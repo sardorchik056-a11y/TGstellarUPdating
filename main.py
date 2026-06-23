@@ -295,7 +295,7 @@ def _distribute_boss_rewards(killer_uid: int, damage_rewards: dict):
                 f'<tg-emoji emoji-id="5438496463044752972">💰</tg-emoji> '
                 f'<b>Награда за участие в убийстве босса!</b>\n\n'
                 f'<blockquote>'
-                f'<tg-emoji emoji-id="5438496463044752972">💰</tg-emoji> <b>Монеты: +{format_amount(coins)}</b>\n'
+                f'<tg-emoji emoji-id="5199552030615558774">💰</tg-emoji> <b>Монеты: +{format_amount(coins)}</b>\n'
                 f'<tg-emoji emoji-id="5341498088408234504">✨</tg-emoji> <b>XP: +{format_amount(xp)}</b>'
                 f'</blockquote>'
             )
