@@ -204,7 +204,10 @@ def cdl_main_text(d: dict) -> str:
 
     return (
         f'<tg-emoji emoji-id="5397916757333654639">💰</tg-emoji> <b>Вклады</b>\n\n'
-        f'<blockquote><b>Баланс:</b> {format_amount(bal)}</blockquote>'
+        f'<blockquote>'
+        f'<i>Вложи монеты — забери с прибылью</i>\n'
+        f'<b>Баланс:</b> {format_amount(bal)}'
+        f'</blockquote>'
         f'{active_block}'
     )
 
@@ -274,12 +277,17 @@ def cdl_detail_text(dep_key: str, d: dict) -> str:
         f'<tg-emoji emoji-id="{dep["emoji_id"]}">{dep["color"]}</tg-emoji> '
         f'<b>{dep["label"]} вклад</b>\n\n'
         f'<blockquote>'
+        f'<tg-emoji emoji-id="5440621591387980068">⏰</tg-emoji> '
         f'<b>Срок:</b> <i>{dep["hours"]}ч · {dep["hours"] // 24} дн.</i>\n'
+        f'<tg-emoji emoji-id="5427168083074628963">💸</tg-emoji> '
         f'<b>Прибыль:</b> +{dep["profit"]}%\n'
+        f'<tg-emoji emoji-id="5397916757333654639">💰</tg-emoji> '
         f'<b>Минимум:</b> {format_amount(dep["min"])}\n'
+        f'<tg-emoji emoji-id="5303214794336125778">🧮</tg-emoji> '
         f'<b>{format_amount(example_in)}</b> → <b>{format_amount(example_out)}</b> <i>(+{format_amount(example_profit)})</i>'
         f'</blockquote>\n'
         f'<blockquote>'
+        f'<tg-emoji emoji-id="5278467510604160626">👛</tg-emoji> '
         f'<b>Баланс:</b> {format_amount(bal)} · {afford_line}'
         f'</blockquote>'
     )
