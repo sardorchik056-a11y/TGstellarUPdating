@@ -325,10 +325,10 @@ def cdl_input_text(dep_key: str, d: dict) -> str:
         f'<tg-emoji emoji-id="{dep["emoji_id"]}">{dep["color"]}</tg-emoji> '
         f'<b>{dep["label"]} вклад</b>\n\n'
         f'<blockquote>'
-        f'<b>Баланс:</b> {format_amount(bal)}\n'
-        f'<b>Минимум:</b> {format_amount(dep["min"])} · <b>+{dep["profit"]}%</b>'
-        f'</blockquote>\n'
-        f'<i>Введи сумму:</i> <code>{format_amount(dep["min"])}</code>'
+        f'<b><tg-emoji emoji-id="5278467510604160626">👛</tg-emoji>Баланс:</b> {format_amount(bal)}\n'
+        f'<b><tg-emoji emoji-id="5447183459602669338">👛</tg-emoji>Минимум:</b> {format_amount(dep["min"])} · <b>+{dep["profit"]}%</b>'
+        f'</blockquote>\n\n'
+        f'<b><i><tg-emoji emoji-id="5197269100878907942">👛</tg-emoji>Введи сумму ниже:</i></b> <code>{format_amount(dep["min"])}</code>'
     )
 
 
