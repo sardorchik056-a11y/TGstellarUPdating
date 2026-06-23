@@ -241,6 +241,70 @@ async def _get_user_lock(uid: int) -> _asyncio.Lock:
         return _user_locks[uid]
 
 
+# ---------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ОХОТЫ ----------
+
+def _apply_xp(data: dict, xp_gain: int):
+    """
+    Начисляет XP пользователю и повышает уровень если накоплено достаточно.
+    Работает с любой формулой xp_for_level из miner.py.
+    """
+    from miner import xp_for_level, MAX_LEVEL
+    data["xp"] = data.get("xp", 0) + xp_gain
+    # Повышаем уровень пока XP >= порога
+    while True:
+        lvl = data.get("level", 1)
+        if lvl >= MAX_LEVEL:
+            # На максимальном уровне — обнуляем XP прогресс
+            data["xp"]    = 0
+            data["xp_max"] = xp_for_level(lvl)
+            break
+        xp_needed = xp_for_level(lvl)
+        data["xp_max"] = xp_needed
+        if data["xp"] >= xp_needed:
+            data["xp"]    -= xp_needed
+            data["level"]  = lvl + 1
+            data["xp_max"] = xp_for_level(lvl + 1)
+        else:
+            break
+
+
+def _distribute_boss_rewards(killer_uid: int, damage_rewards: dict):
+    """
+    Начисляет монеты и XP всем участникам убийства босса кроме убийцы
+    (убийца получил награду уже внутри attack_boss).
+    Сохраняет каждого пользователя в БД.
+    """
+    from database import get_user, save_user as _sv
+    for uid_str, (coins, xp) in damage_rewards.items():
+        try:
+            uid = int(uid_str)
+        except ValueError:
+            continue
+        if uid == killer_uid:
+            continue  # убийца уже получил всё в attack_boss
+        u = get_user(uid)
+        if not u:
+            continue
+        u["balance"] = u.get("balance", 0) + coins
+        _apply_xp(u, xp)
+        _sv(uid, u)
+        # Уведомление участнику
+        try:
+            from miner import COIN as _COIN_ICON
+            _notif = (
+                f'<tg-emoji emoji-id="5438496463044752972">💰</tg-emoji> '
+                f'<b>Награда за участие в убийстве босса!</b>\n\n'
+                f'<blockquote>'
+                f'<tg-emoji emoji-id="5438496463044752972">💰</tg-emoji> <b>Монеты: +{format_amount(coins)}</b>\n'
+                f'<tg-emoji emoji-id="5341498088408234504">✨</tg-emoji> <b>XP: +{format_amount(xp)}</b>'
+                f'</blockquote>'
+            )
+            import asyncio as _aio
+            _aio.ensure_future(bot.send_message(uid, _notif, parse_mode="HTML"))
+        except Exception:
+            pass
+
+
 # ---------- ЭМОДЗИ ГЛАВНОГО МЕНЮ ----------
 EMOJI_PROFILE  = "5906622905894050515"
 EMOJI_STATS    = "5231200819986047254"
@@ -3285,6 +3349,9 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer()
                 return
             if result.get("boss_killed") or result.get("hit"):
+                # ── Повышение уровня убийцы ──
+                if result.get("xp", 0) > 0:
+                    _apply_xp(data, result["xp"])
                 save_user(data["id"], data)
                 # ── Запись статистики для лидерборда ──
                 try:
@@ -3309,6 +3376,9 @@ async def handle_callback(call: CallbackQuery):
                         register_clan_boss_kill(user.id)
                 except Exception as _qe:
                     print(f"[klan] daily quest error: {_qe}")
+                # ── Раздача наград остальным участникам урона ──
+                if result.get("boss_killed"):
+                    _distribute_boss_rewards(user.id, result.get("damage_rewards", {}))
             txt = boss_strike_result_text(data, result, lang, slot)
             kb  = boss_strike_keyboard(data, lang, slot)
             if result.get("crit"):
