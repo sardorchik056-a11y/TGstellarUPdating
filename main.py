@@ -171,7 +171,7 @@ from rass import (
     rass_fsm_callback,
 )
 
-BOT_TOKEN = '8947252465:AAHqlauZc6nOfLylBxlc6xt0VvOhSqR8Rc8'
+BOT_TOKEN = 'gggggggggggggggggggggggggggggggggggggggggggggg'
 
 bot = Bot(token=BOT_TOKEN)
 
