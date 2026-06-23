@@ -105,7 +105,7 @@ def _get_active_deposits(uid: int) -> list[dict]:
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT * FROM deposits WHERE uid=? AND claimed=0 ORDER BY opens_at, id",
+            "SELECT * FROM deposits WHERE uid=? AND claimed=0 ORDER BY opened_at, id",
             (uid,)
         ).fetchall()
     return [dict(r) for r in rows]
@@ -137,6 +137,18 @@ def _claim_deposit(dep_id: int) -> int | None:
         conn.execute("UPDATE deposits SET claimed=1 WHERE id=?", (dep_id,))
         conn.commit()
         return row["payout"]
+
+
+def get_matured_deposits_for_all_users() -> list[dict]:
+    """Все вклады всех пользователей, срок которых истёк и не выплачены."""
+    now = int(time.time())
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM deposits WHERE claimed=0 AND closes_at<=?",
+            (now,)
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def _count_active(uid: int) -> int:
