@@ -186,45 +186,25 @@ def cdl_main_text(d: dict) -> str:
     active = _get_all_active(uid)
     now = int(time.time())
 
-    # Строки активных вкладов
     if active:
         active_lines = ""
         for dep in active:
             dep_cfg = DEPOSITS_BY_KEY.get(dep["dep_key"], {})
             left = max(0, dep["closes_at"] - now)
-            ready = left == 0
-            status = "<b>Готов!</b> ✅" if ready else f"<i>{_fmt_time_left(left)}</i>"
+            status = "✅" if left == 0 else f"<i>{_fmt_time_left(left)}</i>"
             active_lines += (
                 f'\n<tg-emoji emoji-id="{dep_cfg.get("emoji_id", "")}">'
                 f'{dep_cfg.get("color", "⚪")}</tg-emoji>'
                 f' <b>{dep_cfg.get("label", dep["dep_key"])}</b>'
-                f' · {format_amount(dep["amount"])} → <b>{format_amount(dep["payout"])}</b>'
-                f' · {status}'
+                f' · <b>{format_amount(dep["payout"])}</b> · {status}'
             )
-        active_block = (
-            f'\n\n<blockquote>'
-            f'<tg-emoji emoji-id="6030776052345737530">📋</tg-emoji> '
-            f'<b>Активные вклады:</b>'
-            f'{active_lines}'
-            f'</blockquote>'
-        )
+        active_block = f'\n\n<blockquote><b>Активные вклады:</b>{active_lines}</blockquote>'
     else:
-        active_block = (
-            f'\n\n<blockquote>'
-            f'<tg-emoji emoji-id="6030776052345737530">📋</tg-emoji> '
-            f'<b>Активных вкладов нет</b>\n'
-            f'<i>Выбери тариф ниже и открой первый вклад</i>'
-            f'</blockquote>'
-        )
+        active_block = f'\n\n<blockquote><i>Вкладов нет — выбери тариф ниже</i></blockquote>'
 
     return (
         f'<tg-emoji emoji-id="5397916757333654639">💰</tg-emoji> <b>Вклады</b>\n\n'
-        f'<blockquote>'
-        f'Вложи монеты на срок и забери с прибылью — '
-        f'чем дольше вклад, тем выше доходность.\n\n'
-        f'<tg-emoji emoji-id="5438496463044752972">📌</tg-emoji> '
-        f'<b>Баланс:</b> <b>{format_amount(bal)}</b> монет'
-        f'</blockquote>'
+        f'<blockquote><b>Баланс:</b> {format_amount(bal)}</blockquote>'
         f'{active_block}'
     )
 
@@ -285,36 +265,22 @@ def cdl_detail_text(dep_key: str, d: dict) -> str:
     example_profit = example_out - example_in
 
     afford_line = (
-        f'<tg-emoji emoji-id="5325547803936572038">✅</tg-emoji> '
-        f'<b>Монет достаточно — можно открывать</b>'
+        f'✅ <b>Можно открыть</b>'
         if can_afford else
-        f'<tg-emoji emoji-id="5325547803936572038">❌</tg-emoji> '
-        f'<b>Не хватает</b> <i>{format_amount(dep["min"] - bal)} монет</i>'
+        f'❌ <i>Не хватает {format_amount(dep["min"] - bal)}</i>'
     )
 
     return (
         f'<tg-emoji emoji-id="{dep["emoji_id"]}">{dep["color"]}</tg-emoji> '
         f'<b>{dep["label"]} вклад</b>\n\n'
         f'<blockquote>'
-        f'<tg-emoji emoji-id="5440621591387980068">⏰</tg-emoji> '
-        f'<b>Срок:</b> {dep["hours"]}ч <i>({dep["hours"] // 24} дн.)</i>\n'
-        f'<tg-emoji emoji-id="5231200819986047254">📊</tg-emoji> '
-        f'<b>Выплата:</b> {dep["percent"]}% от вклада\n'
-        f'<tg-emoji emoji-id="5427168083074628963">💸</tg-emoji> '
+        f'<b>Срок:</b> <i>{dep["hours"]}ч · {dep["hours"] // 24} дн.</i>\n'
         f'<b>Прибыль:</b> +{dep["profit"]}%\n'
-        f'<tg-emoji emoji-id="5397916757333654639">💰</tg-emoji> '
-        f'<b>Минимум:</b> {format_amount(dep["min"])}'
+        f'<b>Минимум:</b> {format_amount(dep["min"])}\n'
+        f'<b>{format_amount(example_in)}</b> → <b>{format_amount(example_out)}</b> <i>(+{format_amount(example_profit)})</i>'
         f'</blockquote>\n'
         f'<blockquote>'
-        f'<tg-emoji emoji-id="5303214794336125778">🧮</tg-emoji> '
-        f'<b>Пример:</b> вложить <b>{format_amount(example_in)}</b> → '
-        f'получить <b>{format_amount(example_out)}</b> '
-        f'<i>(+{format_amount(example_profit)})</i>'
-        f'</blockquote>\n'
-        f'<blockquote>'
-        f'<tg-emoji emoji-id="5278467510604160626">👛</tg-emoji> '
-        f'<b>Баланс:</b> {format_amount(bal)}\n'
-        f'{afford_line}'
+        f'<b>Баланс:</b> {format_amount(bal)} · {afford_line}'
         f'</blockquote>'
     )
 
@@ -351,14 +317,10 @@ def cdl_input_text(dep_key: str, d: dict) -> str:
         f'<tg-emoji emoji-id="{dep["emoji_id"]}">{dep["color"]}</tg-emoji> '
         f'<b>{dep["label"]} вклад</b>\n\n'
         f'<blockquote>'
-        f'<tg-emoji emoji-id="5197269100878907942">📌</tg-emoji> '
-        f'<b>Минимум:</b> {format_amount(dep["min"])}\n'
-        f'<tg-emoji emoji-id="5429518319243775957">💳</tg-emoji> '
         f'<b>Баланс:</b> {format_amount(bal)}\n'
-        f'<tg-emoji emoji-id="5201691993775818138">💸</tg-emoji> '
-        f'<b>Доходность:</b> <b>+{dep["profit"]}%</b> за {dep["hours"]}ч'
+        f'<b>Минимум:</b> {format_amount(dep["min"])} · <b>+{dep["profit"]}%</b>'
         f'</blockquote>\n'
-        f'<i>Введи сумму — например <code>{format_amount(dep["min"])}</code></i>'
+        f'<i>Введи сумму:</i> <code>{format_amount(dep["min"])}</code>'
     )
 
 
@@ -379,17 +341,10 @@ def cdl_confirm_text(dep_key: str, amount: int) -> str:
     profit = payout - amount
     return (
         f'<tg-emoji emoji-id="{dep["emoji_id"]}">{dep["color"]}</tg-emoji> '
-        f'<b>Подтверждение вклада</b>\n\n'
+        f'<b>Подтверди вклад</b>\n\n'
         f'<blockquote>'
-        f'<tg-emoji emoji-id="5199552030615558774">💰</tg-emoji> '
-        f'<b>Сумма:</b> {format_amount(amount)}\n'
-        f'<tg-emoji emoji-id="5231200819986047254">📊</tg-emoji> '
-        f'<b>Тариф:</b> {dep["label"]} · <b>{dep["percent"]}%</b>\n'
-        f'<tg-emoji emoji-id="5440621591387980068">⏰</tg-emoji> '
-        f'<b>Срок:</b> {dep["hours"]}ч\n'
-        f'<tg-emoji emoji-id="5244837092042750681">📈</tg-emoji> '
-        f'<b>Получишь:</b> <b>{format_amount(payout)}</b> '
-        f'<i>(+{format_amount(profit)})</i>'
+        f'<b>{format_amount(amount)}</b> → <b>{format_amount(payout)}</b> <i>(+{format_amount(profit)})</i>\n'
+        f'<i>{dep["label"]} · {dep["hours"]}ч · +{dep["profit"]}%</i>'
         f'</blockquote>'
     )
 
@@ -420,14 +375,10 @@ def cdl_opened_text(dep_key: str, amount: int) -> str:
     closes_ts = int(time.time()) + dep["hours"] * 3600
     return (
         f'<tg-emoji emoji-id="{dep["emoji_id"]}">{dep["color"]}</tg-emoji> '
-        f'<b>{dep["label"]} вклад открыт!</b>\n\n'
+        f'<b>Вклад открыт!</b>\n\n'
         f'<blockquote>'
-        f'<tg-emoji emoji-id="5222079954421818267">💰</tg-emoji> '
-        f'<b>Вложено:</b> {format_amount(amount)}\n'
-        f'<tg-emoji emoji-id="5251203410396458957">🎯</tg-emoji> '
-        f'<b>Выплата:</b> <b>{format_amount(payout)}</b>\n'
-        f'<tg-emoji emoji-id="5440621591387980068">⏰</tg-emoji> '
-        f'<b>Готов:</b> <i>{_fmt_ts(closes_ts)}</i>'
+        f'<b>{format_amount(amount)}</b> → <b>{format_amount(payout)}</b>\n'
+        f'<i>Забрать {_fmt_ts(closes_ts)}</i>'
         f'</blockquote>'
     )
 
@@ -436,13 +387,8 @@ def cdl_claim_text(total_payout: int, total_profit: int, count: int) -> str:
     from database import format_amount
     return (
         f'<tg-emoji emoji-id="5440621591387980068">💰</tg-emoji> '
-        f'<b>Вклады получены!</b>\n\n'
+        f'<b>Получено!</b>\n\n'
         f'<blockquote>'
-        f'<tg-emoji emoji-id="5397916757333654639">📦</tg-emoji> '
-        f'<b>Выплачено вкладов:</b> {count}\n'
-        f'<tg-emoji emoji-id="5427168083074628963">💳</tg-emoji> '
-        f'<b>Получено:</b> <b>{format_amount(total_payout)}</b>\n'
-        f'<tg-emoji emoji-id="5438496463044752972">📈</tg-emoji> '
-        f'<b>Прибыль:</b> <i>+{format_amount(total_profit)}</i>'
+        f'<b>{format_amount(total_payout)}</b> · <i>+{format_amount(total_profit)} прибыли</i> · {count} вкл.'
         f'</blockquote>'
     )
