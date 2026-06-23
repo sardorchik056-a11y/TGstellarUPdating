@@ -223,6 +223,8 @@ _promo_pending: dict[int, bool] = {}
 
 # Ожидание ввода суммы вклада: uid -> dep_key
 _cdl_input_pending: dict[int, str] = {}
+# Сообщение экрана ввода суммы: uid -> (chat_id, message_id)
+_cdl_input_msg: dict[int, tuple] = {}
 
 EMOJI_DEPOSITS = "5427168083074628963"
 
@@ -1776,10 +1778,30 @@ async def handle_captcha_answer(message: Message):
     # ── Ожидание ввода суммы вклада ──
     if uid in _cdl_input_pending:
         dep_key = _cdl_input_pending.pop(uid)
+        msg_info = _cdl_input_msg.pop(uid, None)
         raw = (message.text or "").strip().replace(" ", "").replace("_", "")
+
+        async def _cdl_edit_or_answer(text: str, kb=None):
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            if msg_info:
+                try:
+                    await bot.edit_message_text(
+                        text, chat_id=msg_info[0], message_id=msg_info[1],
+                        parse_mode="HTML", reply_markup=kb
+                    )
+                    return
+                except Exception:
+                    pass
+            await message.answer(text, parse_mode="HTML", reply_markup=kb)
+
         if not raw.isdigit():
-            _cdl_input_pending[uid] = dep_key  # вернуть обратно — ждём ещё
-            await message.answer("❌ Введи целое число.", parse_mode="HTML")
+            _cdl_input_pending[uid] = dep_key
+            if msg_info:
+                _cdl_input_msg[uid] = msg_info
+            await _cdl_edit_or_answer("❌ <b>Введи целое число</b>", cdl_input_keyboard(dep_key))
             return
         amount = int(raw)
         dep    = _CDL_DEPOSITS_BY_KEY.get(dep_key)
@@ -1790,21 +1812,26 @@ async def handle_captcha_answer(message: Message):
             u2  = get_or_create_user(message.from_user)
             bal = u2.get("balance", 0)
             if amount < dep["min"]:
-                await message.answer(
-                    f'❌ Минимальная сумма: <b>{format_amount(dep["min"])}</b> монет.',
-                    parse_mode="HTML"
+                _cdl_input_pending[uid] = dep_key
+                if msg_info:
+                    _cdl_input_msg[uid] = msg_info
+                await _cdl_edit_or_answer(
+                    f'❌ <b>Минимум:</b> {format_amount(dep["min"])}',
+                    cdl_input_keyboard(dep_key)
                 )
                 return
             if amount > bal:
-                await message.answer(
-                    f'❌ Недостаточно монет. Баланс: <b>{format_amount(bal)}</b>.',
-                    parse_mode="HTML"
+                _cdl_input_pending[uid] = dep_key
+                if msg_info:
+                    _cdl_input_msg[uid] = msg_info
+                await _cdl_edit_or_answer(
+                    f'❌ <b>Не хватает монет.</b> Баланс: {format_amount(bal)}',
+                    cdl_input_keyboard(dep_key)
                 )
                 return
-        await message.answer(
+        await _cdl_edit_or_answer(
             cdl_confirm_text(dep_key, amount),
-            reply_markup=cdl_confirm_keyboard(dep_key, amount),
-            parse_mode="HTML"
+            cdl_confirm_keyboard(dep_key, amount)
         )
         return
 
@@ -2032,6 +2059,7 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer("❌ Недостаточно монет!", show_alert=True)
                 return
             _cdl_input_pending[user.id] = dep_key
+            _cdl_input_msg[user.id] = (call.message.chat.id, call.message.message_id)
             await edit(cdl_input_text(dep_key, data), cdl_input_keyboard(dep_key))
             await call.answer()
             return
