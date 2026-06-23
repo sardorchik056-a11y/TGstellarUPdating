@@ -200,17 +200,20 @@ def cdl_main_text(d: dict) -> str:
 
     if active:
         active_lines = ""
-        for dep in active:
+        now_active = [dep for dep in active if dep["closes_at"] > now]
+        for dep in now_active:
             dep_cfg = DEPOSITS_BY_KEY.get(dep["dep_key"], {})
-            left = max(0, dep["closes_at"] - now)
-            status = "✅" if left == 0 else f"<i>{_fmt_time_left(left)}</i>"
+            left = dep["closes_at"] - now
+            tag = f'{dep_cfg.get("hours", "?")}h | {dep_cfg.get("profit", "?")}%'
             active_lines += (
-                f'\n<tg-emoji emoji-id="{dep_cfg.get("emoji_id", "")}">'
-                f'{dep_cfg.get("color", "⚪")}</tg-emoji>'
-                f' <b>{dep_cfg.get("label", dep["dep_key"])}</b>'
-                f' · <b>{format_amount(dep["payout"])}</b> · {status}'
+                f'\n<b>#{dep["id"]} {tag}</b>'
+                f' · <b>{format_amount(dep["payout"])}</b>'
+                f' · <i>{_fmt_time_left(left)}</i>'
             )
-        active_block = f'\n\n<blockquote><b>Активные вклады:</b>{active_lines}</blockquote>'
+        if active_lines:
+            active_block = f'\n\n<blockquote><b>Активные вклады:</b>{active_lines}</blockquote>'
+        else:
+            active_block = f'\n\n<blockquote><i>Вкладов нет — выбери тариф ниже</i></blockquote>'
     else:
         active_block = f'\n\n<blockquote><i>Вкладов нет — выбери тариф ниже</i></blockquote>'
 
