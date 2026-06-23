@@ -49,6 +49,7 @@ from hunt import (
     sword_shop_text, sword_shop_keyboard,
     sword_detail_text, sword_detail_keyboard,
     my_swords_text, my_swords_keyboard,
+    boss_select_text, boss_select_keyboard,
     boss_attack_text, boss_attack_keyboard,
     boss_strike_result_text, boss_strike_keyboard,
     buy_sword, equip_sword, attack_boss,
@@ -3199,6 +3200,20 @@ async def handle_callback(call: CallbackQuery):
             await edit(hunt_main_text(data, lang), hunt_main_keyboard(data, lang))
             return
 
+        # ===== ОХОТА: экран выбора босса =====
+        if cd == "hunt_boss_select":
+            await edit(boss_select_text(lang), boss_select_keyboard(lang))
+            await call.answer()
+            return
+
+        # ===== ОХОТА: мёртвый босс — тихо отвечаем =====
+        if cd == "hunt_boss_dead":
+            await call.answer(
+                "Boss is dead, wait for respawn." if lang == "en" else "Босс мёртв, жди респауна.",
+                show_alert=True
+            )
+            return
+
         # ===== ОХОТА: магазин мечей =====
         if cd == "hunt_shop_swords":
             await edit(sword_shop_text(data, 0, lang), sword_shop_keyboard(data, 0, lang))
@@ -3246,14 +3261,25 @@ async def handle_callback(call: CallbackQuery):
             await edit(my_swords_text(data, lang), my_swords_keyboard(data, lang))
             return
 
-        # ===== ОХОТА: экран атаки босса =====
-        if cd == "hunt_boss":
-            await edit(boss_attack_text(data, lang), boss_attack_keyboard(data, lang))
+        # ===== ОХОТА: экран атаки конкретного босса (hunt_boss_N) =====
+        if cd.startswith("hunt_boss_") and cd != "hunt_boss_select" and cd != "hunt_boss_dead":
+            try:
+                slot = int(cd.removeprefix("hunt_boss_"))
+            except ValueError:
+                await call.answer("❌ Неизвестный слот." if lang == "ru" else "❌ Unknown slot.", show_alert=True)
+                return
+            await edit(boss_attack_text(data, lang, slot), boss_attack_keyboard(data, lang, slot))
+            await call.answer()
             return
 
-        # ===== ОХОТА: удар по боссу =====
-        if cd == "hunt_strike":
-            result = attack_boss(data)
+        # ===== ОХОТА: удар по боссу (hunt_strike_N) =====
+        if cd.startswith("hunt_strike"):
+            # Парсим слот из hunt_strike_N, дефолт 0
+            try:
+                slot = int(cd.removeprefix("hunt_strike_"))
+            except ValueError:
+                slot = 0
+            result = attack_boss(data, slot=slot)
             # Кулдаун — тихий игнор, просто отвечаем на callback без действий
             if result.get("error") == "cooldown":
                 await call.answer()
@@ -3262,7 +3288,8 @@ async def handle_callback(call: CallbackQuery):
                 save_user(data["id"], data)
                 # ── Запись статистики для лидерборда ──
                 try:
-                    _boss_state = get_boss_state()
+                    from hunt import _load_slot as _ld_slot
+                    _boss_state = _ld_slot(slot)
                     _boss_key   = _boss_state.get("boss_key", "unknown")
                     record_boss_hit(
                         uid        = user.id,
@@ -3282,8 +3309,8 @@ async def handle_callback(call: CallbackQuery):
                         register_clan_boss_kill(user.id)
                 except Exception as _qe:
                     print(f"[klan] daily quest error: {_qe}")
-            txt = boss_strike_result_text(data, result, lang)
-            kb  = boss_strike_keyboard(data, lang)
+            txt = boss_strike_result_text(data, result, lang, slot)
+            kb  = boss_strike_keyboard(data, lang, slot)
             if result.get("crit"):
                 await call.answer("⭐ CRITICAL HIT!" if lang == "en" else "⭐ КРИТИЧЕСКИЙ УДАР!", show_alert=False)
             else:
