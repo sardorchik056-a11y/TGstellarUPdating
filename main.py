@@ -142,6 +142,9 @@ from cdl import (
     _open_deposit as _cdl_open_deposit,
     _get_ready_deposits as _cdl_get_ready,
     _claim_deposit as _cdl_claim,
+    _count_active as _cdl_count_active,
+    get_matured_deposits_for_all_users as _cdl_get_matured_all,
+    DEPOSITS_BY_KEY as _CDL_DEP_BY_KEY_REF,
 )
 from shop import (
     cases_shop_text, cases_shop_keyboard,
@@ -1781,7 +1784,11 @@ async def handle_captcha_answer(message: Message):
         msg_info = _cdl_input_msg.pop(uid, None)
         raw = (message.text or "").strip().replace(" ", "").replace("_", "")
 
-        async def _cdl_edit_or_answer(text: str, kb=None):
+        async def _cdl_edit_or_send(text: str, kb=None):
+            """Удаляет сообщение юзера, редактирует бот-сообщение.
+            Если edit не прошёл (not modified / deleted) — шлёт новое и
+            обновляет msg_info для следующего раунда."""
+            nonlocal msg_info
             try:
                 await message.delete()
             except Exception:
@@ -1793,15 +1800,24 @@ async def handle_captcha_answer(message: Message):
                         parse_mode="HTML", reply_markup=kb
                     )
                     return
-                except Exception:
-                    pass
-            await message.answer(text, parse_mode="HTML", reply_markup=kb)
+                except Exception as _e:
+                    err = str(_e).lower()
+                    if "message is not modified" in err:
+                        # контент тот же — ничего не делаем, msg_info не трогаем
+                        return
+                    # сообщение удалено или недоступно — шлём новое
+            sent = await bot.send_message(
+                msg_info[0] if msg_info else message.chat.id,
+                text, parse_mode="HTML", reply_markup=kb
+            )
+            # Обновляем msg_info на новое сообщение бота
+            msg_info = (sent.chat.id, sent.message_id)
 
         if not raw.isdigit():
             _cdl_input_pending[uid] = dep_key
-            if msg_info:
-                _cdl_input_msg[uid] = msg_info
-            await _cdl_edit_or_answer("❌ <b>Введи целое число</b>", cdl_input_keyboard(dep_key))
+            _cdl_input_msg[uid] = msg_info
+            await _cdl_edit_or_send("❌ <b>Введи целое число</b>", cdl_input_keyboard(dep_key))
+            _cdl_input_msg[uid] = msg_info  # обновляем после возможного send
             return
         amount = int(raw)
         dep    = _CDL_DEPOSITS_BY_KEY.get(dep_key)
@@ -1813,23 +1829,23 @@ async def handle_captcha_answer(message: Message):
             bal = u2.get("balance", 0)
             if amount < dep["min"]:
                 _cdl_input_pending[uid] = dep_key
-                if msg_info:
-                    _cdl_input_msg[uid] = msg_info
-                await _cdl_edit_or_answer(
+                _cdl_input_msg[uid] = msg_info
+                await _cdl_edit_or_send(
                     f'❌ <b>Минимум:</b> {format_amount(dep["min"])}',
                     cdl_input_keyboard(dep_key)
                 )
+                _cdl_input_msg[uid] = msg_info
                 return
             if amount > bal:
                 _cdl_input_pending[uid] = dep_key
-                if msg_info:
-                    _cdl_input_msg[uid] = msg_info
-                await _cdl_edit_or_answer(
+                _cdl_input_msg[uid] = msg_info
+                await _cdl_edit_or_send(
                     f'❌ <b>Не хватает монет.</b> Баланс: {format_amount(bal)}',
                     cdl_input_keyboard(dep_key)
                 )
+                _cdl_input_msg[uid] = msg_info
                 return
-        await _cdl_edit_or_answer(
+        await _cdl_edit_or_send(
             cdl_confirm_text(dep_key, amount),
             cdl_confirm_keyboard(dep_key, amount)
         )
@@ -2058,6 +2074,9 @@ async def handle_callback(call: CallbackQuery):
             if data.get("balance", 0) < dep["min"]:
                 await call.answer("❌ Недостаточно монет!", show_alert=True)
                 return
+            if _cdl_count_active(user.id) >= 8:
+                await call.answer("❌ Максимум 8 активных вкладов!", show_alert=True)
+                return
             _cdl_input_pending[user.id] = dep_key
             _cdl_input_msg[user.id] = (call.message.chat.id, call.message.message_id)
             await edit(cdl_input_text(dep_key, data), cdl_input_keyboard(dep_key))
@@ -2090,6 +2109,9 @@ async def handle_callback(call: CallbackQuery):
                 return
             if amount > bal:
                 await call.answer("❌ Недостаточно монет!", show_alert=True)
+                return
+            if _cdl_count_active(user.id) >= 8:
+                await call.answer("❌ Максимум 8 активных вкладов!", show_alert=True)
                 return
             data["balance"] = bal - amount
             save_user(user.id, data)
@@ -3840,6 +3862,75 @@ async def handle_successful_payment(message: Message):
         return
 
 
+async def _cdl_payout_loop():
+    """Фоновая задача: каждую минуту проверяет созревшие вклады,
+    выплачивает баланс и отправляет уведомление пользователю."""
+    import sqlite3 as _sq, json as _js
+    from database import save_user as _sv
+
+    while True:
+        await asyncio.sleep(60)
+        try:
+            matured = _cdl_get_matured_all()
+            if not matured:
+                continue
+
+            # Группируем по uid
+            by_uid: dict[int, list] = {}
+            for dep in matured:
+                by_uid.setdefault(dep["uid"], []).append(dep)
+
+            for uid, deps in by_uid.items():
+                # Считаем выплаты
+                total_payout = 0
+                total_profit = 0
+                paid_deps    = []
+                for dep in deps:
+                    payout = _cdl_claim(dep["id"])
+                    if payout is not None:
+                        total_payout += payout
+                        total_profit += payout - dep["amount"]
+                        paid_deps.append(dep)
+                if not paid_deps:
+                    continue
+
+                # Начисляем баланс через sqlite (в лупе нет объекта User)
+                with _sq.connect("tgstellar.db") as _conn:
+                    _conn.row_factory = _sq.Row
+                    row = _conn.execute(
+                        "SELECT data FROM users WHERE id=?", (uid,)
+                    ).fetchone()
+                    if not row:
+                        continue
+                    udata = _js.loads(row["data"])
+                udata["balance"] = udata.get("balance", 0) + total_payout
+                _sv(uid, udata)
+
+                # Шлём отдельное уведомление на каждый вклад
+                for dep in paid_deps:
+                    cfg = _CDL_DEP_BY_KEY_REF.get(dep["dep_key"], {})
+                    profit = dep["payout"] - dep["amount"]
+                    notif = (
+                        f'<tg-emoji emoji-id="{cfg.get("emoji_id", "5440621591387980068")}">💰</tg-emoji> '
+                        f'<b>Вклад #{dep["id"]} закрыт!</b>\n\n'
+                        f'<blockquote>'
+                        f'<b>{cfg.get("label", dep["dep_key"])}</b> · {cfg.get("hours", "?")}ч\n'
+                        f'<tg-emoji emoji-id="5447183459602669338">💰</tg-emoji> '
+                        f'<b>Вложено:</b> {format_amount(dep["amount"])}\n'
+                        f'<tg-emoji emoji-id="5278467510604160626">💰</tg-emoji> '
+                        f'<b>Получено:</b> +{format_amount(dep["payout"])}\n'
+                        f'<tg-emoji emoji-id="5224257782013769471">💸</tg-emoji> '
+                        f'<b>Прибыль:</b> +{format_amount(profit)}'
+                        f'</blockquote>'
+                    )
+                    try:
+                        await bot.send_message(uid, notif, parse_mode="HTML")
+                    except Exception:
+                        pass
+        except Exception as _e:
+            print(f"[cdl_payout_loop] {_e}")
+
+
 async def _pets_loop():
     """Фоновая задача: уведомления и доход питомцев.
     1 питомец  → сообщение каждые 12 ч от него.
@@ -4014,6 +4105,9 @@ async def main():
             _changed = True
         if _changed:
             _save_mig(_u["id"], _u)
+
+    # ── Запускаем фоновую задачу вкладов (авто-выплаты) ──
+    asyncio.create_task(_cdl_payout_loop())
 
     # ── Запускаем фоновую задачу питомцев ──
     asyncio.create_task(_pets_loop())
