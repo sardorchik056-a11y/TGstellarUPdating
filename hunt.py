@@ -1270,78 +1270,17 @@ def hunt_main_text(data: dict, lang: str = "ru") -> str:
                 f'</blockquote>\n\n'
             )
 
-    # Статус всех 5 боссов
-    slots = get_all_slots()
-    now   = _now_ts()
-    boss_lines = ""
-    for slot_idx, st in slots:
-        boss_key = st.get("boss_key")
-        boss     = BOSSES_BY_KEY.get(boss_key)
-        if st.get("boss_alive") and boss:
-            hp     = st["boss_hp"]
-            max_hp = st.get("boss_max_hp", BOSS_MAX_HP)
-            pct    = hp / max_hp * 100
-            bname  = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
-            boss_lines += (
-                f'\n{_tg(_E["boss"], "🔥")} <b>#{slot_idx+1} {bname}</b>\n'
-                f'   {_tg(_E["hp"], "❤️")} {_fmt_digits(hp)} / {_fmt_digits(max_hp)} <b>({pct:.1f}%)</b>'
-            )
-        else:
-            died_at = st.get("boss_died_at", 0) or 0
-            rem     = max(0, BOSS_RESPAWN_SEC - (now - died_at))
-            m       = rem // 60
-            if lang == "en":
-                boss_lines += f'\n{_tg(_E["dead"], "💀")} <b>#{slot_idx+1}</b> — next in {m}m'
-            else:
-                boss_lines += f'\n{_tg(_E["dead"], "💀")} <b>#{slot_idx+1}</b> — след. через {m}м'
-
-    if lang == "en":
-        boss_block = f'<blockquote><b>Active bosses:</b>{boss_lines}\n</blockquote>'
-    else:
-        boss_block = f'<blockquote><b>Активные боссы:</b>{boss_lines}\n</blockquote>'
-
-    return header + eq_block + boss_block
+    return header + eq_block
 
 
 def hunt_main_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
-    builder  = InlineKeyboardBuilder()
-    slots    = get_all_slots()
-    eq_key   = get_equipped_sword(data)
+    builder = InlineKeyboardBuilder()
 
-    # Кнопки боссов — по 2-3 в ряд
-    row_btns = []
-    for slot_idx, st in slots:
-        boss_key = st.get("boss_key")
-        boss     = BOSSES_BY_KEY.get(boss_key)
-        alive    = st.get("boss_alive", False)
-        if alive and boss:
-            hp     = st["boss_hp"]
-            max_hp = st.get("boss_max_hp", BOSS_MAX_HP)
-            pct    = int(hp / max_hp * 100)
-            bname  = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
-            btn    = InlineKeyboardButton(
-                text=f"⚔️ #{slot_idx+1} {bname} {pct}%",
-                callback_data=f"hunt_boss_{slot_idx}",
-                icon_custom_emoji_id=_E["skull"]
-            )
-        else:
-            died_at = st.get("boss_died_at", 0) or 0
-            rem     = max(0, BOSS_RESPAWN_SEC - (_now_ts() - died_at))
-            m       = rem // 60
-            label   = f"⏳ #{slot_idx+1} {m}м" if lang == "ru" else f"⏳ #{slot_idx+1} {m}m"
-            btn     = InlineKeyboardButton(
-                text=label,
-                callback_data=f"hunt_boss_{slot_idx}",
-                icon_custom_emoji_id=_E["timer"]
-            )
-        row_btns.append(btn)
-
-    # Две кнопки в ряд, последняя отдельно если нечётное
-    for i in range(0, len(row_btns) - 1, 2):
-        builder.row(row_btns[i], row_btns[i+1])
-    if len(row_btns) % 2 == 1:
-        builder.row(row_btns[-1])
-
+    builder.row(InlineKeyboardButton(
+        text="Attack Boss!" if lang == "en" else "Атаковать босса!",
+        callback_data="hunt_boss_select",
+        icon_custom_emoji_id=_E["skull"]
+    ))
     builder.row(
         InlineKeyboardButton(
             text="My Swords" if lang == "en" else "Мои мечи",
@@ -1616,6 +1555,67 @@ def my_swords_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+# ─── Экран выбора босса ───
+
+def boss_select_text(lang: str = "ru") -> str:
+    slots = get_all_slots()
+    now   = _now_ts()
+    lines = []
+    for slot_idx, st in slots:
+        boss_key = st.get("boss_key")
+        boss     = BOSSES_BY_KEY.get(boss_key)
+        if st.get("boss_alive") and boss:
+            bname = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
+            lines.append(f'{_tg(_E["boss"], "🔥")} <b>#{slot_idx+1} {bname}</b>')
+        else:
+            died_at = st.get("boss_died_at", 0) or 0
+            rem     = max(0, BOSS_RESPAWN_SEC - (now - died_at))
+            m       = rem // 60
+            if lang == "en":
+                lines.append(f'{_tg(_E["dead"], "💀")} <b>#{slot_idx+1}</b> — next in {m}m')
+            else:
+                lines.append(f'{_tg(_E["dead"], "💀")} <b>#{slot_idx+1}</b> — след. через {m}м')
+
+    body = "\n".join(lines)
+    if lang == "en":
+        return f'<blockquote>{_tg(_E["skull"], "💀")} <b>CHOOSE A BOSS</b>\n\n{body}\n</blockquote>'
+    return f'<blockquote>{_tg(_E["skull"], "💀")} <b>ВЫБОР БОССА</b>\n\n{body}\n</blockquote>'
+
+
+def boss_select_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    slots   = get_all_slots()
+
+    for slot_idx, st in slots:
+        boss_key = st.get("boss_key")
+        boss     = BOSSES_BY_KEY.get(boss_key)
+        alive    = st.get("boss_alive", False)
+        if alive and boss:
+            bname = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
+            builder.row(InlineKeyboardButton(
+                text=f"⚔️ #{slot_idx+1} {bname}",
+                callback_data=f"hunt_boss_{slot_idx}",
+                icon_custom_emoji_id=_E["skull"]
+            ))
+        else:
+            died_at = st.get("boss_died_at", 0) or 0
+            rem     = max(0, BOSS_RESPAWN_SEC - (_now_ts() - died_at))
+            m       = rem // 60
+            label   = f"⏳ #{slot_idx+1} — {m}м" if lang == "ru" else f"⏳ #{slot_idx+1} — {m}m"
+            builder.row(InlineKeyboardButton(
+                text=label,
+                callback_data="hunt_boss_dead",
+                icon_custom_emoji_id=_E["timer"]
+            ))
+
+    builder.row(InlineKeyboardButton(
+        text="Back" if lang == "en" else "Назад",
+        callback_data="hunt",
+        icon_custom_emoji_id=_E["back"]
+    ))
+    return builder.as_markup()
+
+
 # ─── Экран атаки босса ───
 
 def boss_attack_text(data: dict, lang: str = "ru", slot: int = 0) -> str:
@@ -1768,29 +1768,29 @@ def boss_attack_text(data: dict, lang: str = "ru", slot: int = 0) -> str:
     )
 
 
-def boss_attack_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
+def boss_attack_keyboard(data: dict, lang: str = "ru", slot: int = 0) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    state   = get_boss_state()
+    state   = _load_slot(slot)
     eq_key  = get_equipped_sword(data)
 
     if state.get("boss_alive") and eq_key:
         builder.row(InlineKeyboardButton(
             text="Strike!" if lang == "en" else "Ударить!",
-            callback_data="hunt_strike",
+            callback_data=f"hunt_strike_{slot}",
             icon_custom_emoji_id=_E["sword"]
         ))
 
     builder.row(InlineKeyboardButton(
         text="Back" if lang == "en" else "Назад",
-        callback_data="hunt",
+        callback_data="hunt_boss_select",
         icon_custom_emoji_id=_E["back"]
     ))
     return builder.as_markup()
 
 
-def boss_strike_result_text(data: dict, result: dict, lang: str = "ru") -> str:
+def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: int = 0) -> str:
     """Текст после удара по боссу."""
-    state    = get_boss_state()
+    state    = _load_slot(result.get("slot", slot))
     boss_key = state.get("boss_key")
     boss     = BOSSES_BY_KEY.get(boss_key)
 
@@ -1886,22 +1886,22 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru") -> str:
     )
 
 
-def boss_strike_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
+def boss_strike_keyboard(data: dict, lang: str = "ru", slot: int = 0) -> InlineKeyboardMarkup:
     """Клавиатура после удара — даём ударить ещё раз или назад."""
     builder = InlineKeyboardBuilder()
-    state   = get_boss_state()
+    state   = _load_slot(slot)
     eq_key  = get_equipped_sword(data)
 
     if state.get("boss_alive") and eq_key:
         builder.row(InlineKeyboardButton(
             text="Strike again!" if lang == "en" else "Ударить ещё!",
-            callback_data="hunt_strike",
+            callback_data=f"hunt_strike_{slot}",
             icon_custom_emoji_id=_E["sword"]
         ))
 
     builder.row(InlineKeyboardButton(
         text="Back" if lang == "en" else "Назад",
-        callback_data="hunt",
+        callback_data="hunt_boss_select",
         icon_custom_emoji_id=_E["back"]
     ))
     return builder.as_markup()
