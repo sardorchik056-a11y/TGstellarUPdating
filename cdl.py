@@ -258,7 +258,7 @@ def cdl_main_keyboard(uid: int) -> InlineKeyboardMarkup:
             icon_custom_emoji_id="5397916757333654639"
         ),
         InlineKeyboardButton(
-            text="144h | 260%",
+            text="144h | 360%",
             callback_data="cdl_info_dep_144h",
             icon_custom_emoji_id="5397916757333654639"
         ),
