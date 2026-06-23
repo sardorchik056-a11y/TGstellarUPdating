@@ -1,0 +1,1531 @@
+# ============================================================
+#  klan.py  —  Система кланов TGStellar
+#  Таблицы: clans, clan_members, clan_applications,
+#           clan_treasury_requests
+#  Роли: creator / member
+# ============================================================
+
+import sqlite3
+import time
+import html as _html
+
+DB_PATH = "tgstellar.db"
+
+# ── Проверенные Emoji IDs (из рабочего кода проекта) ────────
+# Из database.py / main.py — эти ID гарантированно работают
+_E_SWORD   = "5357122032674818130"   # ⛏ / ⚔️  — шахта/оружие
+_E_CROWN   = "5229011542011299168"   # 👑        — создатель
+_E_PEOPLE  = "5452085950022707790"   # 👥        — участники (pets)
+_E_STAR    = "5262643974912355126"   # ⭐        — премиум
+_E_STATS   = "5231200819986047254"   # 📊        — статистика
+_E_COIN    = "5199552030615558774"   # 🪙        — монета (из miner)
+_E_TROPHY  = "5440539497383087970"   # 🏆        — лидеры
+_E_CHEST   = "5278467510604160626"   # 💰        — магазин/казна
+_E_SEARCH  = "5231012545799666522"   # 🔍        — обмен/поиск
+_E_PLUS    = "5397916757333654639"   # ➕        — из main.py кнопка
+_E_CHECK   = "5206607081334906820"   # ✅        — из main.py кнопка
+_E_CROSS   = "5210952531676504517"   # ❌        — из main.py кнопка
+_E_APPS    = "5334544901428229844"   # 📋        — настройки иконка
+_E_BACK    = "6039539366177541657"   # ←         — рабочий back из оригинала
+_E_STATUS  = "5438496463044752972"   # 🎟        — статус
+_E_HUNT    = "5424972470023104089"   # 🗡         — охота
+_E_LEAVE   = "5210952531676504517"   # 🚪        — из main.py кнопка
+_E_STATSE  = "5445355530111437729"
+# ── Emoji для топ-10 кланов (места/цифры) ───────────────────
+_E_RANK_1  = "5440539497383087970"   # 🥇 — 1 место
+_E_RANK_2  = "5447203607294265305"   # 🥈 — 2 место
+_E_RANK_3  = "5453902265922376865"   # 🥉 — 3 место
+_E_RANK_4  = "5382054253403577563"   # 4️⃣
+_E_RANK_5  = "5391197405553107640"   # 5️⃣
+_E_RANK_6  = "5390966190283694453"   # 6️⃣
+_E_RANK_7  = "5382132232829804982"   # 7️⃣
+_E_RANK_8  = "5391038994274329680"   # 8️⃣
+_E_RANK_9  = "5391234698754138414"   # 9️⃣
+_E_DIGIT_1 = "5382322671679708881"   # 1 (для "10")
+_E_DIGIT_0 = "5393480373944459905"   # 0 (для "10")
+
+# tg-emoji хелперы для текстов
+def _e(eid: str, fallback: str) -> str:
+    return f'<tg-emoji emoji-id="{eid}">{fallback}</tg-emoji>'
+
+
+def _fmt(n) -> str:
+    """
+    Сокращённый формат чисел: 1500 -> "1.5к", 100000 -> "100к",
+    2300000 -> "2.3м" и т.д. Единый стиль во всём боте.
+    """
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return str(n)
+
+    sign = "-" if n < 0 else ""
+    n = abs(n)
+
+    if n < 1000:
+        if n == int(n):
+            return f"{sign}{int(n)}"
+        return f"{sign}{n:.1f}"
+
+    for div, suffix in [
+        (1_000_000_000_000, "трлн"),
+        (1_000_000_000,     "млрд"),
+        (1_000_000,         "м"),
+        (1_000,             "к"),
+    ]:
+        if n >= div:
+            val = n / div
+            val = int(val * 10) / 10
+            if val == int(val):
+                return f"{sign}{int(val)}{suffix}"
+            return f"{sign}{val:.1f}{suffix}"
+
+    return f"{sign}{int(n)}"
+
+
+COIN  = _e(_E_COIN,  "🪙")
+CROWN = _e(_E_CROWN, "👑")
+
+MAX_CLAN_MEMBERS = 100
+MAX_CLAN_APPS    = 50
+APPS_PER_PAGE    = 10
+CLANS_PER_PAGE   = 10
+MIN_CLAN_NAME    = 3
+MAX_CLAN_NAME    = 24
+CREATE_COST      = 10_000
+
+# ── Ежедневные задания клана ────────────────────────────────
+DAILY_QUEST_DMG_TARGET  = 1_000_000   # сколько урона боссу нужно нанести (суммарно кланом)
+DAILY_QUEST_DMG_REWARD  = 500_000     # награда в казну за выполнение задания на урон
+DAILY_QUEST_KILL_REWARD = 3_000_000   # награда в казну за убийство любого босса (общее задание)
+
+# Задание 3: суммарный урон клана по боссу 5,000,000 → награда 2,000,000 в казну
+DAILY_QUEST_DMG2_TARGET  = 5_000_000
+DAILY_QUEST_DMG2_REWARD  = 2_000_000
+
+# Задания на добычу монет в шахте (суммарно кланом, нарастающие пороги)
+DAILY_QUEST_MINE1_TARGET = 1_500_000
+DAILY_QUEST_MINE1_REWARD = 500_000
+
+DAILY_QUEST_MINE2_TARGET = 5_000_000
+DAILY_QUEST_MINE2_REWARD = 2_000_000
+
+DAILY_QUEST_MINE3_TARGET = 30_000_000
+DAILY_QUEST_MINE3_REWARD = 5_000_000
+
+# ─────────────────────── БД ──────────────────────────────────
+
+def _conn():
+    c = sqlite3.connect(DB_PATH)
+    c.row_factory = sqlite3.Row
+    return c
+
+
+def init_klan_db():
+    with _conn() as c:
+        c.executescript("""
+            CREATE TABLE IF NOT EXISTS clans (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT    NOT NULL UNIQUE,
+                description TEXT    DEFAULT '',
+                creator_uid INTEGER NOT NULL,
+                treasury    INTEGER DEFAULT 0,
+                created_ts  INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS clan_members (
+                uid         INTEGER PRIMARY KEY,
+                clan_id     INTEGER NOT NULL,
+                role        TEXT    NOT NULL DEFAULT 'member',
+                joined_ts   INTEGER NOT NULL,
+                contributed INTEGER DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS clan_applications (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                clan_id    INTEGER NOT NULL,
+                uid        INTEGER NOT NULL,
+                message    TEXT    DEFAULT '',
+                applied_ts INTEGER NOT NULL,
+                UNIQUE(clan_id, uid)
+            );
+            CREATE TABLE IF NOT EXISTS clan_treasury_requests (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                clan_id     INTEGER NOT NULL,
+                uid         INTEGER NOT NULL,
+                amount      INTEGER NOT NULL,
+                reason      TEXT    DEFAULT '',
+                status      TEXT    DEFAULT 'pending',
+                created_ts  INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS clan_daily_quests (
+                clan_id              INTEGER NOT NULL,
+                quest_date           TEXT    NOT NULL,
+                boss_damage          INTEGER DEFAULT 0,
+                dmg_reward_claimed   INTEGER DEFAULT 0,
+                kill_reward_claimed  INTEGER DEFAULT 0,
+                dmg2_reward_claimed  INTEGER DEFAULT 0,
+                mine_earned          INTEGER DEFAULT 0,
+                mine1_reward_claimed INTEGER DEFAULT 0,
+                mine2_reward_claimed INTEGER DEFAULT 0,
+                mine3_reward_claimed INTEGER DEFAULT 0,
+                PRIMARY KEY (clan_id, quest_date)
+            );
+        """)
+        # Миграция: clan_chat_id в таблице clans
+        clan_cols = {row[1] for row in c.execute("PRAGMA table_info(clans)").fetchall()}
+        if "chat_id" not in clan_cols:
+            c.execute("ALTER TABLE clans ADD COLUMN chat_id INTEGER DEFAULT NULL")
+        if "chat_username" not in clan_cols:
+            c.execute("ALTER TABLE clans ADD COLUMN chat_username TEXT DEFAULT NULL")
+        if "chat_title" not in clan_cols:
+            c.execute("ALTER TABLE clans ADD COLUMN chat_title TEXT DEFAULT NULL")
+        # Миграция: добавляем новые колонки к существующей таблице, если их нет
+        existing_cols = {row[1] for row in c.execute("PRAGMA table_info(clan_daily_quests)").fetchall()}
+        for col, ddl in [
+            ("dmg2_reward_claimed",  "ALTER TABLE clan_daily_quests ADD COLUMN dmg2_reward_claimed INTEGER DEFAULT 0"),
+            ("mine_earned",          "ALTER TABLE clan_daily_quests ADD COLUMN mine_earned INTEGER DEFAULT 0"),
+            ("mine1_reward_claimed", "ALTER TABLE clan_daily_quests ADD COLUMN mine1_reward_claimed INTEGER DEFAULT 0"),
+            ("mine2_reward_claimed", "ALTER TABLE clan_daily_quests ADD COLUMN mine2_reward_claimed INTEGER DEFAULT 0"),
+            ("mine3_reward_claimed", "ALTER TABLE clan_daily_quests ADD COLUMN mine3_reward_claimed INTEGER DEFAULT 0"),
+        ]:
+            if col not in existing_cols:
+                c.execute(ddl)
+        c.commit()
+
+# ─────────────────────── КЛАНЫ: CRUD ─────────────────────────
+
+def get_clan(clan_id: int) -> dict | None:
+    with _conn() as c:
+        row = c.execute("SELECT * FROM clans WHERE id=?", (clan_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_clan_by_name(name: str) -> dict | None:
+    with _conn() as c:
+        row = c.execute(
+            "SELECT * FROM clans WHERE LOWER(name)=LOWER(?)", (name,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def search_clans(query: str, page: int = 0) -> tuple[list[dict], int]:
+    """Возвращает (список кланов на странице, total_count)."""
+    offset = page * CLANS_PER_PAGE
+    if query.strip():
+        if query.strip().isdigit():
+            clan_id = int(query.strip())
+            with _conn() as c:
+                rows = c.execute("""
+                    SELECT c.*, COUNT(m.uid) AS member_count
+                    FROM clans c
+                    LEFT JOIN clan_members m ON m.clan_id = c.id
+                    WHERE c.id=?
+                    GROUP BY c.id
+                """, (clan_id,)).fetchall()
+            return [dict(r) for r in rows], len(rows)
+        q = f"%{query.lower()}%"
+        with _conn() as c:
+            total = c.execute(
+                "SELECT COUNT(*) FROM clans WHERE LOWER(name) LIKE ?", (q,)
+            ).fetchone()[0]
+            rows = c.execute("""
+                SELECT c.*, COUNT(m.uid) AS member_count
+                FROM clans c
+                LEFT JOIN clan_members m ON m.clan_id = c.id
+                WHERE LOWER(c.name) LIKE ?
+                GROUP BY c.id
+                ORDER BY c.treasury DESC
+                LIMIT ? OFFSET ?
+            """, (q, CLANS_PER_PAGE, offset)).fetchall()
+    else:
+        with _conn() as c:
+            total = c.execute("SELECT COUNT(*) FROM clans").fetchone()[0]
+            rows = c.execute("""
+                SELECT c.*, COUNT(m.uid) AS member_count
+                FROM clans c
+                LEFT JOIN clan_members m ON m.clan_id = c.id
+                GROUP BY c.id
+                ORDER BY c.treasury DESC
+                LIMIT ? OFFSET ?
+            """, (CLANS_PER_PAGE, offset)).fetchall()
+    return [dict(r) for r in rows], total
+
+
+def get_top_clans(limit: int = 10) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("""
+            SELECT c.*, COUNT(m.uid) AS member_count
+            FROM clans c
+            LEFT JOIN clan_members m ON m.clan_id = c.id
+            GROUP BY c.id
+            ORDER BY c.treasury DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_clans_stats() -> dict:
+    with _conn() as c:
+        total_clans    = c.execute("SELECT COUNT(*) FROM clans").fetchone()[0]
+        total_members  = c.execute("SELECT COUNT(*) FROM clan_members").fetchone()[0]
+        total_treasury = c.execute("SELECT COALESCE(SUM(treasury),0) FROM clans").fetchone()[0]
+    return {"total_clans": total_clans, "total_members": total_members, "total_treasury": total_treasury}
+
+
+# ─────────────────────── ЧАТ КЛАНА ───────────────────────────
+
+def set_clan_chat(clan_id: int, chat_id: int, chat_username: str | None, chat_title: str) -> None:
+    """Привязать чат к клану."""
+    with _conn() as c:
+        c.execute(
+            "UPDATE clans SET chat_id=?, chat_username=?, chat_title=? WHERE id=?",
+            (chat_id, chat_username, chat_title, clan_id)
+        )
+        c.commit()
+
+
+def remove_clan_chat(clan_id: int) -> None:
+    """Открепить чат от клана."""
+    with _conn() as c:
+        c.execute(
+            "UPDATE clans SET chat_id=NULL, chat_username=NULL, chat_title=NULL WHERE id=?",
+            (clan_id,)
+        )
+        c.commit()
+
+# ─────────────────────── ЧЛЕНЫ КЛАНА ─────────────────────────
+
+def get_member(uid: int) -> dict | None:
+    with _conn() as c:
+        row = c.execute("SELECT * FROM clan_members WHERE uid=?", (uid,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_clan_members(clan_id: int) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("""
+            SELECT m.uid, m.role, m.joined_ts, m.contributed,
+                   json_extract(u.data_json, '$.first_name') AS first_name,
+                   json_extract(u.data_json, '$.username')   AS username
+            FROM clan_members m
+            LEFT JOIN users u ON u.uid = m.uid
+            WHERE m.clan_id=?
+            ORDER BY CASE m.role WHEN 'creator' THEN 0 ELSE 1 END, m.contributed DESC
+        """, (clan_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_member_count(clan_id: int) -> int:
+    with _conn() as c:
+        return c.execute("SELECT COUNT(*) FROM clan_members WHERE clan_id=?", (clan_id,)).fetchone()[0]
+
+# ─────────────────────── ДЕЙСТВИЯ ────────────────────────────
+
+def create_clan(uid: int, name: str) -> dict:
+    from database import get_user, save_user
+    d = get_user(uid)
+    if not d:
+        return {"ok": False, "error": "user_not_found"}
+    if get_member(uid):
+        return {"ok": False, "error": "already_in_clan"}
+    name = name.strip()
+    if len(name) < MIN_CLAN_NAME or len(name) > MAX_CLAN_NAME:
+        return {"ok": False, "error": "bad_name_length"}
+    if d.get("balance", 0) < CREATE_COST:
+        return {"ok": False, "error": "no_coins"}
+    # Проверяем занятость имени до INSERT (case-insensitive)
+    if get_clan_by_name(name):
+        return {"ok": False, "error": "name_taken"}
+    with _conn() as c:
+        try:
+            cur = c.execute("""
+                INSERT INTO clans (name, description, creator_uid, treasury, created_ts)
+                VALUES (?, '', ?, 0, ?)
+            """, (name, uid, int(time.time())))
+            clan_id = cur.lastrowid
+        except sqlite3.IntegrityError:
+            return {"ok": False, "error": "name_taken"}
+        try:
+            c.execute("""
+                INSERT INTO clan_members (uid, clan_id, role, joined_ts, contributed)
+                VALUES (?, ?, 'creator', ?, 0)
+            """, (uid, clan_id, int(time.time())))
+            c.commit()
+        except sqlite3.IntegrityError:
+            c.execute("DELETE FROM clans WHERE id=?", (clan_id,))
+            c.commit()
+            return {"ok": False, "error": "already_in_clan"}
+    d["balance"] -= CREATE_COST
+    save_user(uid, d)
+    return {"ok": True, "clan_id": clan_id}
+
+
+def disband_clan(uid: int) -> dict:
+    m = get_member(uid)
+    if not m or m["role"] != "creator":
+        return {"ok": False, "error": "not_creator"}
+    clan_id = m["clan_id"]
+    clan    = get_clan(clan_id)
+    if clan and clan["treasury"] > 0:
+        from database import get_user, save_user
+        d = get_user(uid)
+        if d:
+            d["balance"] = d.get("balance", 0) + clan["treasury"]
+            save_user(uid, d)
+    with _conn() as c:
+        c.execute("DELETE FROM clan_members WHERE clan_id=?",           (clan_id,))
+        c.execute("DELETE FROM clan_applications WHERE clan_id=?",      (clan_id,))
+        c.execute("DELETE FROM clan_treasury_requests WHERE clan_id=?", (clan_id,))
+        c.execute("DELETE FROM clans WHERE id=?",                       (clan_id,))
+        c.commit()
+    return {"ok": True}
+
+
+def leave_clan(uid: int) -> dict:
+    m = get_member(uid)
+    if not m:
+        return {"ok": False, "error": "not_in_clan"}
+    if m["role"] == "creator":
+        return {"ok": False, "error": "creator_cannot_leave"}
+    with _conn() as c:
+        c.execute("DELETE FROM clan_members WHERE uid=?", (uid,))
+        c.commit()
+    return {"ok": True}
+
+
+def kick_member(creator_uid: int, target_uid: int) -> dict:
+    m = get_member(creator_uid)
+    if not m or m["role"] != "creator":
+        return {"ok": False, "error": "not_creator"}
+    t = get_member(target_uid)
+    if not t or t["clan_id"] != m["clan_id"]:
+        return {"ok": False, "error": "not_in_your_clan"}
+    if t["role"] == "creator":
+        return {"ok": False, "error": "cannot_kick_creator"}
+    with _conn() as c:
+        c.execute("DELETE FROM clan_members WHERE uid=?", (target_uid,))
+        c.commit()
+    return {"ok": True}
+
+# ─────────────────────── ЗАЯВКИ ──────────────────────────────
+
+def apply_to_clan(uid: int, clan_id: int, message: str = "") -> dict:
+    if get_member(uid):
+        return {"ok": False, "error": "already_in_clan"}
+    if get_member_count(clan_id) >= MAX_CLAN_MEMBERS:
+        return {"ok": False, "error": "clan_full"}
+    with _conn() as c:
+        app_count = c.execute(
+            "SELECT COUNT(*) FROM clan_applications WHERE clan_id=?", (clan_id,)
+        ).fetchone()[0]
+        if app_count >= MAX_CLAN_APPS:
+            return {"ok": False, "error": "apps_full"}
+        existing = c.execute(
+            "SELECT id FROM clan_applications WHERE clan_id=? AND uid=?", (clan_id, uid)
+        ).fetchone()
+        if existing:
+            return {"ok": False, "error": "already_applied"}
+        c.execute("""
+            INSERT INTO clan_applications (clan_id, uid, message, applied_ts)
+            VALUES (?, ?, ?, ?)
+        """, (clan_id, uid, message[:200], int(time.time())))
+        c.commit()
+    return {"ok": True}
+
+
+def get_applications(clan_id: int, page: int = 0) -> tuple[list[dict], int]:
+    offset = page * APPS_PER_PAGE
+    with _conn() as c:
+        total = c.execute(
+            "SELECT COUNT(*) FROM clan_applications WHERE clan_id=?", (clan_id,)
+        ).fetchone()[0]
+        rows = c.execute("""
+            SELECT a.id, a.uid, a.message, a.applied_ts,
+                   json_extract(u.data_json, '$.first_name') AS first_name,
+                   json_extract(u.data_json, '$.username')   AS username
+            FROM clan_applications a
+            LEFT JOIN users u ON u.uid = a.uid
+            WHERE a.clan_id=?
+            ORDER BY a.applied_ts ASC
+            LIMIT ? OFFSET ?
+        """, (clan_id, APPS_PER_PAGE, offset)).fetchall()
+    return [dict(r) for r in rows], total
+
+
+def accept_application(creator_uid: int, app_id: int) -> dict:
+    m = get_member(creator_uid)
+    if not m or m["role"] != "creator":
+        return {"ok": False, "error": "not_creator"}
+    with _conn() as c:
+        app = c.execute("SELECT * FROM clan_applications WHERE id=?", (app_id,)).fetchone()
+        if not app:
+            return {"ok": False, "error": "app_not_found"}
+        if app["clan_id"] != m["clan_id"]:
+            return {"ok": False, "error": "wrong_clan"}
+        if get_member_count(m["clan_id"]) >= MAX_CLAN_MEMBERS:
+            return {"ok": False, "error": "clan_full"}
+        if get_member(app["uid"]):
+            c.execute("DELETE FROM clan_applications WHERE id=?", (app_id,))
+            c.commit()
+            return {"ok": False, "error": "already_in_clan"}
+        c.execute("""
+            INSERT INTO clan_members (uid, clan_id, role, joined_ts, contributed)
+            VALUES (?, ?, 'member', ?, 0)
+        """, (app["uid"], m["clan_id"], int(time.time())))
+        c.execute("DELETE FROM clan_applications WHERE clan_id=? AND uid=?",
+                  (m["clan_id"], app["uid"]))
+        c.commit()
+    return {"ok": True, "uid": app["uid"]}
+
+
+def reject_application(creator_uid: int, app_id: int) -> dict:
+    m = get_member(creator_uid)
+    if not m or m["role"] != "creator":
+        return {"ok": False, "error": "not_creator"}
+    with _conn() as c:
+        app = c.execute("SELECT * FROM clan_applications WHERE id=?", (app_id,)).fetchone()
+        if not app or app["clan_id"] != m["clan_id"]:
+            return {"ok": False, "error": "app_not_found"}
+        c.execute("DELETE FROM clan_applications WHERE id=?", (app_id,))
+        c.commit()
+    return {"ok": True, "uid": app["uid"]}
+
+
+def accept_all_applications(creator_uid: int) -> dict:
+    m = get_member(creator_uid)
+    if not m or m["role"] != "creator":
+        return {"ok": False, "error": "not_creator"}
+    clan_id = m["clan_id"]
+    with _conn() as c:
+        all_apps = c.execute(
+            "SELECT id, uid FROM clan_applications WHERE clan_id=? ORDER BY applied_ts ASC",
+            (clan_id,)
+        ).fetchall()
+    accepted = 0
+    skipped  = 0
+    for app in all_apps:
+        if get_member_count(clan_id) >= MAX_CLAN_MEMBERS:
+            skipped += 1
+            continue
+        if get_member(app["uid"]):
+            with _conn() as c:
+                c.execute("DELETE FROM clan_applications WHERE id=?", (app["id"],))
+                c.commit()
+            continue
+        with _conn() as c:
+            c.execute("""
+                INSERT OR IGNORE INTO clan_members (uid, clan_id, role, joined_ts, contributed)
+                VALUES (?, ?, 'member', ?, 0)
+            """, (app["uid"], clan_id, int(time.time())))
+            c.execute("DELETE FROM clan_applications WHERE id=?", (app["id"],))
+            c.commit()
+        accepted += 1
+    return {"ok": True, "accepted": accepted, "skipped": skipped}
+
+
+def reject_all_applications(creator_uid: int) -> dict:
+    m = get_member(creator_uid)
+    if not m or m["role"] != "creator":
+        return {"ok": False, "error": "not_creator"}
+    clan_id = m["clan_id"]
+    with _conn() as c:
+        count = c.execute(
+            "SELECT COUNT(*) FROM clan_applications WHERE clan_id=?", (clan_id,)
+        ).fetchone()[0]
+        c.execute("DELETE FROM clan_applications WHERE clan_id=?", (clan_id,))
+        c.commit()
+    return {"ok": True, "rejected": count}
+
+# ─────────────────────── КАЗНА ───────────────────────────────
+
+def deposit_treasury(uid: int, amount: int) -> dict:
+    m = get_member(uid)
+    if not m:
+        return {"ok": False, "error": "not_in_clan"}
+    if amount <= 0:
+        return {"ok": False, "error": "bad_amount"}
+    from database import get_user, save_user
+    d = get_user(uid)
+    if not d or d.get("balance", 0) < amount:
+        return {"ok": False, "error": "no_coins"}
+    d["balance"] -= amount
+    save_user(uid, d)
+    with _conn() as c:
+        c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",              (amount, m["clan_id"]))
+        c.execute("UPDATE clan_members SET contributed=contributed+? WHERE uid=?", (amount, uid))
+        c.commit()
+    return {"ok": True}
+
+
+def request_withdrawal(uid: int, amount: int, reason: str) -> dict:
+    m = get_member(uid)
+    if not m:
+        return {"ok": False, "error": "not_in_clan"}
+    if amount <= 0:
+        return {"ok": False, "error": "bad_amount"}
+    clan = get_clan(m["clan_id"])
+    if not clan or clan["treasury"] < amount:
+        return {"ok": False, "error": "not_enough_treasury"}
+    with _conn() as c:
+        existing = c.execute("""
+            SELECT id FROM clan_treasury_requests
+            WHERE clan_id=? AND uid=? AND status='pending'
+        """, (m["clan_id"], uid)).fetchone()
+        if existing:
+            return {"ok": False, "error": "already_pending"}
+        c.execute("""
+            INSERT INTO clan_treasury_requests (clan_id, uid, amount, reason, status, created_ts)
+            VALUES (?, ?, ?, ?, 'pending', ?)
+        """, (m["clan_id"], uid, amount, reason[:300], int(time.time())))
+        c.commit()
+    return {"ok": True}
+
+
+def get_withdrawal_requests(clan_id: int) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("""
+            SELECT r.id, r.uid, r.amount, r.reason, r.created_ts,
+                   json_extract(u.data_json, '$.first_name') AS first_name,
+                   json_extract(u.data_json, '$.username')   AS username
+            FROM clan_treasury_requests r
+            LEFT JOIN users u ON u.uid = r.uid
+            WHERE r.clan_id=? AND r.status='pending'
+            ORDER BY r.created_ts ASC
+        """, (clan_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def approve_withdrawal(creator_uid: int, req_id: int) -> dict:
+    m = get_member(creator_uid)
+    if not m or m["role"] != "creator":
+        return {"ok": False, "error": "not_creator"}
+    with _conn() as c:
+        req = c.execute(
+            "SELECT * FROM clan_treasury_requests WHERE id=? AND status='pending'", (req_id,)
+        ).fetchone()
+        if not req:
+            return {"ok": False, "error": "req_not_found"}
+        if req["clan_id"] != m["clan_id"]:
+            return {"ok": False, "error": "wrong_clan"}
+        clan = c.execute("SELECT treasury FROM clans WHERE id=?", (m["clan_id"],)).fetchone()
+        if not clan or clan["treasury"] < req["amount"]:
+            c.execute("UPDATE clan_treasury_requests SET status='rejected' WHERE id=?", (req_id,))
+            c.commit()
+            return {"ok": False, "error": "not_enough_treasury"}
+        c.execute("UPDATE clans SET treasury=treasury-? WHERE id=?", (req["amount"], m["clan_id"]))
+        c.execute("UPDATE clan_treasury_requests SET status='approved' WHERE id=?", (req_id,))
+        c.commit()
+    from database import get_user, save_user
+    d = get_user(req["uid"])
+    if d:
+        d["balance"] = d.get("balance", 0) + req["amount"]
+        save_user(req["uid"], d)
+    return {"ok": True, "uid": req["uid"], "amount": req["amount"]}
+
+
+def reject_withdrawal(creator_uid: int, req_id: int) -> dict:
+    m = get_member(creator_uid)
+    if not m or m["role"] != "creator":
+        return {"ok": False, "error": "not_creator"}
+    with _conn() as c:
+        req = c.execute(
+            "SELECT * FROM clan_treasury_requests WHERE id=? AND status='pending'", (req_id,)
+        ).fetchone()
+        if not req or req["clan_id"] != m["clan_id"]:
+            return {"ok": False, "error": "req_not_found"}
+        c.execute("UPDATE clan_treasury_requests SET status='rejected' WHERE id=?", (req_id,))
+        c.commit()
+    return {"ok": True, "uid": req["uid"]}
+
+# ─────────────────────── ЕЖЕДНЕВНЫЕ ЗАДАНИЯ ──────────────────
+# Задание 1: суммарный урон клана по боссу → DAILY_QUEST_DMG_TARGET,
+#            награда DAILY_QUEST_DMG_REWARD в казну (один раз в день).
+# Задание 2: суммарный урон клана по боссу → DAILY_QUEST_DMG2_TARGET,
+#            награда DAILY_QUEST_DMG2_REWARD в казну (один раз в день).
+# Задание 3: общее — убийство любого босса любым участником клана,
+#            награда DAILY_QUEST_KILL_REWARD в казну (один раз в день).
+# Задание 4: суммарный заработок клана в шахте → DAILY_QUEST_MINE1_TARGET,
+#            награда DAILY_QUEST_MINE1_REWARD в казну (один раз в день).
+# Задание 5: суммарный заработок клана в шахте → DAILY_QUEST_MINE2_TARGET,
+#            награда DAILY_QUEST_MINE2_REWARD в казну (один раз в день).
+# Задание 6: суммарный заработок клана в шахте → DAILY_QUEST_MINE3_TARGET,
+#            награда DAILY_QUEST_MINE3_REWARD в казну (один раз в день).
+# Прогресс хранится по дате (UTC), сбрасывается автоматически каждый день,
+# т.к. для нового дня создаётся новая строка.
+
+def _today_str() -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime())
+
+
+def _ensure_daily_quest_row(c, clan_id: int, date: str) -> None:
+    c.execute("""
+        INSERT OR IGNORE INTO clan_daily_quests (clan_id, quest_date)
+        VALUES (?, ?)
+    """, (clan_id, date))
+
+
+def get_daily_quests(clan_id: int) -> dict:
+    """Прогресс по ежедневным заданиям клана за сегодня (создаёт запись при первом обращении)."""
+    date = _today_str()
+    with _conn() as c:
+        _ensure_daily_quest_row(c, clan_id, date)
+        c.commit()
+        row = c.execute(
+            "SELECT * FROM clan_daily_quests WHERE clan_id=? AND quest_date=?",
+            (clan_id, date)
+        ).fetchone()
+    return dict(row)
+
+
+def add_clan_boss_damage(uid: int, damage: int) -> dict:
+    """
+    Вызывать каждый раз, когда игрок наносит урон боссу.
+    Урон суммируется в общий дневной прогресс клана игрока.
+    Когда суммарный урон клана за день достигает DAILY_QUEST_DMG_TARGET,
+    клан получает DAILY_QUEST_DMG_REWARD в казну (один раз за день).
+    При достижении DAILY_QUEST_DMG2_TARGET клан дополнительно получает
+    DAILY_QUEST_DMG2_REWARD в казну (один раз за день).
+    """
+    if damage <= 0:
+        return {"ok": False, "error": "bad_damage"}
+    m = get_member(uid)
+    if not m:
+        return {"ok": False, "error": "not_in_clan"}
+    clan_id   = m["clan_id"]
+    date      = _today_str()
+    rewarded  = False
+    rewarded2 = False
+    with _conn() as c:
+        _ensure_daily_quest_row(c, clan_id, date)
+        c.execute("""
+            UPDATE clan_daily_quests SET boss_damage = boss_damage + ?
+            WHERE clan_id=? AND quest_date=?
+        """, (damage, clan_id, date))
+        row = c.execute("""
+            SELECT boss_damage, dmg_reward_claimed, dmg2_reward_claimed FROM clan_daily_quests
+            WHERE clan_id=? AND quest_date=?
+        """, (clan_id, date)).fetchone()
+        if row["boss_damage"] >= DAILY_QUEST_DMG_TARGET and not row["dmg_reward_claimed"]:
+            c.execute("""
+                UPDATE clan_daily_quests SET dmg_reward_claimed=1
+                WHERE clan_id=? AND quest_date=?
+            """, (clan_id, date))
+            c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",
+                      (DAILY_QUEST_DMG_REWARD, clan_id))
+            rewarded = True
+        if row["boss_damage"] >= DAILY_QUEST_DMG2_TARGET and not row["dmg2_reward_claimed"]:
+            c.execute("""
+                UPDATE clan_daily_quests SET dmg2_reward_claimed=1
+                WHERE clan_id=? AND quest_date=?
+            """, (clan_id, date))
+            c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",
+                      (DAILY_QUEST_DMG2_REWARD, clan_id))
+            rewarded2 = True
+        c.commit()
+    return {
+        "ok": True, "clan_id": clan_id,
+        "rewarded": rewarded, "reward": DAILY_QUEST_DMG_REWARD,
+        "rewarded2": rewarded2, "reward2": DAILY_QUEST_DMG2_REWARD,
+    }
+
+
+def add_clan_mine_earnings(uid: int, amount: int) -> dict:
+    """
+    Вызывать каждый раз, когда игрок продаёт руду / зарабатывает монеты в шахте.
+    Сумма суммируется в общий дневной прогресс клана игрока.
+    Пороговые задания (нарастающие, кланом суммарно за день):
+      DAILY_QUEST_MINE1_TARGET → DAILY_QUEST_MINE1_REWARD в казну
+      DAILY_QUEST_MINE2_TARGET → DAILY_QUEST_MINE2_REWARD в казну
+      DAILY_QUEST_MINE3_TARGET → DAILY_QUEST_MINE3_REWARD в казну
+    Каждая награда выдаётся один раз за день.
+    """
+    if amount <= 0:
+        return {"ok": False, "error": "bad_amount"}
+    m = get_member(uid)
+    if not m:
+        return {"ok": False, "error": "not_in_clan"}
+    clan_id = m["clan_id"]
+    date    = _today_str()
+    total_reward = 0
+    rewarded_tiers = []
+    with _conn() as c:
+        _ensure_daily_quest_row(c, clan_id, date)
+        c.execute("""
+            UPDATE clan_daily_quests SET mine_earned = mine_earned + ?
+            WHERE clan_id=? AND quest_date=?
+        """, (amount, clan_id, date))
+        row = c.execute("""
+            SELECT mine_earned, mine1_reward_claimed, mine2_reward_claimed, mine3_reward_claimed
+            FROM clan_daily_quests WHERE clan_id=? AND quest_date=?
+        """, (clan_id, date)).fetchone()
+        earned = row["mine_earned"]
+        tiers = [
+            (DAILY_QUEST_MINE1_TARGET, DAILY_QUEST_MINE1_REWARD, "mine1_reward_claimed", row["mine1_reward_claimed"]),
+            (DAILY_QUEST_MINE2_TARGET, DAILY_QUEST_MINE2_REWARD, "mine2_reward_claimed", row["mine2_reward_claimed"]),
+            (DAILY_QUEST_MINE3_TARGET, DAILY_QUEST_MINE3_REWARD, "mine3_reward_claimed", row["mine3_reward_claimed"]),
+        ]
+        for target, reward, col, claimed in tiers:
+            if earned >= target and not claimed:
+                c.execute(f"""
+                    UPDATE clan_daily_quests SET {col}=1
+                    WHERE clan_id=? AND quest_date=?
+                """, (clan_id, date))
+                c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?", (reward, clan_id))
+                total_reward += reward
+                rewarded_tiers.append(target)
+        c.commit()
+    return {"ok": True, "clan_id": clan_id, "rewarded_tiers": rewarded_tiers, "total_reward": total_reward}
+
+
+def register_clan_boss_kill(uid: int) -> dict:
+    """
+    Вызывать каждый раз, когда игрок убивает босса.
+    Задание общее: засчитывается клану по первому убийству любым участником.
+    Если ещё не выполнено сегодня — клан получает DAILY_QUEST_KILL_REWARD в казну.
+    """
+    m = get_member(uid)
+    if not m:
+        return {"ok": False, "error": "not_in_clan"}
+    clan_id  = m["clan_id"]
+    date     = _today_str()
+    rewarded = False
+    with _conn() as c:
+        _ensure_daily_quest_row(c, clan_id, date)
+        row = c.execute("""
+            SELECT kill_reward_claimed FROM clan_daily_quests
+            WHERE clan_id=? AND quest_date=?
+        """, (clan_id, date)).fetchone()
+        if not row["kill_reward_claimed"]:
+            c.execute("""
+                UPDATE clan_daily_quests SET kill_reward_claimed=1
+                WHERE clan_id=? AND quest_date=?
+            """, (clan_id, date))
+            c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",
+                      (DAILY_QUEST_KILL_REWARD, clan_id))
+            rewarded = True
+        c.commit()
+    return {"ok": True, "clan_id": clan_id, "rewarded": rewarded, "reward": DAILY_QUEST_KILL_REWARD}
+
+
+
+def _esc(s) -> str:
+    return _html.escape(str(s), quote=False)
+
+
+def _name(r: dict) -> str:
+    return _esc(r.get("first_name") or r.get("username") or str(r.get("uid", "?")))
+
+
+def _progress_bar(current: int, target: int, length: int = 10) -> str:
+    if target <= 0:
+        return "▱" * length
+    filled = int(length * min(current, target) / target)
+    return "▰" * filled + "▱" * (length - filled)
+
+
+
+def klan_main_text(lang: str = "ru") -> str:
+    stats = get_all_clans_stats()
+    e_sword  = _e(_E_SWORD,  "⚔️")
+    e_people = _e(_E_PEOPLE, "👥")
+    e_chest  = _e(_E_CHEST,  "💰")
+    if lang == "en":
+        return (
+            f'{e_sword} <b>CLANS</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'<blockquote>'
+            f'{e_sword} <b>Clans:</b> {stats["total_clans"]}\n'
+            f'{e_people} <b>Members:</b> {stats["total_members"]}\n'
+            f'{e_chest} <b>Total treasury:</b> {_fmt(stats["total_treasury"])} {COIN}'
+            f'</blockquote>\n\n'
+            f'<i>Search for a clan or create your own!</i>'
+        )
+    return (
+        f'{e_sword} <b>КЛАНЫ</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>'
+        f'{e_sword} <b>Кланов:</b> {stats["total_clans"]}\n'
+        f'{e_people} <b>Участников:</b> {stats["total_members"]}\n'
+        f'{e_chest} <b>В казнах:</b> {_fmt(stats["total_treasury"])} {COIN}'
+        f'</blockquote>\n\n'
+        f'<i>Найди клан по душе или создай свой!</i>'
+    )
+
+
+def klan_search_text(query: str, results: list[dict], page: int, total: int, lang: str = "ru") -> str:
+    total_pages = max(1, (total + CLANS_PER_PAGE - 1) // CLANS_PER_PAGE)
+    q_esc = _esc(query) if query.strip() else ""
+    e_search = _e(_E_SEARCH, "🔍")
+    e_sword  = _e(_E_SWORD,  "⚔️")
+    e_people = _e(_E_PEOPLE, "👥")
+
+    if not results:
+        if lang == "en":
+            header = f'{e_search} <b>Search: «{q_esc}»</b>' if q_esc else f'{e_search} <b>All Clans</b>'
+            return f'{header}\n━━━━━━━━━━━━━━━━━━━━\n\n<blockquote><i>Nothing found.</i></blockquote>'
+        header = f'{e_search} <b>Поиск: «{q_esc}»</b>' if q_esc else f'{e_search} <b>Все кланы</b>'
+        return f'{header}\n━━━━━━━━━━━━━━━━━━━━\n\n<blockquote><i>Ничего не найдено.</i></blockquote>'
+
+    lines = []
+    start = page * CLANS_PER_PAGE
+    for i, cl in enumerate(results, start + 1):
+        lines.append(
+            f'<b>{i}.</b> {e_sword} <b>{_esc(cl["name"])}</b> <code>#{cl["id"]}</code>\n'
+            f'    {e_people} <b>{cl["member_count"]}/{MAX_CLAN_MEMBERS}</b> · {COIN} <b>{_fmt(cl["treasury"])}</b>'
+        )
+    body = "\n\n".join(lines)
+
+    if lang == "en":
+        header = f'{e_search} <b>Search: «{q_esc}»</b>' if q_esc else f'{e_search} <b>All Clans</b>'
+        return (
+            f'{header}\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n'
+            f'<i>Page {page + 1}/{total_pages} · Found: {total}</i>\n\n'
+            f'<blockquote>{body}</blockquote>'
+        )
+    header = f'{e_search} <b>Поиск: «{q_esc}»</b>' if q_esc else f'{e_search} <b>Все кланы</b>'
+    return (
+        f'{header}\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n'
+        f'<i>Стр. {page + 1}/{total_pages} · Найдено: {total}</i>\n\n'
+        f'<blockquote>{body}</blockquote>'
+    )
+
+
+def klan_card_text(clan: dict, member_count: int, lang: str = "ru") -> str:
+    desc    = _esc(clan.get("description") or "—")
+    name    = _esc(clan["name"])
+    from datetime import datetime, timezone
+    created = datetime.fromtimestamp(clan["created_ts"], tz=timezone.utc).strftime("%d.%m.%Y")
+    e_sword  = _e(_E_SWORD,  "⚔️")
+    e_people = _e(_E_PEOPLE, "👥")
+    e_chest  = _e(_E_CHEST,  "💰")
+    e_star   = _e(_E_STAR,   "📅")
+    e_apps   = _e(_E_APPS,   "📋")
+    e_chat   = _e("5443038326535759644", "💬")
+
+    chat_id  = clan.get("chat_id")
+    chat_un  = clan.get("chat_username")
+    chat_ttl = _esc(clan.get("chat_title") or "")
+
+    if chat_id:
+        if chat_un:
+            chat_line_ru = f'\n{e_chat} <b>Чат:</b> <a href="https://t.me/{chat_un}">{chat_ttl}</a>'
+            chat_line_en = f'\n{e_chat} <b>Chat:</b> <a href="https://t.me/{chat_un}">{chat_ttl}</a>'
+        else:
+            chat_line_ru = f'\n{e_chat} <b>Чат:</b> {chat_ttl} <i>(закрытый)</i>'
+            chat_line_en = f'\n{e_chat} <b>Chat:</b> {chat_ttl} <i>(private)</i>'
+    else:
+        chat_line_ru = ""
+        chat_line_en = ""
+
+    if lang == "en":
+        return (
+            f'{e_sword} <b>{name}</b> <code>#{clan["id"]}</code>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'<blockquote>'
+            f'{e_people} <b>Members:</b> {member_count}/{MAX_CLAN_MEMBERS}\n'
+            f'{e_chest} <b>Treasury:</b> {_fmt(clan["treasury"])} {COIN}\n'
+            f'{e_star} <b>Founded:</b> {created}\n'
+            f'{e_apps} <b>About:</b> <i>{desc}</i>'
+            f'{chat_line_en}'
+            f'</blockquote>'
+        )
+    return (
+        f'{e_sword} <b>{name}</b> <code>#{clan["id"]}</code>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>'
+        f'{e_people} <b>Участников:</b> {member_count}/{MAX_CLAN_MEMBERS}\n'
+        f'{e_chest} <b>Казна:</b> {_fmt(clan["treasury"])} {COIN}\n'
+        f'{e_star} <b>Основан:</b> {created}\n'
+        f'{e_apps} <b>О клане:</b> <i>{desc}</i>'
+        f'{chat_line_ru}'
+        f'</blockquote>'
+    )
+
+
+def my_klan_text(clan: dict, member: dict, member_count: int, lang: str = "ru") -> str:
+    name     = _esc(clan["name"])
+    e_sword  = _e(_E_SWORD,  "⚔️")
+    e_crown  = _e(_E_CROWN,  "👑")
+    e_people = _e(_E_PEOPLE, "👥")
+    e_chest  = _e(_E_CHEST,  "💰")
+    e_plus   = _e(_E_PLUS,   "➕")
+    e_chat   = _e("5443038326535759644", "💬")
+
+    chat_id  = clan.get("chat_id")
+    chat_un  = clan.get("chat_username")
+    chat_ttl = _esc(clan.get("chat_title") or "")
+
+    if chat_id:
+        if chat_un:
+            chat_line_ru = f'\n{e_chat} <b>Чат клана:</b> <a href="https://t.me/{chat_un}">{chat_ttl}</a>'
+            chat_line_en = f'\n{e_chat} <b>Clan chat:</b> <a href="https://t.me/{chat_un}">{chat_ttl}</a>'
+        else:
+            chat_line_ru = f'\n{e_chat} <b>Чат клана:</b> {chat_ttl} <i>(закрытый)</i>'
+            chat_line_en = f'\n{e_chat} <b>Clan chat:</b> {chat_ttl} <i>(private)</i>'
+    else:
+        chat_line_ru = ""
+        chat_line_en = ""
+
+    if lang == "en":
+        role_label = f'{e_crown} <b>Creator</b>' if member['role'] == 'creator' else '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji> <b>Member</b>'
+        return (
+            f'{e_sword} <b>{name}</b> <code>#{clan["id"]}</code>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'<blockquote>'
+            f'<tg-emoji emoji-id="5848400681416793625">⭐</tg-emoji> <b>Your role:</b> {role_label}\n'
+            f'{e_people} <b>Members:</b> {member_count}/{MAX_CLAN_MEMBERS}\n'
+            f'{e_chest} <b>Treasury:</b> {_fmt(clan["treasury"])} {COIN}\n'
+            f'{e_plus} <b>Your contribution:</b> {_fmt(member["contributed"])} {COIN}'
+            f'{chat_line_en}'
+            f'</blockquote>'
+        )
+    role_label = f'{e_crown} <b>Создатель</b>' if member['role'] == 'creator' else '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji> <b>Участник</b>'
+    return (
+        f'{e_sword} <b>{name}</b> <code>#{clan["id"]}</code>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>'
+        f'<tg-emoji emoji-id="5848400681416793625">⭐</tg-emoji> <b>Твоя роль:</b> {role_label}\n'
+        f'{e_people} <b>Участников:</b> {member_count}/{MAX_CLAN_MEMBERS}\n'
+        f'{e_chest} <b>Казна:</b> {_fmt(clan["treasury"])} {COIN}\n'
+        f'{e_plus} <b>Твой вклад:</b> {_fmt(member["contributed"])} {COIN}'
+        f'{chat_line_ru}'
+        f'</blockquote>'
+    )
+
+
+def klan_members_text(clan: dict, members: list[dict], lang: str = "ru") -> str:
+    e_people = _e(_E_PEOPLE, "👥")
+    e_crown  = _e(_E_CROWN,  "👑")
+    lines = []
+    for m in members:
+        icon = e_crown if m["role"] == "creator" else '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji>'
+        lines.append(f'{icon} <b>{_name(m)}</b> — {COIN} <b>{_fmt(m["contributed"])}</b>')
+    body = "\n".join(lines) if lines else "<i>—</i>"
+    name = _esc(clan["name"])
+    if lang == "en":
+        return (
+            f'{e_people} <b>{name} — Members</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'<blockquote>{body}</blockquote>'
+        )
+    return (
+        f'{e_people} <b>{name} — Участники</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>{body}</blockquote>'
+    )
+
+
+def klan_treasury_text(clan: dict, lang: str = "ru") -> str:
+    name    = _esc(clan["name"])
+    e_chest = _e(_E_CHEST, "💰")
+    e_plus  = _e(_E_PLUS,  "➕")
+    e_stats = _e(_E_STATS, "📊")
+    if lang == "en":
+        return (
+            f'{e_chest} <b>{name} — Treasury</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'<blockquote>'
+            f'{e_chest} <b>Balance:</b> {_fmt(clan["treasury"])} {COIN}'
+            f'</blockquote>\n\n'
+            f'<i>{e_plus} Deposit to grow the treasury\n'
+            f'<tg-emoji emoji-id="5445355530111437729">⭐</tg-emoji> Withdrawals require creator approval</i>'
+        )
+    return (
+        f'{e_chest} <b>{name} — Казна</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>'
+        f'{e_chest} <b>Баланс:</b> {_fmt(clan["treasury"])} {COIN}'
+        f'</blockquote>\n\n'
+        f'<i>{e_plus} Пополни казну клана\n'
+        f'<tg-emoji emoji-id="5445355530111437729">⭐</tg-emoji> Вывод средств требует одобрения создателя</i>'
+    )
+
+
+def klan_applications_text(clan: dict, apps: list[dict], page: int, total: int, lang: str = "ru") -> str:
+    name        = _esc(clan["name"])
+    total_pages = max(1, (total + APPS_PER_PAGE - 1) // APPS_PER_PAGE)
+    e_apps      = _e(_E_APPS, "📋")
+
+    if not apps:
+        if lang == "en":
+            return (
+                f'{e_apps} <b>{name} — Applications</b>\n'
+                f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                f'<blockquote><i>No pending applications.</i></blockquote>'
+            )
+        return (
+            f'{e_apps} <b>{name} — Заявки</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'<blockquote><i>Нет входящих заявок.</i></blockquote>'
+        )
+
+    lines = []
+    start = page * APPS_PER_PAGE
+    for i, a in enumerate(apps, start + 1):
+        msg = f'\n    <i>«{_esc(a["message"])}»</i>' if a.get("message") else ""
+        lines.append(f'<b>{i}.</b> <tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji> <b>{_name(a)}</b>{msg}')
+    body = "\n\n".join(lines)
+
+    if lang == "en":
+        return (
+            f'{e_apps} <b>{name} — Applications</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n'
+            f'<i>Page {page + 1}/{total_pages} · Total: {total}</i>\n\n'
+            f'<blockquote>{body}</blockquote>'
+        )
+    return (
+        f'{e_apps} <b>{name} — Заявки</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n'
+        f'<i>Стр. {page + 1}/{total_pages} · Всего: {total}</i>\n\n'
+        f'<blockquote>{body}</blockquote>'
+    )
+
+
+def _rank_emoji(i: int) -> str:
+    """Возвращает HTML-эмодзи для места в топе (1-10)."""
+    ranks = {
+        1: (_E_RANK_1, "🥇"), 2: (_E_RANK_2, "🥈"), 3: (_E_RANK_3, "🥉"),
+        4: (_E_RANK_4, "4️⃣"), 5: (_E_RANK_5, "5️⃣"), 6: (_E_RANK_6, "6️⃣"),
+        7: (_E_RANK_7, "7️⃣"), 8: (_E_RANK_8, "8️⃣"), 9: (_E_RANK_9, "9️⃣"),
+    }
+    if i in ranks:
+        eid, fb = ranks[i]
+        return _e(eid, fb)
+    if i == 10:
+        return _e(_E_DIGIT_1, "1️⃣") + _e(_E_DIGIT_0, "0️⃣")
+    return f"{i}."
+
+def klan_top_text(clans: list[dict], lang: str = "ru") -> str:
+    e_trophy = _e(_E_TROPHY, "🏆")
+    e_people = _e(_E_PEOPLE, "👥")
+    e_chest  = _e(_E_CHEST,  "💰")
+    title = "ТОП КЛАНОВ" if lang == "ru" else "TOP CLANS"
+    if not clans:
+        msg = "Кланов пока нет." if lang == "ru" else "No clans yet."
+        return (
+            f'{e_trophy} <b>{title}</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'<blockquote><i>{msg}</i></blockquote>'
+        )
+    lines = []
+    for i, cl in enumerate(clans, 1):
+        rank = _rank_emoji(i)
+        lines.append(
+            f'{rank} <b>{_esc(cl["name"])}</b>\n'
+            f'    {e_people} <b>{cl["member_count"]}</b> · {e_chest} <b>{_fmt(cl["treasury"])}</b> {COIN}'
+        )
+    body = "\n\n".join(lines)
+    return (
+        f'{e_trophy} <b>{title}</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>{body}</blockquote>'
+    )
+
+
+def klan_stats_text(lang: str = "ru") -> str:
+    stats    = get_all_clans_stats()
+    e_stats  = _e(_E_STATS,  "📊")
+    e_sword  = _e(_E_SWORD,  "⚔️")
+    e_people = _e(_E_PEOPLE, "👥")
+    e_chest  = _e(_E_CHEST,  "💰")
+    if lang == "en":
+        return (
+            f'{e_stats} <b>CLAN STATS</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'<blockquote>'
+            f'{e_sword} <b>Total clans:</b> {stats["total_clans"]}\n'
+            f'{e_people} <b>Total members:</b> {stats["total_members"]}\n'
+            f'{e_chest} <b>All treasuries:</b> {_fmt(stats["total_treasury"])} {COIN}'
+            f'</blockquote>'
+        )
+    return (
+        f'{e_stats} <b>СТАТИСТИКА КЛАНОВ</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>'
+        f'{e_sword} <b>Всего кланов:</b> {stats["total_clans"]}\n'
+        f'{e_people} <b>Всего участников:</b> {stats["total_members"]}\n'
+        f'{e_chest} <b>Все казны:</b> {_fmt(stats["total_treasury"])} {COIN}'
+        f'</blockquote>'
+    )
+
+
+def klan_withdrawal_requests_text(clan: dict, reqs: list[dict], lang: str = "ru") -> str:
+    name    = _esc(clan["name"])
+    e_chest = _e(_E_CHEST, "💰")
+    e_stats = _e(_E_STATS, "📊")
+    if lang == "en":
+        title = f'{name} — Withdrawal Requests'
+    else:
+        title = f'{name} — Запросы на вывод'
+    if not reqs:
+        msg = "No pending requests." if lang == "en" else "Нет ожидающих запросов."
+        return (
+            f'{e_chest} <b>{title}</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'<blockquote><i>{msg}</i></blockquote>'
+        )
+    lines = []
+    for r in reqs:
+        reason = f'<i>«{_esc(r["reason"])}»</i>' if r.get("reason") else "<i>—</i>"
+        lines.append(f'<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji> <b>{_name(r)}</b> — {COIN} <b>{_fmt(r["amount"])}</b>\n    {reason}')
+    body = "\n\n".join(lines)
+    hint = 'Нажми ✅ чтобы одобрить · ❌ отклонить' if lang == "ru" else 'Tap ✅ to approve · ❌ to reject'
+    return (
+        f'{e_chest} <b>{title}</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>{body}</blockquote>\n\n'
+        f'<i>{e_stats} {hint}</i>'
+    )
+
+
+def klan_quests_text(clan: dict, quests: dict, lang: str = "ru") -> str:
+    name    = _esc(clan["name"])
+    e_hunt  = _e(_E_HUNT,  "🗡")
+    e_chest = _e(_E_CHEST, "💰")
+    e_check = _e(_E_CHECK, "✅")
+    e_cross = _e(_E_CROSS, "❌")
+    e_sword = _e(_E_SWORD, "⛏")
+
+    dmg        = quests["boss_damage"]
+    dmg_done   = bool(quests["dmg_reward_claimed"])
+    kill_done  = bool(quests["kill_reward_claimed"])
+    dmg2_done  = bool(quests.get("dmg2_reward_claimed", 0))
+    mine       = quests.get("mine_earned", 0)
+    mine1_done = bool(quests.get("mine1_reward_claimed", 0))
+    mine2_done = bool(quests.get("mine2_reward_claimed", 0))
+    mine3_done = bool(quests.get("mine3_reward_claimed", 0))
+
+    dmg_icon   = e_check if dmg_done   else e_cross
+    kill_icon  = e_check if kill_done  else e_cross
+    dmg2_icon  = e_check if dmg2_done  else e_cross
+    mine1_icon = e_check if mine1_done else e_cross
+    mine2_icon = e_check if mine2_done else e_cross
+    mine3_icon = e_check if mine3_done else e_cross
+
+    dmg_bar    = _progress_bar(dmg, DAILY_QUEST_DMG_TARGET)
+    dmg_shown  = min(dmg, DAILY_QUEST_DMG_TARGET)
+    dmg2_bar   = _progress_bar(dmg, DAILY_QUEST_DMG2_TARGET)
+    dmg2_shown = min(dmg, DAILY_QUEST_DMG2_TARGET)
+
+    mine1_bar   = _progress_bar(mine, DAILY_QUEST_MINE1_TARGET)
+    mine1_shown = min(mine, DAILY_QUEST_MINE1_TARGET)
+    mine2_bar   = _progress_bar(mine, DAILY_QUEST_MINE2_TARGET)
+    mine2_shown = min(mine, DAILY_QUEST_MINE2_TARGET)
+    mine3_bar   = _progress_bar(mine, DAILY_QUEST_MINE3_TARGET)
+    mine3_shown = min(mine, DAILY_QUEST_MINE3_TARGET)
+
+    if lang == "en":
+        return (
+            f'{e_hunt} <b>{name} — Daily Quests</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'<blockquote>'
+            f'{dmg_icon} <b>1. Deal {_fmt(DAILY_QUEST_DMG_TARGET)} damage to the boss</b>\n'
+            f'    {dmg_bar}\n'
+            f'    {_fmt(dmg_shown)} / {_fmt(DAILY_QUEST_DMG_TARGET)}\n'
+            f'    {e_chest} Reward: <b>{_fmt(DAILY_QUEST_DMG_REWARD)}</b> {COIN} to clan treasury\n\n'
+            f'{dmg2_icon} <b>2. Deal {_fmt(DAILY_QUEST_DMG2_TARGET)} damage to the boss</b>\n'
+            f'    {dmg2_bar}\n'
+            f'    {_fmt(dmg2_shown)} / {_fmt(DAILY_QUEST_DMG2_TARGET)}\n'
+            f'    {e_chest} Reward: <b>{_fmt(DAILY_QUEST_DMG2_REWARD)}</b> {COIN} to clan treasury\n\n'
+            f'{kill_icon} <b>3. Defeat any boss</b>\n'
+            f'    <i>Shared quest — counts for any clan member</i>\n'
+            f'    {e_chest} Reward: <b>{_fmt(DAILY_QUEST_KILL_REWARD)}</b> {COIN} to clan treasury\n\n'
+            f'{mine1_icon} <b>4. Earn {_fmt(DAILY_QUEST_MINE1_TARGET)} {COIN} from the mine</b>\n'
+            f'    {mine1_bar}\n'
+            f'    {_fmt(mine1_shown)} / {_fmt(DAILY_QUEST_MINE1_TARGET)}\n'
+            f'    {e_chest} Reward: <b>{_fmt(DAILY_QUEST_MINE1_REWARD)}</b> {COIN} to clan treasury\n\n'
+            f'{mine2_icon} <b>5. Earn {_fmt(DAILY_QUEST_MINE2_TARGET)} {COIN} from the mine</b>\n'
+            f'    {mine2_bar}\n'
+            f'    {_fmt(mine2_shown)} / {_fmt(DAILY_QUEST_MINE2_TARGET)}\n'
+            f'    {e_chest} Reward: <b>{_fmt(DAILY_QUEST_MINE2_REWARD)}</b> {COIN} to clan treasury\n\n'
+            f'{mine3_icon} <b>6. Earn {_fmt(DAILY_QUEST_MINE3_TARGET)} {COIN} from the mine</b>\n'
+            f'    {mine3_bar}\n'
+            f'    {_fmt(mine3_shown)} / {_fmt(DAILY_QUEST_MINE3_TARGET)}\n'
+            f'    {e_chest} Reward: <b>{_fmt(DAILY_QUEST_MINE3_REWARD)}</b> {COIN} to clan treasury'
+            f'</blockquote>\n\n'
+            f'<i>Quests reset every day at 00:00 UTC</i>'
+        )
+    return (
+        f'{e_hunt} <b>{name} — Ежедневные задания</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>'
+        f'{dmg_icon} <b>1. Нанести {_fmt(DAILY_QUEST_DMG_TARGET)} урона боссу</b>\n'
+        f'    {dmg_bar}\n'
+        f'    {_fmt(dmg_shown)} / {_fmt(DAILY_QUEST_DMG_TARGET)}\n'
+        f'    {e_chest} Награда: <b>{_fmt(DAILY_QUEST_DMG_REWARD)}</b> {COIN} в казну клана\n\n'
+        f'{dmg2_icon} <b>2. Нанести {_fmt(DAILY_QUEST_DMG2_TARGET)} урона боссу</b>\n'
+        f'    {dmg2_bar}\n'
+        f'    {_fmt(dmg2_shown)} / {_fmt(DAILY_QUEST_DMG2_TARGET)}\n'
+        f'    {e_chest} Награда: <b>{_fmt(DAILY_QUEST_DMG2_REWARD)}</b> {COIN} в казну клана\n\n'
+        f'{kill_icon} <b>3. Убить любого босса</b>\n'
+        f'    <i>Общее задание — засчитывается любому участнику клана</i>\n'
+        f'    {e_chest} Награда: <b>{_fmt(DAILY_QUEST_KILL_REWARD)}</b> {COIN} в казну клана\n\n'
+        f'{mine1_icon} <b>4. Заработать {_fmt(DAILY_QUEST_MINE1_TARGET)} {COIN} с шахты</b>\n'
+        f'    {mine1_bar}\n'
+        f'    {_fmt(mine1_shown)} / {_fmt(DAILY_QUEST_MINE1_TARGET)}\n'
+        f'    {e_chest} Награда: <b>{_fmt(DAILY_QUEST_MINE1_REWARD)}</b> {COIN} в казну клана\n\n'
+        f'{mine2_icon} <b>5. Заработать {_fmt(DAILY_QUEST_MINE2_TARGET)} {COIN} с шахты</b>\n'
+        f'    {mine2_bar}\n'
+        f'    {_fmt(mine2_shown)} / {_fmt(DAILY_QUEST_MINE2_TARGET)}\n'
+        f'    {e_chest} Награда: <b>{_fmt(DAILY_QUEST_MINE2_REWARD)}</b> {COIN} в казну клана\n\n'
+        f'{mine3_icon} <b>6. Заработать {_fmt(DAILY_QUEST_MINE3_TARGET)} {COIN} с шахты</b>\n'
+        f'    {mine3_bar}\n'
+        f'    {_fmt(mine3_shown)} / {_fmt(DAILY_QUEST_MINE3_TARGET)}\n'
+        f'    {e_chest} Награда: <b>{_fmt(DAILY_QUEST_MINE3_REWARD)}</b> {COIN} в казну клана'
+        f'</blockquote>\n\n'
+        f'<i>Задания обновляются каждый день в 00:00 UTC</i>'
+    )
+
+
+# ─────────────────────── КЛАВИАТУРЫ ──────────────────────────
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+
+def _btn(text: str, cb: str, eid: str | None = None) -> InlineKeyboardButton:
+    if eid:
+        return InlineKeyboardButton(text=text, callback_data=cb, icon_custom_emoji_id=eid)
+    return InlineKeyboardButton(text=text, callback_data=cb)
+
+
+def _back_btn(cb: str, lang: str = "ru") -> InlineKeyboardButton:
+    label = "Назад" if lang == "ru" else "Back"
+    return InlineKeyboardButton(text=label, callback_data=cb, icon_custom_emoji_id=_E_BACK)
+
+
+def klan_main_keyboard(uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
+    """
+    Главное меню кланов — без кнопки «Назад».
+    Возврат через кнопку Reply-клавиатуры «🎮 Меню».
+    """
+    member = get_member(uid)
+    b = InlineKeyboardBuilder()
+    if lang == "en":
+        b.row(
+            _btn("Search",  "klan_search", _E_SEARCH),
+            _btn("Top",     "klan_top",    _E_TROPHY),
+        )
+        if member:
+            b.row(_btn("My clan", "klan_my", _E_SWORD))
+        else:
+            b.row(_btn("Create clan", "klan_create", _E_PLUS))
+        b.row(
+            _btn("Stats", "klan_stats", _E_STATS),
+        )
+    else:
+        b.row(
+            _btn("Поиск",  "klan_search", _E_SEARCH),
+            _btn("Топ",    "klan_top",    _E_TROPHY),
+        )
+        if member:
+            b.row(_btn("Мой клан", "klan_my", _E_SWORD))
+        else:
+            b.row(_btn("Создать клан", "klan_create", _E_PLUS))
+        b.row(
+            _btn("Статистика", "klan_stats", _E_STATS),
+        )
+    return b.as_markup()
+
+
+def klan_search_keyboard(
+    results: list[dict],
+    query: str,
+    page: int,
+    total: int,
+    lang: str = "ru"
+) -> InlineKeyboardMarkup:
+    b           = InlineKeyboardBuilder()
+    total_pages = max(1, (total + CLANS_PER_PAGE - 1) // CLANS_PER_PAGE)
+    for cl in results:
+        b.row(_btn(
+            f'⚔️ {cl["name"]} | 👥{cl["member_count"]} | 💰{_fmt(cl["treasury"])}',
+            f'klan_view_{cl["id"]}',
+        ))
+    # Кнопка поиска
+    search_label = "Search by name / ID" if lang == "en" else "Поиск по названию / ID"
+    b.row(_btn(search_label, "klan_do_search", _E_SEARCH))
+    nav = []
+    if page > 0:
+        nav.append(_btn("◀️", f'klan_search_page_{page - 1}_{query}'))
+    if page < total_pages - 1:
+        nav.append(_btn("▶️", f'klan_search_page_{page + 1}_{query}'))
+    if nav:
+        b.row(*nav)
+    b.row(_back_btn("klan_main", lang))
+    return b.as_markup()
+
+
+def klan_card_keyboard(clan_id: int, uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
+    b      = InlineKeyboardBuilder()
+    member = get_member(uid)
+    if not member:
+        label = "Apply" if lang == "en" else "Подать заявку"
+        b.row(_btn(label, f"klan_apply_{clan_id}", _E_APPS))
+    b.row(_back_btn("klan_search", lang))
+    return b.as_markup()
+
+
+def my_klan_keyboard(uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
+    member     = get_member(uid)
+    b          = InlineKeyboardBuilder()
+    is_creator = member and member["role"] == "creator"
+
+    # Получаем данные клана для проверки наличия чата
+    clan = get_clan(member["clan_id"]) if member else None
+    has_chat = bool(clan and clan.get("chat_id"))
+
+    _E_CHAT = "5443038326535759644"   # 💬 чат клана
+
+    if lang == "en":
+        b.row(
+            _btn("Members",  "klan_members",  _E_PEOPLE),
+            _btn("Treasury", "klan_treasury", _E_CHEST),
+        )
+        b.row(_btn("Daily quests", "klan_quests", _E_HUNT))
+        # Кнопка чата (если привязан — для всех, прямая URL-ссылка)
+        if has_chat:
+            chat_un  = clan.get("chat_username")
+            chat_ttl = clan.get("chat_title") or "Clan Chat"
+            if chat_un:
+                b.row(InlineKeyboardButton(
+                    text=chat_ttl,
+                    url=f"https://t.me/{chat_un}",
+                    icon_custom_emoji_id=_E_CHAT,
+                ))
+            else:
+                b.row(_btn("Clan Chat (private)", "klan_chat_private", _E_CHAT))
+        if is_creator:
+            b.row(_btn("Applications", "klan_apps", _E_APPS))
+            b.row(
+                _btn("Withdrawals",    "klan_withdraw_list", _E_CHEST),
+                _btn("Kick",          "klan_kick",          _E_CROSS),
+            )
+            if has_chat:
+                b.row(_btn("Unlink Chat", "klan_chat_unlink", _E_CROSS))
+            else:
+                b.row(_btn("Link Chat", "klan_chat_link", _E_CHAT))
+            b.row(_btn("Disband clan", "klan_disband", _E_CROSS))
+        else:
+            b.row(_btn("Leave clan", "klan_leave", _E_LEAVE))
+    else:
+        b.row(
+            _btn("Участники", "klan_members",  _E_PEOPLE),
+            _btn("Казна",     "klan_treasury", _E_CHEST),
+        )
+        b.row(_btn("Ежедневные задания", "klan_quests", _E_HUNT))
+        # Кнопка чата (если привязан — для всех, прямая URL-ссылка)
+        if has_chat:
+            chat_un  = clan.get("chat_username")
+            chat_ttl = clan.get("chat_title") or "Чат клана"
+            if chat_un:
+                b.row(InlineKeyboardButton(
+                    text=chat_ttl,
+                    url=f"https://t.me/{chat_un}",
+                    icon_custom_emoji_id=_E_CHAT,
+                ))
+            else:
+                b.row(_btn("Чат клана (закрытый)", "klan_chat_private", _E_CHAT))
+        if is_creator:
+            b.row(_btn("Заявки", "klan_apps", _E_APPS))
+            b.row(
+                _btn("Запросы на вывод", "klan_withdraw_list", _E_CHEST),
+                _btn("Исключить",        "klan_kick",          _E_CROSS),
+            )
+            if has_chat:
+                b.row(_btn("Открепить чат", "klan_chat_unlink", _E_CROSS))
+            else:
+                b.row(_btn("Привязать чат", "klan_chat_link", _E_CHAT))
+            b.row(_btn("Расформировать", "klan_disband", _E_CROSS))
+        else:
+            b.row(_btn("Покинуть клан", "klan_leave", _E_LEAVE))
+    b.row(_back_btn("klan_main", lang))
+    return b.as_markup()
+
+
+def klan_treasury_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    if lang == "en":
+        b.row(
+            _btn("Deposit",    "klan_deposit",  _E_PLUS),
+            _btn("Withdrawal", "klan_withdraw", _E_STATSE),
+        )
+    else:
+        b.row(
+            _btn("Пополнить",       "klan_deposit",  _E_PLUS),
+            _btn("Запрос на вывод", "klan_withdraw", _E_STATSE),
+        )
+    b.row(_back_btn("klan_my", lang))
+    return b.as_markup()
+
+
+def klan_quests_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(_back_btn("klan_my", lang))
+    return b.as_markup()
+
+
+def klan_applications_keyboard(
+    apps: list[dict],
+    page: int,
+    total: int,
+    lang: str = "ru"
+) -> InlineKeyboardMarkup:
+    b           = InlineKeyboardBuilder()
+    total_pages = max(1, (total + APPS_PER_PAGE - 1) // APPS_PER_PAGE)
+    for a in apps:
+        name = _name(a)
+        b.row(
+            _btn(f' {name}', f'klan_app_accept_{a["id"]}', _E_CHECK),
+            _btn('Отмена',          f'klan_app_reject_{a["id"]}', _E_CROSS),
+        )
+    if total > 0:
+        if lang == "en":
+            b.row(
+                _btn("Accept all",  "klan_app_accept_all", _E_CHECK),
+                _btn("Reject all",  "klan_app_reject_all", _E_CROSS),
+            )
+        else:
+            b.row(
+                _btn("Принять все",   "klan_app_accept_all", _E_CHECK),
+                _btn("Отклонить все", "klan_app_reject_all", _E_CROSS),
+            )
+    nav = []
+    if page > 0:
+        nav.append(_btn("◀️", f'klan_apps_page_{page - 1}'))
+    if page < total_pages - 1:
+        nav.append(_btn("▶️", f'klan_apps_page_{page + 1}'))
+    if nav:
+        b.row(*nav)
+    b.row(_back_btn("klan_my", lang))
+    return b.as_markup()
+
+
+def klan_withdrawal_keyboard(reqs: list[dict], lang: str = "ru") -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for r in reqs:
+        b.row(
+            _btn(f' {_name(r)} · {_fmt(r["amount"])}', f'klan_wd_approve_{r["id"]}', _E_CHECK),
+            _btn('Reject',                                  f'klan_wd_reject_{r["id"]}',  _E_CROSS),
+        )
+    b.row(_back_btn("klan_my", lang))
+    return b.as_markup()
+
+
+def klan_top_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(_back_btn("klan_main", lang))
+    return b.as_markup()
+
+
+def klan_stats_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(_back_btn("klan_main", lang))
+    return b.as_markup()
+
+
+def klan_back_keyboard(cb: str, lang: str = "ru") -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(_back_btn(cb, lang))
+    return b.as_markup()
