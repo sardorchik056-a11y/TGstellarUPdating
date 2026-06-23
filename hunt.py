@@ -429,23 +429,29 @@ _HUNT_QUOTES = [
 # ─────────────────────────────────────────
 #  БОССЫ
 # ─────────────────────────────────────────
-BOSS_MAX_HP      = 10_000_000
-BOSS_RESPAWN_SEC = 2 * 3600   # 2 часа после смерти — следующий босс
+BOSS_MAX_HP       = 10_000_000
+BOSS_RESPAWN_SEC  = 30 * 60    # 30 минут после смерти — следующий босс в слоте
+ACTIVE_BOSS_SLOTS = 5          # одновременно активных боссов
 
 # HP следующего босса в зависимости от скорости убийства предыдущего
 BOSS_HP_FAST   = 150_000_000  # убит за <= 5 минут
 BOSS_HP_MEDIUM =  50_000_000  # убит за 5-30 минут
 BOSS_HP_SLOW   =  10_000_000  # убит за > 30 минут (обычный)
 
-def _reward_for_hp(max_hp: int) -> int:
-    """Награда за убийство босса зависит от его максимального HP."""
-    if max_hp >= 100_000_000:   # 150 млн
-        return 25_000_000
-    if max_hp >= 50_000_000:    # 50-100 млн
-        return 15_000_000
-    return 5_000_000            # 10 млн (обычный)
+# Опыт за участие в убийстве
+BOSS_XP_KILLER           = 25_000
+BOSS_XP_PARTICIPANT_MAX  =  5_000
+BOSS_XP_PARTICIPANT_MIN  =    100
 
-BOSS_KILL_REWARD = 5_000_000   # дефолт для отображения в UI (обычный босс)
+def _reward_for_hp(max_hp: int) -> int:
+    """Полная награда пула за босса (делится пропорционально урону)."""
+    if max_hp >= 100_000_000:
+        return 25_000_000
+    if max_hp >= 50_000_000:
+        return 15_000_000
+    return 5_000_000
+
+BOSS_KILL_REWARD = 5_000_000   # дефолт для отображения в UI
 
 BOSSES = [
     {
@@ -608,6 +614,255 @@ BOSSES = [
         "lore": "Он пережил всех. Каждого. Он переживёт и тебя. Если не постараешься.",
         "lore_en": "He outlived everyone. Every single one. He will outlive you too. Unless you try.",
     },
+    # ── Боссы 21–50 ──
+    {
+        "key": "iron_sentinel",
+        "name": "Железный Страж", "name_en": "Iron Sentinel",
+        "desc": "Живой голем из кованого железа. Охраняет врата нижних ярусов.",
+        "desc_en": "A living golem of forged iron. Guards the gates of the lower tiers.",
+        "lore": "Его не создавали. Шахта сделала его сама, за тысячу лет тишины.",
+        "lore_en": "He was not made. The mine made him on its own, over a thousand years of silence.",
+    },
+    {
+        "key": "bone_empress",
+        "name": "Костяная Императрица", "name_en": "Bone Empress",
+        "desc": "Правительница кладбища павших шахтёров. Её армия — те, кто не вернулся.",
+        "desc_en": "Ruler of the graveyard of fallen miners. Her army — those who never returned.",
+        "lore": "Она не убивает. Она просто ждёт. Рано или поздно каждый приходит к ней.",
+        "lore_en": "She does not kill. She simply waits. Sooner or later, everyone comes to her.",
+    },
+    {
+        "key": "magma_prophet",
+        "name": "Пророк Магмы", "name_en": "Magma Prophet",
+        "desc": "Провидец, рождённый в сердце подземного огня. Видит смерть каждого.",
+        "desc_en": "A seer born in the heart of underground fire. Sees the death of everyone.",
+        "lore": "Он знает, как ты умрёшь. Вопрос лишь в том — когда.",
+        "lore_en": "He knows how you will die. The only question is — when.",
+    },
+    {
+        "key": "crystal_tyrant",
+        "name": "Кристальный Тиран", "name_en": "Crystal Tyrant",
+        "desc": "Существо, целиком состоящее из смертоносных кристаллов глубин.",
+        "desc_en": "A creature made entirely of lethal crystals from the depths.",
+        "lore": "Каждый кристалл — чья-то застывшая душа. Их очень много.",
+        "lore_en": "Every crystal is someone's frozen soul. There are very many of them.",
+    },
+    {
+        "key": "plague_warden",
+        "name": "Страж Чумы", "name_en": "Plague Warden",
+        "desc": "Распространитель подземной заразы. Его присутствие губит всё живое.",
+        "desc_en": "Spreader of underground plague. His presence destroys all living things.",
+        "lore": "Шахтёры думали, что это болезнь шахты. Это был он. Всегда он.",
+        "lore_en": "Miners thought it was the mine's disease. It was him. Always him.",
+    },
+    {
+        "key": "twin_terror",
+        "name": "Двойной Ужас", "name_en": "Twin Terror",
+        "desc": "Двуглавое существо из древних глубин. Одна голова думает, другая атакует.",
+        "desc_en": "A two-headed creature from the ancient depths. One head thinks, the other attacks.",
+        "lore": "Они никогда не спорят. Потому что никогда не ошибаются.",
+        "lore_en": "They never argue. Because they never make mistakes.",
+    },
+    {
+        "key": "shadow_viceroy",
+        "name": "Вице-король Теней", "name_en": "Shadow Viceroy",
+        "desc": "Правитель теневого подкоролевства. Тень — его тело, тьма — его голос.",
+        "desc_en": "Ruler of the shadow sub-kingdom. Shadow is his body, darkness is his voice.",
+        "lore": "Ты никогда не видел его настоящего лица. Никто не видел. И не увидит.",
+        "lore_en": "You have never seen his true face. No one has. And no one ever will.",
+    },
+    {
+        "key": "quake_lord",
+        "name": "Владыка Землетрясений", "name_en": "Quake Lord",
+        "desc": "Повелитель сейсмических волн. Один удар его кулака — обвал тоннеля.",
+        "desc_en": "Master of seismic waves. One punch of his fist — a tunnel collapse.",
+        "lore": "Шахтёры боятся обвалов. Он — причина каждого из них.",
+        "lore_en": "Miners fear cave-ins. He is the cause of every single one.",
+    },
+    {
+        "key": "rust_king",
+        "name": "Король Ржавчины", "name_en": "Rust King",
+        "desc": "Существо, разъедающее металл одним прикосновением. Кошмар кузнецов.",
+        "desc_en": "A creature that corrodes metal with a single touch. The nightmare of blacksmiths.",
+        "lore": "Лучший меч против него уже стал ржавчиной. Надеюсь, ты принёс другой.",
+        "lore_en": "The finest blade against him has already turned to rust. Hope you brought another.",
+    },
+    {
+        "key": "ember_sovereign",
+        "name": "Государь Угля", "name_en": "Ember Sovereign",
+        "desc": "Вечно тлеющий владыка угольных пластов. Его тело — живой уголь.",
+        "desc_en": "The eternally smoldering lord of coal seams. His body is living coal.",
+        "lore": "Он не горит. Он тлеет. Века. И будет тлеть, пока есть уголь.",
+        "lore_en": "He does not burn. He smolders. For centuries. And will smolder as long as coal exists.",
+    },
+    {
+        "key": "acid_overlord",
+        "name": "Повелитель Кислоты", "name_en": "Acid Overlord",
+        "desc": "Хозяин подземных кислотных озёр. Его кровь растворяет камень.",
+        "desc_en": "Master of underground acid lakes. His blood dissolves rock.",
+        "lore": "Броня не поможет. Кислота найдёт любую щель. Всегда.",
+        "lore_en": "Armor will not help. Acid finds every crack. Always.",
+    },
+    {
+        "key": "grave_titan",
+        "name": "Титан Могил", "name_en": "Grave Titan",
+        "desc": "Древний великан, поднявшийся из самого глубокого захоронения глубин.",
+        "desc_en": "An ancient giant risen from the deepest burial site in the depths.",
+        "lore": "Его хоронили трижды. Трижды он выходил. На четвёртый — перестали пытаться.",
+        "lore_en": "They buried him three times. Three times he came back. The fourth time — they stopped trying.",
+    },
+    {
+        "key": "frost_reaper",
+        "name": "Ледяной Жнец", "name_en": "Frost Reaper",
+        "desc": "Вестник смерти из ледяных глубин. Его коса — замороженный воздух.",
+        "desc_en": "A herald of death from the icy depths. His scythe — frozen air.",
+        "lore": "Там, где он прошёл, остаётся иней. И больше ничего.",
+        "lore_en": "Where he has passed, frost remains. And nothing else.",
+    },
+    {
+        "key": "blood_archon",
+        "name": "Архонт Крови", "name_en": "Blood Archon",
+        "desc": "Древний владыка, питающийся кровью тех, кто осмеливается спуститься.",
+        "desc_en": "An ancient ruler who feeds on the blood of those who dare descend.",
+        "lore": "Он не злится. Он просто голоден. Всегда. Вечно.",
+        "lore_en": "He is not angry. He is simply hungry. Always. Forever.",
+    },
+    {
+        "key": "thunder_chancellor",
+        "name": "Канцлер Грома", "name_en": "Thunder Chancellor",
+        "desc": "Бюрократ бури, подписывающий смертные приговоры молниями.",
+        "desc_en": "Bureaucrat of the storm, signing death sentences with lightning.",
+        "lore": "Каждый гром — это его печать. Каждая молния — подпись.",
+        "lore_en": "Every thunder is his seal. Every lightning bolt — his signature.",
+    },
+    {
+        "key": "sand_devourer",
+        "name": "Пожиратель Песка", "name_en": "Sand Devourer",
+        "desc": "Существо из песчаных пустошей под землёй. Поглощает всё на своём пути.",
+        "desc_en": "A creature from underground sandy wastes. It swallows everything in its path.",
+        "lore": "Пустыня под землёй — его работа. Раньше здесь были леса.",
+        "lore_en": "The underground desert is his doing. There were forests here once.",
+    },
+    {
+        "key": "plague_monarch",
+        "name": "Монарх Заразы", "name_en": "Plague Monarch",
+        "desc": "Высший распространитель болезней глубин. Его корона — из кристаллов яда.",
+        "desc_en": "Supreme spreader of diseases from the depths. His crown is made of poison crystals.",
+        "lore": "Эпидемия 300-го яруса? Его работа. Он гордится.",
+        "lore_en": "The epidemic on level 300? His doing. He is proud of it.",
+    },
+    {
+        "key": "venom_sovereign",
+        "name": "Суверен Яда", "name_en": "Venom Sovereign",
+        "desc": "Повелитель ядовитых пауков и змей подземелья. Сам — живой яд.",
+        "desc_en": "Ruler of the poisonous spiders and snakes of the underworld. Himself — living venom.",
+        "lore": "Его укус — это не смерть. Это долгое прощание с жизнью.",
+        "lore_en": "His bite is not death. It is a long farewell to life.",
+    },
+    {
+        "key": "eclipse_king",
+        "name": "Король Затмения", "name_en": "Eclipse King",
+        "desc": "Тот, кто гасит свет в любом тоннеле. Абсолютная тьма — его оружие.",
+        "desc_en": "The one who extinguishes light in any tunnel. Absolute darkness is his weapon.",
+        "lore": "Фонари гаснут за секунду до его появления. Потом — тишина.",
+        "lore_en": "Lanterns go out a second before he appears. Then — silence.",
+    },
+    {
+        "key": "deep_herald",
+        "name": "Глашатай Глубин", "name_en": "Deep Herald",
+        "desc": "Посланник того, что живёт ниже любых известных ярусов.",
+        "desc_en": "Messenger of whatever lives below any known tier.",
+        "lore": "Он — только предупреждение. Страшно думать, кто идёт следом.",
+        "lore_en": "He is only a warning. Terrifying to think who comes after him.",
+    },
+    {
+        "key": "iron_colossus",
+        "name": "Железный Колосс", "name_en": "Iron Colossus",
+        "desc": "Гигант из сплавленного железа и горных пород. Ходячая гора.",
+        "desc_en": "A giant of fused iron and rock. A walking mountain.",
+        "lore": "Он не ходит. Он движется. Медленно. Неотвратимо. Как обвал.",
+        "lore_en": "He does not walk. He moves. Slowly. Inevitably. Like a cave-in.",
+    },
+    {
+        "key": "eternal_warden",
+        "name": "Вечный Страж", "name_en": "Eternal Warden",
+        "desc": "Тот, кто охраняет вход в шахту с самого начала времён.",
+        "desc_en": "The one who has guarded the mine entrance since the beginning of time.",
+        "lore": "Он видел первого шахтёра. И последнего. Ты — где-то посередине.",
+        "lore_en": "He saw the first miner. And the last. You are somewhere in between.",
+    },
+    {
+        "key": "cinder_baron",
+        "name": "Барон Золы", "name_en": "Cinder Baron",
+        "desc": "Правитель пепельных пустошей, где горели целые пласты угля.",
+        "desc_en": "Ruler of the ash wastes where entire coal seams burned.",
+        "lore": "Зола — его богатство. Каждый пожар — его налог с шахты.",
+        "lore_en": "Ash is his wealth. Every fire — his tax from the mine.",
+    },
+    {
+        "key": "rot_warlord",
+        "name": "Военачальник Гнили", "name_en": "Rot Warlord",
+        "desc": "Генерал армии разложения. Там, где он прошёл, гниёт даже камень.",
+        "desc_en": "General of the army of decay. Where he has passed, even stone rots.",
+        "lore": "Его армия не воюет. Она ждёт. Гниение — дело терпеливых.",
+        "lore_en": "His army does not fight. It waits. Decay is a patient business.",
+    },
+    {
+        "key": "rift_emperor",
+        "name": "Император Разломов", "name_en": "Rift Emperor",
+        "desc": "Высший повелитель пространственных трещин. Открывает разломы одним словом.",
+        "desc_en": "Supreme lord of spatial cracks. Opens rifts with a single word.",
+        "lore": "Его слово создаёт разлом. Второе слово — закрывает. Внутри — всё что было снаружи.",
+        "lore_en": "His word creates a rift. The second word closes it. Inside — everything that was outside.",
+    },
+    {
+        "key": "obsidian_lord",
+        "name": "Владыка Обсидиана", "name_en": "Obsidian Lord",
+        "desc": "Существо из застывшей лавы и обсидиана. Острее любого меча.",
+        "desc_en": "A creature of solidified lava and obsidian. Sharper than any blade.",
+        "lore": "Его тело — оружие. Каждый его шаг — удар.",
+        "lore_en": "His body is a weapon. His every step — a strike.",
+    },
+    {
+        "key": "nightmare_king",
+        "name": "Король Кошмаров", "name_en": "Nightmare King",
+        "desc": "Правитель сновидений шахтёров. Превращает страхи в реальных монстров.",
+        "desc_en": "Ruler of miners' dreams. Turns fears into real monsters.",
+        "lore": "Ты боишься? Он уже знает чего именно. И это уже идёт к тебе.",
+        "lore_en": "You are afraid? He already knows of what exactly. And it is already coming.",
+    },
+    {
+        "key": "titan_of_silence",
+        "name": "Титан Тишины", "name_en": "Titan of Silence",
+        "desc": "Тот, кто поглощает все звуки. В его присутствии абсолютная тишина.",
+        "desc_en": "The one who absorbs all sound. In his presence — absolute silence.",
+        "lore": "Ты не слышишь его шагов. Ты вообще ничего не слышишь. Это и есть он.",
+        "lore_en": "You cannot hear his footsteps. You cannot hear anything at all. That is him.",
+    },
+    {
+        "key": "ancient_dread",
+        "name": "Древний Ужас", "name_en": "Ancient Dread",
+        "desc": "Существо старше самих шахт. Оно было здесь до первого удара кирки.",
+        "desc_en": "A creature older than the mines themselves. It was here before the first pickaxe strike.",
+        "lore": "Шахты строили вокруг него. Шахтёры просто не знали об этом.",
+        "lore_en": "The mines were built around it. Miners simply did not know.",
+    },
+    {
+        "key": "prime_destroyer",
+        "name": "Первичный Разрушитель", "name_en": "Prime Destroyer",
+        "desc": "Воплощение разрушения. Существует только для того, чтобы уничтожать.",
+        "desc_en": "The embodiment of destruction. Exists only to destroy.",
+        "lore": "У него нет цели, нет мотива, нет ярости. Только разрушение. Чистое и окончательное.",
+        "lore_en": "No goal, no motive, no rage. Only destruction. Pure and final.",
+    },
+    {
+        "key": "abyss_emperor",
+        "name": "Император Бездны", "name_en": "Abyss Emperor",
+        "desc": "Абсолютный повелитель бездонных глубин. Никто не знает, где его трон.",
+        "desc_en": "Absolute ruler of the bottomless depths. No one knows where his throne is.",
+        "lore": "Бездна — это он. Он — это бездна. Граница стёрлась тысячу лет назад.",
+        "lore_en": "The abyss is him. He is the abyss. The boundary was erased a thousand years ago.",
+    },
 ]
 
 BOSSES_BY_KEY = {b["key"]: b for b in BOSSES}
@@ -627,114 +882,166 @@ def init_hunt_db():
     """Создаёт таблицы для охоты. Вызывать при старте."""
     with _get_conn() as conn:
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS boss_state (
-                id          INTEGER PRIMARY KEY CHECK (id = 1),
+            CREATE TABLE IF NOT EXISTS boss_slots (
+                slot        INTEGER PRIMARY KEY,
                 data_json   TEXT NOT NULL
             )
         """)
         conn.commit()
-    _ensure_boss()
+    _ensure_all_slots()
 
 
-def _load_boss_state() -> dict:
+# ── Слот = отдельный босс ──
+# Структура слота:
+# {
+#   "boss_key": str,
+#   "boss_hp":  int,
+#   "boss_max_hp": int,
+#   "boss_alive": bool,
+#   "boss_spawned": int,
+#   "boss_died_at": int | None,
+#   "boss_kill_duration": int | None,
+#   "damage_log": {uid_str: total_dmg},   # кто сколько урона нанёс
+#   "kill_duration": int | None,
+# }
+
+def _load_slot(slot: int) -> dict:
     with _get_conn() as conn:
-        row = conn.execute("SELECT data_json FROM boss_state WHERE id=1").fetchone()
-    if row:
-        return json.loads(row["data_json"])
-    return {}
+        row = conn.execute(
+            "SELECT data_json FROM boss_slots WHERE slot=?", (slot,)
+        ).fetchone()
+    return json.loads(row["data_json"]) if row else {}
 
 
-def _save_boss_state(state: dict):
+def _save_slot(slot: int, state: dict):
     with _get_conn() as conn:
         conn.execute(
-            "INSERT INTO boss_state (id, data_json) VALUES (1,?) "
-            "ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json",
-            (json.dumps(state, ensure_ascii=False),)
+            "INSERT INTO boss_slots (slot, data_json) VALUES (?,?) "
+            "ON CONFLICT(slot) DO UPDATE SET data_json=excluded.data_json",
+            (slot, json.dumps(state, ensure_ascii=False))
         )
         conn.commit()
 
 
-def _ensure_boss():
-    """Проверяет текущее состояние босса; спавнит первого если нет."""
-    state = _load_boss_state()
-    if not state:
-        _spawn_next_boss(state, force_index=0)
-    return state
+def _pick_random_boss(exclude_keys: list[str] = None) -> dict:
+    """Выбирает случайного босса, не из исключённых (активные в других слотах)."""
+    pool = [b for b in BOSSES if not exclude_keys or b["key"] not in exclude_keys]
+    if not pool:
+        pool = BOSSES  # крайний случай
+    return random.choice(pool)
 
 
-def _spawn_next_boss(state: dict, force_index: int = None):
-    """Спавнит следующего босса по ротации. HP зависит от скорости убийства предыдущего."""
-    if force_index is not None:
-        idx = force_index
-    else:
-        last_idx = state.get("boss_index", -1)
-        idx = (last_idx + 1) % len(BOSSES)
-
-    # Определяем HP нового босса по скорости убийства предыдущего
-    kill_duration = state.get("boss_kill_duration", None)
+def _spawn_slot(slot: int, kill_duration: int = None, active_keys: list[str] = None):
+    """Спавнит нового случайного босса в слот."""
     if kill_duration is None:
-        next_hp = BOSS_MAX_HP  # первый спавн — стандартный
+        next_hp = BOSS_MAX_HP
     elif kill_duration <= 5 * 60:
-        next_hp = BOSS_HP_FAST    # убит за ≤ 5 минут → 150 млн
+        next_hp = BOSS_HP_FAST
     elif kill_duration <= 30 * 60:
-        next_hp = BOSS_HP_MEDIUM  # убит за 5–30 минут → 50 млн
+        next_hp = BOSS_HP_MEDIUM
     else:
-        next_hp = BOSS_HP_SLOW    # убит за > 30 минут → 10 млн
+        next_hp = BOSS_HP_SLOW
 
-    boss = BOSSES[idx]
-    state["boss_key"]            = boss["key"]
-    state["boss_index"]          = idx
-    state["boss_hp"]             = next_hp
-    state["boss_max_hp"]         = next_hp
-    state["boss_alive"]          = True
-    state["boss_spawned"]        = _now_ts()
-    state["boss_died_at"]        = None
-    state["boss_kill_duration"]  = None
-    _save_boss_state(state)
+    boss = _pick_random_boss(exclude_keys=active_keys or [])
+    state = {
+        "boss_key":          boss["key"],
+        "boss_hp":           next_hp,
+        "boss_max_hp":       next_hp,
+        "boss_alive":        True,
+        "boss_spawned":      _now_ts(),
+        "boss_died_at":      None,
+        "boss_kill_duration": None,
+        "damage_log":        {},
+    }
+    _save_slot(slot, state)
     return state
 
 
-def get_boss_state() -> dict:
-    """Возвращает актуальное состояние босса (с авто-спавном при необходимости)."""
-    state = _load_boss_state()
-    if not state:
-        state = {}
-        _spawn_next_boss(state, force_index=0)
-        return state
+def _ensure_all_slots():
+    """При старте инициализирует все 5 слотов если пусты."""
+    used_keys = []
+    for slot in range(ACTIVE_BOSS_SLOTS):
+        st = _load_slot(slot)
+        if st and st.get("boss_key") in BOSSES_BY_KEY:
+            if st.get("boss_alive"):
+                used_keys.append(st["boss_key"])
+        else:
+            st = _spawn_slot(slot, active_keys=used_keys)
+            if st.get("boss_alive"):
+                used_keys.append(st["boss_key"])
 
-    # Если сохранённый boss_key не существует в текущем списке — спавним заново
-    if state.get("boss_key") not in BOSSES_BY_KEY:
-        _spawn_next_boss(state, force_index=0)
-        return state
 
+def get_all_slots() -> list[dict]:
+    """Возвращает все 5 слотов, обновляя мёртвых боссов если прошло 30 минут."""
     now = _now_ts()
+    slots = []
+    active_keys = []
 
-    # Если босс мёртв — проверяем время возрождения (2 часа)
-    if not state.get("boss_alive", True):
-        died_at = state.get("boss_died_at", 0)
-        if now - died_at >= BOSS_RESPAWN_SEC:
-            _spawn_next_boss(state)
-    else:
-        _save_boss_state(state)
+    # Первый проход — собираем живых
+    raw = [_load_slot(s) for s in range(ACTIVE_BOSS_SLOTS)]
+    for st in raw:
+        if st.get("boss_alive") and st.get("boss_key") in BOSSES_BY_KEY:
+            active_keys.append(st["boss_key"])
 
-    return state
+    result = []
+    for slot, st in enumerate(raw):
+        if not st or st.get("boss_key") not in BOSSES_BY_KEY:
+            st = _spawn_slot(slot, active_keys=active_keys)
+            if st.get("boss_alive"):
+                active_keys.append(st["boss_key"])
+        elif not st.get("boss_alive", True):
+            died_at = st.get("boss_died_at", 0) or 0
+            if now - died_at >= BOSS_RESPAWN_SEC:
+                kill_dur = st.get("boss_kill_duration")
+                st = _spawn_slot(slot, kill_duration=kill_dur, active_keys=active_keys)
+                if st.get("boss_alive"):
+                    active_keys.append(st["boss_key"])
+        result.append((slot, st))
+    return result
 
 
-def attack_boss(data: dict) -> dict:
+def get_slot(slot: int) -> tuple[int, dict]:
+    """Возвращает один слот с авто-рефрешем."""
+    all_slots = get_all_slots()
+    for s, st in all_slots:
+        if s == slot:
+            return s, st
+    return slot, _load_slot(slot)
+
+
+# Для совместимости со старым кодом — возвращает первый живой слот
+def get_boss_state() -> dict:
+    slots = get_all_slots()
+    for _, st in slots:
+        if st.get("boss_alive"):
+            return st
+    # Все мертвы — вернуть первый
+    return slots[0][1] if slots else {}
+
+
+def _save_boss_state(state: dict):
+    """Совместимость: сохраняет state в слот 0 (старый код)."""
+    _save_slot(0, state)
+
+
+def attack_boss(data: dict, slot: int = 0) -> dict:
     """
-    Атака босса игроком.
+    Атака босса игроком в указанном слоте.
     data — словарь пользователя (должен содержать equipped_sword).
     Возвращает dict с ключами:
       hit, crit, dmg, boss_hp_before, boss_hp_after,
-      boss_killed, reward, error
+      boss_killed, reward, xp, damage_rewards, error
+    damage_rewards — dict {uid: (coins, xp)} для всех участников при убийстве
     """
     result = {
         "hit": False, "crit": False, "dmg": 0,
         "boss_hp_before": 0, "boss_hp_after": 0,
-        "boss_killed": False, "reward": 0, "error": None,
+        "boss_killed": False, "reward": 0, "xp": 0,
+        "damage_rewards": {},
+        "error": None,
+        "slot": slot,
     }
 
-    # Кулдаун 1 секунда — тихий игнор
     now = _now_ts()
     last_hit = data.get("last_boss_hit", 0)
     if now - last_hit < 1:
@@ -751,34 +1058,33 @@ def attack_boss(data: dict) -> dict:
         result["error"] = "no_sword"
         return result
 
-    state = get_boss_state()
+    state = _load_slot(slot)
 
-    if not state.get("boss_alive", False):
+    if not state or not state.get("boss_alive", False):
         result["error"] = "boss_dead"
         return result
 
-    # Фиксируем время удара
+    if state.get("boss_key") not in BOSSES_BY_KEY:
+        result["error"] = "boss_dead"
+        return result
+
     data["last_boss_hit"] = now
 
-
-    # Множитель усилителя урона из кейса усилителей
+    # Множители урона
     from datetime import datetime, timezone as _tz
     _now_check = datetime.now(_tz.utc).timestamp()
     _enh = data.get("active_enh_booster")
     enh_mult = (_enh["multiplier"] if _enh and _enh.get("ends_at", 0) > _now_check else 1.0)
 
-    # Множитель артефактов к урону
     from shop import get_artifact_damage_multiplier
     art_dmg_mult = get_artifact_damage_multiplier(data)
 
-    # Множитель статуса к урону + бонус к крит-шансу
     from status import get_status_multiplier as _status_dmg_mult, get_crit_chance_bonus as _status_crit_bonus
-    status_dmg_mult  = _status_dmg_mult(data)
-    status_crit_add  = _status_crit_bonus(data) / 100.0   # 0.15 или 0.25
+    status_dmg_mult = _status_dmg_mult(data)
+    status_crit_add = _status_crit_bonus(data) / 100.0
 
-    # Урон
     if data.get("infinite_dmg"):
-        dmg  = state["boss_hp"]  # убивает с одного удара
+        dmg  = state["boss_hp"]
         crit = False
     else:
         dmg = random.randint(sword["dmg_min"], sword["dmg_max"])
@@ -792,6 +1098,11 @@ def attack_boss(data: dict) -> dict:
     hp_after  = max(0, hp_before - dmg)
     state["boss_hp"] = hp_after
 
+    # Записываем урон в лог
+    uid_str = str(data.get("id", 0))
+    damage_log = state.setdefault("damage_log", {})
+    damage_log[uid_str] = damage_log.get(uid_str, 0) + dmg
+
     result["hit"]            = True
     result["crit"]           = crit
     result["dmg"]            = dmg
@@ -801,17 +1112,41 @@ def attack_boss(data: dict) -> dict:
     if hp_after == 0:
         died_at = _now_ts()
         spawned_at = state.get("boss_spawned", died_at)
-        kill_duration = died_at - spawned_at  # секунды с момента спавна
+        kill_duration = died_at - spawned_at
 
-        state["boss_alive"]        = False
-        state["boss_died_at"]      = died_at
-        state["boss_kill_duration"] = kill_duration
-        result["boss_killed"]      = True
-        _kill_reward = _reward_for_hp(state.get("boss_max_hp", BOSS_MAX_HP))
-        result["reward"]           = _kill_reward
-        data["balance"] = data.get("balance", 0) + _kill_reward
+        state["boss_alive"]          = False
+        state["boss_died_at"]        = died_at
+        state["boss_kill_duration"]  = kill_duration
+        result["boss_killed"]        = True
 
-    _save_boss_state(state)
+        # ── Пропорциональное распределение награды ──
+        total_pool = _reward_for_hp(state.get("boss_max_hp", BOSS_MAX_HP))
+        total_dmg  = sum(damage_log.values()) or 1
+        killer_uid = uid_str
+
+        damage_rewards = {}  # uid_str -> (coins, xp)
+        for u_str, u_dmg in damage_log.items():
+            share      = u_dmg / total_dmg
+            coins      = int(total_pool * share)
+            is_killer  = (u_str == killer_uid)
+            if is_killer:
+                xp = BOSS_XP_KILLER
+            else:
+                xp = max(
+                    BOSS_XP_PARTICIPANT_MIN,
+                    int(BOSS_XP_PARTICIPANT_MAX * share)
+                )
+            damage_rewards[u_str] = (coins, xp)
+
+        result["damage_rewards"] = damage_rewards
+        result["reward"]         = damage_rewards.get(uid_str, (0, 0))[0]
+        result["xp"]             = damage_rewards.get(uid_str, (0, 0))[1]
+
+        # Начисляем убийце сразу (остальным — в main.py через damage_rewards)
+        data["balance"] = data.get("balance", 0) + result["reward"]
+        data["xp"]      = data.get("xp", 0) + result["xp"]
+
+    _save_slot(slot, state)
     return result
 
 
@@ -935,84 +1270,90 @@ def hunt_main_text(data: dict, lang: str = "ru") -> str:
                 f'</blockquote>\n\n'
             )
 
-    # Статус босса
-    state = get_boss_state()
-    boss_key = state.get("boss_key")
-    boss = BOSSES_BY_KEY.get(boss_key)
+    # Статус всех 5 боссов
+    slots = get_all_slots()
+    now   = _now_ts()
+    boss_lines = ""
+    for slot_idx, st in slots:
+        boss_key = st.get("boss_key")
+        boss     = BOSSES_BY_KEY.get(boss_key)
+        if st.get("boss_alive") and boss:
+            hp     = st["boss_hp"]
+            max_hp = st.get("boss_max_hp", BOSS_MAX_HP)
+            pct    = hp / max_hp * 100
+            bname  = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
+            boss_lines += (
+                f'\n{_tg(_E["boss"], "🔥")} <b>#{slot_idx+1} {bname}</b>\n'
+                f'   {_tg(_E["hp"], "❤️")} {_fmt_digits(hp)} / {_fmt_digits(max_hp)} <b>({pct:.1f}%)</b>'
+            )
+        else:
+            died_at = st.get("boss_died_at", 0) or 0
+            rem     = max(0, BOSS_RESPAWN_SEC - (now - died_at))
+            m       = rem // 60
+            if lang == "en":
+                boss_lines += f'\n{_tg(_E["dead"], "💀")} <b>#{slot_idx+1}</b> — next in {m}m'
+            else:
+                boss_lines += f'\n{_tg(_E["dead"], "💀")} <b>#{slot_idx+1}</b> — след. через {m}м'
 
-    if state.get("boss_alive") and boss:
-        hp     = state["boss_hp"]
-        max_hp = state.get("boss_max_hp", BOSS_MAX_HP)
-        pct    = hp / max_hp * 100
-        boss_display = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
-        if lang == "en":
-            boss_block = (
-                f'<blockquote>'
-                f'{_tg(_E["boss"], "🔥")} <b>Current boss: {boss_display}</b>\n'
-                f'{_tg(_E["hp"], "❤️")} <b>HP:</b> {_fmt_digits(hp)} / {_fmt_digits(max_hp)} <b>({pct:.1f}%)</b>'
-                f'</blockquote>'
-            )
-        else:
-            boss_block = (
-                f'<blockquote>'
-                f'{_tg(_E["boss"], "🔥")} <b>Текущий босс: {boss_display}</b>\n'
-                f'{_tg(_E["hp"], "❤️")} <b>HP:</b> {_fmt_digits(hp)} / {_fmt_digits(max_hp)} <b>({pct:.1f}%)</b>'
-                f'</blockquote>'
-            )
-    elif not state.get("boss_alive"):
-        died_at = state.get("boss_died_at", 0)
-        rem     = max(0, BOSS_RESPAWN_SEC - (_now_ts() - died_at))
-        h, m    = rem // 3600, (rem % 3600) // 60
-        if lang == "en":
-            boss_block = (
-                f'<blockquote>'
-                f'{_tg(_E["dead"], "💀")} <b>Boss defeated!</b>\n'
-                f'{_tg(_E["timer"], "⏱")} <b>Next appears in: {h}h {m}m</b>'
-                f'</blockquote>'
-            )
-        else:
-            boss_block = (
-                f'<blockquote>'
-                f'{_tg(_E["dead"], "💀")} <b>Босс повержен!</b>\n'
-                f'{_tg(_E["timer"], "⏱")} <b>Следующий появится через: {h}ч {m}м</b>'
-                f'</blockquote>'
-            )
+    if lang == "en":
+        boss_block = f'<blockquote><b>Active bosses:</b>{boss_lines}\n</blockquote>'
     else:
-        if lang == "en":
-            boss_block = (
-                f'<blockquote>'
-                f'{_tg(_E["spawn"], "⚡")} <b>Boss is spawning soon...</b>'
-                f'</blockquote>'
-            )
-        else:
-            boss_block = (
-                f'<blockquote>'
-                f'{_tg(_E["spawn"], "⚡")} <b>Босс скоро появится...</b>'
-                f'</blockquote>'
-            )
+        boss_block = f'<blockquote><b>Активные боссы:</b>{boss_lines}\n</blockquote>'
 
     return header + eq_block + boss_block
 
 
 def hunt_main_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
+    builder  = InlineKeyboardBuilder()
+    slots    = get_all_slots()
+    eq_key   = get_equipped_sword(data)
+
+    # Кнопки боссов — по 2-3 в ряд
+    row_btns = []
+    for slot_idx, st in slots:
+        boss_key = st.get("boss_key")
+        boss     = BOSSES_BY_KEY.get(boss_key)
+        alive    = st.get("boss_alive", False)
+        if alive and boss:
+            hp     = st["boss_hp"]
+            max_hp = st.get("boss_max_hp", BOSS_MAX_HP)
+            pct    = int(hp / max_hp * 100)
+            bname  = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
+            btn    = InlineKeyboardButton(
+                text=f"⚔️ #{slot_idx+1} {bname} {pct}%",
+                callback_data=f"hunt_boss_{slot_idx}",
+                icon_custom_emoji_id=_E["skull"]
+            )
+        else:
+            died_at = st.get("boss_died_at", 0) or 0
+            rem     = max(0, BOSS_RESPAWN_SEC - (_now_ts() - died_at))
+            m       = rem // 60
+            label   = f"⏳ #{slot_idx+1} {m}м" if lang == "ru" else f"⏳ #{slot_idx+1} {m}m"
+            btn     = InlineKeyboardButton(
+                text=label,
+                callback_data=f"hunt_boss_{slot_idx}",
+                icon_custom_emoji_id=_E["timer"]
+            )
+        row_btns.append(btn)
+
+    # Две кнопки в ряд, последняя отдельно если нечётное
+    for i in range(0, len(row_btns) - 1, 2):
+        builder.row(row_btns[i], row_btns[i+1])
+    if len(row_btns) % 2 == 1:
+        builder.row(row_btns[-1])
+
     builder.row(
-        InlineKeyboardButton(
-            text="Attack Boss" if lang == "en" else "Атаковать босса",
-            callback_data="hunt_boss",
-            icon_custom_emoji_id=_E["skull"]
-        ),
         InlineKeyboardButton(
             text="My Swords" if lang == "en" else "Мои мечи",
             callback_data="hunt_my_swords",
             icon_custom_emoji_id=_E["my_swords"]
+        ),
+        InlineKeyboardButton(
+            text="Armory" if lang == "en" else "Оружейная",
+            callback_data="hunt_shop_swords",
+            icon_custom_emoji_id=_E["shop"]
         )
     )
-    builder.row(InlineKeyboardButton(
-        text="Armory" if lang == "en" else "Оружейная",
-        callback_data="hunt_shop_swords",
-        icon_custom_emoji_id=_E["shop"]
-    ))
     builder.row(InlineKeyboardButton(
         text="Back" if lang == "en" else "Назад",
         callback_data="back_to_menu",
@@ -1277,8 +1618,8 @@ def my_swords_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
 
 # ─── Экран атаки босса ───
 
-def boss_attack_text(data: dict, lang: str = "ru") -> str:
-    state   = get_boss_state()
+def boss_attack_text(data: dict, lang: str = "ru", slot: int = 0) -> str:
+    state    = _load_slot(slot)
     boss_key = state.get("boss_key")
     boss     = BOSSES_BY_KEY.get(boss_key)
     eq_key   = get_equipped_sword(data)
@@ -1301,26 +1642,30 @@ def boss_attack_text(data: dict, lang: str = "ru") -> str:
             f'</blockquote>'
         )
 
-    if not state.get("boss_alive"):
-        died_at = state.get("boss_died_at", 0)
+    if not state or not state.get("boss_alive"):
+        died_at = (state.get("boss_died_at") or 0) if state else 0
         rem     = max(0, BOSS_RESPAWN_SEC - (_now_ts() - died_at))
-        h, m    = rem // 3600, (rem % 3600) // 60
+        m       = rem // 60
         if lang == "en":
             return (
                 f'<blockquote>'
                 f'{_tg(_E["dead"], "💀")} <b>BOSS DEFEATED!</b>\n\n'
-                f'{_tg(_E["timer"], "⏱")} <b>Next spawns in: {h}h {m}m</b>'
+                f'{_tg(_E["timer"], "⏱")} <b>Next spawns in: {m}m</b>'
                 f'</blockquote>'
             )
         return (
             f'<blockquote>'
             f'{_tg(_E["dead"], "💀")} <b>БОСС ПОВЕРЖЕН!</b>\n\n'
-            f'{_tg(_E["timer"], "⏱")} <b>Следующий появится через: {h}ч {m}м</b>'
+            f'{_tg(_E["timer"], "⏱")} <b>Следующий появится через: {m}м</b>'
             f'</blockquote>'
         )
 
     if not boss:
         return "<b>❌ Boss not found.</b>" if lang == "en" else "<b>❌ Ошибка: босс не найден.</b>"
+
+    # Мой урон по этому боссу
+    damage_log = state.get("damage_log", {})
+    my_dmg     = damage_log.get(str(data.get("id", 0)), 0)
 
     hp     = state["boss_hp"]
     max_hp = state.get("boss_max_hp", BOSS_MAX_HP)
