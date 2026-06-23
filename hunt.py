@@ -1593,7 +1593,7 @@ def boss_select_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         if alive and boss:
             bname = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
             builder.row(InlineKeyboardButton(
-                text=f"⚔️ #{slot_idx+1} {bname}",
+                text=f" #{slot_idx+1} {bname}",
                 callback_data=f"hunt_boss_{slot_idx}",
                 icon_custom_emoji_id=_E["skull"]
             ))
@@ -1601,7 +1601,7 @@ def boss_select_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
             died_at = st.get("boss_died_at", 0) or 0
             rem     = max(0, BOSS_RESPAWN_SEC - (_now_ts() - died_at))
             m       = rem // 60
-            label   = f"⏳ #{slot_idx+1} — {m}м" if lang == "ru" else f"⏳ #{slot_idx+1} — {m}m"
+            label   = f" #{slot_idx+1} — {m}м" if lang == "ru" else f" #{slot_idx+1} — {m}m"
             builder.row(InlineKeyboardButton(
                 text=label,
                 callback_data="hunt_boss_dead",
