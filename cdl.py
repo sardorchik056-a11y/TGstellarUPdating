@@ -161,7 +161,7 @@ def _get_all_active(uid: int) -> list[dict]:
 
 def _fmt_time_left(secs: int) -> str:
     if secs <= 0:
-        return "готово ✅"
+        return "готово✅"
     h = secs // 3600
     m = (secs % 3600) // 60
     if h >= 24:
