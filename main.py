@@ -175,7 +175,7 @@ from rass import (
     rass_fsm_callback,
 )
 
-BOT_TOKEN = '8693034024:AAFQ8rUGuhJ5yT9QNZoZzAmzNMatp_SVSbk'
+BOT_TOKEN = '8947252465:AAHqlauZc6nOfLylBxlc6xt0VvOhSqR8Rc8'
 
 bot = Bot(token=BOT_TOKEN)
 
@@ -445,6 +445,27 @@ def shop_main_keyboard() -> InlineKeyboardMarkup:
 # ---------- КОМАНДЫ ----------
 
 ADMIN_IDS = {8118184388}
+
+GUIDE_URL = "https://telegra.ph/POLNOE-RUKOVODSTVO-POLZOVATELYA-06-24"
+
+
+def guide_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="📖 Открыть гайд",
+        url=GUIDE_URL,
+    ))
+    return builder.as_markup()
+
+
+@dp.message(Command("guide", "гайд", "Guide", "Гайд"))
+@dp.message(_text_in("гайд", "guide", "/guide", "/гайд", "как играть", "/как играть"))
+async def cmd_guide(message: Message):
+    await message.answer(
+        '<tg-emoji emoji-id="5334544901428229844">📖</tg-emoji> <b><i>Гайд для новых игроков!</i></b>\n',
+        parse_mode="HTML",
+        reply_markup=guide_keyboard(),
+    )
 
 
 @dp.message(Command("add"))
@@ -1843,21 +1864,14 @@ async def handle_captcha_answer(message: Message):
                             await message.reply(promo_error_text(reason, lang), parse_mode="HTML")
                 return
 
-    # ── Ожидание ввода суммы вклада ──
+    # ── Ожидание ввода суммы вклада (один раз) ──
     if uid in _cdl_input_pending:
-        dep_key = _cdl_input_pending.pop(uid)
+        dep_key  = _cdl_input_pending.pop(uid)   # сразу сбрасываем — больше не ждём
         msg_info = _cdl_input_msg.pop(uid, None)
         raw = (message.text or "").strip().replace(" ", "").replace("_", "")
 
-        async def _cdl_edit_or_send(text: str, kb=None):
-            """Удаляет сообщение юзера, редактирует бот-сообщение.
-            Если edit не прошёл (not modified / deleted) — шлёт новое и
-            обновляет msg_info для следующего раунда."""
-            nonlocal msg_info
-            try:
-                await message.delete()
-            except Exception:
-                pass
+        async def _cdl_edit(text: str, kb=None):
+            """Редактирует бот-сообщение (окно ввода). НЕ удаляет сообщение юзера."""
             if msg_info:
                 try:
                     await bot.edit_message_text(
@@ -1866,51 +1880,44 @@ async def handle_captcha_answer(message: Message):
                     )
                     return
                 except Exception as _e:
-                    err = str(_e).lower()
-                    if "message is not modified" in err:
-                        # контент тот же — ничего не делаем, msg_info не трогаем
+                    if "message is not modified" in str(_e).lower():
                         return
-                    # сообщение удалено или недоступно — шлём новое
-            sent = await bot.send_message(
+            # Если окно недоступно — шлём новое
+            await bot.send_message(
                 msg_info[0] if msg_info else message.chat.id,
                 text, parse_mode="HTML", reply_markup=kb
             )
-            # Обновляем msg_info на новое сообщение бота
-            msg_info = (sent.chat.id, sent.message_id)
 
         if not raw.isdigit():
-            _cdl_input_pending[uid] = dep_key
-            _cdl_input_msg[uid] = msg_info
-            await _cdl_edit_or_send("❌ <b>Введи целое число</b>", cdl_input_keyboard(dep_key))
-            _cdl_input_msg[uid] = msg_info  # обновляем после возможного send
+            await _cdl_edit(
+                f'❌ <b>Некорректный ввод.</b>\nОткрой вклад снова и введи число.',
+                cdl_input_keyboard(dep_key)
+            )
             return
+
         amount = int(raw)
         dep    = _CDL_DEPOSITS_BY_KEY.get(dep_key)
         if dep is None:
             return
+
         lock = await _get_user_lock(uid)
         async with lock:
             u2  = get_or_create_user(message.from_user)
             bal = u2.get("balance", 0)
             if amount < dep["min"]:
-                _cdl_input_pending[uid] = dep_key
-                _cdl_input_msg[uid] = msg_info
-                await _cdl_edit_or_send(
-                    f'❌ <b>Минимум:</b> {format_amount(dep["min"])}',
+                await _cdl_edit(
+                    f'❌ <b>Минимум:</b> {format_amount(dep["min"])}\nОткрой вклад снова и введи сумму.',
                     cdl_input_keyboard(dep_key)
                 )
-                _cdl_input_msg[uid] = msg_info
                 return
             if amount > bal:
-                _cdl_input_pending[uid] = dep_key
-                _cdl_input_msg[uid] = msg_info
-                await _cdl_edit_or_send(
-                    f'❌ <b>Не хватает монет.</b> Баланс: {format_amount(bal)}',
+                await _cdl_edit(
+                    f'❌ <b>Не хватает монет.</b> Баланс: {format_amount(bal)}\nОткрой вклад снова и введи сумму.',
                     cdl_input_keyboard(dep_key)
                 )
-                _cdl_input_msg[uid] = msg_info
                 return
-        await _cdl_edit_or_send(
+
+        await _cdl_edit(
             cdl_confirm_text(dep_key, amount),
             cdl_confirm_keyboard(dep_key, amount)
         )
@@ -3963,7 +3970,6 @@ async def _cdl_payout_loop():
     """Фоновая задача: каждую минуту проверяет созревшие вклады,
     выплачивает баланс и отправляет уведомление пользователю."""
     import sqlite3 as _sq, json as _js
-    from database import save_user as _sv
 
     while True:
         await asyncio.sleep(60)
@@ -3978,7 +3984,7 @@ async def _cdl_payout_loop():
                 by_uid.setdefault(dep["uid"], []).append(dep)
 
             for uid, deps in by_uid.items():
-                # Считаем выплаты
+                # Считаем выплаты и помечаем claimed=1
                 total_payout = 0
                 total_profit = 0
                 paid_deps    = []
@@ -3991,17 +3997,27 @@ async def _cdl_payout_loop():
                 if not paid_deps:
                     continue
 
-                # Начисляем баланс через sqlite (в лупе нет объекта User)
-                with _sq.connect("tgstellar.db") as _conn:
-                    _conn.row_factory = _sq.Row
-                    row = _conn.execute(
-                        "SELECT data FROM users WHERE id=?", (uid,)
-                    ).fetchone()
-                    if not row:
-                        continue
-                    udata = _js.loads(row["data"])
-                udata["balance"] = udata.get("balance", 0) + total_payout
-                _sv(uid, udata)
+                # Атомарное начисление баланса: читаем + пишем в одной транзакции.
+                # Исправлено: колонка data_json, ключ uid (не data/id).
+                try:
+                    with _sq.connect("tgstellar.db") as _conn:
+                        _conn.row_factory = _sq.Row
+                        row = _conn.execute(
+                            "SELECT data_json FROM users WHERE uid=?", (uid,)
+                        ).fetchone()
+                        if not row:
+                            print(f"[cdl_payout_loop] uid={uid} не найден в users")
+                            continue
+                        udata = _js.loads(row["data_json"])
+                        udata["balance"] = udata.get("balance", 0) + total_payout
+                        _conn.execute(
+                            "UPDATE users SET data_json=? WHERE uid=?",
+                            (_js.dumps(udata, ensure_ascii=False), uid)
+                        )
+                        _conn.commit()
+                except Exception as _db_e:
+                    print(f"[cdl_payout_loop] ошибка начисления uid={uid}: {_db_e}")
+                    continue
 
                 # Шлём отдельное уведомление на каждый вклад
                 for dep in paid_deps:
@@ -4022,8 +4038,8 @@ async def _cdl_payout_loop():
                     )
                     try:
                         await bot.send_message(uid, notif, parse_mode="HTML")
-                    except Exception:
-                        pass
+                    except Exception as _send_e:
+                        print(f"[cdl_payout_loop] send_message uid={uid}: {_send_e}")
         except Exception as _e:
             print(f"[cdl_payout_loop] {_e}")
 
