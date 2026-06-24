@@ -174,6 +174,10 @@ from rass import (
     rass_fsm_message,
     rass_fsm_callback,
 )
+from duel import (
+    duel_main_text, duel_main_keyboard,
+    duel_soon_text, duel_back_keyboard,
+)
 
 BOT_TOKEN = '8693034024:AAFQ8rUGuhJ5yT9QNZoZzAmzNMatp_SVSbk'
 
@@ -342,9 +346,14 @@ def main_menu_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     )
     builder.row(InlineKeyboardButton(text=t(lang, "btn_mine"), callback_data="mine", icon_custom_emoji_id=EMOJI_MINE))
     builder.row(
-        InlineKeyboardButton(text=t(lang, "btn_hunt"),   callback_data="hunt",   icon_custom_emoji_id=EMOJI_HUNT),
-        InlineKeyboardButton(text=t(lang, "btn_status"), callback_data="status", icon_custom_emoji_id=EMOJI_STATUS),
+        InlineKeyboardButton(text=t(lang, "btn_hunt"),   callback_data="hunt",      icon_custom_emoji_id=EMOJI_HUNT),
+        InlineKeyboardButton(text=t(lang, "btn_status"), callback_data="status",    icon_custom_emoji_id=EMOJI_STATUS),
     )
+    builder.row(InlineKeyboardButton(
+        text=" Дуэли" if lang == "ru" else " Duels",
+        callback_data="duel_main",
+        icon_custom_emoji_id=EMOJI_HUNT,
+    ))
     builder.row(InlineKeyboardButton(text=t(lang, "btn_pets"), callback_data="pets", icon_custom_emoji_id=EMOJI_PETS))
     builder.row(InlineKeyboardButton(
         text=" Вклады" if lang == "ru" else " Deposits",
@@ -3965,6 +3974,33 @@ async def handle_successful_payment(message: Message):
             await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
         return
 
+
+# ─────────────────────────────────────────────────────────────
+#  ДУЭЛИ
+# ─────────────────────────────────────────────────────────────
+
+@dp.callback_query(F.data == "duel_main")
+async def cb_duel_main(call: CallbackQuery):
+    await call.answer()
+    await call.message.edit_text(
+        duel_main_text(),
+        parse_mode="HTML",
+        reply_markup=duel_main_keyboard(),
+    )
+
+
+@dp.callback_query(F.data.in_({"duel_search", "duel_invite", "duel_equip", "duel_skills", "duel_charstats"}))
+async def cb_duel_section(call: CallbackQuery):
+    await call.answer()
+    section = call.data.replace("duel_", "")
+    await call.message.edit_text(
+        duel_soon_text(section),
+        parse_mode="HTML",
+        reply_markup=duel_back_keyboard(),
+    )
+
+
+# ─────────────────────────────────────────────────────────────
 
 async def _cdl_payout_loop():
     """Фоновая задача: каждую минуту проверяет созревшие вклады,
