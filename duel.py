@@ -35,6 +35,7 @@ STAT_META = {
 }
 
 # ── Каталог снаряжения: 5 слотов × 5 уровней ────────────────
+# ВАЖНО: снаряжение даёт только HP, защиту, регенерацию, стойкость — НЕ урон!
 GEAR_CATALOG = {
 
     # ── ШЛЕМ ─────────────────────────────────────────────────
@@ -45,8 +46,7 @@ GEAR_CATALOG = {
         "price": 5_000,
         "description": (
             "Грубо выкованный железный шлем без украшений. "
-            "Прост в изготовлении, но надёжно прикрывает голову от первого удара. "
-            "Идеальный выбор для тех, кто только встаёт на путь дуэлянта."
+            "Прост в изготовлении, но надёжно прикрывает голову от первого удара."
         ),
         "bonus": {"hp": 10, "phys_def": 3},
     },
@@ -55,12 +55,7 @@ GEAR_CATALOG = {
         "name": "Helmet Lvl 2", "ru_name": "Боевой Шлем",
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5445284980978621387",
         "price": 15_000,
-        "description": (
-            "Усиленный шлем с рунической вставкой на лбу. "
-            "Древние символы рассеивают слабые магические атаки, "
-            "а закалённая сталь держит удары тяжёлого оружия. "
-            "Стандартное снаряжение опытного бойца."
-        ),
+        "description": "Усиленный шлем с рунической вставкой. Рассеивает слабые магические атаки.",
         "bonus": {"hp": 20, "phys_def": 6, "mag_def": 5},
     },
     "helmet-lvl3": {
@@ -68,11 +63,7 @@ GEAR_CATALOG = {
         "name": "Helmet Lvl 3", "ru_name": "Шлем Гвардейца",
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5445284980978621387",
         "price": 35_000,
-        "description": (
-            "Закалённый шлем королевской гвардии с забралом из мифрила. "
-            "Повышает концентрацию в бою и значительно снижает усталость. "
-            "Носившие его редко пропускали смертельные удары."
-        ),
+        "description": "Закалённый шлем королевской гвардии с забралом из мифрила.",
         "bonus": {"hp": 35, "phys_def": 10, "mag_def": 8, "stamina": 5},
     },
     "helmet-lvl4": {
@@ -80,11 +71,7 @@ GEAR_CATALOG = {
         "name": "Helmet Lvl 4", "ru_name": "Шлем Стального Стража",
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5445284980978621387",
         "price": 70_000,
-        "description": (
-            "Реликвийный шлем Стального Стража с рунической гравировкой по всей поверхности. "
-            "Каждый символ — заклинание защиты, впитанное веками. "
-            "Входящий урон частично поглощается магическим барьером."
-        ),
+        "description": "Реликвийный шлем с рунической гравировкой. Входящий урон частично поглощается барьером.",
         "bonus": {"hp": 50, "phys_def": 15, "mag_def": 12, "stamina": 10},
     },
     "helmet-lvl5": {
@@ -92,11 +79,7 @@ GEAR_CATALOG = {
         "name": "Helmet Lvl 5", "ru_name": "Шлем Легенды",
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5445284980978621387",
         "price": 150_000,
-        "description": (
-            "Артефакт эпохи Первых Воинов. Говорят, тот кто надевает его — "
-            "слышит голоса павших героев, дающих силу и непоколебимость духа. "
-            "Ни одна стрела, ни одно заклинание не может поколебать носителя этого шлема."
-        ),
+        "description": "Артефакт эпохи Первых Воинов. Ни одна стрела не может поколебать носителя.",
         "bonus": {"hp": 75, "phys_def": 22, "mag_def": 18, "stamina": 18},
     },
 
@@ -106,11 +89,7 @@ GEAR_CATALOG = {
         "name": "Armor Lvl 1", "ru_name": "Кожаный Доспех",
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5447644880824181073",
         "price": 6_000,
-        "description": (
-            "Доспех из дублёной кожи горного быка. Лёгкий и не сковывает движений — "
-            "идеален для быстрых атак. Не выдержит удар тяжёлого меча, "
-            "но защитит от скользящих ударов и стрел."
-        ),
+        "description": "Доспех из дублёной кожи. Лёгкий, не сковывает движений.",
         "bonus": {"hp": 15, "phys_def": 5},
     },
     "armor-lvl2": {
@@ -118,12 +97,7 @@ GEAR_CATALOG = {
         "name": "Armor Lvl 2", "ru_name": "Кольчужный Доспех",
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5447644880824181073",
         "price": 18_000,
-        "description": (
-            "Тысячи закалённых колец, переплетённых вручную. "
-            "Кольчуга хорошо поглощает рубящие и колющие удары, "
-            "давая бойцу запас прочности в затяжных поединках. "
-            "Классика среди опытных дуэлянтов."
-        ),
+        "description": "Тысячи закалённых колец. Хорошо поглощает рубящие удары.",
         "bonus": {"hp": 30, "phys_def": 12, "stamina": 5},
     },
     "armor-lvl3": {
@@ -131,11 +105,7 @@ GEAR_CATALOG = {
         "name": "Armor Lvl 3", "ru_name": "Пластинчатый Доспех",
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5447644880824181073",
         "price": 40_000,
-        "description": (
-            "Боевые латы из стальных пластин с усиленными сочленениями. "
-            "Распределяют силу удара по всей поверхности, сводя урон к минимуму. "
-            "Тяжелее кольчуги, но даёт существенно лучшую защиту торса."
-        ),
+        "description": "Боевые латы из стальных пластин. Сводят урон к минимуму.",
         "bonus": {"hp": 50, "phys_def": 20, "stamina": 8},
     },
     "armor-lvl4": {
@@ -143,11 +113,7 @@ GEAR_CATALOG = {
         "name": "Armor Lvl 4", "ru_name": "Латы Воина Бездны",
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5447644880824181073",
         "price": 80_000,
-        "description": (
-            "Прочнейшие латы, выкованные в жерле вулкана тёмными кузнецами Бездны. "
-            "Металл пропитан магмой и заклят на стойкость. "
-            "Поглощают часть урона в каждом бою, превращая его в регенерацию."
-        ),
+        "description": "Прочнейшие латы, выкованные в жерле вулкана тёмными кузнецами.",
         "bonus": {"hp": 75, "phys_def": 30, "mag_def": 8, "stamina": 12},
     },
     "armor-lvl5": {
@@ -155,11 +121,7 @@ GEAR_CATALOG = {
         "name": "Armor Lvl 5", "ru_name": "Латы Абсолюта",
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5447644880824181073",
         "price": 180_000,
-        "description": (
-            "Легендарный доспех, не знавший поражений за всю историю TGStellar. "
-            "Выкован из металла упавшей звезды и закалён в крови древнего дракона. "
-            "Максимальная физическая защита — ни одна атака не пройдёт сквозь него незамеченной."
-        ),
+        "description": "Легендарный доспех. Выкован из металла упавшей звезды.",
         "bonus": {"hp": 110, "phys_def": 45, "mag_def": 15, "stamina": 20},
     },
 
@@ -169,61 +131,40 @@ GEAR_CATALOG = {
         "name": "Gloves Lvl 1", "ru_name": "Боевые Рукавицы",
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5445284980978621387",
         "price": 4_000,
-        "description": (
-            "Простые кожаные рукавицы с наклёпками из железа на костяшках. "
-            "Защищают кулаки и немного усиливают удар. "
-            "Первый шаг к мощи твоих рук в дуэльном бою."
-        ),
-        "bonus": {"dmg": 4, "stamina": 2},
+        "description": "Кожаные рукавицы с наклёпками. Защищают кулаки.",
+        "bonus": {"stamina": 5, "phys_def": 2},
     },
     "gloves-lvl2": {
         "slot": "gloves", "level": 2, "key": "gloves-lvl2",
         "name": "Gloves Lvl 2", "ru_name": "Латные Рукавицы",
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5445284980978621387",
         "price": 12_000,
-        "description": (
-            "Рукавицы с металлическими пластинами вдоль пальцев. "
-            "Усиливают хват оружия и дают бонус к критическому удару. "
-            "Любимое снаряжение арбитров дуэльных арен."
-        ),
-        "bonus": {"dmg": 8, "stamina": 5},
+        "description": "Рукавицы с металлическими пластинами. Усиливают хват оружия.",
+        "bonus": {"stamina": 8, "phys_def": 5},
     },
     "gloves-lvl3": {
         "slot": "gloves", "level": 3, "key": "gloves-lvl3",
         "name": "Gloves Lvl 3", "ru_name": "Наручи Теневого Клинка",
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5445284980978621387",
         "price": 28_000,
-        "description": (
-            "Боевые наручи с выдвижными шипами из чёрного железа. "
-            "Ускоряют темп атаки и позволяют наносить удары, "
-            "пробивающие стандартную броню. Оружие теневых воинов."
-        ),
-        "bonus": {"dmg": 14, "stamina": 8, "phys_def": 3},
+        "description": "Боевые наручи с выдвижными шипами. Оружие теневых воинов.",
+        "bonus": {"stamina": 12, "phys_def": 6, "mag_def": 3},
     },
     "gloves-lvl4": {
         "slot": "gloves", "level": 4, "key": "gloves-lvl4",
         "name": "Gloves Lvl 4", "ru_name": "Наручи Убийцы",
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5445284980978621387",
         "price": 55_000,
-        "description": (
-            "Зачарованные наручи элитных убийц гильдии Алой Тени. "
-            "Вибрирующие руны в металле усиливают каждый удар магической энергией. "
-            "Максимальный урон в сочетании с непревзойдённой скоростью атаки."
-        ),
-        "bonus": {"dmg": 20, "stamina": 12, "phys_def": 5},
+        "description": "Зачарованные наручи элитных убийц гильдии Алой Тени.",
+        "bonus": {"stamina": 16, "phys_def": 10, "mag_def": 5},
     },
     "gloves-lvl5": {
         "slot": "gloves", "level": 5, "key": "gloves-lvl5",
         "name": "Gloves Lvl 5", "ru_name": "Длани Хаоса",
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5445284980978621387",
         "price": 120_000,
-        "description": (
-            "Артефактные перчатки, пронизанные энергией первозданного хаоса. "
-            "Каждый удар сотрясает реальность — противник ощущает не просто боль, "
-            "но и разрушение своей воли к сопротивлению. "
-            "Носить могут лишь те, кто укротил хаос внутри себя."
-        ),
-        "bonus": {"dmg": 30, "stamina": 18, "phys_def": 8, "regen": 3},
+        "description": "Артефактные перчатки, пронизанные энергией первозданного хаоса.",
+        "bonus": {"stamina": 22, "phys_def": 14, "mag_def": 8, "regen": 3},
     },
 
     # ── ШТАНЫ ─────────────────────────────────────────────────
@@ -232,11 +173,7 @@ GEAR_CATALOG = {
         "name": "Pants Lvl 1", "ru_name": "Боевые Штаны",
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "5445284980978621387",
         "price": 4_500,
-        "description": (
-            "Прочные штаны из грубой холщовой ткани с кожаными вставками на бёдрах. "
-            "Дают свободу движений и базовую защиту ног. "
-            "Начало пути к полному боевому снаряжению."
-        ),
+        "description": "Прочные штаны с кожаными вставками. Дают свободу движений.",
         "bonus": {"hp": 8, "stamina": 5},
     },
     "pants-lvl2": {
@@ -244,11 +181,7 @@ GEAR_CATALOG = {
         "name": "Pants Lvl 2", "ru_name": "Кольчужные Поножи",
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "5445284980978621387",
         "price": 14_000,
-        "description": (
-            "Усиленные поножи с кольчужными вставками на бёдрах и голенях. "
-            "Защищают от рубящих ударов в нижнюю часть тела. "
-            "Особенно эффективны против быстрых ударов по ногам."
-        ),
+        "description": "Усиленные поножи с кольчужными вставками на бёдрах.",
         "bonus": {"hp": 18, "stamina": 10, "phys_def": 4},
     },
     "pants-lvl3": {
@@ -256,11 +189,7 @@ GEAR_CATALOG = {
         "name": "Pants Lvl 3", "ru_name": "Поножи Железного Рыцаря",
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "5445284980978621387",
         "price": 30_000,
-        "description": (
-            "Тяжёлые боевые штаны с усиленными бёдрами и наколенниками из закалённой стали. "
-            "Дают прибавку к выносливости и уклонению в долгих поединках. "
-            "Стандарт тяжёлой пехоты Железного ордена."
-        ),
+        "description": "Тяжёлые боевые штаны с наколенниками из закалённой стали.",
         "bonus": {"hp": 30, "stamina": 16, "phys_def": 7},
     },
     "pants-lvl4": {
@@ -268,11 +197,7 @@ GEAR_CATALOG = {
         "name": "Pants Lvl 4", "ru_name": "Зачарованные Поножи",
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "5445284980978621387",
         "price": 60_000,
-        "description": (
-            "Латные поножи с вплавленными кристаллами выносливости. "
-            "Магия кристаллов медленно восстанавливает силы бойца в ходе боя. "
-            "Уклонение и стойкость выходят на профессиональный уровень."
-        ),
+        "description": "Латные поножи с кристаллами выносливости. Восстанавливают силы в бою.",
         "bonus": {"hp": 45, "stamina": 22, "phys_def": 11, "regen": 3},
     },
     "pants-lvl5": {
@@ -280,12 +205,7 @@ GEAR_CATALOG = {
         "name": "Pants Lvl 5", "ru_name": "Поножи Вечности",
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "5445284980978621387",
         "price": 130_000,
-        "description": (
-            "Реликвийные поножи, скованные в эпоху Великих Войн. "
-            "Легенда гласит: ни один носитель этих поножей не упал в бою. "
-            "Дают невероятную стойкость и восстановление — "
-            "тело бойца будто отказывается сдаваться."
-        ),
+        "description": "Реликвийные поножи. Тело бойца отказывается сдаваться.",
         "bonus": {"hp": 65, "stamina": 32, "phys_def": 16, "regen": 6},
     },
 
@@ -295,61 +215,40 @@ GEAR_CATALOG = {
         "name": "Boots Lvl 1", "ru_name": "Походные Сапоги",
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5445284980978621387",
         "price": 3_500,
-        "description": (
-            "Добротные кожаные сапоги, проверенные долгими походами. "
-            "Мягкая подошва гасит шум шагов и даёт небольшую прибавку к скорости. "
-            "Первый шаг к стремительности в бою."
-        ),
-        "bonus": {"dmg": 2, "regen": 3},
+        "description": "Добротные кожаные сапоги. Мягкая подошва гасит шум шагов.",
+        "bonus": {"regen": 3, "stamina": 3},
     },
     "boots-lvl2": {
         "slot": "boots", "level": 2, "key": "boots-lvl2",
         "name": "Boots Lvl 2", "ru_name": "Сапоги Следопыта",
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5445284980978621387",
         "price": 11_000,
-        "description": (
-            "Лёгкие сапоги из кожи ночного пантеры. "
-            "Позволяют двигаться практически бесшумно и увеличивают "
-            "шанс нанести первый удар прежде чем противник успеет среагировать."
-        ),
-        "bonus": {"dmg": 5, "regen": 5, "stamina": 3},
+        "description": "Лёгкие сапоги из кожи ночной пантеры. Почти бесшумны.",
+        "bonus": {"regen": 5, "stamina": 6, "phys_def": 2},
     },
     "boots-lvl3": {
         "slot": "boots", "level": 3, "key": "boots-lvl3",
         "name": "Boots Lvl 3", "ru_name": "Сапоги Ветра Пустоши",
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5445284980978621387",
         "price": 25_000,
-        "description": (
-            "Сапоги из кожи горного дракона, пропитанные эликсиром скорости ветра. "
-            "Ноги бойца становятся лёгкими как перо — "
-            "каждый шаг приносит восстановление сил и увеличивает скорость атаки."
-        ),
-        "bonus": {"dmg": 8, "regen": 8, "stamina": 6},
+        "description": "Сапоги из кожи горного дракона, пропитанные эликсиром скорости.",
+        "bonus": {"regen": 8, "stamina": 10, "phys_def": 4},
     },
     "boots-lvl4": {
         "slot": "boots", "level": 4, "key": "boots-lvl4",
         "name": "Boots Lvl 4", "ru_name": "Сапоги Призрака",
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5445284980978621387",
         "price": 50_000,
-        "description": (
-            "Зачарованные сапоги элитных разведчиков, способные делать владельца "
-            "почти невидимым в движении. Молниеносный первый удар "
-            "и незаметное перемещение по арене дают огромное тактическое преимущество."
-        ),
-        "bonus": {"dmg": 12, "regen": 12, "stamina": 10, "phys_def": 4},
+        "description": "Зачарованные сапоги разведчиков. Молниеносное перемещение.",
+        "bonus": {"regen": 12, "stamina": 14, "phys_def": 6},
     },
     "boots-lvl5": {
         "slot": "boots", "level": 5, "key": "boots-lvl5",
         "name": "Boots Lvl 5", "ru_name": "Сапоги Грома",
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5445284980978621387",
         "price": 110_000,
-        "description": (
-            "Реликвийные сапоги Громового Бога. При каждом шаге слышен тихий раскат грома — "
-            "знак того, что стихия сама несёт бойца вперёд. "
-            "Максимальная скорость, восстановление и стойкость. "
-            "Надевший их — неудержим."
-        ),
-        "bonus": {"dmg": 18, "regen": 18, "stamina": 16, "phys_def": 7},
+        "description": "Реликвийные сапоги Громового Бога. Надевший их — неудержим.",
+        "bonus": {"regen": 18, "stamina": 20, "phys_def": 8},
     },
 }
 
@@ -386,53 +285,53 @@ def _fmt(amount: int) -> str:
 
 
 # ════════════════════════════════════════════════════════════
-#  БОЕВЫЕ НАВЫКИ
+#  БОЕВЫЕ НАВЫКИ — 22 навыка, покупаемые за монеты
+#  Урон исходит ТОЛЬКО из навыков. Снаряжение урон НЕ даёт.
 # ════════════════════════════════════════════════════════════
 
-# Логика урона навыков:
-#   Физ. навыки (взрыв, блок-маг) → снижаются phys_def противника
-#   Маг. навыки (шар-маг, заморозка) → снижаются mag_def противника
-#   Щит → защитный навык, не урон
-#
-# Формула физ. урона: base_dmg + atk_bonus - max(0, enemy_phys_def * 0.4)
-# Формула маг. урона: base_mag + atk_bonus * 0.6 - max(0, enemy_mag_def * 0.5)
-
 SKILLS = {
+    # ── Базовые (бесплатные) ──────────────────────────────────
     "mag_ball": {
         "key": "mag_ball",
         "name": "Шар-маг",
         "emoji": "🔵",
-        "type": "magic",          # урон от mag_def
-        "cooldown": 15,           # секунды
-        "base_dmg": (18, 28),     # диапазон базового маг.урона
+        "type": "magic",
+        "cooldown": 15,
+        "base_dmg": (18, 28),
         "description": "Концентрированный шар магической энергии. Пробивает магическую защиту.",
+        "price": 0,          # бесплатный — доступен всем
     },
+    "explosion": {
+        "key": "explosion",
+        "name": "Взрыв",
+        "emoji": "💥",
+        "type": "physical",
+        "cooldown": 18,
+        "base_dmg": (22, 35),
+        "description": "Взрыв физической силы. Снижается физической защитой.",
+        "price": 0,
+    },
+    "shield": {
+        "key": "shield",
+        "name": "Щит",
+        "emoji": "🛡️",
+        "type": "shield",
+        "cooldown": 25,
+        "shield_amount": (20, 35),
+        "description": "Магический щит. Поглощает следующий входящий удар.",
+        "price": 0,
+    },
+
+    # ── Покупаемые навыки ────────────────────────────────────
     "mag_block": {
         "key": "mag_block",
         "name": "Блок-маг",
         "emoji": "🟣",
         "type": "magic",
         "cooldown": 20,
-        "base_dmg": (25, 40),
+        "base_dmg": (30, 48),
         "description": "Мощный магический таран. Высокий урон, длинный кулдаун.",
-    },
-    "shield": {
-        "key": "shield",
-        "name": "Щит",
-        "emoji": "🛡️",
-        "type": "shield",          # защита
-        "cooldown": 25,
-        "shield_amount": (20, 35), # поглощает X урона
-        "description": "Магический щит. Поглощает следующий входящий удар.",
-    },
-    "explosion": {
-        "key": "explosion",
-        "name": "Взрыв",
-        "emoji": "💥",
-        "type": "physical",        # урон от phys_def
-        "cooldown": 18,
-        "base_dmg": (22, 35),
-        "description": "Взрыв физической силы. Снижается физической защитой.",
+        "price": 8_000,
     },
     "freeze": {
         "key": "freeze",
@@ -441,35 +340,229 @@ SKILLS = {
         "type": "magic",
         "cooldown": 30,
         "base_dmg": (15, 22),
-        "freeze_turns": 1,         # пропуск хода у врага
+        "freeze_turns": 1,
         "description": "Заморозка противника. Наносит маг. урон и лишает хода.",
+        "price": 10_000,
+    },
+    "thunder": {
+        "key": "thunder",
+        "name": "Гром",
+        "emoji": "⚡",
+        "type": "magic",
+        "cooldown": 22,
+        "base_dmg": (35, 52),
+        "description": "Удар молнией. Игнорирует часть магической защиты.",
+        "price": 15_000,
+    },
+    "inferno": {
+        "key": "inferno",
+        "name": "Инферно",
+        "emoji": "🔥",
+        "type": "magic",
+        "cooldown": 28,
+        "base_dmg": (40, 60),
+        "description": "Огненный шторм. Один из мощнейших магических ударов.",
+        "price": 20_000,
+    },
+    "shadow_strike": {
+        "key": "shadow_strike",
+        "name": "Удар Тени",
+        "emoji": "🌑",
+        "type": "physical",
+        "cooldown": 16,
+        "base_dmg": (28, 42),
+        "description": "Стремительный удар из тени. Снижается физической защитой.",
+        "price": 12_000,
+    },
+    "berserker": {
+        "key": "berserker",
+        "name": "Берсерк",
+        "emoji": "🔴",
+        "type": "physical",
+        "cooldown": 35,
+        "base_dmg": (55, 80),
+        "description": "Состояние боевого безумия. Колоссальный физический удар.",
+        "price": 25_000,
+    },
+    "poison_dart": {
+        "key": "poison_dart",
+        "name": "Ядовитая Стрела",
+        "emoji": "🧪",
+        "type": "magic",
+        "cooldown": 20,
+        "base_dmg": (20, 30),
+        "description": "Отравленная стрела. Наносит маг. урон и ослабляет врага.",
+        "price": 13_000,
+    },
+    "earthquake": {
+        "key": "earthquake",
+        "name": "Землетрясение",
+        "emoji": "🌍",
+        "type": "physical",
+        "cooldown": 32,
+        "base_dmg": (45, 65),
+        "description": "Раскалывает землю под ногами врага. Мощный физ. удар.",
+        "price": 22_000,
+    },
+    "void_blast": {
+        "key": "void_blast",
+        "name": "Взрыв Пустоты",
+        "emoji": "🌀",
+        "type": "magic",
+        "cooldown": 40,
+        "base_dmg": (60, 90),
+        "description": "Разрывает ткань реальности. Огромный урон, долгий кулдаун.",
+        "price": 35_000,
+    },
+    "blade_storm": {
+        "key": "blade_storm",
+        "name": "Буря Клинков",
+        "emoji": "🌪️",
+        "type": "physical",
+        "cooldown": 26,
+        "base_dmg": (38, 55),
+        "description": "Вихрь из тысячи лезвий. Рубящий физический удар.",
+        "price": 18_000,
+    },
+    "soul_drain": {
+        "key": "soul_drain",
+        "name": "Похищение Души",
+        "emoji": "💜",
+        "type": "magic",
+        "cooldown": 45,
+        "base_dmg": (50, 75),
+        "drain_regen": 15,   # восстанавливает HP атакующему
+        "description": "Высасывает жизненную силу врага. Часть урона восстанавливает твоё HP.",
+        "price": 30_000,
+    },
+    "meteor": {
+        "key": "meteor",
+        "name": "Метеор",
+        "emoji": "☄️",
+        "type": "magic",
+        "cooldown": 50,
+        "base_dmg": (70, 100),
+        "description": "С небес падает огненный метеор. Сокрушительная мощь.",
+        "price": 45_000,
+    },
+    "iron_fist": {
+        "key": "iron_fist",
+        "name": "Железный Кулак",
+        "emoji": "✊",
+        "type": "physical",
+        "cooldown": 14,
+        "base_dmg": (24, 36),
+        "description": "Сокрушительный удар, пробивающий любую броню.",
+        "price": 9_000,
+    },
+    "arcane_surge": {
+        "key": "arcane_surge",
+        "name": "Аркановый Всплеск",
+        "emoji": "✨",
+        "type": "magic",
+        "cooldown": 18,
+        "base_dmg": (26, 40),
+        "description": "Выброс чистой маг. энергии. Быстрый и надёжный удар.",
+        "price": 11_000,
+    },
+    "war_cry": {
+        "key": "war_cry",
+        "name": "Боевой Клич",
+        "emoji": "📣",
+        "type": "physical",
+        "cooldown": 30,
+        "base_dmg": (42, 60),
+        "description": "Боевой клич, вселяющий ужас. Мощный физический удар.",
+        "price": 20_000,
+    },
+    "dark_nova": {
+        "key": "dark_nova",
+        "name": "Тёмная Новa",
+        "emoji": "🖤",
+        "type": "magic",
+        "cooldown": 55,
+        "base_dmg": (80, 115),
+        "description": "Взрыв тёмной материи. Разрушительная тёмная магия.",
+        "price": 60_000,
+    },
+    "chain_lightning": {
+        "key": "chain_lightning",
+        "name": "Цепная Молния",
+        "emoji": "🌩️",
+        "type": "magic",
+        "cooldown": 24,
+        "base_dmg": (32, 48),
+        "description": "Молния, скачущая от цели к цели. Стабильный маг. удар.",
+        "price": 16_000,
+    },
+    "titan_slam": {
+        "key": "titan_slam",
+        "name": "Удар Титана",
+        "emoji": "⚒️",
+        "type": "physical",
+        "cooldown": 42,
+        "base_dmg": (62, 88),
+        "description": "Удар с силой титана. Сотрясает врага до основания.",
+        "price": 40_000,
+    },
+    "divine_wrath": {
+        "key": "divine_wrath",
+        "name": "Гнев Небес",
+        "emoji": "⚜️",
+        "type": "magic",
+        "cooldown": 60,
+        "base_dmg": (90, 130),
+        "description": "Священный огонь небес. Абсолютное разрушение.",
+        "price": 80_000,
+    },
+    "mega_shield": {
+        "key": "mega_shield",
+        "name": "Мега-Щит",
+        "emoji": "🔰",
+        "type": "shield",
+        "cooldown": 40,
+        "shield_amount": (50, 80),
+        "description": "Огромный магический щит. Поглощает колоссальный урон.",
+        "price": 28_000,
     },
 }
 
-SKILLS_ORDER = ["mag_ball", "mag_block", "shield", "explosion", "freeze"]
+SKILLS_ORDER_BASE = ["mag_ball", "explosion", "shield"]
+SKILLS_ORDER = list(SKILLS.keys())
+
+
+def get_owned_skills(user_data: dict) -> list:
+    """Возвращает список ключей навыков, которыми владеет пользователь."""
+    # Базовые всегда есть
+    base = [k for k, v in SKILLS.items() if v["price"] == 0]
+    owned = user_data.get("duel_owned_skills", [])
+    result = []
+    for k in base:
+        if k not in result:
+            result.append(k)
+    for k in owned:
+        if k not in result:
+            result.append(k)
+    return result
 
 
 def _calc_skill_damage(skill_key: str, attacker_stats: dict, defender_stats: dict) -> dict:
-    """Вычислить урон от навыка с учётом характеристик обеих сторон."""
+    """Вычислить урон от навыка."""
     sk = SKILLS[skill_key]
     result = {"type": sk["type"], "skill": skill_key}
-
-    atk = attacker_stats.get("dmg", 15)
 
     if sk["type"] == "magic":
         base_min, base_max = sk["base_dmg"]
         base = random.randint(base_min, base_max)
-        mag_bonus = atk * 0.6
         enemy_resist = max(0, defender_stats.get("mag_def", 10) * 0.5)
-        dmg = max(1, int(base + mag_bonus - enemy_resist))
+        dmg = max(1, int(base - enemy_resist))
         result["dmg"] = dmg
 
     elif sk["type"] == "physical":
         base_min, base_max = sk["base_dmg"]
         base = random.randint(base_min, base_max)
-        phys_bonus = atk
         enemy_resist = max(0, defender_stats.get("phys_def", 10) * 0.4)
-        dmg = max(1, int(base + phys_bonus - enemy_resist))
+        dmg = max(1, int(base - enemy_resist))
         result["dmg"] = dmg
 
     elif sk["type"] == "shield":
@@ -477,51 +570,40 @@ def _calc_skill_damage(skill_key: str, attacker_stats: dict, defender_stats: dic
         result["shield"] = random.randint(sh_min, sh_max)
         result["dmg"] = 0
 
-    # Особый эффект заморозки
     if skill_key == "freeze":
         result["freeze"] = True
+
+    if skill_key == "soul_drain":
+        result["drain_regen"] = sk.get("drain_regen", 15)
 
     return result
 
 
 # ════════════════════════════════════════════════════════════
 #  ПОИСК ПРОТИВНИКА / МАТЧМЕЙКИНГ
-#  Хранение: user_data["duel_queue"] = timestamp попадания в очередь
-#            активный бой: user_data["duel_battle"] = dict (состояние боя)
 # ════════════════════════════════════════════════════════════
 
-# in-memory очередь: uid -> (timestamp, user_data)
 _match_queue: dict[int, tuple] = {}
 
 
 def join_queue(uid: int, user_data: dict) -> dict | None:
-    """Добавить игрока в очередь поиска.
-    Если в очереди уже есть другой — создать бой и вернуть battle_state.
-    Иначе вернуть None (ждём).
-    """
     now = int(time.time())
-
-    # Убираем устаревших (>120 сек) из очереди
     stale = [k for k, (ts, _) in _match_queue.items() if now - ts > 120]
     for k in stale:
         _match_queue.pop(k, None)
 
-    # Ищем соперника
     for opponent_uid, (ts, opp_data) in list(_match_queue.items()):
         if opponent_uid == uid:
             continue
-        # Нашли! Убираем соперника из очереди
         _match_queue.pop(opponent_uid, None)
         battle = _create_battle(uid, user_data, opponent_uid, opp_data)
         return battle
 
-    # Никого нет — встаём в очередь
     _match_queue[uid] = (now, user_data)
     return None
 
 
 def leave_queue(uid: int):
-    """Покинуть очередь поиска."""
     _match_queue.pop(uid, None)
 
 
@@ -534,25 +616,31 @@ def in_queue(uid: int) -> bool:
 # ════════════════════════════════════════════════════════════
 
 BASE_STATS = {
-    "hp": 100, "dmg": 15, "regen": 5,
+    "hp": 100, "dmg": 0, "regen": 5,
     "phys_def": 10, "mag_def": 10, "stamina": 20,
 }
 
 
 def _calc_stats(user_data: dict) -> dict:
+    """
+    Считаем статы персонажа.
+    Снаряжение даёт hp, phys_def, mag_def, regen, stamina — НЕ dmg.
+    Урон (dmg) снаряжение не даёт вообще.
+    """
     equipped = user_data.get("duel_equipped", {})
-    stats    = dict(BASE_STATS)
+    stats = dict(BASE_STATS)
     for item_key in equipped.values():
         item = GEAR_CATALOG.get(item_key)
         if not item:
             continue
         for stat, bonus in item["bonus"].items():
+            if stat == "dmg":
+                continue   # снаряжение НЕ добавляет урон
             stats[stat] = stats.get(stat, 0) + bonus
     return stats
 
 
 def _create_battle(uid1: int, data1: dict, uid2: int, data2: dict) -> dict:
-    """Создать состояние нового боя между двумя игроками."""
     stats1 = _calc_stats(data1)
     stats2 = _calc_stats(data2)
 
@@ -571,17 +659,16 @@ def _create_battle(uid1: int, data1: dict, uid2: int, data2: dict) -> dict:
         "p2_hp_max": stats2["hp"],
         "p1_stats": stats1,
         "p2_stats": stats2,
-        "p1_shield": 0,     # активный щит
+        "p1_shield": 0,
         "p2_shield": 0,
-        "p1_frozen": False,  # пропускает ход
+        "p1_frozen": False,
         "p2_frozen": False,
-        # Перезарядка навыков: skill_key -> unix timestamp готовности
         "p1_cooldowns": {},
         "p2_cooldowns": {},
-        "turn": uid1,       # чья очередь ходить (оба могут жать когда хотят)
+        "turn": uid1,
         "started_at": now,
         "last_action": now,
-        "log": [],           # лог действий
+        "log": [],
         "finished": False,
         "winner_uid": None,
     }
@@ -589,7 +676,6 @@ def _create_battle(uid1: int, data1: dict, uid2: int, data2: dict) -> dict:
 
 
 def _get_player_prefix(battle: dict, uid: int) -> str:
-    """Вернуть 'p1' или 'p2' для данного uid."""
     return "p1" if battle["p1_uid"] == uid else "p2"
 
 
@@ -597,11 +683,7 @@ def _get_enemy_prefix(battle: dict, uid: int) -> str:
     return "p2" if battle["p1_uid"] == uid else "p1"
 
 
-def battle_use_skill(battle: dict, uid: int, skill_key: str) -> dict:
-    """
-    Применить навык в бою. Возвращает обновлённый battle + result dict.
-    result: {"ok": bool, "msg": str, "dmg": int, "effect": str|None}
-    """
+def battle_use_skill(battle: dict, uid: int, skill_key: str) -> tuple:
     now = int(time.time())
 
     if battle.get("finished"):
@@ -610,12 +692,10 @@ def battle_use_skill(battle: dict, uid: int, skill_key: str) -> dict:
     me  = _get_player_prefix(battle, uid)
     foe = _get_enemy_prefix(battle, uid)
 
-    # Проверяем заморозку
     if battle.get(f"{me}_frozen"):
         battle[f"{me}_frozen"] = False
         return battle, {"ok": False, "msg": "❄️ Ты заморожен и пропускаешь ход!"}
 
-    # Проверяем кулдаун
     cooldowns = battle.get(f"{me}_cooldowns", {})
     ready_at  = cooldowns.get(skill_key, 0)
     if now < ready_at:
@@ -626,7 +706,6 @@ def battle_use_skill(battle: dict, uid: int, skill_key: str) -> dict:
     if not sk:
         return battle, {"ok": False, "msg": "Неизвестный навык."}
 
-    # Ставим кулдаун
     cooldowns[skill_key] = now + sk["cooldown"]
     battle[f"{me}_cooldowns"] = cooldowns
 
@@ -643,7 +722,6 @@ def battle_use_skill(battle: dict, uid: int, skill_key: str) -> dict:
         log_entry = f"{battle[f'{me}_name']}: {sk['emoji']} {sk['name']} → {effect_msg}"
     else:
         raw_dmg = result["dmg"]
-        # Учитываем щит врага
         foe_shield = battle.get(f"{foe}_shield", 0)
         if foe_shield > 0:
             absorbed = min(foe_shield, raw_dmg)
@@ -651,36 +729,39 @@ def battle_use_skill(battle: dict, uid: int, skill_key: str) -> dict:
             battle[f"{foe}_shield"] = foe_shield - absorbed
             effect_msg += f" (щит -{absorbed})"
 
-        # Наносим урон
         battle[f"{foe}_hp"] = max(0, battle[f"{foe}_hp"] - raw_dmg)
         result["dmg"] = raw_dmg
 
-        # Заморозка
         if result.get("freeze"):
             battle[f"{foe}_frozen"] = True
             effect_msg += " ❄️ заморозка!"
+
+        # Soul drain — восстановить HP атакующему
+        if result.get("drain_regen"):
+            drain = result["drain_regen"]
+            hp_max = battle[f"{me}_hp_max"]
+            battle[f"{me}_hp"] = min(hp_max, battle[f"{me}_hp"] + drain)
+            effect_msg += f" 💜+{drain}HP"
 
         log_entry = (
             f"{battle[f'{me}_name']}: {sk['emoji']} {sk['name']} "
             f"→ -{raw_dmg} HP{effect_msg}"
         )
 
-    # Регенерация при каждом ходу
+    # Регенерация
     regen = my_stats.get("regen", 0)
     if regen > 0:
         hp_max = battle[f"{me}_hp_max"]
         battle[f"{me}_hp"] = min(hp_max, battle[f"{me}_hp"] + regen)
 
-    # Добавляем лог
     battle["log"].append(log_entry)
     if len(battle["log"]) > 6:
         battle["log"] = battle["log"][-6:]
 
-    # Проверяем конец боя
     if battle["p1_hp"] <= 0 or battle["p2_hp"] <= 0:
         battle["finished"] = True
         if battle["p1_hp"] <= 0 and battle["p2_hp"] <= 0:
-            battle["winner_uid"] = None  # ничья
+            battle["winner_uid"] = None
         elif battle["p1_hp"] <= 0:
             battle["winner_uid"] = battle["p2_uid"]
         else:
@@ -708,11 +789,11 @@ def battle_text(battle: dict, uid: int) -> str:
     me  = _get_player_prefix(battle, uid)
     foe = _get_enemy_prefix(battle, uid)
 
-    my_name  = battle[f"{me}_name"]
-    foe_name = battle[f"{foe}_name"]
-    my_hp    = battle[f"{me}_hp"]
-    my_hp_max = battle[f"{me}_hp_max"]
-    foe_hp   = battle[f"{foe}_hp"]
+    my_name    = battle[f"{me}_name"]
+    foe_name   = battle[f"{foe}_name"]
+    my_hp      = battle[f"{me}_hp"]
+    my_hp_max  = battle[f"{me}_hp_max"]
+    foe_hp     = battle[f"{foe}_hp"]
     foe_hp_max = battle[f"{foe}_hp_max"]
 
     my_bar  = _hp_bar(my_hp, my_hp_max)
@@ -730,7 +811,6 @@ def battle_text(battle: dict, uid: int) -> str:
     if battle.get(f"{foe}_frozen"):
         frozen_note += f"\n❄️ <b>{foe_name} заморожен!</b>"
 
-    # Лог последних действий
     log_lines = battle.get("log", [])
     log_block = ""
     if log_lines:
@@ -773,12 +853,17 @@ def battle_text(battle: dict, uid: int) -> str:
     )
 
 
-# ── Боевая клавиатура (навыки с кулдаунами) ─────────────────
+# ── Боевая клавиатура (навыки с кулдаунами, таймер обновляется) ──────────
 
 def battle_keyboard(battle: dict, uid: int) -> InlineKeyboardMarkup:
     me  = _get_player_prefix(battle, uid)
     now = int(time.time())
     cooldowns = battle.get(f"{me}_cooldowns", {})
+
+    # Узнаём какими навыками владеет игрок
+    # Нужен user_data, но в battle его нет — храним uid->data в _battle_user_data
+    # Используем _battle_skill_sets если есть, иначе базовые
+    p_skills = battle.get(f"{me}_skills", SKILLS_ORDER_BASE)
 
     builder = InlineKeyboardBuilder()
 
@@ -791,10 +876,11 @@ def battle_keyboard(battle: dict, uid: int) -> InlineKeyboardMarkup:
         ))
         return builder.as_markup()
 
-    # Собираем кнопки навыков
     skill_buttons = []
-    for skill_key in SKILLS_ORDER:
-        sk = SKILLS[skill_key]
+    for skill_key in p_skills:
+        sk = SKILLS.get(skill_key)
+        if not sk:
+            continue
         ready_at = cooldowns.get(skill_key, 0)
         left = ready_at - now
         if left > 0:
@@ -806,13 +892,108 @@ def battle_keyboard(battle: dict, uid: int) -> InlineKeyboardMarkup:
             callback_data=f"duel_skill:{skill_key}"
         ))
 
-    # Раскладка: 2 + 2 + 1
-    builder.row(skill_buttons[0], skill_buttons[1])
-    builder.row(skill_buttons[2], skill_buttons[3])
-    builder.row(skill_buttons[4])
+    # Раскладка: по 2 в ряд
+    for i in range(0, len(skill_buttons), 2):
+        pair = skill_buttons[i:i+2]
+        builder.row(*pair)
 
     builder.row(InlineKeyboardButton(
         text="🏳️ Сдаться", callback_data="duel_surrender"
+    ))
+    return builder.as_markup()
+
+
+# ════════════════════════════════════════════════════════════
+#  МАГАЗИН НАВЫКОВ
+# ════════════════════════════════════════════════════════════
+
+SKILLS_SHOP_PAGE_SIZE = 5   # навыков на страницу
+
+
+def _skill_page_items(page: int) -> list:
+    """Возвращает навыки для страницы магазина (только платные)."""
+    paid = [k for k, v in SKILLS.items() if v["price"] > 0]
+    start = page * SKILLS_SHOP_PAGE_SIZE
+    return paid[start:start + SKILLS_SHOP_PAGE_SIZE], len(paid)
+
+
+def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
+    items, total = _skill_page_items(page)
+    total_pages = (total + SKILLS_SHOP_PAGE_SIZE - 1) // SKILLS_SHOP_PAGE_SIZE
+    owned_skills = get_owned_skills(user_data)
+    balance = user_data.get("balance", 0)
+
+    lines = []
+    for sk_key in items:
+        sk = SKILLS[sk_key]
+        owned = sk_key in owned_skills
+        if owned:
+            marker = "✅"
+            price_str = "куплено"
+        else:
+            marker = "🔒"
+            price_str = f"{_fmt(sk['price'])} монет"
+
+        if sk["type"] == "shield":
+            val = f"щит {sk['shield_amount'][0]}–{sk['shield_amount'][1]} HP"
+        else:
+            val = f"урон {sk['base_dmg'][0]}–{sk['base_dmg'][1]}"
+
+        lines.append(
+            f"{marker} {sk['emoji']} <b>{sk['name']}</b> [{price_str}]\n"
+            f"  ⏳{sk['cooldown']}с · {val}\n"
+            f"  <i>{sk['description']}</i>"
+        )
+
+    block = "\n\n".join(lines)
+    return (
+        f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>МАГАЗИН НАВЫКОВ</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>{block}</blockquote>\n\n'
+        f'💰 Баланс: <b>{_fmt(balance)}</b> монет · Стр. {page+1}/{total_pages}\n'
+        f'<i>Навыки дают урон в бою. Снаряжение урон НЕ даёт.</i>'
+    )
+
+
+def duel_skills_shop_keyboard(user_data: dict, page: int = 0) -> InlineKeyboardMarkup:
+    items, total = _skill_page_items(page)
+    total_pages = (total + SKILLS_SHOP_PAGE_SIZE - 1) // SKILLS_SHOP_PAGE_SIZE
+    owned_skills = get_owned_skills(user_data)
+    balance = user_data.get("balance", 0)
+    builder = InlineKeyboardBuilder()
+
+    for sk_key in items:
+        sk = SKILLS[sk_key]
+        owned = sk_key in owned_skills
+        if owned:
+            btn = InlineKeyboardButton(
+                text=f"✅ {sk['emoji']} {sk['name']}",
+                callback_data=f"duel_skill_owned:{sk_key}",
+            )
+        elif balance >= sk["price"]:
+            btn = InlineKeyboardButton(
+                text=f"🛒 {sk['emoji']} {sk['name']} — {_fmt(sk['price'])}",
+                callback_data=f"duel_skill_buy:{sk_key}",
+            )
+        else:
+            btn = InlineKeyboardButton(
+                text=f"💸 {sk['emoji']} {sk['name']} — {_fmt(sk['price'])}",
+                callback_data="duel_skill_nofunds",
+            )
+        builder.row(btn)
+
+    # Пагинация
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="◀️", callback_data=f"duel_skills_shop_page:{page-1}"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton(text="▶️", callback_data=f"duel_skills_shop_page:{page+1}"))
+    if nav:
+        builder.row(*nav)
+
+    builder.row(InlineKeyboardButton(
+        text="Назад", callback_data="duel_skills",
+        icon_custom_emoji_id=EMOJI_BACK,
     ))
     return builder.as_markup()
 
@@ -835,12 +1016,11 @@ def duel_search_text(in_queue_flag: bool = False) -> str:
         f'<tg-emoji emoji-id="{EMOJI_SEARCH}">🔍</tg-emoji> <b>ПОИСК ПРОТИВНИКА</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         '<blockquote>Нажми <b>«Найти бой»</b> для поиска соперника.\n\n'
-        'В бою тебе доступны 5 боевых навыков:\n'
-        '🔵 <b>Шар-маг</b> — маг. урон\n'
-        '🟣 <b>Блок-маг</b> — мощный маг. удар\n'
-        '🛡️ <b>Щит</b> — поглощает урон\n'
-        '💥 <b>Взрыв</b> — физ. урон\n'
-        '❄️ <b>Заморозка</b> — маг. урон + лишает хода</blockquote>'
+        'В бою тебе доступны твои навыки из магазина.\n'
+        'Урон зависит <b>только от навыков</b> — прокачивай их!\n'
+        '🔵 Маг. навыки снижаются магической защитой\n'
+        '💥 Физ. навыки снижаются физической защитой\n'
+        '🛡️ Щитовые навыки поглощают входящий урон</blockquote>'
     )
 
 
@@ -865,7 +1045,7 @@ def duel_search_keyboard(in_queue_flag: bool = False) -> InlineKeyboardMarkup:
 
 
 # ════════════════════════════════════════════════════════════
-#  ОРИГИНАЛЬНЫЕ ЭКРАНЫ (без изменений)
+#  ОРИГИНАЛЬНЫЕ ЭКРАНЫ
 # ════════════════════════════════════════════════════════════
 
 def duel_main_text() -> str:
@@ -874,8 +1054,10 @@ def duel_main_text() -> str:
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         '<blockquote>'
         'Испытай себя в бою один на один.\n'
-        'Собери снаряжение, прокачай навыки\n'
-        'и докажи, кто сильнейший в TGStellar.'
+        'Собери снаряжение для защиты, купи навыки для урона\n'
+        'и докажи, кто сильнейший в TGStellar.\n\n'
+        '⚔️ <b>Урон</b> — даётся навыками из магазина\n'
+        '🛡️ <b>Защита</b> — даётся снаряжением'
         '</blockquote>'
     )
 
@@ -927,8 +1109,8 @@ def duel_equip_text(user_data: dict) -> str:
     return (
         '<tg-emoji emoji-id="5445221832074483553">🎒</tg-emoji> <b>СНАРЯЖЕНИЕ</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote>{"    ".join("") + chr(10).join(lines)}</blockquote>\n\n'
-        '<i>Выбери слот для просмотра и покупки предметов</i>'
+        f'<blockquote>{chr(10).join(lines)}</blockquote>\n\n'
+        '<i>Снаряжение даёт HP и защиту — урон даётся навыками!</i>'
     )
 
 def duel_equip_keyboard() -> InlineKeyboardMarkup:
@@ -1027,6 +1209,8 @@ def duel_item_card_text(item_key: str, user_data: dict) -> str:
 
     bonus_lines = []
     for stat, val in item["bonus"].items():
+        if stat == "dmg":
+            continue
         emoji_s, ru, unit = STAT_META.get(stat, ("▫️", stat, ""))
         bonus_lines.append(f'  {emoji_s} <b>+{val}</b> {ru} <i>({unit})</i>')
     bonus_block = "\n".join(bonus_lines)
@@ -1038,7 +1222,8 @@ def duel_item_card_text(item_key: str, user_data: dict) -> str:
         f'<i>{item["ru_name"]}</i>  {stars}\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>{item["description"]}</blockquote>\n\n'
-        f'<b>Боевые бонусы:</b>\n{bonus_block}\n\n'
+        f'<b>Боевые бонусы (защита и HP):</b>\n{bonus_block}\n\n'
+        f'<i>💡 Урон в дуэли даётся навыками, а не снаряжением!</i>\n\n'
         f'{status_line}'
     )
 
@@ -1107,19 +1292,22 @@ def duel_charstats_text(user_data: dict) -> str:
     equipped   = user_data.get("duel_equipped", {})
     gear_count = len(equipped)
     gear_line  = f"надето {gear_count}/5 предм." if gear_count else "снаряжение не надето"
+    owned_sk   = get_owned_skills(user_data)
+    sk_count   = len(owned_sk)
 
     return (
         f'<tg-emoji emoji-id="{EMOJI_STATS_DUEL}">📊</tg-emoji> <b>ХАРАКТЕРИСТИКИ</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         '<blockquote>'
         f'<tg-emoji emoji-id="{EMOJI_HP}">❤️</tg-emoji> <b>Здоровье</b> — <b>{s["hp"]}</b> HP\n\n'
-        f'<tg-emoji emoji-id="{EMOJI_DMG}">⚔️</tg-emoji> <b>Урон</b> — <b>{s["dmg"]}</b> ATK\n\n'
         f'<tg-emoji emoji-id="{EMOJI_REGEN}">💚</tg-emoji> <b>Регенерация</b> — <b>{s["regen"]}</b> HP/ход\n\n'
         f'<tg-emoji emoji-id="{EMOJI_PHYS_DEF}">🛡️</tg-emoji> <b>Физ. защита</b> — <b>{s["phys_def"]}</b> DEF\n\n'
         f'<tg-emoji emoji-id="{EMOJI_MAG_DEF}">🔮</tg-emoji> <b>Маг. защита</b> — <b>{s["mag_def"]}</b> MDEF\n\n'
         f'<tg-emoji emoji-id="{EMOJI_STAMINA}">⚙️</tg-emoji> <b>Стойкость</b> — <b>{s["stamina"]}</b> STM'
         '</blockquote>\n\n'
-        f'🎽 <i>Снаряжение: {gear_line}</i>'
+        f'🎽 <i>Снаряжение: {gear_line}</i>\n'
+        f'⚔️ <i>Навыков куплено: {sk_count} шт.</i>\n\n'
+        f'<i>💡 Урон в дуэли зависит от купленных навыков,\nа не от снаряжения!</i>'
     )
 
 def duel_charstats_keyboard() -> InlineKeyboardMarkup:
@@ -1135,31 +1323,38 @@ def duel_charstats_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-# ── Экран навыков ────────────────────────────────────────────
+# ── Экран навыков (обзор + ссылка в магазин) ─────────────────
 
 def duel_skills_text() -> str:
-    lines = []
-    for sk_key in SKILLS_ORDER:
+    base_lines = []
+    for sk_key in SKILLS_ORDER_BASE:
         sk = SKILLS[sk_key]
         if sk["type"] == "shield":
             val = f"поглощает {sk['shield_amount'][0]}–{sk['shield_amount'][1]} HP"
         else:
-            val = f"урон {sk['base_dmg'][0]}–{sk['base_dmg'][1]}+ (зависит от ATK)"
-        lines.append(
+            val = f"урон {sk['base_dmg'][0]}–{sk['base_dmg'][1]}"
+        base_lines.append(
             f"{sk['emoji']} <b>{sk['name']}</b> [⏳{sk['cooldown']}с]\n"
-            f"  <i>{val}</i>\n"
-            f"  {sk['description']}"
+            f"  <i>{val}</i> · {sk['description']}"
         )
-    block = "\n\n".join(lines)
+    base_block = "\n\n".join(base_lines)
+
+    paid_count = len([k for k, v in SKILLS.items() if v["price"] > 0])
+
     return (
         f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>БОЕВЫЕ НАВЫКИ</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote>{block}</blockquote>\n\n'
-        '<i>Навыки доступны в бою. Каждый имеет время перезарядки.</i>'
+        f'<blockquote><b>🆓 Базовые навыки (бесплатно):</b>\n\n{base_block}</blockquote>\n\n'
+        f'<blockquote>🛒 <b>В магазине доступно ещё {paid_count} навыков</b>\n'
+        f'от слабых ударов до разрушительных ультимейтов!\n\n'
+        f'💡 <i>Урон зависит только от навыков — покупай их!</i></blockquote>'
     )
 
 def duel_skills_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="🛒 Магазин навыков", callback_data="duel_skills_shop",
+    ))
     builder.row(InlineKeyboardButton(
         text="Назад", callback_data="duel_main",
         icon_custom_emoji_id=EMOJI_BACK,
