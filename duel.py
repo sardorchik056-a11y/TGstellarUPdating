@@ -1758,6 +1758,18 @@ def duel_hp_status_text(uid: int, user_data: dict) -> str:
         '<blockquote>🚧 Раздел в разработке.\nСкоро будет доступен!</blockquote>'
     )
 
+def duel_soon_text(section: str) -> str:
+    labels = {
+        "search": "Поиск противника",
+        "invite": "Пригласить на поединок",
+        "skills": "Навыки",
+    }
+    name = labels.get(section, section)
+    return (
+        f'<tg-emoji emoji-id="{EMOJI_DUEL_MAIN}">⚔️</tg-emoji> <b>{name}</b>\n\n'
+        '<blockquote>🚧 Раздел в разработке.\nСкоро будет доступен!</blockquote>'
+    )
+
 def duel_back_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
