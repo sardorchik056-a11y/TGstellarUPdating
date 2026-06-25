@@ -42,7 +42,7 @@ GEAR_CATALOG = {
     "helmet-lvl1": {
         "slot": "helmet", "level": 1, "key": "helmet-lvl1",
         "name": "Helmet Lvl 1", "ru_name": "Железный Шлем",
-        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5445284980978621387",
+        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 5_000,
         "description": (
             "Грубо выкованный железный шлем без украшений. "
@@ -53,7 +53,7 @@ GEAR_CATALOG = {
     "helmet-lvl2": {
         "slot": "helmet", "level": 2, "key": "helmet-lvl2",
         "name": "Helmet Lvl 2", "ru_name": "Боевой Шлем",
-        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5445284980978621387",
+        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 15_000,
         "description": "Усиленный шлем с рунической вставкой. Рассеивает слабые магические атаки.",
         "bonus": {"hp": 20, "phys_def": 6, "mag_def": 5},
@@ -61,7 +61,7 @@ GEAR_CATALOG = {
     "helmet-lvl3": {
         "slot": "helmet", "level": 3, "key": "helmet-lvl3",
         "name": "Helmet Lvl 3", "ru_name": "Шлем Гвардейца",
-        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5445284980978621387",
+        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 35_000,
         "description": "Закалённый шлем королевской гвардии с забралом из мифрила.",
         "bonus": {"hp": 35, "phys_def": 10, "mag_def": 8, "stamina": 5},
@@ -69,7 +69,7 @@ GEAR_CATALOG = {
     "helmet-lvl4": {
         "slot": "helmet", "level": 4, "key": "helmet-lvl4",
         "name": "Helmet Lvl 4", "ru_name": "Шлем Стального Стража",
-        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5445284980978621387",
+        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 70_000,
         "description": "Реликвийный шлем с рунической гравировкой. Входящий урон частично поглощается барьером.",
         "bonus": {"hp": 50, "phys_def": 15, "mag_def": 12, "stamina": 10},
@@ -77,7 +77,7 @@ GEAR_CATALOG = {
     "helmet-lvl5": {
         "slot": "helmet", "level": 5, "key": "helmet-lvl5",
         "name": "Helmet Lvl 5", "ru_name": "Шлем Легенды",
-        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5445284980978621387",
+        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 150_000,
         "description": "Артефакт эпохи Первых Воинов. Ни одна стрела не может поколебать носителя.",
         "bonus": {"hp": 75, "phys_def": 22, "mag_def": 18, "stamina": 18},
@@ -87,7 +87,7 @@ GEAR_CATALOG = {
     "armor-lvl1": {
         "slot": "armor", "level": 1, "key": "armor-lvl1",
         "name": "Armor Lvl 1", "ru_name": "Кожаный Доспех",
-        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5447644880824181073",
+        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 6_000,
         "description": "Доспех из дублёной кожи. Лёгкий, не сковывает движений.",
         "bonus": {"hp": 15, "phys_def": 5},
@@ -95,7 +95,7 @@ GEAR_CATALOG = {
     "armor-lvl2": {
         "slot": "armor", "level": 2, "key": "armor-lvl2",
         "name": "Armor Lvl 2", "ru_name": "Кольчужный Доспех",
-        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5447644880824181073",
+        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 18_000,
         "description": "Тысячи закалённых колец. Хорошо поглощает рубящие удары.",
         "bonus": {"hp": 30, "phys_def": 12, "stamina": 5},
@@ -103,7 +103,7 @@ GEAR_CATALOG = {
     "armor-lvl3": {
         "slot": "armor", "level": 3, "key": "armor-lvl3",
         "name": "Armor Lvl 3", "ru_name": "Пластинчатый Доспех",
-        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5447644880824181073",
+        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 40_000,
         "description": "Боевые латы из стальных пластин. Сводят урон к минимуму.",
         "bonus": {"hp": 50, "phys_def": 20, "stamina": 8},
@@ -111,7 +111,7 @@ GEAR_CATALOG = {
     "armor-lvl4": {
         "slot": "armor", "level": 4, "key": "armor-lvl4",
         "name": "Armor Lvl 4", "ru_name": "Латы Воина Бездны",
-        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5447644880824181073",
+        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 80_000,
         "description": "Прочнейшие латы, выкованные в жерле вулкана тёмными кузнецами.",
         "bonus": {"hp": 75, "phys_def": 30, "mag_def": 8, "stamina": 12},
@@ -119,7 +119,7 @@ GEAR_CATALOG = {
     "armor-lvl5": {
         "slot": "armor", "level": 5, "key": "armor-lvl5",
         "name": "Armor Lvl 5", "ru_name": "Латы Абсолюта",
-        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5447644880824181073",
+        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 180_000,
         "description": "Легендарный доспех. Выкован из металла упавшей звезды.",
         "bonus": {"hp": 110, "phys_def": 45, "mag_def": 15, "stamina": 20},
@@ -129,7 +129,7 @@ GEAR_CATALOG = {
     "gloves-lvl1": {
         "slot": "gloves", "level": 1, "key": "gloves-lvl1",
         "name": "Gloves Lvl 1", "ru_name": "Боевые Рукавицы",
-        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5445284980978621387",
+        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 4_000,
         "description": "Кожаные рукавицы с наклёпками. Защищают кулаки.",
         "bonus": {"stamina": 5, "phys_def": 2},
@@ -137,7 +137,7 @@ GEAR_CATALOG = {
     "gloves-lvl2": {
         "slot": "gloves", "level": 2, "key": "gloves-lvl2",
         "name": "Gloves Lvl 2", "ru_name": "Латные Рукавицы",
-        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5445284980978621387",
+        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 12_000,
         "description": "Рукавицы с металлическими пластинами. Усиливают хват оружия.",
         "bonus": {"stamina": 8, "phys_def": 5},
@@ -145,7 +145,7 @@ GEAR_CATALOG = {
     "gloves-lvl3": {
         "slot": "gloves", "level": 3, "key": "gloves-lvl3",
         "name": "Gloves Lvl 3", "ru_name": "Наручи Теневого Клинка",
-        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5445284980978621387",
+        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 28_000,
         "description": "Боевые наручи с выдвижными шипами. Оружие теневых воинов.",
         "bonus": {"stamina": 12, "phys_def": 6, "mag_def": 3},
@@ -153,7 +153,7 @@ GEAR_CATALOG = {
     "gloves-lvl4": {
         "slot": "gloves", "level": 4, "key": "gloves-lvl4",
         "name": "Gloves Lvl 4", "ru_name": "Наручи Убийцы",
-        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5445284980978621387",
+        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 55_000,
         "description": "Зачарованные наручи элитных убийц гильдии Алой Тени.",
         "bonus": {"stamina": 16, "phys_def": 10, "mag_def": 5},
@@ -161,7 +161,7 @@ GEAR_CATALOG = {
     "gloves-lvl5": {
         "slot": "gloves", "level": 5, "key": "gloves-lvl5",
         "name": "Gloves Lvl 5", "ru_name": "Длани Хаоса",
-        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5445284980978621387",
+        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 120_000,
         "description": "Артефактные перчатки, пронизанные энергией первозданного хаоса.",
         "bonus": {"stamina": 22, "phys_def": 14, "mag_def": 8, "regen": 3},
@@ -171,7 +171,7 @@ GEAR_CATALOG = {
     "pants-lvl1": {
         "slot": "pants", "level": 1, "key": "pants-lvl1",
         "name": "Pants Lvl 1", "ru_name": "Боевые Штаны",
-        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "5445284980978621387",
+        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 4_500,
         "description": "Прочные штаны с кожаными вставками. Дают свободу движений.",
         "bonus": {"hp": 8, "stamina": 5},
@@ -179,7 +179,7 @@ GEAR_CATALOG = {
     "pants-lvl2": {
         "slot": "pants", "level": 2, "key": "pants-lvl2",
         "name": "Pants Lvl 2", "ru_name": "Кольчужные Поножи",
-        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "5445284980978621387",
+        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 14_000,
         "description": "Усиленные поножи с кольчужными вставками на бёдрах.",
         "bonus": {"hp": 18, "stamina": 10, "phys_def": 4},
@@ -187,7 +187,7 @@ GEAR_CATALOG = {
     "pants-lvl3": {
         "slot": "pants", "level": 3, "key": "pants-lvl3",
         "name": "Pants Lvl 3", "ru_name": "Поножи Железного Рыцаря",
-        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "5445284980978621387",
+        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 30_000,
         "description": "Тяжёлые боевые штаны с наколенниками из закалённой стали.",
         "bonus": {"hp": 30, "stamina": 16, "phys_def": 7},
@@ -195,7 +195,7 @@ GEAR_CATALOG = {
     "pants-lvl4": {
         "slot": "pants", "level": 4, "key": "pants-lvl4",
         "name": "Pants Lvl 4", "ru_name": "Зачарованные Поножи",
-        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "5445284980978621387",
+        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 60_000,
         "description": "Латные поножи с кристаллами выносливости. Восстанавливают силы в бою.",
         "bonus": {"hp": 45, "stamina": 22, "phys_def": 11, "regen": 3},
@@ -203,7 +203,7 @@ GEAR_CATALOG = {
     "pants-lvl5": {
         "slot": "pants", "level": 5, "key": "pants-lvl5",
         "name": "Pants Lvl 5", "ru_name": "Поножи Вечности",
-        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "5445284980978621387",
+        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 130_000,
         "description": "Реликвийные поножи. Тело бойца отказывается сдаваться.",
         "bonus": {"hp": 65, "stamina": 32, "phys_def": 16, "regen": 6},
@@ -213,7 +213,7 @@ GEAR_CATALOG = {
     "boots-lvl1": {
         "slot": "boots", "level": 1, "key": "boots-lvl1",
         "name": "Boots Lvl 1", "ru_name": "Походные Сапоги",
-        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5445284980978621387",
+        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 3_500,
         "description": "Добротные кожаные сапоги. Мягкая подошва гасит шум шагов.",
         "bonus": {"regen": 3, "stamina": 3},
@@ -221,7 +221,7 @@ GEAR_CATALOG = {
     "boots-lvl2": {
         "slot": "boots", "level": 2, "key": "boots-lvl2",
         "name": "Boots Lvl 2", "ru_name": "Сапоги Следопыта",
-        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5445284980978621387",
+        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 11_000,
         "description": "Лёгкие сапоги из кожи ночной пантеры. Почти бесшумны.",
         "bonus": {"regen": 5, "stamina": 6, "phys_def": 2},
@@ -229,7 +229,7 @@ GEAR_CATALOG = {
     "boots-lvl3": {
         "slot": "boots", "level": 3, "key": "boots-lvl3",
         "name": "Boots Lvl 3", "ru_name": "Сапоги Ветра Пустоши",
-        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5445284980978621387",
+        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 25_000,
         "description": "Сапоги из кожи горного дракона, пропитанные эликсиром скорости.",
         "bonus": {"regen": 8, "stamina": 10, "phys_def": 4},
@@ -237,7 +237,7 @@ GEAR_CATALOG = {
     "boots-lvl4": {
         "slot": "boots", "level": 4, "key": "boots-lvl4",
         "name": "Boots Lvl 4", "ru_name": "Сапоги Призрака",
-        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5445284980978621387",
+        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 50_000,
         "description": "Зачарованные сапоги разведчиков. Молниеносное перемещение.",
         "bonus": {"regen": 12, "stamina": 14, "phys_def": 6},
@@ -245,7 +245,7 @@ GEAR_CATALOG = {
     "boots-lvl5": {
         "slot": "boots", "level": 5, "key": "boots-lvl5",
         "name": "Boots Lvl 5", "ru_name": "Сапоги Грома",
-        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5445284980978621387",
+        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 110_000,
         "description": "Реликвийные сапоги Громового Бога. Надевший их — неудержим.",
         "bonus": {"regen": 18, "stamina": 20, "phys_def": 8},
@@ -1434,14 +1434,32 @@ def duel_equip_text(user_data: dict) -> str:
         '<i>Снаряжение даёт HP и защиту — урон даётся навыками!</i>'
     )
 
-def duel_equip_keyboard() -> InlineKeyboardMarkup:
+_SLOT_EMOJI_IDS = {
+    "armor":  "5454168390685965478",
+    "helmet": "5260546085251739109",
+    "pants":  "4952249553173613188",
+    "boots":  "5776192535890235363",
+    "gloves": "5404591969735308062",
+}
+
+def duel_equip_keyboard(user_data: dict = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     row_buf = []
     for slot in GEAR_SLOTS_ORDER:
-        row_buf.append(InlineKeyboardButton(
+        is_owned = user_data and owned_level(slot, user_data) > 0
+        btn = InlineKeyboardButton(
             text=f"{slot_emoji(slot)} {slot_label(slot)}",
             callback_data=f"duel_equip_slot:{slot}",
-        ))
+            icon_custom_emoji_id=_SLOT_EMOJI_IDS.get(slot),
+        )
+        if is_owned:
+            btn = InlineKeyboardButton(
+                text=f"{slot_emoji(slot)} {slot_label(slot)}",
+                callback_data=f"duel_equip_slot:{slot}",
+                icon_custom_emoji_id=_SLOT_EMOJI_IDS.get(slot),
+                style="success",
+            )
+        row_buf.append(btn)
         if len(row_buf) == 2:
             builder.row(*row_buf)
             row_buf = []
@@ -1487,21 +1505,34 @@ def duel_equip_slot_keyboard(slot: str, user_data: dict) -> InlineKeyboardMarkup
     ow_lvl = owned_level(slot, user_data)
     eq_lvl = equipped_level(slot, user_data)
     builder = InlineKeyboardBuilder()
+    slot_eid = _SLOT_EMOJI_IDS.get(slot)
 
     for lvl in range(1, 6):
         item_key = f"{slot}-lvl{lvl}"
         item     = GEAR_CATALOG[item_key]
         if lvl == eq_lvl:
             btn_text = f"✅ [{item['name']}]"
+            builder.row(InlineKeyboardButton(
+                text=btn_text,
+                callback_data=f"duel_item_card:{item_key}",
+                icon_custom_emoji_id=slot_eid,
+                style="success",
+            ))
         elif lvl <= ow_lvl:
             btn_text = f"📦 [{item['name']}]"
+            builder.row(InlineKeyboardButton(
+                text=btn_text,
+                callback_data=f"duel_item_card:{item_key}",
+                icon_custom_emoji_id=slot_eid,
+                style="success",
+            ))
         else:
             btn_text = f"🔒 [{item['name']}] — {_fmt(item['price'])} монет"
-
-        builder.row(InlineKeyboardButton(
-            text=btn_text,
-            callback_data=f"duel_item_card:{item_key}",
-        ))
+            builder.row(InlineKeyboardButton(
+                text=btn_text,
+                callback_data=f"duel_item_card:{item_key}",
+                icon_custom_emoji_id=slot_eid,
+            ))
 
     builder.row(InlineKeyboardButton(
         text="Назад", callback_data="duel_equip",
@@ -1555,28 +1586,35 @@ def duel_item_card_keyboard(item_key: str, user_data: dict) -> InlineKeyboardMar
     eq_lvl = equipped_level(slot, user_data)
     lvl    = item["level"]
     balance = user_data.get("balance", 0)
+    slot_eid = _SLOT_EMOJI_IDS.get(slot)
     builder = InlineKeyboardBuilder()
 
     if lvl == eq_lvl:
         builder.row(InlineKeyboardButton(
             text="❌ Снять",
             callback_data=f"duel_gear_unequip:{item_key}",
+            icon_custom_emoji_id=slot_eid,
         ))
     elif lvl <= ow_lvl:
         builder.row(InlineKeyboardButton(
             text="✅ Надеть",
             callback_data=f"duel_gear_equip:{item_key}",
+            icon_custom_emoji_id=slot_eid,
+            style="success",
         ))
     else:
         if balance >= item["price"]:
             builder.row(InlineKeyboardButton(
                 text=f"🛒 Купить — {_fmt(item['price'])} монет",
                 callback_data=f"duel_gear_buy:{item_key}",
+                icon_custom_emoji_id=slot_eid,
+                style="success",
             ))
         else:
             builder.row(InlineKeyboardButton(
                 text=f"💸 Недостаточно монет",
                 callback_data="duel_gear_nofunds",
+                icon_custom_emoji_id=slot_eid,
             ))
 
     builder.row(InlineKeyboardButton(
