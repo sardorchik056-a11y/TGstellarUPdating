@@ -15,7 +15,14 @@ EMOJI_INVITE       = "5332724926216428039"   # 👥
 EMOJI_EQUIP        = "5445221832074483553"   # 🎒
 EMOJI_SKILLS       = "5224607267797606837"   # 🔮
 EMOJI_STATS_DUEL   = "5231200819986047254"   # 📊
-EMOJI_SHOP         = "5447183459602669338"   # 🛒 (магазин/купить)
+EMOJI_SHOP         = "5447183459602669338"   # 🛒
+
+EMOJI_HP           = "5431815452437257407"   # ❤️
+EMOJI_DMG          = "5440539497383087970"   # ⚔️ урон
+EMOJI_REGEN        = "5226711870492020965"   # 💚 восстановление
+EMOJI_PHYS_DEF     = "5447644880824181073"   # 🛡️ физ защита
+EMOJI_MAG_DEF      = "5224607267797606837"   # 🔮 маг защита
+EMOJI_STAMINA      = "5431815452437257407"   # 🔩 стойкость
 
 
 # ── Каталог снаряжения ───────────────────────────────────────
@@ -240,11 +247,11 @@ def duel_equip_slot_keyboard(slot_key: str, user_data: dict) -> InlineKeyboardMa
             )
         )
     else:
-        # Купить (заглушка)
+        # Купить и сразу надеть
         builder.row(
             InlineKeyboardButton(
                 text=f"🛒 Купить — {_fmt(GEAR_SLOTS[slot_key]['price'])} монет",
-                callback_data=f"duel_gear_buy:{slot_key}",
+                callback_data=f"duel_gear_buy_equip:{slot_key}",
             )
         )
 
@@ -258,18 +265,135 @@ def duel_equip_slot_keyboard(slot_key: str, user_data: dict) -> InlineKeyboardMa
     return builder.as_markup()
 
 
+# ── Хелпер: купить и сразу надеть ───────────────────────────
+
+def apply_gear_purchase(slot_key: str, user_data: dict) -> dict:
+    """
+    Вызывается после успешного списания монет.
+    Добавляет предмет в инвентарь и сразу надевает его.
+    Возвращает обновлённый user_data (изменяет и на месте).
+
+    Пример использования в хендлере duel_gear_buy_equip:{slot_key}:
+
+        slot_key = callback.data.split(":")[1]
+        g = GEAR_SLOTS[slot_key]
+        if user_data["balance"] < g["price"]:
+            # недостаточно монет
+            ...
+        else:
+            deduct_balance(user_id, g["price"])
+            apply_gear_purchase(slot_key, user_data)
+            save_user_data(user_id, user_data)
+            # показать обновлённую карточку слота
+            await callback.message.edit_text(
+                duel_equip_slot_text(slot_key, user_data),
+                reply_markup=duel_equip_slot_keyboard(slot_key, user_data),
+            )
+    """
+    owned    = user_data.setdefault("duel_owned_gear", [])
+    equipped = user_data.setdefault("duel_equipped", {})
+
+    if slot_key not in owned:
+        owned.append(slot_key)
+
+    equipped[slot_key] = slot_key   # надеваем сразу
+    return user_data
+
+
+# ── Характеристики ───────────────────────────────────────────
+
+# Базовые значения (без снаряжения)
+BASE_STATS = {
+    "hp":       100,
+    "dmg":      15,
+    "regen":    5,
+    "phys_def": 10,
+    "mag_def":  10,
+    "stamina":  20,
+}
+
+# Бонусы от каждого предмета снаряжения
+GEAR_STAT_BONUS = {
+    "armor":   {"hp": 40,  "phys_def": 20},
+    "helmet":  {"hp": 25,  "mag_def": 15,  "stamina": 10},
+    "gloves":  {"dmg": 10, "stamina": 5},
+    "pants":   {"hp": 20,  "stamina": 15,  "phys_def": 5},
+    "boots":   {"dmg": 5,  "regen": 5},
+}
+
+
+def _calc_stats(user_data: dict) -> dict:
+    """Считает итоговые характеристики с учётом надетого снаряжения."""
+    equipped = user_data.get("duel_equipped", {})
+    stats    = dict(BASE_STATS)
+    for slot_key in equipped.values():
+        for stat, bonus in GEAR_STAT_BONUS.get(slot_key, {}).items():
+            stats[stat] = stats.get(stat, 0) + bonus
+    return stats
+
+
+def duel_charstats_text(user_data: dict) -> str:
+    s        = _calc_stats(user_data)
+    equipped = user_data.get("duel_equipped", {})
+    gear_count = len(equipped)
+
+    gear_line = (
+        f"надето {gear_count}/5 предм."
+        if gear_count else "снаряжение не надето"
+    )
+
+    return (
+        f'<tg-emoji emoji-id="{EMOJI_STATS_DUEL}">📊</tg-emoji> '
+        f'<b>ХАРАКТЕРИСТИКИ</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>'
+        f'<tg-emoji emoji-id="{EMOJI_HP}">❤️</tg-emoji> '
+        f'<b>Очки здоровья</b> — <b>{s["hp"]}</b> HP\n\n'
+        f'<tg-emoji emoji-id="{EMOJI_DMG}">⚔️</tg-emoji> '
+        f'<b>Средний урон</b> — <b>{s["dmg"]}</b> ATK\n\n'
+        f'<tg-emoji emoji-id="{EMOJI_REGEN}">💚</tg-emoji> '
+        f'<b>Восстановление</b> — <b>{s["regen"]}</b> HP/ход\n\n'
+        f'<tg-emoji emoji-id="{EMOJI_PHYS_DEF}">🛡️</tg-emoji> '
+        f'<b>Физ. защита</b> — <b>{s["phys_def"]}</b> DEF\n\n'
+        f'<tg-emoji emoji-id="{EMOJI_MAG_DEF}">🔮</tg-emoji> '
+        f'<b>Маг. защита</b> — <b>{s["mag_def"]}</b> MDEF\n\n'
+        f'<tg-emoji emoji-id="{EMOJI_STAMINA}">⚙️</tg-emoji> '
+        f'<b>Стойкость</b> — <b>{s["stamina"]}</b> STM'
+        f'</blockquote>\n\n'
+        f'🎽 <i>Снаряжение: {gear_line}</i>'
+    )
+
+
+def duel_charstats_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="Экипировка",
+            callback_data="duel_equip",
+            icon_custom_emoji_id=EMOJI_EQUIP,
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="Назад",
+            callback_data="duel_main",
+            icon_custom_emoji_id=EMOJI_BACK,
+        )
+    )
+    return builder.as_markup()
+
+
 # ── Заглушки прочих подразделов ──────────────────────────────
 
 def duel_soon_text(section: str) -> str:
     labels = {
-        "search":    "Поиск противника",
-        "invite":    "Пригласить на поединок",
-        "skills":    "Навыки",
-        "charstats": "Характеристики",
+        "search": "Поиск противника",
+        "invite": "Пригласить на поединок",
+        "skills": "Навыки",
     }
     name = labels.get(section, section)
     return (
-        f'<tg-emoji emoji-id="5424972470023104089">⚔️</tg-emoji> <b>{name}</b>\n\n'
+        f'<tg-emoji emoji-id="{EMOJI_DUEL_MAIN}">⚔️</tg-emoji> <b>{name}</b>\n\n'
         '<blockquote>🚧 Раздел в разработке.\nСкоро будет доступен!</blockquote>'
     )
 
