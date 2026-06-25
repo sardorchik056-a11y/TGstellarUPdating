@@ -181,10 +181,19 @@ from duel import (
     duel_equip_slot_text, duel_equip_slot_keyboard,
     duel_item_card_text, duel_item_card_keyboard,
     duel_charstats_text, duel_charstats_keyboard,
+    duel_skills_text, duel_skills_keyboard,
+    duel_search_text, duel_search_keyboard,
+    battle_text, battle_keyboard,
+    battle_use_skill,
+    join_queue, leave_queue, in_queue,
     GEAR_CATALOG,
+    SKILLS,
     owned_level, equipped_level,
     apply_gear_purchase, apply_gear_equip, apply_gear_unequip,
 )
+
+# ── In-memory хранилище активных боёв (uid -> battle_state) ─────────
+_active_battles: dict[int, dict] = {}
 
 BOT_TOKEN = '8693034024:AAFQ8rUGuhJ5yT9QNZoZzAmzNMatp_SVSbk'
 
@@ -3717,11 +3726,137 @@ async def handle_callback(call: CallbackQuery):
             await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data))
             return
 
-        # ===== ДУЭЛИ: подразделы (заглушки) =====
-        if cd in ("duel_search", "duel_invite", "duel_skills"):
+        # ===== ДУЭЛИ: поиск — главный экран =====
+        if cd == "duel_search":
             await call.answer()
-            section = cd.split("_", 1)[1]
-            await edit(duel_soon_text(section), duel_back_keyboard())
+            if user.id in _active_battles:
+                battle = _active_battles[user.id]
+                await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                return
+            in_q = in_queue(user.id)
+            await edit(duel_search_text(in_q), duel_search_keyboard(in_q))
+            return
+
+        # ===== ДУЭЛИ: начать поиск =====
+        if cd == "duel_search_start":
+            await call.answer()
+            if user.id in _active_battles:
+                battle = _active_battles[user.id]
+                await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                return
+            battle = join_queue(user.id, data)
+            if battle:
+                p1_uid = battle["p1_uid"]
+                p2_uid = battle["p2_uid"]
+                _active_battles[p1_uid] = battle
+                _active_battles[p2_uid] = battle
+                await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                try:
+                    await bot.send_message(
+                        p2_uid,
+                        battle_text(battle, p2_uid),
+                        parse_mode="HTML",
+                        reply_markup=battle_keyboard(battle, p2_uid)
+                    )
+                except Exception:
+                    pass
+            else:
+                await edit(duel_search_text(True), duel_search_keyboard(True))
+            return
+
+        # ===== ДУЭЛИ: проверить поиск =====
+        if cd == "duel_search_check":
+            await call.answer()
+            if user.id in _active_battles:
+                battle = _active_battles[user.id]
+                await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                return
+            in_q = in_queue(user.id)
+            await edit(duel_search_text(in_q), duel_search_keyboard(in_q))
+            return
+
+        # ===== ДУЭЛИ: отменить поиск =====
+        if cd == "duel_search_cancel":
+            leave_queue(user.id)
+            await call.answer("Поиск отменён.")
+            await edit(duel_search_text(False), duel_search_keyboard(False))
+            return
+
+        # ===== ДУЭЛИ: применить навык =====
+        if cd.startswith("duel_skill:"):
+            skill_key = cd.split(":", 1)[1]
+            if user.id not in _active_battles:
+                await call.answer("Ты не в бою!", show_alert=True)
+                return
+            battle = _active_battles[user.id]
+            battle, result = battle_use_skill(battle, user.id, skill_key)
+            if not result["ok"]:
+                await call.answer(result["msg"], show_alert=True)
+                return
+            await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+            foe_uid = battle["p2_uid"] if battle["p1_uid"] == user.id else battle["p1_uid"]
+            try:
+                if battle.get("finished"):
+                    await bot.send_message(
+                        foe_uid,
+                        battle_text(battle, foe_uid),
+                        parse_mode="HTML",
+                        reply_markup=battle_keyboard(battle, foe_uid)
+                    )
+                    _active_battles.pop(user.id, None)
+                    _active_battles.pop(foe_uid, None)
+                else:
+                    log_entry = result.get("log_entry", "")
+                    if log_entry:
+                        await bot.send_message(
+                            foe_uid,
+                            f"⚔️ {log_entry}\n\n" + battle_text(battle, foe_uid),
+                            parse_mode="HTML",
+                            reply_markup=battle_keyboard(battle, foe_uid)
+                        )
+            except Exception:
+                pass
+            if result["ok"] and battle.get("finished"):
+                _active_battles.pop(user.id, None)
+            await call.answer()
+            return
+
+        # ===== ДУЭЛИ: сдаться =====
+        if cd == "duel_surrender":
+            if user.id not in _active_battles:
+                await call.answer("Ты не в бою!", show_alert=True)
+                return
+            battle = _active_battles[user.id]
+            if not battle.get("finished"):
+                foe_uid = battle["p2_uid"] if battle["p1_uid"] == user.id else battle["p1_uid"]
+                battle["finished"] = True
+                battle["winner_uid"] = foe_uid
+                battle["log"].append(f"🏳️ {data.get('first_name', 'Игрок')} сдался.")
+                try:
+                    await bot.send_message(
+                        foe_uid,
+                        "🏆 Противник сдался!\n\n" + battle_text(battle, foe_uid),
+                        parse_mode="HTML",
+                        reply_markup=battle_keyboard(battle, foe_uid)
+                    )
+                except Exception:
+                    pass
+                _active_battles.pop(foe_uid, None)
+            _active_battles.pop(user.id, None)
+            await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+            await call.answer("Ты сдался.")
+            return
+
+        # ===== ДУЭЛИ: навыки =====
+        if cd == "duel_skills":
+            await call.answer()
+            await edit(duel_skills_text(), duel_skills_keyboard())
+            return
+
+        # ===== ДУЭЛИ: подразделы (заглушки) =====
+        if cd == "duel_invite":
+            await call.answer()
+            await edit(duel_soon_text("invite"), duel_back_keyboard())
             return
 
         if cd == "duel_charstats":
