@@ -182,12 +182,14 @@ from duel import (
     duel_item_card_text, duel_item_card_keyboard,
     duel_charstats_text, duel_charstats_keyboard,
     duel_skills_text, duel_skills_keyboard,
+    duel_skills_shop_text, duel_skills_shop_keyboard,
     duel_search_text, duel_search_keyboard,
     battle_text, battle_keyboard,
     battle_use_skill,
     join_queue, leave_queue, in_queue,
     GEAR_CATALOG,
     SKILLS,
+    get_owned_skills,
     owned_level, equipped_level,
     apply_gear_purchase, apply_gear_equip, apply_gear_unequip,
 )
@@ -202,6 +204,10 @@ BOT_TOKEN = '8693034024:AAFQ8rUGuhJ5yT9QNZoZzAmzNMatp_SVSbk'
 bot = Bot(token=BOT_TOKEN)
 
 import re as _re
+
+
+def _fmt_d(n: int) -> str:
+    return f"{n:,}".replace(",", " ")
 
 def _plain(text: str) -> str:
     """Убирает HTML-теги и обрезает до 200 символов для call.answer()."""
@@ -3704,6 +3710,55 @@ async def handle_callback(call: CallbackQuery):
             await call.answer("💸 Недостаточно монет для покупки!", show_alert=True)
             return
 
+        # ===== ДУЭЛИ: магазин навыков =====
+        if cd == "duel_skills_shop":
+            await call.answer()
+            await edit(duel_skills_shop_text(data, 0), duel_skills_shop_keyboard(data, 0))
+            return
+
+        # ===== ДУЭЛИ: пагинация магазина навыков =====
+        if cd.startswith("duel_skills_shop_page:"):
+            page = int(cd.split(":", 1)[1])
+            await call.answer()
+            await edit(duel_skills_shop_text(data, page), duel_skills_shop_keyboard(data, page))
+            return
+
+        # ===== ДУЭЛИ: купить навык =====
+        if cd.startswith("duel_skill_buy:"):
+            sk_key = cd.split(":", 1)[1]
+            sk = SKILLS.get(sk_key)
+            if not sk:
+                await call.answer("Неизвестный навык.", show_alert=True)
+                return
+            price = sk["price"]
+            balance = data.get("balance", 0)
+            if balance < price:
+                _no_money_msg = f"Недостаточно монет! Нужно: {_fmt_d(price)} | У вас: {_fmt_d(balance)}"
+                await call.answer(_no_money_msg, show_alert=True)
+                return
+            owned_sk = data.setdefault("duel_owned_skills", [])
+            if sk_key in owned_sk:
+                await call.answer("Навык уже куплен!", show_alert=True)
+                return
+            data["balance"] -= price
+            owned_sk.append(sk_key)
+            save_user(user.id, data)
+            await call.answer(f"✅ Куплен навык: {sk['name']}!", show_alert=True)
+            await edit(duel_skills_shop_text(data, 0), duel_skills_shop_keyboard(data, 0))
+            return
+
+        # ===== ДУЭЛИ: навык уже куплен (заглушка) =====
+        if cd.startswith("duel_skill_owned:"):
+            sk_key = cd.split(":", 1)[1]
+            sk = SKILLS.get(sk_key) or {}
+            await call.answer(f"✅ {sk.get('name', 'Навык')} уже в твоём арсенале!", show_alert=True)
+            return
+
+        # ===== ДУЭЛИ: недостаточно монет (навык) =====
+        if cd == "duel_skill_nofunds":
+            await call.answer("💸 Недостаточно монет для покупки навыка!", show_alert=True)
+            return
+
         # ===== ДУЭЛИ: надеть предмет =====
         if cd.startswith("duel_gear_equip:"):
             item_key = cd.split(":", 1)[1]
@@ -3752,6 +3807,12 @@ async def handle_callback(call: CallbackQuery):
             if battle:
                 p1_uid = battle["p1_uid"]
                 p2_uid = battle["p2_uid"]
+                # Сохраняем список навыков каждого игрока в бой
+                from database import get_user as _gu_battle
+                _d1 = _gu_battle(p1_uid) or {}
+                _d2 = _gu_battle(p2_uid) or {}
+                battle["p1_skills"] = get_owned_skills(_d1)
+                battle["p2_skills"] = get_owned_skills(_d2)
                 _active_battles[p1_uid] = battle
                 _active_battles[p2_uid] = battle
                 # Показываем боевой экран инициатору (p1) — редактируем его сообщение
@@ -4438,6 +4499,45 @@ async def _poison_loop():
             print(f"[poison_loop] {_e}")
 
 
+
+async def _duel_timer_loop():
+    """Каждые 3 секунды обновляет боевые экраны активных дуэлей,
+    чтобы кнопки отображали актуальный таймер кулдауна."""
+    import time as _time
+    while True:
+        await asyncio.sleep(3)
+        try:
+            processed = set()
+            for uid, battle in list(_active_battles.items()):
+                if battle.get("finished"):
+                    continue
+                me = "p1" if battle["p1_uid"] == uid else "p2"
+                now = int(_time.time())
+                cooldowns = battle.get(f"{me}_cooldowns", {})
+                has_active_cd = any(v > now for v in cooldowns.values())
+                if not has_active_cd:
+                    continue
+                msg_info = _battle_msgs.get(uid)
+                if not msg_info:
+                    continue
+                # Дедупликация — не обновляем одно и то же сообщение дважды
+                msg_key = (msg_info[0], msg_info[1])
+                if msg_key in processed:
+                    continue
+                processed.add(msg_key)
+                try:
+                    await bot.edit_message_text(
+                        chat_id=msg_info[0],
+                        message_id=msg_info[1],
+                        text=battle_text(battle, uid),
+                        parse_mode="HTML",
+                        reply_markup=battle_keyboard(battle, uid),
+                    )
+                except Exception:
+                    pass
+        except Exception as _e:
+            print(f"[duel_timer_loop] {_e}")
+
 async def main():
     logging.basicConfig(level=logging.INFO)
 
@@ -4490,6 +4590,9 @@ async def main():
 
     # ── Запускаем фоновую задачу яда ──
     asyncio.create_task(_poison_loop())
+
+    # ── Запускаем таймер обновления кнопок дуэлей (каждые 3 сек) ──
+    asyncio.create_task(_duel_timer_loop())
 
     print("🤖 Бот запущен! БД: tgstellar.db")
     await dp.start_polling(bot)
