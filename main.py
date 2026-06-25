@@ -185,6 +185,9 @@ from duel import (
     duel_skills_shop_text, duel_skills_shop_keyboard,
     duel_skill_card_text, duel_skill_card_keyboard,
     duel_search_text, duel_search_keyboard,
+    duel_challenge_screen_text, duel_challenge_screen_keyboard,
+    duel_challenge_sent_text, duel_challenge_sent_keyboard,
+    duel_hp_status_text,
     battle_text, battle_keyboard,
     battle_use_skill,
     join_queue, leave_queue, in_queue,
@@ -197,6 +200,13 @@ from duel import (
     owned_level, equipped_level,
     apply_gear_purchase, apply_gear_equip, apply_gear_unequip,
     MAX_EQUIPPED_SKILLS,
+    # HP система
+    get_player_hp, set_player_hp, is_player_ready, player_hp_regen_seconds,
+    HP_REGEN_INTERVAL, HP_REGEN_AMOUNT,
+    # Вызов на дуэль
+    create_challenge, get_incoming_challenge, cancel_challenge,
+    accept_challenge, decline_challenge, start_challenge_battle,
+    challenge_invite_text, challenge_invite_keyboard,
 )
 
 # ── In-memory хранилище активных боёв (uid -> battle_state) ─────────
@@ -262,6 +272,9 @@ _promo_pending: dict[int, bool] = {}
 _cdl_input_pending: dict[int, str] = {}
 # Сообщение экрана ввода суммы: uid -> (chat_id, message_id)
 _cdl_input_msg: dict[int, tuple] = {}
+
+# Ожидание ввода цели для вызова на дуэль: uid -> True
+_challenge_input_pending: dict[int, bool] = {}
 
 EMOJI_DEPOSITS = "5427168083074628963"
 
@@ -1902,8 +1915,57 @@ async def handle_captcha_answer(message: Message):
                             await message.reply(promo_error_text(reason, lang), parse_mode="HTML")
                 return
 
-    # ── Ожидание ввода суммы вклада (один раз) ──
-    if uid in _cdl_input_pending:
+    # ── Ожидание ввода цели вызова на дуэль ──
+    if _challenge_input_pending.pop(uid, False):
+        from database import get_all_users as _gau_ch, get_user as _gu_ch2
+        target_raw = (message.text or "").strip().lstrip("@")
+        if not target_raw:
+            await message.reply("❌ Укажи ID или @юзернейм.", parse_mode="HTML")
+            return
+        all_users = _gau_ch()
+        target = None
+        if target_raw.lstrip("-").isdigit():
+            target = next((u for u in all_users if u["id"] == int(target_raw)), None)
+        else:
+            target = next(
+                (u for u in all_users if (u.get("username") or "").lower() == target_raw.lower()),
+                None
+            )
+        if not target:
+            await message.reply("❌ Игрок не найден. Он должен хотя бы раз написать боту.", parse_mode="HTML")
+            return
+        if target["id"] == uid:
+            await message.reply("❌ Нельзя вызвать самого себя!", parse_mode="HTML")
+            return
+        if target["id"] in _active_battles:
+            await message.reply("❌ Этот игрок уже находится в бою.", parse_mode="HTML")
+            return
+        target_name = target.get("first_name") or target.get("username") or str(target["id"])
+        # Создаём вызов
+        create_challenge(uid, target["id"], target_name)
+        # Уведомляем цель в ЛС
+        try:
+            await bot.send_message(
+                target["id"],
+                challenge_invite_text(u),
+                parse_mode="HTML",
+                reply_markup=challenge_invite_keyboard(uid),
+            )
+        except Exception:
+            await message.reply(
+                f"❌ Не удалось отправить уведомление <b>{target_name}</b> — возможно бот заблокирован.",
+                parse_mode="HTML"
+            )
+            cancel_challenge(uid)
+            return
+        await message.reply(
+            duel_challenge_sent_text(target_name),
+            parse_mode="HTML",
+            reply_markup=duel_challenge_sent_keyboard(),
+        )
+        return
+
+
         dep_key  = _cdl_input_pending.pop(uid)   # сразу сбрасываем — больше не ждём
         msg_info = _cdl_input_msg.pop(uid, None)
         raw = (message.text or "").strip().replace(" ", "").replace("_", "")
@@ -3671,7 +3733,7 @@ async def handle_callback(call: CallbackQuery):
         # ===== ДУЭЛИ: экипировка — список слотов =====
         if cd == "duel_equip":
             await call.answer()
-            await edit(duel_equip_text(data), duel_equip_keyboard(data))
+            await edit(duel_equip_text(data), duel_equip_keyboard())
             return
 
         # ===== ДУЭЛИ: список уровней слота =====
@@ -3827,24 +3889,43 @@ async def handle_callback(call: CallbackQuery):
 
         # ===== ДУЭЛИ: поиск — главный экран =====
         if cd == "duel_search":
-            await call.answer()
             if user.id in _active_battles:
+                await call.answer()
                 battle = _active_battles[user.id]
                 await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
                 _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
                 return
+            if not is_player_ready(user.id, data):
+                hp_now = get_player_hp(user.id, data)
+                secs   = player_hp_regen_seconds(user.id, data)
+                await call.answer(
+                    f"HP слишком низкий ({hp_now}/100)! Восстановится через {secs} сек.",
+                    show_alert=True
+                )
+                return
+            await call.answer()
             in_q = in_queue(user.id)
-            await edit(duel_search_text(in_q), duel_search_keyboard(in_q))
+            hp_note = duel_hp_status_text(user.id, data)
+            await edit(duel_search_text(in_q) + hp_note, duel_search_keyboard(in_q))
             return
 
         # ===== ДУЭЛИ: начать поиск =====
         if cd == "duel_search_start":
-            await call.answer()
             if user.id in _active_battles:
+                await call.answer()
                 battle = _active_battles[user.id]
                 await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
                 _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
                 return
+            if not is_player_ready(user.id, data):
+                hp_now = get_player_hp(user.id, data)
+                secs   = player_hp_regen_seconds(user.id, data)
+                await call.answer(
+                    f"HP слишком низкий ({hp_now}/100)! Следующий тик через {secs} сек.",
+                    show_alert=True
+                )
+                return
+            await call.answer()
             battle = join_queue(user.id, data)
             if battle:
                 p1_uid = battle["p1_uid"]
@@ -3939,6 +4020,12 @@ async def handle_callback(call: CallbackQuery):
                 _active_battles.pop(foe_uid, None)
                 _battle_msgs.pop(user.id, None)
                 _battle_msgs.pop(foe_uid, None)
+                # Сохраняем оставшийся HP игроков после боя
+                from database import get_user as _gu_hp
+                _d1 = _gu_hp(battle["p1_uid"]) or {}
+                _d2 = _gu_hp(battle["p2_uid"]) or {}
+                set_player_hp(battle["p1_uid"], battle["p1_hp"], _d1)
+                set_player_hp(battle["p2_uid"], battle["p2_hp"], _d2)
             await call.answer()
             return
 
@@ -3969,6 +4056,12 @@ async def handle_callback(call: CallbackQuery):
                 _battle_msgs.pop(foe_uid, None)
             _active_battles.pop(user.id, None)
             _battle_msgs.pop(user.id, None)
+            # Сохраняем HP после боя
+            from database import get_user as _gu_sr
+            _d1 = _gu_sr(battle["p1_uid"]) or {}
+            _d2 = _gu_sr(battle["p2_uid"]) or {}
+            set_player_hp(battle["p1_uid"], battle["p1_hp"], _d1)
+            set_player_hp(battle["p2_uid"], battle["p2_hp"], _d2)
             await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
             await call.answer("Ты сдался.")
             return
@@ -3980,14 +4073,99 @@ async def handle_callback(call: CallbackQuery):
             return
 
         # ===== ДУЭЛИ: подразделы (заглушки) =====
-        if cd == "duel_invite":
+        # ===== ДУЭЛИ: бросить вызов — экран ввода =====
+        if cd == "duel_challenge_start":
+            if user.id in _active_battles:
+                await call.answer("Ты уже в бою!", show_alert=True)
+                return
+            if not is_player_ready(user.id, data):
+                hp_now = get_player_hp(user.id, data)
+                secs   = player_hp_regen_seconds(user.id, data)
+                await call.answer(
+                    f"HP слишком низкий ({hp_now}/100)! Следующий тик через {secs} сек.",
+                    show_alert=True
+                )
+                return
             await call.answer()
-            await edit(duel_soon_text("invite"), duel_back_keyboard())
+            _challenge_input_pending[user.id] = True
+            await edit(duel_challenge_screen_text(), duel_challenge_screen_keyboard())
+            return
+
+        # ===== ДУЭЛИ: отменить вызов =====
+        if cd == "duel_challenge_cancel":
+            cancel_challenge(user.id)
+            _challenge_input_pending.pop(user.id, None)
+            await call.answer("Вызов отменён.")
+            await edit(duel_main_text(), duel_main_keyboard())
+            return
+
+        # ===== ДУЭЛИ: принять вызов =====
+        if cd.startswith("duel_challenge_accept:"):
+            challenger_uid = int(cd.split(":")[1])
+            if user.id in _active_battles:
+                await call.answer("Ты уже в бою!", show_alert=True)
+                return
+            if not is_player_ready(user.id, data):
+                hp_now = get_player_hp(user.id, data)
+                secs   = player_hp_regen_seconds(user.id, data)
+                await call.answer(
+                    f"HP слишком низкий ({hp_now}/100)! Сначала восстановись.",
+                    show_alert=True
+                )
+                return
+            await call.answer()
+            from database import get_user as _gu_ch
+            challenger_data = _gu_ch(challenger_uid)
+            if not challenger_data:
+                await call.answer("❌ Вызывающий не найден.", show_alert=True)
+                return
+            # Принимаем
+            result = accept_challenge(user.id)
+            if not result:
+                await call.answer("❌ Вызов истёк или уже не действителен.", show_alert=True)
+                await edit(duel_main_text(), duel_main_keyboard())
+                return
+            battle = start_challenge_battle(challenger_uid, challenger_data, user.id, data)
+            _active_battles[challenger_uid] = battle
+            _active_battles[user.id] = battle
+            # Показываем бой принявшему
+            await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+            _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
+            # Уведомляем вызывающего
+            try:
+                sent = await bot.send_message(
+                    challenger_uid,
+                    f'✅ <b>{data.get("first_name") or data.get("username") or "Игрок"} принял вызов! Бой начался!</b>\n\n'
+                    + battle_text(battle, challenger_uid),
+                    parse_mode="HTML",
+                    reply_markup=battle_keyboard(battle, challenger_uid),
+                )
+                _battle_msgs[challenger_uid] = (sent.chat.id, sent.message_id)
+            except Exception:
+                pass
+            return
+
+        # ===== ДУЭЛИ: отклонить вызов =====
+        if cd.startswith("duel_challenge_decline:"):
+            challenger_uid = int(cd.split(":")[1])
+            decline_challenge(user.id)
+            await call.answer("Вызов отклонён.")
+            await edit(duel_main_text(), duel_main_keyboard())
+            # Уведомляем вызывающего
+            try:
+                target_name = data.get("first_name") or data.get("username") or "Игрок"
+                await bot.send_message(
+                    challenger_uid,
+                    f'❌ <b>{target_name} отклонил твой вызов на дуэль.</b>',
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
             return
 
         if cd == "duel_charstats":
             await call.answer()
-            await edit(duel_charstats_text(data), duel_charstats_keyboard())
+            await edit(duel_charstats_text(data, uid=user.id), duel_charstats_keyboard())
             return
 
         # ===== ЗАГЛУШКИ (в разработке) =====
@@ -4580,6 +4758,54 @@ async def _duel_timer_loop():
         except Exception as _e:
             print(f"[duel_timer_loop] {_e}")
 
+async def _hp_regen_notify_loop():
+    """
+    Каждые 10 секунд тикает регенерация HP игроков вне боя.
+    Когда HP восстанавливается до 100 — шлёт уведомление.
+    """
+    # Просто держим словарь «уже уведомлён о полном HP»
+    _notified_full: set[int] = set()
+
+    while True:
+        await asyncio.sleep(HP_REGEN_INTERVAL)
+        try:
+            from database import get_all_users as _gau_regen
+            from duel import _player_hp as _phps, _calc_stats as _cs
+            for _d in _gau_regen():
+                _uid = _d["id"]
+                if _uid in _active_battles:
+                    continue
+                entry = _phps.get(_uid)
+                if entry is None:
+                    continue
+                import time as _t
+                now = int(_t.time())
+                elapsed = now - entry["last_regen_at"]
+                ticks   = elapsed // HP_REGEN_INTERVAL
+                if ticks > 0:
+                    hp_max = _cs(_d)["hp"]
+                    was_below_100 = entry["hp"] < 100
+                    entry["hp"] = min(hp_max, entry["hp"] + ticks * HP_REGEN_AMOUNT)
+                    entry["last_regen_at"] += ticks * HP_REGEN_INTERVAL
+                    # Уведомление только один раз когда достиг 100
+                    if was_below_100 and entry["hp"] >= 100 and _uid not in _notified_full:
+                        _notified_full.add(_uid)
+                        try:
+                            await bot.send_message(
+                                _uid,
+                                '❤️ <b>HP восстановлено!</b>\n\n'
+                                '<blockquote>Твоё здоровье полностью восстановлено.\n'
+                                'Теперь можно начинать новую дуэль!</blockquote>',
+                                parse_mode="HTML",
+                            )
+                        except Exception:
+                            pass
+                    elif entry["hp"] < 100:
+                        _notified_full.discard(_uid)
+        except Exception as _e:
+            print(f"[hp_regen_loop] {_e}")
+
+
 async def main():
     logging.basicConfig(level=logging.INFO)
 
@@ -4635,6 +4861,9 @@ async def main():
 
     # ── Запускаем таймер обновления кнопок дуэлей (каждые 3 сек) ──
     asyncio.create_task(_duel_timer_loop())
+
+    # ── Запускаем фоновую задачу регенерации HP вне боя ──
+    asyncio.create_task(_hp_regen_notify_loop())
 
     print("🤖 Бот запущен! БД: tgstellar.db")
     await dp.start_polling(bot)
