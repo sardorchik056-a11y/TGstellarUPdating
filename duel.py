@@ -791,20 +791,25 @@ def battle_keyboard(battle: dict, uid: int) -> InlineKeyboardMarkup:
         ))
         return builder.as_markup()
 
+    # Собираем кнопки навыков
+    skill_buttons = []
     for skill_key in SKILLS_ORDER:
         sk = SKILLS[skill_key]
         ready_at = cooldowns.get(skill_key, 0)
         left = ready_at - now
-
         if left > 0:
             btn_text = f"{sk['emoji']} {sk['name']} ⏳{left}с"
         else:
             btn_text = f"{sk['emoji']} {sk['name']}"
-
-        builder.row(InlineKeyboardButton(
+        skill_buttons.append(InlineKeyboardButton(
             text=btn_text,
             callback_data=f"duel_skill:{skill_key}"
         ))
+
+    # Раскладка: 2 + 2 + 1
+    builder.row(skill_buttons[0], skill_buttons[1])
+    builder.row(skill_buttons[2], skill_buttons[3])
+    builder.row(skill_buttons[4])
 
     builder.row(InlineKeyboardButton(
         text="🏳️ Сдаться", callback_data="duel_surrender"
