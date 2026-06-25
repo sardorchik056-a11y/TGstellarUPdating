@@ -180,7 +180,9 @@ from duel import (
     duel_equip_text, duel_equip_keyboard,
     duel_equip_slot_text, duel_equip_slot_keyboard,
     duel_charstats_text, duel_charstats_keyboard,
-    GEAR_SLOTS,
+    GEAR_CATALOG,
+    owned_level, equipped_level,
+    apply_gear_purchase, apply_gear_equip, apply_gear_unequip,
 )
 
 BOT_TOKEN = '8693034024:AAFQ8rUGuhJ5yT9QNZoZzAmzNMatp_SVSbk'
@@ -3656,14 +3658,19 @@ async def handle_callback(call: CallbackQuery):
             await edit(duel_equip_slot_text(slot_key, data), duel_equip_slot_keyboard(slot_key, data))
             return
 
-        # ===== ДУЭЛИ: купить предмет (заглушка логики) =====
+        # ===== ДУЭЛИ: купить предмет =====
         if cd.startswith("duel_gear_buy:"):
-            slot_key = cd.split(":", 1)[1]
-            gear     = GEAR_SLOTS.get(slot_key)
-            if not gear:
+            item_key = cd.split(":", 1)[1]
+            item     = GEAR_CATALOG.get(item_key)
+            if not item:
                 await call.answer("Неизвестный предмет.", show_alert=True)
                 return
-            price   = gear["price"]
+            slot   = item["slot"]
+            ow_lvl = owned_level(slot, data)
+            if item["level"] != ow_lvl + 1:
+                await call.answer("Сначала купи предыдущий уровень!", show_alert=True)
+                return
+            price   = item["price"]
             balance = data.get("balance", 0)
             if balance < price:
                 await call.answer(
@@ -3671,39 +3678,45 @@ async def handle_callback(call: CallbackQuery):
                     show_alert=True,
                 )
                 return
-            owned = data.setdefault("duel_owned_gear", [])
-            if slot_key in owned:
-                await call.answer("Предмет уже куплен.", show_alert=True)
-                return
             data["balance"] -= price
-            owned.append(slot_key)
+            apply_gear_purchase(item_key, data)
             save_user(user.id, data)
-            await call.answer(f"✅ Куплено: {gear['name']}!", show_alert=True)
-            await edit(duel_equip_slot_text(slot_key, data), duel_equip_slot_keyboard(slot_key, data))
+            await call.answer(f"✅ Куплено: {item['name']}!", show_alert=True)
+            await edit(duel_equip_slot_text(slot, data), duel_equip_slot_keyboard(slot, data))
+            return
+
+        # ===== ДУЭЛИ: заблокированный предмет (тап на 🔒) =====
+        if cd.startswith("duel_gear_locked:"):
+            item_key = cd.split(":", 1)[1]
+            item     = GEAR_CATALOG.get(item_key)
+            if item:
+                await call.answer(f"🔒 Сначала купи {item['slot']}-lvl{item['level']-1}", show_alert=True)
             return
 
         # ===== ДУЭЛИ: надеть предмет =====
         if cd.startswith("duel_gear_equip:"):
-            slot_key = cd.split(":", 1)[1]
-            gear     = GEAR_SLOTS.get(slot_key)
+            item_key = cd.split(":", 1)[1]
+            item     = GEAR_CATALOG.get(item_key)
             owned    = data.get("duel_owned_gear", [])
-            if slot_key not in owned:
+            if item_key not in owned:
                 await call.answer("Сначала купи предмет.", show_alert=True)
                 return
-            data.setdefault("duel_equipped", {})[slot_key] = slot_key
+            apply_gear_equip(item_key, data)
             save_user(user.id, data)
-            await call.answer(f"✅ Надето: {gear['name']}!", show_alert=True)
-            await edit(duel_equip_slot_text(slot_key, data), duel_equip_slot_keyboard(slot_key, data))
+            await call.answer(f"✅ Надето: {item['name']}!", show_alert=True)
+            slot = item["slot"]
+            await edit(duel_equip_slot_text(slot, data), duel_equip_slot_keyboard(slot, data))
             return
 
         # ===== ДУЭЛИ: снять предмет =====
         if cd.startswith("duel_gear_unequip:"):
-            slot_key = cd.split(":", 1)[1]
-            gear     = GEAR_SLOTS.get(slot_key)
-            data.setdefault("duel_equipped", {}).pop(slot_key, None)
+            item_key = cd.split(":", 1)[1]
+            item     = GEAR_CATALOG.get(item_key)
+            apply_gear_unequip(item_key, data)
             save_user(user.id, data)
-            await call.answer(f"❌ Снято: {gear['name']}.", show_alert=True)
-            await edit(duel_equip_slot_text(slot_key, data), duel_equip_slot_keyboard(slot_key, data))
+            await call.answer(f"❌ Снято: {item['name']}.", show_alert=True)
+            slot = item["slot"]
+            await edit(duel_equip_slot_text(slot, data), duel_equip_slot_keyboard(slot, data))
             return
 
         # ===== ДУЭЛИ: подразделы (заглушки) =====
