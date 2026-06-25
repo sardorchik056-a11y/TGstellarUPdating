@@ -707,6 +707,173 @@ def _calc_skill_damage(skill_key: str, attacker_stats: dict, defender_stats: dic
 
 
 # ════════════════════════════════════════════════════════════
+#  СИСТЕМА HP ИГРОКА (восстановление после боя)
+# ════════════════════════════════════════════════════════════
+# Хранит текущий HP игрока вне боя: uid -> {"hp": int, "last_regen_at": int}
+_player_hp: dict[int, dict] = {}
+
+HP_REGEN_INTERVAL = 10   # секунд между тиками восстановления
+HP_REGEN_AMOUNT   = 10   # HP за тик
+HP_MAX_DEFAULT    = 100  # стандартный максимум HP (без снаряжения)
+
+
+def get_player_hp(uid: int, user_data: dict) -> int:
+    """Возвращает текущий HP игрока вне боя (с учётом регенерации)."""
+    hp_max = _calc_stats(user_data)["hp"]
+    entry  = _player_hp.get(uid)
+    if entry is None:
+        # Первый вызов — HP полное
+        _player_hp[uid] = {"hp": hp_max, "last_regen_at": int(time.time())}
+        return hp_max
+
+    now     = int(time.time())
+    elapsed = now - entry["last_regen_at"]
+    ticks   = elapsed // HP_REGEN_INTERVAL
+    if ticks > 0 and entry["hp"] < hp_max:
+        entry["hp"] = min(hp_max, entry["hp"] + ticks * HP_REGEN_AMOUNT)
+        entry["last_regen_at"] += ticks * HP_REGEN_INTERVAL
+    return entry["hp"]
+
+
+def set_player_hp(uid: int, hp: int, user_data: dict):
+    """Устанавливает HP игрока после боя."""
+    hp_max = _calc_stats(user_data)["hp"]
+    _player_hp[uid] = {
+        "hp": max(0, min(hp_max, hp)),
+        "last_regen_at": int(time.time()),
+    }
+
+
+def is_player_ready(uid: int, user_data: dict) -> bool:
+    """True если HP игрока >= 100 (можно идти в бой)."""
+    return get_player_hp(uid, user_data) >= 100
+
+
+def player_hp_regen_seconds(uid: int, user_data: dict) -> int:
+    """Возвращает секунд до следующего тика регенерации."""
+    hp_max = _calc_stats(user_data)["hp"]
+    entry  = _player_hp.get(uid)
+    if entry is None or entry["hp"] >= hp_max:
+        return 0
+    elapsed = int(time.time()) - entry["last_regen_at"]
+    return max(0, HP_REGEN_INTERVAL - elapsed % HP_REGEN_INTERVAL)
+
+
+# ════════════════════════════════════════════════════════════
+#  СИСТЕМА ВЫЗОВА НА ДУЭЛЬ (Challenge)
+# ════════════════════════════════════════════════════════════
+# pending_challenges: uid_challenger -> {"target_uid": int, "target_name": str, "expires_at": int}
+_pending_challenges: dict[int, dict] = {}
+# Хранит uid того, кто бросил вызов: uid_target -> uid_challenger
+_incoming_challenge: dict[int, int] = {}
+
+
+def create_challenge(challenger_uid: int, target_uid: int, target_name: str):
+    """Создаёт вызов на дуэль."""
+    expires = int(time.time()) + 120  # 2 минуты
+    _pending_challenges[challenger_uid] = {
+        "target_uid": target_uid,
+        "target_name": target_name,
+        "expires_at": expires,
+    }
+    _incoming_challenge[target_uid] = challenger_uid
+
+
+def get_incoming_challenge(uid: int) -> dict | None:
+    """Возвращает данные входящего вызова или None."""
+    challenger_uid = _incoming_challenge.get(uid)
+    if challenger_uid is None:
+        return None
+    ch = _pending_challenges.get(challenger_uid)
+    if ch is None or int(time.time()) > ch["expires_at"]:
+        _incoming_challenge.pop(uid, None)
+        _pending_challenges.pop(challenger_uid, None)
+        return None
+    ch = dict(ch)
+    ch["challenger_uid"] = challenger_uid
+    return ch
+
+
+def cancel_challenge(challenger_uid: int):
+    """Отменяет вызов."""
+    ch = _pending_challenges.pop(challenger_uid, None)
+    if ch:
+        _incoming_challenge.pop(ch["target_uid"], None)
+
+
+def accept_challenge(target_uid: int) -> dict | None:
+    """
+    Принимает вызов. Возвращает battle-dict или None если вызов устарел.
+    Данные игроков надо передать снаружи через accept_challenge_with_data.
+    """
+    challenger_uid = _incoming_challenge.pop(target_uid, None)
+    if challenger_uid is None:
+        return None
+    ch = _pending_challenges.pop(challenger_uid, None)
+    if ch is None or int(time.time()) > ch["expires_at"]:
+        return None
+    return {"challenger_uid": challenger_uid}
+
+
+def decline_challenge(target_uid: int) -> int | None:
+    """Отклоняет вызов, возвращает uid вызывающего."""
+    challenger_uid = _incoming_challenge.pop(target_uid, None)
+    if challenger_uid:
+        _pending_challenges.pop(challenger_uid, None)
+    return challenger_uid
+
+
+def start_challenge_battle(challenger_uid: int, challenger_data: dict,
+                           target_uid: int, target_data: dict) -> dict:
+    """Создаёт боевой state для вызова на дуэль."""
+    battle = _create_battle(challenger_uid, challenger_data, target_uid, target_data)
+    # Навыки обоих
+    battle["p1_skills"] = get_equipped_skills(challenger_data) or get_owned_skills(challenger_data)
+    battle["p2_skills"] = get_equipped_skills(target_data) or get_owned_skills(target_data)
+    return battle
+
+
+def challenge_invite_text(challenger_data: dict) -> str:
+    """Текст уведомления о вызове для цели. Показывает хар-ки вызывающего."""
+    stats  = _calc_stats(challenger_data)
+    name   = challenger_data.get("first_name") or challenger_data.get("username") or "Игрок"
+    lvl    = challenger_data.get("level", 1)
+    skills = get_equipped_skills(challenger_data) or get_owned_skills(challenger_data)
+    sk_names = ", ".join(SKILLS[k]["name"] for k in skills[:5] if k in SKILLS) or "нет"
+    return (
+        f'⚔️ <b>Вызов на дуэль!</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>'
+        f'👤 <b>{name}</b> (уровень {lvl}) бросает тебе вызов!\n\n'
+        f'📊 <b>Характеристики противника:</b>\n'
+        f'❤️ HP: <b>{stats["hp"]}</b>\n'
+        f'🛡️ Физ. защита: <b>{stats["phys_def"]}</b>\n'
+        f'🔮 Маг. защита: <b>{stats["mag_def"]}</b>\n'
+        f'💚 Регенерация: <b>{stats["regen"]}</b> HP/ход\n'
+        f'⚙️ Стойкость: <b>{stats["stamina"]}</b>\n\n'
+        f'⚔️ Навыки: <i>{sk_names}</i>\n\n'
+        f'⏳ <i>Вызов действителен 2 минуты</i>'
+        f'</blockquote>'
+    )
+
+
+def challenge_invite_keyboard(challenger_uid: int) -> InlineKeyboardMarkup:
+    """Кнопки Принять / Отказаться для цели вызова."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="✅ Принять",
+            callback_data=f"duel_challenge_accept:{challenger_uid}",
+        ),
+        InlineKeyboardButton(
+            text="❌ Отказаться",
+            callback_data=f"duel_challenge_decline:{challenger_uid}",
+        ),
+    )
+    return builder.as_markup()
+
+
+# ════════════════════════════════════════════════════════════
 #  ПОИСК ПРОТИВНИКА / МАТЧМЕЙКИНГ
 # ════════════════════════════════════════════════════════════
 
@@ -1202,7 +1369,7 @@ def duel_main_keyboard() -> InlineKeyboardMarkup:
         icon_custom_emoji_id=EMOJI_SEARCH,
     ))
     builder.row(InlineKeyboardButton(
-        text=" Пригласить на поединок", callback_data="duel_invite",
+        text=" Бросить вызов", callback_data="duel_challenge_start",
         icon_custom_emoji_id=EMOJI_INVITE,
     ))
     builder.row(
@@ -1522,7 +1689,64 @@ def duel_skills_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def duel_soon_text(section: str) -> str:
+def duel_challenge_screen_text() -> str:
+    return (
+        f'<tg-emoji emoji-id="{EMOJI_INVITE}">⚔️</tg-emoji> <b>БРОСИТЬ ВЫЗОВ</b>\n'
+        '━━━━━━━━━━━━━━━━━━━━\n\n'
+        '<blockquote>'
+        'Отправь <b>ID</b> или <b>@юзернейм</b> игрока которого хочешь вызвать на дуэль.\n\n'
+        'Примеры:\n'
+        '<code>123456789</code>\n'
+        '<code>@username</code>\n\n'
+        '⏳ <i>Вызов действует 2 минуты — если противник не ответит, он истечёт.</i>'
+        '</blockquote>'
+    )
+
+
+def duel_challenge_screen_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="Назад", callback_data="duel_main",
+        icon_custom_emoji_id=EMOJI_BACK,
+    ))
+    return builder.as_markup()
+
+
+def duel_challenge_sent_text(target_name: str) -> str:
+    return (
+        f'⚔️ <b>Вызов отправлен!</b>\n\n'
+        f'<blockquote>👤 <b>{target_name}</b> получил твой вызов.\n'
+        f'⏳ Ожидай ответа — у него есть 2 минуты.</blockquote>'
+    )
+
+
+def duel_challenge_sent_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="❌ Отменить вызов", callback_data="duel_challenge_cancel",
+    ))
+    builder.row(InlineKeyboardButton(
+        text="Назад", callback_data="duel_main",
+        icon_custom_emoji_id=EMOJI_BACK,
+    ))
+    return builder.as_markup()
+
+
+def duel_hp_status_text(uid: int, user_data: dict) -> str:
+    """Текст статуса HP для отображения в поиске/вызове."""
+    hp     = get_player_hp(uid, user_data)
+    hp_max = _calc_stats(user_data)["hp"]
+    if hp >= 100:
+        return ""
+    secs   = player_hp_regen_seconds(uid, user_data)
+    return (
+        f'\n\n⚠️ <b>Твоё HP: {hp}/{hp_max}</b>\n'
+        f'<i>Следующий тик восстановления через {secs} сек. (+{HP_REGEN_AMOUNT} HP каждые {HP_REGEN_INTERVAL} сек.)\n'
+        f'Нельзя начать бой пока HP < 100!</i>'
+    )
+
+
+
     labels = {
         "search": "Поиск противника",
         "invite": "Пригласить на поединок",
