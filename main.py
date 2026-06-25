@@ -179,6 +179,7 @@ from duel import (
     duel_soon_text, duel_back_keyboard,
     duel_equip_text, duel_equip_keyboard,
     duel_equip_slot_text, duel_equip_slot_keyboard,
+    duel_item_card_text, duel_item_card_keyboard,
     duel_charstats_text, duel_charstats_keyboard,
     GEAR_CATALOG,
     owned_level, equipped_level,
@@ -3651,11 +3652,18 @@ async def handle_callback(call: CallbackQuery):
             await edit(duel_equip_text(data), duel_equip_keyboard())
             return
 
-        # ===== ДУЭЛИ: карточка слота снаряжения =====
+        # ===== ДУЭЛИ: список уровней слота =====
         if cd.startswith("duel_equip_slot:"):
             slot_key = cd.split(":", 1)[1]
             await call.answer()
             await edit(duel_equip_slot_text(slot_key, data), duel_equip_slot_keyboard(slot_key, data))
+            return
+
+        # ===== ДУЭЛИ: карточка предмета (отдельное окно) =====
+        if cd.startswith("duel_item_card:"):
+            item_key = cd.split(":", 1)[1]
+            await call.answer()
+            await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data))
             return
 
         # ===== ДУЭЛИ: купить предмет =====
@@ -3664,11 +3672,6 @@ async def handle_callback(call: CallbackQuery):
             item     = GEAR_CATALOG.get(item_key)
             if not item:
                 await call.answer("Неизвестный предмет.", show_alert=True)
-                return
-            slot   = item["slot"]
-            ow_lvl = owned_level(slot, data)
-            if item["level"] != ow_lvl + 1:
-                await call.answer("Сначала купи предыдущий уровень!", show_alert=True)
                 return
             price   = item["price"]
             balance = data.get("balance", 0)
@@ -3682,15 +3685,12 @@ async def handle_callback(call: CallbackQuery):
             apply_gear_purchase(item_key, data)
             save_user(user.id, data)
             await call.answer(f"✅ Куплено: {item['name']}!", show_alert=True)
-            await edit(duel_equip_slot_text(slot, data), duel_equip_slot_keyboard(slot, data))
+            await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data))
             return
 
-        # ===== ДУЭЛИ: заблокированный предмет (тап на 🔒) =====
-        if cd.startswith("duel_gear_locked:"):
-            item_key = cd.split(":", 1)[1]
-            item     = GEAR_CATALOG.get(item_key)
-            if item:
-                await call.answer(f"🔒 Сначала купи {item['slot']}-lvl{item['level']-1}", show_alert=True)
+        # ===== ДУЭЛИ: недостаточно монет (заглушка кнопки) =====
+        if cd == "duel_gear_nofunds":
+            await call.answer("💸 Недостаточно монет для покупки!", show_alert=True)
             return
 
         # ===== ДУЭЛИ: надеть предмет =====
@@ -3704,8 +3704,7 @@ async def handle_callback(call: CallbackQuery):
             apply_gear_equip(item_key, data)
             save_user(user.id, data)
             await call.answer(f"✅ Надето: {item['name']}!", show_alert=True)
-            slot = item["slot"]
-            await edit(duel_equip_slot_text(slot, data), duel_equip_slot_keyboard(slot, data))
+            await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data))
             return
 
         # ===== ДУЭЛИ: снять предмет =====
@@ -3715,8 +3714,7 @@ async def handle_callback(call: CallbackQuery):
             apply_gear_unequip(item_key, data)
             save_user(user.id, data)
             await call.answer(f"❌ Снято: {item['name']}.", show_alert=True)
-            slot = item["slot"]
-            await edit(duel_equip_slot_text(slot, data), duel_equip_slot_keyboard(slot, data))
+            await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data))
             return
 
         # ===== ДУЭЛИ: подразделы (заглушки) =====
