@@ -3913,7 +3913,7 @@ async def handle_callback(call: CallbackQuery):
                 hp_now = get_player_hp(user.id, data)
                 secs   = player_hp_regen_seconds(user.id, data)
                 await call.answer(
-                    f"❌ HP слишком низкий ({hp_now}/100)! Восстановится через {secs} сек.",
+                    f"HP слишком низкий ({hp_now}/100)! Следующий тик через {secs} сек.",
                     show_alert=True
                 )
                 return
@@ -4074,7 +4074,7 @@ async def handle_callback(call: CallbackQuery):
                 hp_now = get_player_hp(user.id, data)
                 secs   = player_hp_regen_seconds(user.id, data)
                 await call.answer(
-                    f"❌ HP слишком низкий ({hp_now}/100)! Восстановится через {secs} сек.",
+                    f"HP слишком низкий ({hp_now}/100)! Следующий тик через {secs} сек.",
                     show_alert=True
                 )
                 return
@@ -4101,7 +4101,7 @@ async def handle_callback(call: CallbackQuery):
                 hp_now = get_player_hp(user.id, data)
                 secs   = player_hp_regen_seconds(user.id, data)
                 await call.answer(
-                    f"❌ HP слишком низкий ({hp_now}/100)! Сначала восстановись.",
+                    f"HP слишком низкий ({hp_now}/100)! Сначала восстановись.",
                     show_alert=True
                 )
                 return
@@ -4156,7 +4156,7 @@ async def handle_callback(call: CallbackQuery):
 
         if cd == "duel_charstats":
             await call.answer()
-            await edit(duel_charstats_text(data), duel_charstats_keyboard())
+            await edit(duel_charstats_text(data, uid=user.id), duel_charstats_keyboard())
             return
 
         # ===== ЗАГЛУШКИ (в разработке) =====
