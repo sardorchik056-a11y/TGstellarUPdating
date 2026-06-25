@@ -2,6 +2,8 @@
 #  duel.py  —  Раздел Дуэлей TGStellar
 # ============================================================
 
+import random
+import time
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -383,7 +385,483 @@ def _fmt(amount: int) -> str:
     return f"{amount:,}".replace(",", " ")
 
 
-# ── Главный экран ────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════
+#  БОЕВЫЕ НАВЫКИ
+# ════════════════════════════════════════════════════════════
+
+# Логика урона навыков:
+#   Физ. навыки (взрыв, блок-маг) → снижаются phys_def противника
+#   Маг. навыки (шар-маг, заморозка) → снижаются mag_def противника
+#   Щит → защитный навык, не урон
+#
+# Формула физ. урона: base_dmg + atk_bonus - max(0, enemy_phys_def * 0.4)
+# Формула маг. урона: base_mag + atk_bonus * 0.6 - max(0, enemy_mag_def * 0.5)
+
+SKILLS = {
+    "mag_ball": {
+        "key": "mag_ball",
+        "name": "Шар-маг",
+        "emoji": "🔵",
+        "type": "magic",          # урон от mag_def
+        "cooldown": 15,           # секунды
+        "base_dmg": (18, 28),     # диапазон базового маг.урона
+        "description": "Концентрированный шар магической энергии. Пробивает магическую защиту.",
+    },
+    "mag_block": {
+        "key": "mag_block",
+        "name": "Блок-маг",
+        "emoji": "🟣",
+        "type": "magic",
+        "cooldown": 20,
+        "base_dmg": (25, 40),
+        "description": "Мощный магический таран. Высокий урон, длинный кулдаун.",
+    },
+    "shield": {
+        "key": "shield",
+        "name": "Щит",
+        "emoji": "🛡️",
+        "type": "shield",          # защита
+        "cooldown": 25,
+        "shield_amount": (20, 35), # поглощает X урона
+        "description": "Магический щит. Поглощает следующий входящий удар.",
+    },
+    "explosion": {
+        "key": "explosion",
+        "name": "Взрыв",
+        "emoji": "💥",
+        "type": "physical",        # урон от phys_def
+        "cooldown": 18,
+        "base_dmg": (22, 35),
+        "description": "Взрыв физической силы. Снижается физической защитой.",
+    },
+    "freeze": {
+        "key": "freeze",
+        "name": "Заморозка",
+        "emoji": "❄️",
+        "type": "magic",
+        "cooldown": 30,
+        "base_dmg": (15, 22),
+        "freeze_turns": 1,         # пропуск хода у врага
+        "description": "Заморозка противника. Наносит маг. урон и лишает хода.",
+    },
+}
+
+SKILLS_ORDER = ["mag_ball", "mag_block", "shield", "explosion", "freeze"]
+
+
+def _calc_skill_damage(skill_key: str, attacker_stats: dict, defender_stats: dict) -> dict:
+    """Вычислить урон от навыка с учётом характеристик обеих сторон."""
+    sk = SKILLS[skill_key]
+    result = {"type": sk["type"], "skill": skill_key}
+
+    atk = attacker_stats.get("dmg", 15)
+
+    if sk["type"] == "magic":
+        base_min, base_max = sk["base_dmg"]
+        base = random.randint(base_min, base_max)
+        mag_bonus = atk * 0.6
+        enemy_resist = max(0, defender_stats.get("mag_def", 10) * 0.5)
+        dmg = max(1, int(base + mag_bonus - enemy_resist))
+        result["dmg"] = dmg
+
+    elif sk["type"] == "physical":
+        base_min, base_max = sk["base_dmg"]
+        base = random.randint(base_min, base_max)
+        phys_bonus = atk
+        enemy_resist = max(0, defender_stats.get("phys_def", 10) * 0.4)
+        dmg = max(1, int(base + phys_bonus - enemy_resist))
+        result["dmg"] = dmg
+
+    elif sk["type"] == "shield":
+        sh_min, sh_max = sk["shield_amount"]
+        result["shield"] = random.randint(sh_min, sh_max)
+        result["dmg"] = 0
+
+    # Особый эффект заморозки
+    if skill_key == "freeze":
+        result["freeze"] = True
+
+    return result
+
+
+# ════════════════════════════════════════════════════════════
+#  ПОИСК ПРОТИВНИКА / МАТЧМЕЙКИНГ
+#  Хранение: user_data["duel_queue"] = timestamp попадания в очередь
+#            активный бой: user_data["duel_battle"] = dict (состояние боя)
+# ════════════════════════════════════════════════════════════
+
+# in-memory очередь: uid -> (timestamp, user_data)
+_match_queue: dict[int, tuple] = {}
+
+
+def join_queue(uid: int, user_data: dict) -> dict | None:
+    """Добавить игрока в очередь поиска.
+    Если в очереди уже есть другой — создать бой и вернуть battle_state.
+    Иначе вернуть None (ждём).
+    """
+    now = int(time.time())
+
+    # Убираем устаревших (>120 сек) из очереди
+    stale = [k for k, (ts, _) in _match_queue.items() if now - ts > 120]
+    for k in stale:
+        _match_queue.pop(k, None)
+
+    # Ищем соперника
+    for opponent_uid, (ts, opp_data) in list(_match_queue.items()):
+        if opponent_uid == uid:
+            continue
+        # Нашли! Убираем соперника из очереди
+        _match_queue.pop(opponent_uid, None)
+        battle = _create_battle(uid, user_data, opponent_uid, opp_data)
+        return battle
+
+    # Никого нет — встаём в очередь
+    _match_queue[uid] = (now, user_data)
+    return None
+
+
+def leave_queue(uid: int):
+    """Покинуть очередь поиска."""
+    _match_queue.pop(uid, None)
+
+
+def in_queue(uid: int) -> bool:
+    return uid in _match_queue
+
+
+# ════════════════════════════════════════════════════════════
+#  БОЙ
+# ════════════════════════════════════════════════════════════
+
+BASE_STATS = {
+    "hp": 100, "dmg": 15, "regen": 5,
+    "phys_def": 10, "mag_def": 10, "stamina": 20,
+}
+
+
+def _calc_stats(user_data: dict) -> dict:
+    equipped = user_data.get("duel_equipped", {})
+    stats    = dict(BASE_STATS)
+    for item_key in equipped.values():
+        item = GEAR_CATALOG.get(item_key)
+        if not item:
+            continue
+        for stat, bonus in item["bonus"].items():
+            stats[stat] = stats.get(stat, 0) + bonus
+    return stats
+
+
+def _create_battle(uid1: int, data1: dict, uid2: int, data2: dict) -> dict:
+    """Создать состояние нового боя между двумя игроками."""
+    stats1 = _calc_stats(data1)
+    stats2 = _calc_stats(data2)
+
+    name1 = data1.get("first_name") or data1.get("username") or f"Игрок {uid1}"
+    name2 = data2.get("first_name") or data2.get("username") or f"Игрок {uid2}"
+
+    now = int(time.time())
+    battle = {
+        "p1_uid": uid1,
+        "p2_uid": uid2,
+        "p1_name": name1,
+        "p2_name": name2,
+        "p1_hp": stats1["hp"],
+        "p2_hp": stats2["hp"],
+        "p1_hp_max": stats1["hp"],
+        "p2_hp_max": stats2["hp"],
+        "p1_stats": stats1,
+        "p2_stats": stats2,
+        "p1_shield": 0,     # активный щит
+        "p2_shield": 0,
+        "p1_frozen": False,  # пропускает ход
+        "p2_frozen": False,
+        # Перезарядка навыков: skill_key -> unix timestamp готовности
+        "p1_cooldowns": {},
+        "p2_cooldowns": {},
+        "turn": uid1,       # чья очередь ходить (оба могут жать когда хотят)
+        "started_at": now,
+        "last_action": now,
+        "log": [],           # лог действий
+        "finished": False,
+        "winner_uid": None,
+    }
+    return battle
+
+
+def _get_player_prefix(battle: dict, uid: int) -> str:
+    """Вернуть 'p1' или 'p2' для данного uid."""
+    return "p1" if battle["p1_uid"] == uid else "p2"
+
+
+def _get_enemy_prefix(battle: dict, uid: int) -> str:
+    return "p2" if battle["p1_uid"] == uid else "p1"
+
+
+def battle_use_skill(battle: dict, uid: int, skill_key: str) -> dict:
+    """
+    Применить навык в бою. Возвращает обновлённый battle + result dict.
+    result: {"ok": bool, "msg": str, "dmg": int, "effect": str|None}
+    """
+    now = int(time.time())
+
+    if battle.get("finished"):
+        return battle, {"ok": False, "msg": "Бой уже завершён."}
+
+    me  = _get_player_prefix(battle, uid)
+    foe = _get_enemy_prefix(battle, uid)
+
+    # Проверяем заморозку
+    if battle.get(f"{me}_frozen"):
+        battle[f"{me}_frozen"] = False
+        return battle, {"ok": False, "msg": "❄️ Ты заморожен и пропускаешь ход!"}
+
+    # Проверяем кулдаун
+    cooldowns = battle.get(f"{me}_cooldowns", {})
+    ready_at  = cooldowns.get(skill_key, 0)
+    if now < ready_at:
+        left = ready_at - now
+        return battle, {"ok": False, "msg": f"⏳ Навык на перезарядке ещё {left}с."}
+
+    sk = SKILLS.get(skill_key)
+    if not sk:
+        return battle, {"ok": False, "msg": "Неизвестный навык."}
+
+    # Ставим кулдаун
+    cooldowns[skill_key] = now + sk["cooldown"]
+    battle[f"{me}_cooldowns"] = cooldowns
+
+    my_stats  = battle[f"{me}_stats"]
+    foe_stats = battle[f"{foe}_stats"]
+
+    result = _calc_skill_damage(skill_key, my_stats, foe_stats)
+    effect_msg = ""
+
+    if sk["type"] == "shield":
+        sh = result["shield"]
+        battle[f"{me}_shield"] = sh
+        effect_msg = f"🛡️ Щит {sh} HP"
+        log_entry = f"{battle[f'{me}_name']}: {sk['emoji']} {sk['name']} → {effect_msg}"
+    else:
+        raw_dmg = result["dmg"]
+        # Учитываем щит врага
+        foe_shield = battle.get(f"{foe}_shield", 0)
+        if foe_shield > 0:
+            absorbed = min(foe_shield, raw_dmg)
+            raw_dmg -= absorbed
+            battle[f"{foe}_shield"] = foe_shield - absorbed
+            effect_msg += f" (щит -{absorbed})"
+
+        # Наносим урон
+        battle[f"{foe}_hp"] = max(0, battle[f"{foe}_hp"] - raw_dmg)
+        result["dmg"] = raw_dmg
+
+        # Заморозка
+        if result.get("freeze"):
+            battle[f"{foe}_frozen"] = True
+            effect_msg += " ❄️ заморозка!"
+
+        log_entry = (
+            f"{battle[f'{me}_name']}: {sk['emoji']} {sk['name']} "
+            f"→ -{raw_dmg} HP{effect_msg}"
+        )
+
+    # Регенерация при каждом ходу
+    regen = my_stats.get("regen", 0)
+    if regen > 0:
+        hp_max = battle[f"{me}_hp_max"]
+        battle[f"{me}_hp"] = min(hp_max, battle[f"{me}_hp"] + regen)
+
+    # Добавляем лог
+    battle["log"].append(log_entry)
+    if len(battle["log"]) > 6:
+        battle["log"] = battle["log"][-6:]
+
+    # Проверяем конец боя
+    if battle["p1_hp"] <= 0 or battle["p2_hp"] <= 0:
+        battle["finished"] = True
+        if battle["p1_hp"] <= 0 and battle["p2_hp"] <= 0:
+            battle["winner_uid"] = None  # ничья
+        elif battle["p1_hp"] <= 0:
+            battle["winner_uid"] = battle["p2_uid"]
+        else:
+            battle["winner_uid"] = battle["p1_uid"]
+
+    battle["last_action"] = now
+    return battle, {"ok": True, "result": result, "log_entry": log_entry}
+
+
+# ── HP-бар ───────────────────────────────────────────────────
+
+def _hp_bar(hp: int, hp_max: int, length: int = 10) -> str:
+    if hp_max <= 0:
+        return "▓" * length
+    ratio = max(0, min(1, hp / hp_max))
+    filled = round(ratio * length)
+    bar = "█" * filled + "░" * (length - filled)
+    pct = int(ratio * 100)
+    return f"[{bar}] {hp}/{hp_max} ({pct}%)"
+
+
+# ── Боевой экран (текст) ─────────────────────────────────────
+
+def battle_text(battle: dict, uid: int) -> str:
+    me  = _get_player_prefix(battle, uid)
+    foe = _get_enemy_prefix(battle, uid)
+
+    my_name  = battle[f"{me}_name"]
+    foe_name = battle[f"{foe}_name"]
+    my_hp    = battle[f"{me}_hp"]
+    my_hp_max = battle[f"{me}_hp_max"]
+    foe_hp   = battle[f"{foe}_hp"]
+    foe_hp_max = battle[f"{foe}_hp_max"]
+
+    my_bar  = _hp_bar(my_hp, my_hp_max)
+    foe_bar = _hp_bar(foe_hp, foe_hp_max)
+
+    shields = ""
+    if battle.get(f"{me}_shield", 0) > 0:
+        shields += f"\n🛡️ Твой щит: <b>{battle[f'{me}_shield']} HP</b>"
+    if battle.get(f"{foe}_shield", 0) > 0:
+        shields += f"\n🛡️ Щит врага: <b>{battle[f'{foe}_shield']} HP</b>"
+
+    frozen_note = ""
+    if battle.get(f"{me}_frozen"):
+        frozen_note = "\n❄️ <b>Ты заморожен! Следующий ход пропущен.</b>"
+    if battle.get(f"{foe}_frozen"):
+        frozen_note += f"\n❄️ <b>{foe_name} заморожен!</b>"
+
+    # Лог последних действий
+    log_lines = battle.get("log", [])
+    log_block = ""
+    if log_lines:
+        log_block = "\n\n<blockquote>" + "\n".join(log_lines[-4:]) + "</blockquote>"
+
+    if battle.get("finished"):
+        winner = battle.get("winner_uid")
+        if winner is None:
+            result_line = "⚔️ <b>Ничья!</b>"
+        elif winner == uid:
+            result_line = "🏆 <b>Ты победил!</b>"
+        else:
+            result_line = "💀 <b>Ты проиграл!</b>"
+        return (
+            f'⚔️ <b>БОЙ ЗАВЕРШЁН</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'{result_line}\n\n'
+            f'<blockquote>'
+            f'👤 <b>{my_name}</b>\n'
+            f'❤️ {my_bar}\n\n'
+            f'👹 <b>{foe_name}</b>\n'
+            f'❤️ {foe_bar}'
+            f'</blockquote>'
+            f'{log_block}'
+        )
+
+    return (
+        f'⚔️ <b>БОЙ</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>'
+        f'👤 <b>{my_name}</b>\n'
+        f'❤️ {my_bar}'
+        f'{shields}'
+        f'{frozen_note}\n\n'
+        f'👹 <b>{foe_name}</b>\n'
+        f'❤️ {foe_bar}'
+        f'</blockquote>'
+        f'{log_block}\n\n'
+        f'<i>Выбери навык для атаки:</i>'
+    )
+
+
+# ── Боевая клавиатура (навыки с кулдаунами) ─────────────────
+
+def battle_keyboard(battle: dict, uid: int) -> InlineKeyboardMarkup:
+    me  = _get_player_prefix(battle, uid)
+    now = int(time.time())
+    cooldowns = battle.get(f"{me}_cooldowns", {})
+
+    builder = InlineKeyboardBuilder()
+
+    if battle.get("finished"):
+        builder.row(InlineKeyboardButton(
+            text="🔄 Новый поиск", callback_data="duel_search"
+        ))
+        builder.row(InlineKeyboardButton(
+            text="🏠 В меню дуэлей", callback_data="duel_main"
+        ))
+        return builder.as_markup()
+
+    for skill_key in SKILLS_ORDER:
+        sk = SKILLS[skill_key]
+        ready_at = cooldowns.get(skill_key, 0)
+        left = ready_at - now
+
+        if left > 0:
+            btn_text = f"{sk['emoji']} {sk['name']} ⏳{left}с"
+        else:
+            btn_text = f"{sk['emoji']} {sk['name']}"
+
+        builder.row(InlineKeyboardButton(
+            text=btn_text,
+            callback_data=f"duel_skill:{skill_key}"
+        ))
+
+    builder.row(InlineKeyboardButton(
+        text="🏳️ Сдаться", callback_data="duel_surrender"
+    ))
+    return builder.as_markup()
+
+
+# ════════════════════════════════════════════════════════════
+#  ЭКРАН ПОИСКА
+# ════════════════════════════════════════════════════════════
+
+def duel_search_text(in_queue_flag: bool = False) -> str:
+    if in_queue_flag:
+        return (
+            f'<tg-emoji emoji-id="{EMOJI_SEARCH}">🔍</tg-emoji> <b>ПОИСК ПРОТИВНИКА</b>\n'
+            '━━━━━━━━━━━━━━━━━━━━\n\n'
+            '<blockquote>⏳ <b>Ищем соперника...</b>\n\n'
+            'Ожидай — как только найдётся противник,\n'
+            'бой начнётся автоматически.\n\n'
+            '<i>Нажми «Проверить» чтобы обновить статус.</i></blockquote>'
+        )
+    return (
+        f'<tg-emoji emoji-id="{EMOJI_SEARCH}">🔍</tg-emoji> <b>ПОИСК ПРОТИВНИКА</b>\n'
+        '━━━━━━━━━━━━━━━━━━━━\n\n'
+        '<blockquote>Нажми <b>«Найти бой»</b> для поиска соперника.\n\n'
+        'В бою тебе доступны 5 боевых навыков:\n'
+        '🔵 <b>Шар-маг</b> — маг. урон\n'
+        '🟣 <b>Блок-маг</b> — мощный маг. удар\n'
+        '🛡️ <b>Щит</b> — поглощает урон\n'
+        '💥 <b>Взрыв</b> — физ. урон\n'
+        '❄️ <b>Заморозка</b> — маг. урон + лишает хода</blockquote>'
+    )
+
+
+def duel_search_keyboard(in_queue_flag: bool = False) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if in_queue_flag:
+        builder.row(InlineKeyboardButton(
+            text="🔄 Проверить", callback_data="duel_search_check"
+        ))
+        builder.row(InlineKeyboardButton(
+            text="❌ Отменить поиск", callback_data="duel_search_cancel"
+        ))
+    else:
+        builder.row(InlineKeyboardButton(
+            text="⚔️ Найти бой", callback_data="duel_search_start"
+        ))
+    builder.row(InlineKeyboardButton(
+        text="Назад", callback_data="duel_main",
+        icon_custom_emoji_id=EMOJI_BACK,
+    ))
+    return builder.as_markup()
+
+
+# ════════════════════════════════════════════════════════════
+#  ОРИГИНАЛЬНЫЕ ЭКРАНЫ (без изменений)
+# ════════════════════════════════════════════════════════════
 
 def duel_main_text() -> str:
     return (
@@ -422,8 +900,6 @@ def duel_main_keyboard() -> InlineKeyboardMarkup:
     ))
     return builder.as_markup()
 
-
-# ── Экран: список слотов ─────────────────────────────────────
 
 def duel_equip_text(user_data: dict) -> str:
     lines = []
@@ -469,8 +945,6 @@ def duel_equip_keyboard() -> InlineKeyboardMarkup:
     ))
     return builder.as_markup()
 
-
-# ── Экран: список уровней слота ──────────────────────────────
 
 def duel_equip_slot_text(slot: str, user_data: dict) -> str:
     ow_lvl = owned_level(slot, user_data)
@@ -528,8 +1002,6 @@ def duel_equip_slot_keyboard(slot: str, user_data: dict) -> InlineKeyboardMarkup
     return builder.as_markup()
 
 
-# ── Экран: карточка предмета (отдельное окно) ────────────────
-
 def duel_item_card_text(item_key: str, user_data: dict) -> str:
     item   = GEAR_CATALOG[item_key]
     slot   = item["slot"]
@@ -538,7 +1010,6 @@ def duel_item_card_text(item_key: str, user_data: dict) -> str:
     lvl    = item["level"]
     balance = user_data.get("balance", 0)
 
-    # Статус предмета
     if lvl == eq_lvl:
         status_line = '✅ <b>Надето прямо сейчас</b>'
     elif lvl <= ow_lvl:
@@ -549,14 +1020,12 @@ def duel_item_card_text(item_key: str, user_data: dict) -> str:
             deficit = item["price"] - balance
             status_line += f'\n⚠️ <i>Не хватает {_fmt(deficit)} монет</i>'
 
-    # Бонусы
     bonus_lines = []
     for stat, val in item["bonus"].items():
         emoji_s, ru, unit = STAT_META.get(stat, ("▫️", stat, ""))
         bonus_lines.append(f'  {emoji_s} <b>+{val}</b> {ru} <i>({unit})</i>')
     bonus_block = "\n".join(bonus_lines)
 
-    # Звёзды уровня
     stars = "⭐" * lvl + "☆" * (5 - lvl)
 
     return (
@@ -606,8 +1075,6 @@ def duel_item_card_keyboard(item_key: str, user_data: dict) -> InlineKeyboardMar
     return builder.as_markup()
 
 
-# ── Хелперы применения снаряжения ───────────────────────────
-
 def apply_gear_purchase(item_key: str, user_data: dict) -> dict:
     owned    = user_data.setdefault("duel_owned_gear", [])
     equipped = user_data.setdefault("duel_equipped", {})
@@ -629,24 +1096,6 @@ def apply_gear_unequip(item_key: str, user_data: dict) -> dict:
         del equipped[slot]
     return user_data
 
-
-# ── Характеристики ───────────────────────────────────────────
-
-BASE_STATS = {
-    "hp": 100, "dmg": 15, "regen": 5,
-    "phys_def": 10, "mag_def": 10, "stamina": 20,
-}
-
-def _calc_stats(user_data: dict) -> dict:
-    equipped = user_data.get("duel_equipped", {})
-    stats    = dict(BASE_STATS)
-    for item_key in equipped.values():
-        item = GEAR_CATALOG.get(item_key)
-        if not item:
-            continue
-        for stat, bonus in item["bonus"].items():
-            stats[stat] = stats.get(stat, 0) + bonus
-    return stats
 
 def duel_charstats_text(user_data: dict) -> str:
     s          = _calc_stats(user_data)
@@ -681,7 +1130,37 @@ def duel_charstats_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-# ── Заглушки ─────────────────────────────────────────────────
+# ── Экран навыков ────────────────────────────────────────────
+
+def duel_skills_text() -> str:
+    lines = []
+    for sk_key in SKILLS_ORDER:
+        sk = SKILLS[sk_key]
+        if sk["type"] == "shield":
+            val = f"поглощает {sk['shield_amount'][0]}–{sk['shield_amount'][1]} HP"
+        else:
+            val = f"урон {sk['base_dmg'][0]}–{sk['base_dmg'][1]}+ (зависит от ATK)"
+        lines.append(
+            f"{sk['emoji']} <b>{sk['name']}</b> [⏳{sk['cooldown']}с]\n"
+            f"  <i>{val}</i>\n"
+            f"  {sk['description']}"
+        )
+    block = "\n\n".join(lines)
+    return (
+        f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>БОЕВЫЕ НАВЫКИ</b>\n'
+        '━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>{block}</blockquote>\n\n'
+        '<i>Навыки доступны в бою. Каждый имеет время перезарядки.</i>'
+    )
+
+def duel_skills_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="Назад", callback_data="duel_main",
+        icon_custom_emoji_id=EMOJI_BACK,
+    ))
+    return builder.as_markup()
+
 
 def duel_soon_text(section: str) -> str:
     labels = {
