@@ -1238,9 +1238,7 @@ def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
             val = f"урон {sk['base_dmg'][0]}–{sk['base_dmg'][1]}"
 
         lines.append(
-            f"{marker} {sk['emoji']} <b>{sk['name']}</b> [{price_str}]\n"
-            f"  ⏳{sk['cooldown']}с · {val}\n"
-            f"  <i>{sk['description']}</i>"
+            f"{marker} {sk['emoji']} <b>{sk['name']}</b> [{price_str}]"
         )
 
     block = "\n\n".join(lines)
@@ -1648,15 +1646,8 @@ def duel_skills_text(user_data: dict = None) -> str:
     base_lines = []
     for sk_key in SKILLS_ORDER_BASE:
         sk = SKILLS[sk_key]
-        if sk["type"] == "shield":
-            val = f"поглощает {sk['shield_amount'][0]}–{sk['shield_amount'][1]} HP"
-        else:
-            val = f"урон {sk['base_dmg'][0]}–{sk['base_dmg'][1]}"
-        base_lines.append(
-            f"{sk['emoji']} <b>{sk['name']}</b> [⏳{sk['cooldown']}с]\n"
-            f"  <i>{val}</i> · {sk['description']}"
-        )
-    base_block = "\n\n".join(base_lines)
+        base_lines.append(f"{sk['emoji']} <b>{sk['name']}</b> — <i>{sk['description']}</i>")
+    base_block = "\n".join(base_lines)
 
     paid_count = len([k for k, v in SKILLS.items() if v["price"] > 0])
 
