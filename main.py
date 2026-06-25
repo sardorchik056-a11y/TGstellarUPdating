@@ -1,1851 +1,4644 @@
-# ============================================================
-#  duel.py  —  Раздел Дуэлей TGStellar
-# ============================================================
+import asyncio
+import logging
+from aiogram import Bot, Dispatcher, F
+from aiogram.types import (
+    Message, CallbackQuery,
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    ReplyKeyboardMarkup, KeyboardButton,
+    LabeledPrice, PreCheckoutQuery,
+)
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
+from aiogram.filters import Command
 
-import random
-import time
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from database import (
+    init_db, get_or_create_user, save_user,
+    profile_text, format_amount,
+)
+from miner import (
+    ORES, PICKAXES, PICKAXES_ORDER,
+    DURATIONS, DURATIONS_ORDER,
+    now_ts,
+    mine_text, mine_keyboard,
+    workshop_text, workshop_keyboard,
+    pickaxe_detail_text, pickaxe_detail_keyboard,
+    duration_shop_text, duration_shop_keyboard,
+    duration_detail_text, duration_detail_keyboard,
+    sell_screen_text, sell_keyboard,
+    shop_pickaxes_text, shop_pickaxes_keyboard,
+    inventory_screen_text, inventory_keyboard,
+    init_mine_data,
+    collect_mine,
+    sell_all_ores,
+    buy_pickaxe, select_pickaxe,
+    buy_duration, select_duration,
+    get_pickaxe_page,
+    EMOJI_BACK,
+)
+from pets import (
+    PETS,
+    pets_main_text, pets_main_keyboard,
+    pet_detail_text, pet_detail_keyboard,
+    buy_pet,
+    get_pending_income, get_pending_notifications,
+    pet_income_text,
+)
 
-# ── Эмодзи ──────────────────────────────────────────────────
-EMOJI_BACK         = "5252272671669706296"
-EMOJI_DUEL_MAIN    = "5424972470023104089"
-EMOJI_SEARCH       = "5440539497383087970"
-EMOJI_INVITE       = "5332724926216428039"
-EMOJI_EQUIP        = "5445221832074483553"
-EMOJI_SKILLS       = "5224607267797606837"
-EMOJI_STATS_DUEL   = "5231200819986047254"
-EMOJI_SHOP         = "5447183459602669338"
+from hunt import (
+    init_hunt_db,
+    hunt_main_text, hunt_main_keyboard,
+    sword_shop_text, sword_shop_keyboard,
+    sword_detail_text, sword_detail_keyboard,
+    my_swords_text, my_swords_keyboard,
+    boss_select_text, boss_select_keyboard,
+    boss_attack_text, boss_attack_keyboard,
+    boss_strike_result_text, boss_strike_keyboard,
+    buy_sword, equip_sword, attack_boss,
+    get_boss_state,
+    BOSSES_BY_KEY as _BOSSES_BY_KEY,
+)
 
-EMOJI_HP       = "5262643974912355126"
-EMOJI_DMG      = "5262643974912355126"
-EMOJI_REGEN    = "5262643974912355126"
-EMOJI_PHYS_DEF = "5262643974912355126"
-EMOJI_MAG_DEF  = "5262643974912355126"
-EMOJI_STAMINA  = "5262643974912355126"
+from stats import init_stats_db, track_user, stats_text, stats_keyboard
+from settings import (
+    settings_text, settings_keyboard,
+    lang_choose_text, lang_choose_keyboard, lang_choose_keyboard_start,
+)
+from lang import t, get_lang
 
-# ── Метки статов ────────────────────────────────────────────
-STAT_META = {
-    "hp":       ("❤️", "Здоровье",    "HP"),
-    "dmg":      ("⚔️", "Урон",        "ATK"),
-    "regen":    ("💚", "Регенерация", "HP/ход"),
-    "phys_def": ("🛡️", "Физ. защита", "DEF"),
-    "mag_def":  ("🔮", "Маг. защита", "MDEF"),
-    "stamina":  ("⚙️", "Стойкость",   "STM"),
-}
-
-# ── Каталог снаряжения: 5 слотов × 5 уровней ────────────────
-# ВАЖНО: снаряжение даёт только HP, защиту, регенерацию, стойкость — НЕ урон!
-GEAR_CATALOG = {
-
-    # ── ШЛЕМ ─────────────────────────────────────────────────
-    "helmet-lvl1": {
-        "slot": "helmet", "level": 1, "key": "helmet-lvl1",
-        "name": "Helmet Lvl 1", "ru_name": "Железный Шлем",
-        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
-        "price": 5_000,
-        "description": (
-            "Грубо выкованный железный шлем без украшений. "
-            "Прост в изготовлении, но надёжно прикрывает голову от первого удара."
-        ),
-        "bonus": {"hp": 10, "phys_def": 3},
-    },
-    "helmet-lvl2": {
-        "slot": "helmet", "level": 2, "key": "helmet-lvl2",
-        "name": "Helmet Lvl 2", "ru_name": "Боевой Шлем",
-        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
-        "price": 15_000,
-        "description": "Усиленный шлем с рунической вставкой. Рассеивает слабые магические атаки.",
-        "bonus": {"hp": 20, "phys_def": 6, "mag_def": 5},
-    },
-    "helmet-lvl3": {
-        "slot": "helmet", "level": 3, "key": "helmet-lvl3",
-        "name": "Helmet Lvl 3", "ru_name": "Шлем Гвардейца",
-        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
-        "price": 35_000,
-        "description": "Закалённый шлем королевской гвардии с забралом из мифрила.",
-        "bonus": {"hp": 35, "phys_def": 10, "mag_def": 8, "stamina": 5},
-    },
-    "helmet-lvl4": {
-        "slot": "helmet", "level": 4, "key": "helmet-lvl4",
-        "name": "Helmet Lvl 4", "ru_name": "Шлем Стального Стража",
-        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
-        "price": 70_000,
-        "description": "Реликвийный шлем с рунической гравировкой. Входящий урон частично поглощается барьером.",
-        "bonus": {"hp": 50, "phys_def": 15, "mag_def": 12, "stamina": 10},
-    },
-    "helmet-lvl5": {
-        "slot": "helmet", "level": 5, "key": "helmet-lvl5",
-        "name": "Helmet Lvl 5", "ru_name": "Шлем Легенды",
-        "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
-        "price": 150_000,
-        "description": "Артефакт эпохи Первых Воинов. Ни одна стрела не может поколебать носителя.",
-        "bonus": {"hp": 75, "phys_def": 22, "mag_def": 18, "stamina": 18},
-    },
-
-    # ── БРОНЯ ─────────────────────────────────────────────────
-    "armor-lvl1": {
-        "slot": "armor", "level": 1, "key": "armor-lvl1",
-        "name": "Armor Lvl 1", "ru_name": "Кожаный Доспех",
-        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
-        "price": 6_000,
-        "description": "Доспех из дублёной кожи. Лёгкий, не сковывает движений.",
-        "bonus": {"hp": 15, "phys_def": 5},
-    },
-    "armor-lvl2": {
-        "slot": "armor", "level": 2, "key": "armor-lvl2",
-        "name": "Armor Lvl 2", "ru_name": "Кольчужный Доспех",
-        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
-        "price": 18_000,
-        "description": "Тысячи закалённых колец. Хорошо поглощает рубящие удары.",
-        "bonus": {"hp": 30, "phys_def": 12, "stamina": 5},
-    },
-    "armor-lvl3": {
-        "slot": "armor", "level": 3, "key": "armor-lvl3",
-        "name": "Armor Lvl 3", "ru_name": "Пластинчатый Доспех",
-        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
-        "price": 40_000,
-        "description": "Боевые латы из стальных пластин. Сводят урон к минимуму.",
-        "bonus": {"hp": 50, "phys_def": 20, "stamina": 8},
-    },
-    "armor-lvl4": {
-        "slot": "armor", "level": 4, "key": "armor-lvl4",
-        "name": "Armor Lvl 4", "ru_name": "Латы Воина Бездны",
-        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
-        "price": 80_000,
-        "description": "Прочнейшие латы, выкованные в жерле вулкана тёмными кузнецами.",
-        "bonus": {"hp": 75, "phys_def": 30, "mag_def": 8, "stamina": 12},
-    },
-    "armor-lvl5": {
-        "slot": "armor", "level": 5, "key": "armor-lvl5",
-        "name": "Armor Lvl 5", "ru_name": "Латы Абсолюта",
-        "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
-        "price": 180_000,
-        "description": "Легендарный доспех. Выкован из металла упавшей звезды.",
-        "bonus": {"hp": 110, "phys_def": 45, "mag_def": 15, "stamina": 20},
-    },
-
-    # ── ПЕРЧАТКИ ──────────────────────────────────────────────
-    "gloves-lvl1": {
-        "slot": "gloves", "level": 1, "key": "gloves-lvl1",
-        "name": "Gloves Lvl 1", "ru_name": "Боевые Рукавицы",
-        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
-        "price": 4_000,
-        "description": "Кожаные рукавицы с наклёпками. Защищают кулаки.",
-        "bonus": {"stamina": 5, "phys_def": 2},
-    },
-    "gloves-lvl2": {
-        "slot": "gloves", "level": 2, "key": "gloves-lvl2",
-        "name": "Gloves Lvl 2", "ru_name": "Латные Рукавицы",
-        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
-        "price": 12_000,
-        "description": "Рукавицы с металлическими пластинами. Усиливают хват оружия.",
-        "bonus": {"stamina": 8, "phys_def": 5},
-    },
-    "gloves-lvl3": {
-        "slot": "gloves", "level": 3, "key": "gloves-lvl3",
-        "name": "Gloves Lvl 3", "ru_name": "Наручи Теневого Клинка",
-        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
-        "price": 28_000,
-        "description": "Боевые наручи с выдвижными шипами. Оружие теневых воинов.",
-        "bonus": {"stamina": 12, "phys_def": 6, "mag_def": 3},
-    },
-    "gloves-lvl4": {
-        "slot": "gloves", "level": 4, "key": "gloves-lvl4",
-        "name": "Gloves Lvl 4", "ru_name": "Наручи Убийцы",
-        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
-        "price": 55_000,
-        "description": "Зачарованные наручи элитных убийц гильдии Алой Тени.",
-        "bonus": {"stamina": 16, "phys_def": 10, "mag_def": 5},
-    },
-    "gloves-lvl5": {
-        "slot": "gloves", "level": 5, "key": "gloves-lvl5",
-        "name": "Gloves Lvl 5", "ru_name": "Длани Хаоса",
-        "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
-        "price": 120_000,
-        "description": "Артефактные перчатки, пронизанные энергией первозданного хаоса.",
-        "bonus": {"stamina": 22, "phys_def": 14, "mag_def": 8, "regen": 3},
-    },
-
-    # ── ШТАНЫ ─────────────────────────────────────────────────
-    "pants-lvl1": {
-        "slot": "pants", "level": 1, "key": "pants-lvl1",
-        "name": "Pants Lvl 1", "ru_name": "Боевые Штаны",
-        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
-        "price": 4_500,
-        "description": "Прочные штаны с кожаными вставками. Дают свободу движений.",
-        "bonus": {"hp": 8, "stamina": 5},
-    },
-    "pants-lvl2": {
-        "slot": "pants", "level": 2, "key": "pants-lvl2",
-        "name": "Pants Lvl 2", "ru_name": "Кольчужные Поножи",
-        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
-        "price": 14_000,
-        "description": "Усиленные поножи с кольчужными вставками на бёдрах.",
-        "bonus": {"hp": 18, "stamina": 10, "phys_def": 4},
-    },
-    "pants-lvl3": {
-        "slot": "pants", "level": 3, "key": "pants-lvl3",
-        "name": "Pants Lvl 3", "ru_name": "Поножи Железного Рыцаря",
-        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
-        "price": 30_000,
-        "description": "Тяжёлые боевые штаны с наколенниками из закалённой стали.",
-        "bonus": {"hp": 30, "stamina": 16, "phys_def": 7},
-    },
-    "pants-lvl4": {
-        "slot": "pants", "level": 4, "key": "pants-lvl4",
-        "name": "Pants Lvl 4", "ru_name": "Зачарованные Поножи",
-        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
-        "price": 60_000,
-        "description": "Латные поножи с кристаллами выносливости. Восстанавливают силы в бою.",
-        "bonus": {"hp": 45, "stamina": 22, "phys_def": 11, "regen": 3},
-    },
-    "pants-lvl5": {
-        "slot": "pants", "level": 5, "key": "pants-lvl5",
-        "name": "Pants Lvl 5", "ru_name": "Поножи Вечности",
-        "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
-        "price": 130_000,
-        "description": "Реликвийные поножи. Тело бойца отказывается сдаваться.",
-        "bonus": {"hp": 65, "stamina": 32, "phys_def": 16, "regen": 6},
-    },
-
-    # ── САПОГИ ────────────────────────────────────────────────
-    "boots-lvl1": {
-        "slot": "boots", "level": 1, "key": "boots-lvl1",
-        "name": "Boots Lvl 1", "ru_name": "Походные Сапоги",
-        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
-        "price": 3_500,
-        "description": "Добротные кожаные сапоги. Мягкая подошва гасит шум шагов.",
-        "bonus": {"regen": 3, "stamina": 3},
-    },
-    "boots-lvl2": {
-        "slot": "boots", "level": 2, "key": "boots-lvl2",
-        "name": "Boots Lvl 2", "ru_name": "Сапоги Следопыта",
-        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
-        "price": 11_000,
-        "description": "Лёгкие сапоги из кожи ночной пантеры. Почти бесшумны.",
-        "bonus": {"regen": 5, "stamina": 6, "phys_def": 2},
-    },
-    "boots-lvl3": {
-        "slot": "boots", "level": 3, "key": "boots-lvl3",
-        "name": "Boots Lvl 3", "ru_name": "Сапоги Ветра Пустоши",
-        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
-        "price": 25_000,
-        "description": "Сапоги из кожи горного дракона, пропитанные эликсиром скорости.",
-        "bonus": {"regen": 8, "stamina": 10, "phys_def": 4},
-    },
-    "boots-lvl4": {
-        "slot": "boots", "level": 4, "key": "boots-lvl4",
-        "name": "Boots Lvl 4", "ru_name": "Сапоги Призрака",
-        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
-        "price": 50_000,
-        "description": "Зачарованные сапоги разведчиков. Молниеносное перемещение.",
-        "bonus": {"regen": 12, "stamina": 14, "phys_def": 6},
-    },
-    "boots-lvl5": {
-        "slot": "boots", "level": 5, "key": "boots-lvl5",
-        "name": "Boots Lvl 5", "ru_name": "Сапоги Грома",
-        "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
-        "price": 110_000,
-        "description": "Реликвийные сапоги Громового Бога. Надевший их — неудержим.",
-        "bonus": {"regen": 18, "stamina": 20, "phys_def": 8},
-    },
-}
-
-GEAR_SLOTS_ORDER = ["helmet", "armor", "gloves", "pants", "boots"]
-
-def slot_levels(slot: str) -> list:
-    return [f"{slot}-lvl{i}" for i in range(1, 6)]
-
-def slot_label(slot: str) -> str:
-    return GEAR_CATALOG[f"{slot}-lvl1"]["slot_label"]
-
-def slot_emoji(slot: str) -> str:
-    return GEAR_CATALOG[f"{slot}-lvl1"]["emoji_char"]
-
-def current_slot_item(slot: str, user_data: dict):
-    equipped = user_data.get("duel_equipped", {})
-    item_key = equipped.get(slot)
-    return GEAR_CATALOG.get(item_key)
-
-def owned_level(slot: str, user_data: dict) -> int:
-    owned = user_data.get("duel_owned_gear", [])
-    max_lvl = 0
-    for lvl in range(1, 6):
-        if f"{slot}-lvl{lvl}" in owned:
-            max_lvl = lvl
-    return max_lvl
-
-def equipped_level(slot: str, user_data: dict) -> int:
-    item = current_slot_item(slot, user_data)
-    return item["level"] if item else 0
-
-def _fmt(amount: int) -> str:
-    return f"{amount:,}".replace(",", " ")
+from leaders import (
+    init_leaders_db,
+    record_boss_hit,
+    leaders_text,
+    leaders_keyboard,
+    leaders_main_text,
+    leaders_main_keyboard,
+    CATEGORIES as _LEADERS_CATEGORIES,
+    PERIODS    as _LEADERS_PERIODS,
+)
 
 
-# ════════════════════════════════════════════════════════════
-#  БОЕВЫЕ НАВЫКИ — 22 навыка, покупаемые за монеты
-#  Урон исходит ТОЛЬКО из навыков. Снаряжение урон НЕ даёт.
-# ════════════════════════════════════════════════════════════
+from status import (
+    status_main_text, status_main_keyboard,
+    status_vip_text, status_vip_keyboard, status_vip_keyboard_invoice,
+    status_premium_text, status_premium_keyboard, status_premium_keyboard_invoice,
+    status_upgrade_keyboard_invoice,
+    activate_status,
+    VIP_COST_STARS, PREMIUM_COST_STARS, UPGRADE_COST_STARS,
+)
+from refs import (
+    init_refs_db,
+    register_referral,
+    is_captcha_passed, is_captcha_blocked,
+    get_captcha_state, create_captcha, check_captcha,
+    set_captcha_msg, get_captcha_msg,
+    reward_inviter, get_inviter,
+    refs_main_text, refs_main_keyboard,
+    refs_list_text, refs_list_keyboard,
+    captcha_start_text, captcha_wrong_text,
+    captcha_blocked_text,
+    refs_notif_text,
+    reftop_text, reftop_keyboard,
+)
+from klan import (
+    init_klan_db,
+    get_member, get_clan, get_clan_members, get_member_count,
+    search_clans, get_top_clans,
+    create_clan, disband_clan, leave_clan, kick_member,
+    apply_to_clan, get_applications, accept_application, reject_application,
+    accept_all_applications, reject_all_applications,
+    deposit_treasury, request_withdrawal, get_withdrawal_requests,
+    approve_withdrawal, reject_withdrawal,
+    set_clan_chat, remove_clan_chat,
+    klan_main_text, klan_main_keyboard,
+    klan_search_text, klan_search_keyboard,
+    klan_card_text, klan_card_keyboard,
+    my_klan_text, my_klan_keyboard,
+    klan_members_text,
+    klan_treasury_text, klan_treasury_keyboard,
+    klan_applications_text, klan_applications_keyboard,
+    klan_withdrawal_requests_text, klan_withdrawal_keyboard,
+    klan_top_text, klan_top_keyboard,
+    klan_stats_text, klan_stats_keyboard,
+    klan_back_keyboard,
+    add_clan_boss_damage, register_clan_boss_kill, add_clan_mine_earnings,
+    get_daily_quests, klan_quests_text, klan_quests_keyboard,
+    CREATE_COST, MIN_CLAN_NAME, MAX_CLAN_NAME,
+    CLANS_PER_PAGE,
+)
+from checks import (
+    init_checks_db,
+    create_check, get_check, activate_check, list_checks, delete_check,
+    create_promo, get_promo, activate_promo, list_promos, delete_promo,
+    check_activate_text, check_error_text,
+    promo_activate_text, promo_error_text, promo_input_text,
+)
+from cdl import (
+    init_cdl_db,
+    DEPOSITS_BY_KEY as _CDL_DEPOSITS_BY_KEY,
+    cdl_main_text, cdl_main_keyboard,
+    cdl_detail_text, cdl_detail_keyboard,
+    cdl_input_text, cdl_input_keyboard,
+    cdl_confirm_text, cdl_confirm_keyboard,
+    cdl_opened_text,
+    cdl_claim_text,
+    _open_deposit as _cdl_open_deposit,
+    _get_ready_deposits as _cdl_get_ready,
+    _claim_deposit as _cdl_claim,
+    _count_active as _cdl_count_active,
+    get_matured_deposits_for_all_users as _cdl_get_matured_all,
+    DEPOSITS_BY_KEY as _CDL_DEP_BY_KEY_REF,
+)
+from shop import (
+    cases_shop_text, cases_shop_keyboard,
+    inventory_main_text, inventory_main_keyboard,
+    boosters_inventory_text, boosters_inventory_keyboard,
+    booster_detail_text, booster_detail_keyboard,
+    booster_confirm_replace_text, booster_confirm_replace_keyboard,
+    xp_inventory_text, xp_inventory_keyboard,
+    xp_item_detail_text, xp_item_detail_keyboard,
+    xp_confirm_replace_text, xp_confirm_replace_keyboard,
+    enh_inventory_text, enh_inventory_keyboard,
+    enh_item_detail_text, enh_item_detail_keyboard,
+    enh_confirm_replace_text, enh_confirm_replace_keyboard,
+    open_case, activate_booster, sell_booster,
+    use_xp_item, sell_xp_item,
+    use_poison, activate_enh_boost, sell_enh_item,
+    # Артефакты
+    artifact_case_detail_text, artifact_case_keyboard,
+    artifact_collection_text, artifact_collection_keyboard,
+    open_artifact_case, ARTIFACT_CASE_COST_STARS, ARTIFACT_POOL_BY_KEY,
+)
+from rass import (
+    is_in_rass,
+    rass_start,
+    rass_cancel,
+    rass_fsm_message,
+    rass_fsm_callback,
+)
+from duel import (
+    duel_main_text, duel_main_keyboard,
+    duel_soon_text, duel_back_keyboard,
+    duel_equip_text, duel_equip_keyboard,
+    duel_equip_slot_text, duel_equip_slot_keyboard,
+    duel_item_card_text, duel_item_card_keyboard,
+    duel_charstats_text, duel_charstats_keyboard,
+    duel_skills_text, duel_skills_keyboard,
+    duel_skills_shop_text, duel_skills_shop_keyboard,
+    duel_skill_card_text, duel_skill_card_keyboard,
+    duel_search_text, duel_search_keyboard,
+    battle_text, battle_keyboard,
+    battle_use_skill,
+    join_queue, leave_queue, in_queue,
+    GEAR_CATALOG,
+    SKILLS,
+    get_owned_skills,
+    get_equipped_skills,
+    equip_skill,
+    unequip_skill,
+    owned_level, equipped_level,
+    apply_gear_purchase, apply_gear_equip, apply_gear_unequip,
+    MAX_EQUIPPED_SKILLS,
+)
 
-SKILLS = {
-    # ── Базовые (бесплатные) ──────────────────────────────────
-    "mag_ball": {
-        "key": "mag_ball",
-        "name": "Шар-маг",
-        "emoji": "🔵",
-        "type": "magic",
-        "cooldown": 15,
-        "base_dmg": (18, 28),
-        "description": "Концентрированный шар магической энергии. Пробивает магическую защиту.",
-        "price": 0,          # бесплатный — доступен всем
-    },
-    "explosion": {
-        "key": "explosion",
-        "name": "Взрыв",
-        "emoji": "💥",
-        "type": "physical",
-        "cooldown": 18,
-        "base_dmg": (22, 35),
-        "description": "Взрыв физической силы. Снижается физической защитой.",
-        "price": 0,
-    },
-    "shield": {
-        "key": "shield",
-        "name": "Щит",
-        "emoji": "🛡️",
-        "type": "shield",
-        "cooldown": 25,
-        "shield_amount": (20, 35),
-        "description": "Магический щит. Поглощает следующий входящий удар.",
-        "price": 0,
-    },
+# ── In-memory хранилище активных боёв (uid -> battle_state) ─────────
+_active_battles: dict[int, dict] = {}
+# ── Хранилище message_id боевого экрана (uid -> (chat_id, message_id)) ─
+_battle_msgs: dict[int, tuple] = {}
 
-    # ── Покупаемые навыки ────────────────────────────────────
-    "mag_block": {
-        "key": "mag_block",
-        "name": "Блок-маг",
-        "emoji": "🟣",
-        "type": "magic",
-        "cooldown": 20,
-        "base_dmg": (30, 48),
-        "description": "Мощный магический таран. Высокий урон, длинный кулдаун.",
-        "price": 8_000,
-    },
-    "freeze": {
-        "key": "freeze",
-        "name": "Заморозка",
-        "emoji": "❄️",
-        "type": "magic",
-        "cooldown": 30,
-        "base_dmg": (15, 22),
-        "freeze_turns": 1,
-        "description": "Заморозка противника. Наносит маг. урон и лишает хода.",
-        "price": 10_000,
-    },
-    "thunder": {
-        "key": "thunder",
-        "name": "Гром",
-        "emoji": "⚡",
-        "type": "magic",
-        "cooldown": 22,
-        "base_dmg": (35, 52),
-        "description": "Удар молнией. Игнорирует часть магической защиты.",
-        "price": 15_000,
-    },
-    "inferno": {
-        "key": "inferno",
-        "name": "Инферно",
-        "emoji": "🔥",
-        "type": "magic",
-        "cooldown": 28,
-        "base_dmg": (40, 60),
-        "description": "Огненный шторм. Один из мощнейших магических ударов.",
-        "price": 20_000,
-    },
-    "shadow_strike": {
-        "key": "shadow_strike",
-        "name": "Удар Тени",
-        "emoji": "🌑",
-        "type": "physical",
-        "cooldown": 16,
-        "base_dmg": (28, 42),
-        "description": "Стремительный удар из тени. Снижается физической защитой.",
-        "price": 12_000,
-    },
-    "berserker": {
-        "key": "berserker",
-        "name": "Берсерк",
-        "emoji": "🔴",
-        "type": "physical",
-        "cooldown": 35,
-        "base_dmg": (55, 80),
-        "description": "Состояние боевого безумия. Колоссальный физический удар.",
-        "price": 25_000,
-    },
-    "poison_dart": {
-        "key": "poison_dart",
-        "name": "Ядовитая Стрела",
-        "emoji": "🧪",
-        "type": "magic",
-        "cooldown": 20,
-        "base_dmg": (20, 30),
-        "description": "Отравленная стрела. Наносит маг. урон и ослабляет врага.",
-        "price": 13_000,
-    },
-    "earthquake": {
-        "key": "earthquake",
-        "name": "Землетрясение",
-        "emoji": "🌍",
-        "type": "physical",
-        "cooldown": 32,
-        "base_dmg": (45, 65),
-        "description": "Раскалывает землю под ногами врага. Мощный физ. удар.",
-        "price": 22_000,
-    },
-    "void_blast": {
-        "key": "void_blast",
-        "name": "Взрыв Пустоты",
-        "emoji": "🌀",
-        "type": "magic",
-        "cooldown": 40,
-        "base_dmg": (60, 90),
-        "description": "Разрывает ткань реальности. Огромный урон, долгий кулдаун.",
-        "price": 35_000,
-    },
-    "blade_storm": {
-        "key": "blade_storm",
-        "name": "Буря Клинков",
-        "emoji": "🌪️",
-        "type": "physical",
-        "cooldown": 26,
-        "base_dmg": (38, 55),
-        "description": "Вихрь из тысячи лезвий. Рубящий физический удар.",
-        "price": 18_000,
-    },
-    "soul_drain": {
-        "key": "soul_drain",
-        "name": "Похищение Души",
-        "emoji": "💜",
-        "type": "magic",
-        "cooldown": 45,
-        "base_dmg": (50, 75),
-        "drain_regen": 15,   # восстанавливает HP атакующему
-        "description": "Высасывает жизненную силу врага. Часть урона восстанавливает твоё HP.",
-        "price": 30_000,
-    },
-    "meteor": {
-        "key": "meteor",
-        "name": "Метеор",
-        "emoji": "☄️",
-        "type": "magic",
-        "cooldown": 50,
-        "base_dmg": (70, 100),
-        "description": "С небес падает огненный метеор. Сокрушительная мощь.",
-        "price": 45_000,
-    },
-    "iron_fist": {
-        "key": "iron_fist",
-        "name": "Железный Кулак",
-        "emoji": "✊",
-        "type": "physical",
-        "cooldown": 14,
-        "base_dmg": (24, 36),
-        "description": "Сокрушительный удар, пробивающий любую броню.",
-        "price": 9_000,
-    },
-    "arcane_surge": {
-        "key": "arcane_surge",
-        "name": "Аркановый Всплеск",
-        "emoji": "✨",
-        "type": "magic",
-        "cooldown": 18,
-        "base_dmg": (26, 40),
-        "description": "Выброс чистой маг. энергии. Быстрый и надёжный удар.",
-        "price": 11_000,
-    },
-    "war_cry": {
-        "key": "war_cry",
-        "name": "Боевой Клич",
-        "emoji": "📣",
-        "type": "physical",
-        "cooldown": 30,
-        "base_dmg": (42, 60),
-        "description": "Боевой клич, вселяющий ужас. Мощный физический удар.",
-        "price": 20_000,
-    },
-    "dark_nova": {
-        "key": "dark_nova",
-        "name": "Тёмная Новa",
-        "emoji": "🖤",
-        "type": "magic",
-        "cooldown": 55,
-        "base_dmg": (80, 115),
-        "description": "Взрыв тёмной материи. Разрушительная тёмная магия.",
-        "price": 60_000,
-    },
-    "chain_lightning": {
-        "key": "chain_lightning",
-        "name": "Цепная Молния",
-        "emoji": "🌩️",
-        "type": "magic",
-        "cooldown": 24,
-        "base_dmg": (32, 48),
-        "description": "Молния, скачущая от цели к цели. Стабильный маг. удар.",
-        "price": 16_000,
-    },
-    "titan_slam": {
-        "key": "titan_slam",
-        "name": "Удар Титана",
-        "emoji": "⚒️",
-        "type": "physical",
-        "cooldown": 42,
-        "base_dmg": (62, 88),
-        "description": "Удар с силой титана. Сотрясает врага до основания.",
-        "price": 40_000,
-    },
-    "divine_wrath": {
-        "key": "divine_wrath",
-        "name": "Гнев Небес",
-        "emoji": "⚜️",
-        "type": "magic",
-        "cooldown": 60,
-        "base_dmg": (90, 130),
-        "description": "Священный огонь небес. Абсолютное разрушение.",
-        "price": 80_000,
-    },
-    "mega_shield": {
-        "key": "mega_shield",
-        "name": "Мега-Щит",
-        "emoji": "🔰",
-        "type": "shield",
-        "cooldown": 40,
-        "shield_amount": (50, 80),
-        "description": "Огромный магический щит. Поглощает колоссальный урон.",
-        "price": 28_000,
-    },
-}
+BOT_TOKEN = '8693034024:AAFQ8rUGuhJ5yT9QNZoZzAmzNMatp_SVSbk'
 
-SKILLS_ORDER_BASE = ["mag_ball", "explosion", "shield"]
-SKILLS_ORDER = list(SKILLS.keys())
+bot = Bot(token=BOT_TOKEN)
 
-# Максимум навыков в бою
-MAX_EQUIPPED_SKILLS = 5
+import re as _re
 
 
-def get_owned_skills(user_data: dict) -> list:
-    """Возвращает список ключей навыков, которыми владеет пользователь."""
-    base = [k for k, v in SKILLS.items() if v["price"] == 0]
-    owned = user_data.get("duel_owned_skills", [])
-    result = []
-    for k in base:
-        if k not in result:
-            result.append(k)
-    for k in owned:
-        if k not in result:
-            result.append(k)
-    return result
+def _fmt_d(n: int) -> str:
+    return f"{n:,}".replace(",", " ")
+
+def _plain(text: str) -> str:
+    """Убирает HTML-теги и обрезает до 200 символов для call.answer()."""
+    return _re.sub(r'<[^>]+>', '', text).strip()[:200]
 
 
-def get_equipped_skills(user_data: dict) -> list:
-    """Возвращает список навыков, экипированных в бой (макс. 5)."""
-    equipped = user_data.get("duel_equipped_skills", [])
-    # Фильтруем: только те, которыми владеем
-    owned = get_owned_skills(user_data)
-    return [k for k in equipped if k in owned]
+def _text_in(*variants: str):
+    """Регистронезависимый фильтр текста сообщения.
+    Сравнивает message.text.strip().lower() с lower-версиями variants,
+    поэтому 'Шахта', 'ШАХТА', 'шахта' и т.п. — все будут совпадать.
+    """
+    lowered = {v.lower() for v in variants}
+
+    def _check(message: Message) -> bool:
+        if not message.text:
+            return False
+        return message.text.strip().lower() in lowered
+
+    return F.func(_check)
 
 
-def equip_skill(skill_key: str, user_data: dict) -> tuple:
-    """Экипировать навык в бой. Возвращает (ok, msg)."""
-    owned = get_owned_skills(user_data)
-    if skill_key not in owned:
-        return False, "❌ Навык не куплен!"
-    equipped = user_data.setdefault("duel_equipped_skills", [])
-    if skill_key in equipped:
-        return False, "❌ Навык уже экипирован!"
-    if len(equipped) >= MAX_EQUIPPED_SKILLS:
-        return False, f"❌ Максимум {MAX_EQUIPPED_SKILLS} навыков в бою!"
-    equipped.append(skill_key)
-    return True, "✅ Навык экипирован!"
+dp  = Dispatcher()
+
+# ---------- БЛОКИРОВКИ ПО ПОЛЬЗОВАТЕЛЯМ (защита от race condition / дюпов) ----------
+import asyncio as _asyncio
+_user_locks: dict[int, _asyncio.Lock] = {}
+_user_locks_mutex = _asyncio.Lock()
 
 
-def unequip_skill(skill_key: str, user_data: dict) -> tuple:
-    """Снять навык с экипировки. Возвращает (ok, msg)."""
-    equipped = user_data.setdefault("duel_equipped_skills", [])
-    if skill_key not in equipped:
-        return False, "❌ Навык не экипирован!"
-    equipped.remove(skill_key)
-    return True, "✅ Навык снят!"
+
+# Хранит message_id экрана кирки перед оплатой: uid -> (chat_id, message_id, pick_key)
+_pending_stars_msg: dict[int, tuple] = {}
+
+# Хранит message_id экрана кейса артефактов перед оплатой: uid -> (chat_id, message_id)
+_pending_artifact_msg: dict[int, tuple] = {}
+
+# Хранит message_id экрана статуса перед оплатой: uid -> (chat_id, message_id, tier)
+_pending_status_msg: dict[int, tuple] = {}
+
+# Защита от повторной обработки одного charge_id (replay-attack)
+_processed_charge_ids: set[str] = set()
+
+# Ожидание ввода промокода: uid -> True
+_promo_pending: dict[int, bool] = {}
+
+# Ожидание ввода суммы вклада: uid -> dep_key
+_cdl_input_pending: dict[int, str] = {}
+# Сообщение экрана ввода суммы: uid -> (chat_id, message_id)
+_cdl_input_msg: dict[int, tuple] = {}
+
+EMOJI_DEPOSITS = "5427168083074628963"
 
 
-# ── Карточка навыка (подробное окно, как у снаряжения) ────────────────────
-
-def duel_skill_card_text(skill_key: str, user_data: dict) -> str:
-    sk      = SKILLS.get(skill_key)
-    if not sk:
-        return "❌ Навык не найден."
-    owned    = get_owned_skills(user_data)
-    equipped = get_equipped_skills(user_data)
-    balance  = user_data.get("balance", 0)
-    is_owned = skill_key in owned
-    is_equip = skill_key in equipped
-
-    # Тип навыка
-    type_labels = {"magic": "🔮 Магический", "physical": "⚔️ Физический", "shield": "🛡️ Защитный"}
-    type_label  = type_labels.get(sk["type"], sk["type"])
-
-    # Характеристики
-    if sk["type"] == "shield":
-        power_line = f'🛡️ <b>Поглощает:</b> {sk["shield_amount"][0]}–{sk["shield_amount"][1]} HP'
-    else:
-        power_line = f'⚔️ <b>Урон:</b> {sk["base_dmg"][0]}–{sk["base_dmg"][1]}'
-
-    # Статус
-    if is_equip:
-        status_line = '✅ <b>Экипирован в бой</b>'
-    elif is_owned:
-        status_line = '📦 <b>Куплен</b> — не экипирован в бой'
-    else:
-        status_line = f'💰 <b>Цена: {_fmt(sk["price"])} монет</b>'
-        if balance < sk["price"]:
-            deficit = sk["price"] - balance
-            status_line += f'\n⚠️ <i>Не хватает {_fmt(deficit)} монет</i>'
-
-    # Слоты
-    slot_info = f'{len(equipped)}/{MAX_EQUIPPED_SKILLS} навыков экипировано'
-
-    return (
-        f'{sk["emoji"]} <b>{sk["name"]}</b>\n'
-        f'<i>{type_label} · ⏳ Перезарядка: {sk["cooldown"]} сек.</i>\n'
-        '━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote>{sk["description"]}</blockquote>\n\n'
-        f'<b>Характеристики:</b>\n'
-        f'{power_line}\n'
-        f'⏳ <b>Кулдаун:</b> {sk["cooldown"]} сек.\n\n'
-        f'<i>Слоты в бою: {slot_info}</i>\n\n'
-        f'{status_line}'
-    )
+async def _get_user_lock(uid: int) -> _asyncio.Lock:
+    """Возвращает персональный Lock для пользователя uid."""
+    async with _user_locks_mutex:
+        if uid not in _user_locks:
+            _user_locks[uid] = _asyncio.Lock()
+        return _user_locks[uid]
 
 
-def duel_skill_card_keyboard(skill_key: str, user_data: dict, from_page: int = 0) -> InlineKeyboardMarkup:
-    sk      = SKILLS.get(skill_key)
-    owned   = get_owned_skills(user_data)
-    equipped = get_equipped_skills(user_data)
-    balance = user_data.get("balance", 0)
-    is_owned = skill_key in owned
-    is_equip = skill_key in equipped
-    builder  = InlineKeyboardBuilder()
+# ---------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ОХОТЫ ----------
 
-    if is_equip:
-        builder.row(InlineKeyboardButton(
-            text="❌ Снять из боя",
-            callback_data=f"duel_skill_unequip:{skill_key}",
-        ))
-    elif is_owned:
-        if len(equipped) < MAX_EQUIPPED_SKILLS:
-            builder.row(InlineKeyboardButton(
-                text="⚔️ Экипировать в бой",
-                callback_data=f"duel_skill_equip:{skill_key}",
-            ))
+def _apply_xp(data: dict, xp_gain: int):
+    """
+    Начисляет XP пользователю и повышает уровень если накоплено достаточно.
+    Работает с любой формулой xp_for_level из miner.py.
+    """
+    from miner import xp_for_level, MAX_LEVEL
+    data["xp"] = data.get("xp", 0) + xp_gain
+    # Повышаем уровень пока XP >= порога
+    while True:
+        lvl = data.get("level", 1)
+        if lvl >= MAX_LEVEL:
+            # На максимальном уровне — обнуляем XP прогресс
+            data["xp"]    = 0
+            data["xp_max"] = xp_for_level(lvl)
+            break
+        xp_needed = xp_for_level(lvl)
+        data["xp_max"] = xp_needed
+        if data["xp"] >= xp_needed:
+            data["xp"]    -= xp_needed
+            data["level"]  = lvl + 1
+            data["xp_max"] = xp_for_level(lvl + 1)
         else:
-            builder.row(InlineKeyboardButton(
-                text=f"⚠️ Все {MAX_EQUIPPED_SKILLS} слотов заняты",
-                callback_data="duel_skill_slots_full",
-            ))
-    else:
-        if sk and balance >= sk["price"]:
-            builder.row(InlineKeyboardButton(
-                text=f"🛒 Купить — {_fmt(sk['price'])} монет",
-                callback_data=f"duel_skill_buy:{skill_key}",
-            ))
-        elif sk:
-            builder.row(InlineKeyboardButton(
-                text=f"💸 Недостаточно монет",
-                callback_data="duel_skill_nofunds",
-            ))
+            break
 
+
+def _distribute_boss_rewards(killer_uid: int, damage_rewards: dict):
+    """
+    Начисляет монеты и XP всем участникам убийства босса кроме убийцы
+    (убийца получил награду уже внутри attack_boss).
+    Сохраняет каждого пользователя в БД.
+    """
+    from database import get_user, save_user as _sv
+    for uid_str, (coins, xp) in damage_rewards.items():
+        try:
+            uid = int(uid_str)
+        except ValueError:
+            continue
+        if uid == killer_uid:
+            continue  # убийца уже получил всё в attack_boss
+        u = get_user(uid)
+        if not u:
+            continue
+        u["balance"] = u.get("balance", 0) + coins
+        _apply_xp(u, xp)
+        _sv(uid, u)
+        # Уведомление участнику
+        try:
+            from miner import COIN as _COIN_ICON
+            _notif = (
+                f'<tg-emoji emoji-id="5438496463044752972">💰</tg-emoji> '
+                f'<b>Награда за участие в убийстве босса!</b>\n\n'
+                f'<blockquote>'
+                f'<tg-emoji emoji-id="5199552030615558774">💰</tg-emoji> <b>Монеты: +{format_amount(coins)}</b>\n'
+                f'<tg-emoji emoji-id="5341498088408234504">✨</tg-emoji> <b>XP: +{format_amount(xp)}</b>'
+                f'</blockquote>'
+            )
+            import asyncio as _aio
+            _aio.ensure_future(bot.send_message(uid, _notif, parse_mode="HTML"))
+        except Exception:
+            pass
+
+
+# ---------- ЭМОДЗИ ГЛАВНОГО МЕНЮ ----------
+EMOJI_PROFILE  = "5906622905894050515"
+EMOJI_STATS    = "5231200819986047254"
+EMOJI_SHOP     = "5406683434124859552"
+EMOJI_MINE     = "5197371802136892976"
+EMOJI_HUNT     = "5424972470023104089"
+EMOJI_STATUS   = "5438496463044752972"
+EMOJI_EXCHANGE = "5402186569006210455"
+EMOJI_PETS     = "5337047059180566409"
+EMOJI_LEADERS  = "5440539497383087970"
+EMOJI_SETTINGS = "5341715473882955310"
+
+# Кастомная монета (используется в сообщениях кланов вместо обычного 🪙)
+_COIN = '<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji>'
+
+def _back_btn(callback: str, label: str = "Назад") -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=label, callback_data=callback, icon_custom_emoji_id=EMOJI_BACK)
+
+
+def main_reply_keyboard(lang: str = "ru") -> ReplyKeyboardMarkup:
+    builder = ReplyKeyboardBuilder()
+    builder.row(
+        KeyboardButton(text="🎮 Меню" if lang == "ru" else "🎮 Menu", style="primary"),
+        KeyboardButton(text="⚔️ Клан" if lang == "ru" else "⚔️ Clan", style="primary"),
+    )
+    return builder.as_markup(resize_keyboard=True)
+
+
+def main_menu_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text=t(lang, "btn_profile"),  callback_data="profile",    icon_custom_emoji_id=EMOJI_PROFILE),
+        InlineKeyboardButton(text=t(lang, "btn_stats"),    callback_data="stats",      icon_custom_emoji_id=EMOJI_STATS),
+        InlineKeyboardButton(text=t(lang, "btn_cases"),    callback_data="shop_cases", icon_custom_emoji_id="5442939099906325301"),
+    )
+    builder.row(InlineKeyboardButton(text=t(lang, "btn_mine"), callback_data="mine", icon_custom_emoji_id=EMOJI_MINE))
+    builder.row(
+        InlineKeyboardButton(text=t(lang, "btn_hunt"),   callback_data="hunt",   icon_custom_emoji_id=EMOJI_HUNT),
+        InlineKeyboardButton(text=t(lang, "btn_status"), callback_data="status", icon_custom_emoji_id=EMOJI_STATUS),
+    )
+    builder.row(InlineKeyboardButton(text=t(lang, "btn_pets"), callback_data="pets", icon_custom_emoji_id=EMOJI_PETS))
     builder.row(InlineKeyboardButton(
-        text="Назад",
-        callback_data=f"duel_skills_shop_page:{from_page}",
-        icon_custom_emoji_id=EMOJI_BACK,
+        text=" Дуэли" if lang == "ru" else " Duels",
+        callback_data="duel_main",
+        icon_custom_emoji_id="5424972470023104089",
     ))
+    builder.row(InlineKeyboardButton(
+        text=" Вклады" if lang == "ru" else " Deposits",
+        callback_data="cdl_main",
+        icon_custom_emoji_id=EMOJI_DEPOSITS,
+    ))
+    builder.row(
+        InlineKeyboardButton(text=t(lang, "btn_leaders"),  callback_data="leaders",  icon_custom_emoji_id=EMOJI_LEADERS),
+        InlineKeyboardButton(text=t(lang, "btn_settings"), callback_data="settings", icon_custom_emoji_id=EMOJI_SETTINGS),
+    )
     return builder.as_markup()
 
 
-def _calc_skill_damage(skill_key: str, attacker_stats: dict, defender_stats: dict) -> dict:
-    """Вычислить урон от навыка."""
-    sk = SKILLS[skill_key]
-    result = {"type": sk["type"], "skill": skill_key}
-
-    if sk["type"] == "magic":
-        base_min, base_max = sk["base_dmg"]
-        base = random.randint(base_min, base_max)
-        enemy_resist = max(0, defender_stats.get("mag_def", 10) * 0.5)
-        dmg = max(1, int(base - enemy_resist))
-        result["dmg"] = dmg
-
-    elif sk["type"] == "physical":
-        base_min, base_max = sk["base_dmg"]
-        base = random.randint(base_min, base_max)
-        enemy_resist = max(0, defender_stats.get("phys_def", 10) * 0.4)
-        dmg = max(1, int(base - enemy_resist))
-        result["dmg"] = dmg
-
-    elif sk["type"] == "shield":
-        sh_min, sh_max = sk["shield_amount"]
-        result["shield"] = random.randint(sh_min, sh_max)
-        result["dmg"] = 0
-
-    if skill_key == "freeze":
-        result["freeze"] = True
-
-    if skill_key == "soul_drain":
-        result["drain_regen"] = sk.get("drain_regen", 15)
-
-    return result
+def profile_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=" Инвентарь" if lang == "ru" else " Inventory",
+            callback_data="profile_boosters",
+            icon_custom_emoji_id="5445221832074483553"
+        ),
+        InlineKeyboardButton(
+            text=" Друзья" if lang == "ru" else " Friends",
+            callback_data="refs_main",
+            icon_custom_emoji_id="5332724926216428039"
+        ),
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=" Промокод" if lang == "ru" else " Promo",
+            callback_data="promo_input",
+            icon_custom_emoji_id="5359664288241829619"
+        ),
+    )
+    builder.row(_back_btn("back_to_menu", t(lang, "btn_back")))
+    return builder.as_markup()
 
 
-# ════════════════════════════════════════════════════════════
-#  СИСТЕМА HP ИГРОКА (восстановление после боя)
-# ════════════════════════════════════════════════════════════
-# Хранит текущий HP игрока вне боя: uid -> {"hp": int, "last_regen_at": int}
-_player_hp: dict[int, dict] = {}
-
-HP_REGEN_INTERVAL = 10   # секунд между тиками восстановления
-HP_REGEN_AMOUNT   = 10   # HP за тик
-HP_MAX_DEFAULT    = 100  # стандартный максимум HP (без снаряжения)
+def back_button(lang: str = "ru") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(_back_btn("back_to_menu", t(lang, "btn_back")))
+    return builder.as_markup()
 
 
-def get_player_hp(uid: int, user_data: dict) -> int:
-    """Возвращает текущий HP игрока вне боя (с учётом регенерации)."""
-    hp_max = _calc_stats(user_data)["hp"]
-    entry  = _player_hp.get(uid)
-    if entry is None:
-        # Первый вызов — HP полное
-        _player_hp[uid] = {"hp": hp_max, "last_regen_at": int(time.time())}
-        return hp_max
-
-    now     = int(time.time())
-    elapsed = now - entry["last_regen_at"]
-    ticks   = elapsed // HP_REGEN_INTERVAL
-    if ticks > 0 and entry["hp"] < hp_max:
-        entry["hp"] = min(hp_max, entry["hp"] + ticks * HP_REGEN_AMOUNT)
-        entry["last_regen_at"] += ticks * HP_REGEN_INTERVAL
-    return entry["hp"]
-
-
-def set_player_hp(uid: int, hp: int, user_data: dict):
-    """Устанавливает HP игрока после боя."""
-    hp_max = _calc_stats(user_data)["hp"]
-    _player_hp[uid] = {
-        "hp": max(0, min(hp_max, hp)),
-        "last_regen_at": int(time.time()),
-    }
-
-
-def is_player_ready(uid: int, user_data: dict) -> bool:
-    """True если HP игрока >= 100 (можно идти в бой)."""
-    return get_player_hp(uid, user_data) >= 100
+def stars_confirm_keyboard(pick_key: str, page: int, invoice_url: str = None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if invoice_url:
+        builder.row(InlineKeyboardButton(
+            text="Оплатить",
+            url=invoice_url,
+            icon_custom_emoji_id="5999336376342940892",
+            style="success"
+        ))
+    else:
+        builder.row(InlineKeyboardButton(
+            text="Оплатить",
+            callback_data=f"pick_pay_stars_{pick_key}",
+            icon_custom_emoji_id="5999336376342940892",
+            style="success"
+        ))
+    builder.row(InlineKeyboardButton(
+        text="Мои звёзды",
+        url="tg://stars/",
+        icon_custom_emoji_id="5348570868752595928",
+        style="primary"
+    ))
+    builder.row(_back_btn(f"pick_info_{pick_key}", "Назад"))
+    return builder.as_markup()
 
 
-def player_hp_regen_seconds(uid: int, user_data: dict) -> int:
-    """Возвращает секунд до следующего тика регенерации."""
-    hp_max = _calc_stats(user_data)["hp"]
-    entry  = _player_hp.get(uid)
-    if entry is None or entry["hp"] >= hp_max:
-        return 0
-    elapsed = int(time.time()) - entry["last_regen_at"]
-    return max(0, HP_REGEN_INTERVAL - elapsed % HP_REGEN_INTERVAL)
-
-
-# ════════════════════════════════════════════════════════════
-#  СИСТЕМА ВЫЗОВА НА ДУЭЛЬ (Challenge)
-# ════════════════════════════════════════════════════════════
-# pending_challenges: uid_challenger -> {"target_uid": int, "target_name": str, "expires_at": int}
-_pending_challenges: dict[int, dict] = {}
-# Хранит uid того, кто бросил вызов: uid_target -> uid_challenger
-_incoming_challenge: dict[int, int] = {}
-
-
-def create_challenge(challenger_uid: int, target_uid: int, target_name: str):
-    """Создаёт вызов на дуэль."""
-    expires = int(time.time()) + 120  # 2 минуты
-    _pending_challenges[challenger_uid] = {
-        "target_uid": target_uid,
-        "target_name": target_name,
-        "expires_at": expires,
-    }
-    _incoming_challenge[target_uid] = challenger_uid
-
-
-def get_incoming_challenge(uid: int) -> dict | None:
-    """Возвращает данные входящего вызова или None."""
-    challenger_uid = _incoming_challenge.get(uid)
-    if challenger_uid is None:
-        return None
-    ch = _pending_challenges.get(challenger_uid)
-    if ch is None or int(time.time()) > ch["expires_at"]:
-        _incoming_challenge.pop(uid, None)
-        _pending_challenges.pop(challenger_uid, None)
-        return None
-    ch = dict(ch)
-    ch["challenger_uid"] = challenger_uid
-    return ch
-
-
-def cancel_challenge(challenger_uid: int):
-    """Отменяет вызов."""
-    ch = _pending_challenges.pop(challenger_uid, None)
-    if ch:
-        _incoming_challenge.pop(ch["target_uid"], None)
-
-
-def accept_challenge(target_uid: int) -> dict | None:
-    """
-    Принимает вызов. Возвращает battle-dict или None если вызов устарел.
-    Данные игроков надо передать снаружи через accept_challenge_with_data.
-    """
-    challenger_uid = _incoming_challenge.pop(target_uid, None)
-    if challenger_uid is None:
-        return None
-    ch = _pending_challenges.pop(challenger_uid, None)
-    if ch is None or int(time.time()) > ch["expires_at"]:
-        return None
-    return {"challenger_uid": challenger_uid}
-
-
-def decline_challenge(target_uid: int) -> int | None:
-    """Отклоняет вызов, возвращает uid вызывающего."""
-    challenger_uid = _incoming_challenge.pop(target_uid, None)
-    if challenger_uid:
-        _pending_challenges.pop(challenger_uid, None)
-    return challenger_uid
-
-
-def start_challenge_battle(challenger_uid: int, challenger_data: dict,
-                           target_uid: int, target_data: dict) -> dict:
-    """Создаёт боевой state для вызова на дуэль."""
-    battle = _create_battle(challenger_uid, challenger_data, target_uid, target_data)
-    # Навыки обоих
-    battle["p1_skills"] = get_equipped_skills(challenger_data) or get_owned_skills(challenger_data)
-    battle["p2_skills"] = get_equipped_skills(target_data) or get_owned_skills(target_data)
-    return battle
-
-
-def challenge_invite_text(challenger_data: dict) -> str:
-    """Текст уведомления о вызове для цели. Показывает хар-ки вызывающего."""
-    stats  = _calc_stats(challenger_data)
-    name   = challenger_data.get("first_name") or challenger_data.get("username") or "Игрок"
-    lvl    = challenger_data.get("level", 1)
-    skills = get_equipped_skills(challenger_data) or get_owned_skills(challenger_data)
-    sk_names = ", ".join(SKILLS[k]["name"] for k in skills[:5] if k in SKILLS) or "нет"
+def stars_confirm_text(p: dict) -> str:
+    from miner import STAR, COIN, TIER_LABELS
+    tier  = TIER_LABELS.get(p.get("tier", ""), "")
     return (
-        f'⚔️ <b>Вызов на дуэль!</b>\n'
-        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<tg-emoji emoji-id="5197371802136892976">⭐</tg-emoji> <b>{p["name"]}</b>\n'
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
         f'<blockquote>'
-        f'👤 <b>{name}</b> (уровень {lvl}) бросает тебе вызов!\n\n'
-        f'📊 <b>Характеристики противника:</b>\n'
-        f'❤️ HP: <b>{stats["hp"]}</b>\n'
-        f'🛡️ Физ. защита: <b>{stats["phys_def"]}</b>\n'
-        f'🔮 Маг. защита: <b>{stats["mag_def"]}</b>\n'
-        f'💚 Регенерация: <b>{stats["regen"]}</b> HP/ход\n'
-        f'⚙️ Стойкость: <b>{stats["stamina"]}</b>\n\n'
-        f'⚔️ Навыки: <i>{sk_names}</i>\n\n'
-        f'⏳ <i>Вызов действителен 2 минуты</i>'
+        f'<tg-emoji emoji-id="5197269100878907942">⭐</tg-emoji><b>Тир: {tier}</b>\n'
+        f'<tg-emoji emoji-id="5310278924616356636">⭐</tg-emoji><b>Ударов за кампанию: {format_amount(p["dig_min"])}–{format_amount(p["dig_max"])}</b>\n'
+        f'<tg-emoji emoji-id="5445353829304387411">⭐</tg-emoji><b>Стоимость: {format_amount(p["cost_stars"])}</b> {STAR}'
         f'</blockquote>'
     )
 
 
-def challenge_invite_keyboard(challenger_uid: int) -> InlineKeyboardMarkup:
-    """Кнопки Принять / Отказаться для цели вызова."""
+SHOP_TEXT = '<blockquote><tg-emoji emoji-id="5406683434124859552">🛒</tg-emoji> <b>МАГАЗИН</b>\n\n<b>Выбери категорию:</b></blockquote>'
+
+
+def shop_main_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text="✅ Принять",
-            callback_data=f"duel_challenge_accept:{challenger_uid}",
-        ),
-        InlineKeyboardButton(
-            text="❌ Отказаться",
-            callback_data=f"duel_challenge_decline:{challenger_uid}",
-        ),
-    )
+    builder.row(InlineKeyboardButton(
+        text="Кейсы", callback_data="shop_cases",
+        icon_custom_emoji_id="5442939099906325301"
+    ))
+    builder.row(_back_btn("back_to_menu", "Назад"))
     return builder.as_markup()
 
 
-# ════════════════════════════════════════════════════════════
-#  ПОИСК ПРОТИВНИКА / МАТЧМЕЙКИНГ
-# ════════════════════════════════════════════════════════════
+# ---------- КОМАНДЫ ----------
 
-_match_queue: dict[int, tuple] = {}
+ADMIN_IDS = {8118184388}
 
-
-def join_queue(uid: int, user_data: dict) -> dict | None:
-    now = int(time.time())
-    stale = [k for k, (ts, _) in _match_queue.items() if now - ts > 120]
-    for k in stale:
-        _match_queue.pop(k, None)
-
-    for opponent_uid, (ts, opp_data) in list(_match_queue.items()):
-        if opponent_uid == uid:
-            continue
-        _match_queue.pop(opponent_uid, None)
-        battle = _create_battle(uid, user_data, opponent_uid, opp_data)
-        return battle
-
-    _match_queue[uid] = (now, user_data)
-    return None
+GUIDE_URL = "https://telegra.ph/POLNOE-RUKOVODSTVO-POLZOVATELYA-06-24"
 
 
-def leave_queue(uid: int):
-    _match_queue.pop(uid, None)
+def guide_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="📖 Открыть гайд",
+        url=GUIDE_URL,
+    ))
+    return builder.as_markup()
 
 
-def in_queue(uid: int) -> bool:
-    return uid in _match_queue
+@dp.message(Command("guide", "гайд", "Guide", "Гайд"))
+@dp.message(_text_in("гайд", "guide", "/guide", "/гайд", "как играть", "/как играть"))
+async def cmd_guide(message: Message):
+    await message.answer(
+        '<tg-emoji emoji-id="5334544901428229844">📖</tg-emoji> <b><i>Гайд для новых игроков!</i></b>\n',
+        parse_mode="HTML",
+        reply_markup=guide_keyboard(),
+    )
 
 
-# ════════════════════════════════════════════════════════════
-#  БОЙ
-# ════════════════════════════════════════════════════════════
+@dp.message(Command("add"))
+async def cmd_add_balance(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return  # тихо игнорируем
 
-BASE_STATS = {
-    "hp": 100, "dmg": 0, "regen": 5,
-    "phys_def": 10, "mag_def": 10, "stamina": 20,
-}
+    parts = message.text.strip().split()
+    # /add <username|id> <сумма>
+    if len(parts) != 3:
+        await message.reply(
+            "❌ Неверный формат.\nИспользование: <code>/add username|id сумма</code>",
+            parse_mode="HTML"
+        )
+        return
 
+    target_raw = parts[1].lstrip("@")
+    try:
+        amount = int(parts[2])
+    except ValueError:
+        await message.reply("❌ Сумма должна быть целым числом.", parse_mode="HTML")
+        return
 
-def _calc_stats(user_data: dict) -> dict:
-    """
-    Считаем статы персонажа.
-    Снаряжение даёт hp, phys_def, mag_def, regen, stamina — НЕ dmg.
-    Урон (dmg) снаряжение не даёт вообще.
-    """
-    equipped = user_data.get("duel_equipped", {})
-    stats = dict(BASE_STATS)
-    for item_key in equipped.values():
-        item = GEAR_CATALOG.get(item_key)
-        if not item:
-            continue
-        for stat, bonus in item["bonus"].items():
-            if stat == "dmg":
-                continue   # снаряжение НЕ добавляет урон
-            stats[stat] = stats.get(stat, 0) + bonus
-    return stats
+    # Поиск пользователя в БД
+    from database import get_all_users, save_user as _save
+    all_users = get_all_users()
+    found = None
 
-
-def _create_battle(uid1: int, data1: dict, uid2: int, data2: dict) -> dict:
-    stats1 = _calc_stats(data1)
-    stats2 = _calc_stats(data2)
-
-    name1 = data1.get("first_name") or data1.get("username") or f"Игрок {uid1}"
-    name2 = data2.get("first_name") or data2.get("username") or f"Игрок {uid2}"
-
-    now = int(time.time())
-    battle = {
-        "p1_uid": uid1,
-        "p2_uid": uid2,
-        "p1_name": name1,
-        "p2_name": name2,
-        "p1_hp": stats1["hp"],
-        "p2_hp": stats2["hp"],
-        "p1_hp_max": stats1["hp"],
-        "p2_hp_max": stats2["hp"],
-        "p1_stats": stats1,
-        "p2_stats": stats2,
-        "p1_shield": 0,
-        "p2_shield": 0,
-        "p1_frozen": False,
-        "p2_frozen": False,
-        "p1_cooldowns": {},
-        "p2_cooldowns": {},
-        "turn": uid1,
-        "started_at": now,
-        "last_action": now,
-        "log": [],
-        "finished": False,
-        "winner_uid": None,
-    }
-    return battle
-
-
-def _get_player_prefix(battle: dict, uid: int) -> str:
-    return "p1" if battle["p1_uid"] == uid else "p2"
-
-
-def _get_enemy_prefix(battle: dict, uid: int) -> str:
-    return "p2" if battle["p1_uid"] == uid else "p1"
-
-
-def battle_use_skill(battle: dict, uid: int, skill_key: str) -> tuple:
-    now = int(time.time())
-
-    if battle.get("finished"):
-        return battle, {"ok": False, "msg": "Бой уже завершён."}
-
-    me  = _get_player_prefix(battle, uid)
-    foe = _get_enemy_prefix(battle, uid)
-
-    if battle.get(f"{me}_frozen"):
-        battle[f"{me}_frozen"] = False
-        return battle, {"ok": False, "msg": "❄️ Ты заморожен и пропускаешь ход!"}
-
-    cooldowns = battle.get(f"{me}_cooldowns", {})
-    ready_at  = cooldowns.get(skill_key, 0)
-    if now < ready_at:
-        left = ready_at - now
-        return battle, {"ok": False, "msg": f"⏳ Навык на перезарядке ещё {left}с."}
-
-    sk = SKILLS.get(skill_key)
-    if not sk:
-        return battle, {"ok": False, "msg": "Неизвестный навык."}
-
-    cooldowns[skill_key] = now + sk["cooldown"]
-    battle[f"{me}_cooldowns"] = cooldowns
-
-    my_stats  = battle[f"{me}_stats"]
-    foe_stats = battle[f"{foe}_stats"]
-
-    result = _calc_skill_damage(skill_key, my_stats, foe_stats)
-    effect_msg = ""
-
-    if sk["type"] == "shield":
-        sh = result["shield"]
-        battle[f"{me}_shield"] = sh
-        effect_msg = f"🛡️ Щит {sh} HP"
-        log_entry = f"{battle[f'{me}_name']}: {sk['emoji']} {sk['name']} → {effect_msg}"
+    # Сначала пробуем по числовому ID
+    if target_raw.lstrip("-").isdigit():
+        uid = int(target_raw)
+        found = next((u for u in all_users if u["id"] == uid), None)
     else:
-        raw_dmg = result["dmg"]
-        foe_shield = battle.get(f"{foe}_shield", 0)
-        if foe_shield > 0:
-            absorbed = min(foe_shield, raw_dmg)
-            raw_dmg -= absorbed
-            battle[f"{foe}_shield"] = foe_shield - absorbed
-            effect_msg += f" (щит -{absorbed})"
-
-        battle[f"{foe}_hp"] = max(0, battle[f"{foe}_hp"] - raw_dmg)
-        result["dmg"] = raw_dmg
-
-        if result.get("freeze"):
-            battle[f"{foe}_frozen"] = True
-            effect_msg += " ❄️ заморозка!"
-
-        # Soul drain — восстановить HP атакующему
-        if result.get("drain_regen"):
-            drain = result["drain_regen"]
-            hp_max = battle[f"{me}_hp_max"]
-            battle[f"{me}_hp"] = min(hp_max, battle[f"{me}_hp"] + drain)
-            effect_msg += f" 💜+{drain}HP"
-
-        log_entry = (
-            f"{battle[f'{me}_name']}: {sk['emoji']} {sk['name']} "
-            f"→ -{raw_dmg} HP{effect_msg}"
+        # По username (без учёта регистра)
+        found = next(
+            (u for u in all_users
+             if (u.get("username") or "").lower() == target_raw.lower()),
+            None
         )
 
-    # Регенерация
-    regen = my_stats.get("regen", 0)
-    if regen > 0:
-        hp_max = battle[f"{me}_hp_max"]
-        battle[f"{me}_hp"] = min(hp_max, battle[f"{me}_hp"] + regen)
+    if not found:
+        await message.reply(
+            f"❌ Пользователь <code>{target_raw}</code> не найден в базе.",
+            parse_mode="HTML"
+        )
+        return
 
-    battle["log"].append(log_entry)
-    if len(battle["log"]) > 6:
-        battle["log"] = battle["log"][-6:]
+    old_balance = found.get("balance", 0)
+    new_balance = old_balance + amount
+    if new_balance < 0:
+        new_balance = 0  # не уходим в минус
 
-    if battle["p1_hp"] <= 0 or battle["p2_hp"] <= 0:
-        battle["finished"] = True
-        if battle["p1_hp"] <= 0 and battle["p2_hp"] <= 0:
-            battle["winner_uid"] = None
-        elif battle["p1_hp"] <= 0:
-            battle["winner_uid"] = battle["p2_uid"]
-        else:
-            battle["winner_uid"] = battle["p1_uid"]
+    found["balance"] = new_balance
+    _save(found["id"], found)
 
-    battle["last_action"] = now
-    return battle, {"ok": True, "result": result, "log_entry": log_entry}
+    name   = found.get("first_name") or found.get("username") or str(found["id"])
+    action = "➕ Выдано" if amount >= 0 else "➖ Снято"
+    coin   = '<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji>'
 
-
-# ── HP-бар ───────────────────────────────────────────────────
-
-def _hp_bar(hp: int, hp_max: int, length: int = 10) -> str:
-    if hp_max <= 0:
-        return "▓" * length
-    ratio = max(0, min(1, hp / hp_max))
-    filled = round(ratio * length)
-    bar = "█" * filled + "░" * (length - filled)
-    pct = int(ratio * 100)
-    return f"[{bar}] {hp}/{hp_max} ({pct}%)"
+    await message.reply(
+        f"✅ <b>Готово!</b>\n\n"
+        f"<blockquote>👤 Игрок: <b>{name}</b> (<code>{found['id']}</code>)\n"
+        f"{action}: <b>{format_amount(abs(amount))}</b> {coin}\n"
+        f"Было: <b>{format_amount(old_balance)}</b> {coin}\n"
+        f"Стало: <b>{format_amount(new_balance)}</b> {coin}</blockquote>",
+        parse_mode="HTML"
+    )
 
 
-# ── Боевой экран (текст) ─────────────────────────────────────
+@dp.message(Command("getallart"))
+async def cmd_getallart(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    from shop import _ARTIFACT_POOL, ARTIFACT_POOL_BY_KEY, get_artifact_mine_multiplier, get_artifact_damage_multiplier, get_artifact_pets_multiplier
+    from database import get_user, save_user as _save
+    uid  = message.from_user.id
+    data = get_user(uid)
+    if not data:
+        await message.reply("❌ Пользователь не найден в БД. Напиши /start сначала.", parse_mode="HTML")
+        return
+    artifacts = data.setdefault("artifacts", [])
+    already   = {e["key"] for e in artifacts}
+    added     = []
+    for a in _ARTIFACT_POOL:
+        if a["key"] not in already:
+            artifacts.append({"key": a["key"]})
+            added.append(a)
+    data["artifact_cases_opened"] = data.get("artifact_cases_opened", 0) + len(added)
+    _save(uid, data)
+    mine_mult   = get_artifact_mine_multiplier(data)
+    damage_mult = get_artifact_damage_multiplier(data)
+    pets_mult   = get_artifact_pets_multiplier(data)
+    if added:
+        lines = "\n".join(f'<b>✅ {a["name"]} — {a["multiplier"]}×</b>' for a in added)
+        status = f"<b>Добавлено: {len(added)} шт.</b>\n{lines}"
+    else:
+        status = "<b>Все артефакты уже были в коллекции.</b>"
+    await message.reply(
+        f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>GETALLART</b>\n\n'
+        f'<blockquote>{status}</blockquote>\n\n'
+        f'<blockquote>'
+        f'<b>Итоговые бонусы:</b>\n'
+        f'<b>⛏ Добыча руды: ×{mine_mult}</b>\n'
+        f'<b>⚔️ Урон по боссу: ×{damage_mult}</b>\n'
+        f'<b>🐾 Добыча питомцов: ×{pets_mult}</b>'
+        f'</blockquote>',
+        parse_mode="HTML"
+    )
 
-def battle_text(battle: dict, uid: int) -> str:
-    me  = _get_player_prefix(battle, uid)
-    foe = _get_enemy_prefix(battle, uid)
 
-    my_name    = battle[f"{me}_name"]
-    foe_name   = battle[f"{foe}_name"]
-    my_hp      = battle[f"{me}_hp"]
-    my_hp_max  = battle[f"{me}_hp_max"]
-    foe_hp     = battle[f"{foe}_hp"]
-    foe_hp_max = battle[f"{foe}_hp_max"]
+@dp.message(Command("updamage"))
+async def cmd_updamage(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return  # тихо игнорируем
 
-    my_bar  = _hp_bar(my_hp, my_hp_max)
-    foe_bar = _hp_bar(foe_hp, foe_hp_max)
+    parts = message.text.strip().split()
+    if len(parts) != 2:
+        await message.reply(
+            "❌ Неверный формат.\nИспользование: <code>/updamage username|id</code>",
+            parse_mode="HTML"
+        )
+        return
 
-    shields = ""
-    if battle.get(f"{me}_shield", 0) > 0:
-        shields += f"\n🛡️ Твой щит: <b>{battle[f'{me}_shield']} HP</b>"
-    if battle.get(f"{foe}_shield", 0) > 0:
-        shields += f"\n🛡️ Щит врага: <b>{battle[f'{foe}_shield']} HP</b>"
+    target_raw = parts[1].lstrip("@")
+    from database import get_all_users, save_user as _save
+    all_users = get_all_users()
 
-    frozen_note = ""
-    if battle.get(f"{me}_frozen"):
-        frozen_note = "\n❄️ <b>Ты заморожен! Следующий ход пропущен.</b>"
-    if battle.get(f"{foe}_frozen"):
-        frozen_note += f"\n❄️ <b>{foe_name} заморожен!</b>"
+    if target_raw.lstrip("-").isdigit():
+        found = next((u for u in all_users if u["id"] == int(target_raw)), None)
+    else:
+        found = next(
+            (u for u in all_users if (u.get("username") or "").lower() == target_raw.lower()),
+            None
+        )
 
-    log_lines = battle.get("log", [])
-    log_block = ""
-    if log_lines:
-        log_block = "\n\n<blockquote>" + "\n".join(log_lines[-4:]) + "</blockquote>"
+    if not found:
+        await message.reply(
+            f"❌ Пользователь <code>{target_raw}</code> не найден в базе.",
+            parse_mode="HTML"
+        )
+        return
 
-    if battle.get("finished"):
-        winner = battle.get("winner_uid")
-        if winner is None:
-            result_line = "⚔️ <b>Ничья!</b>"
-        elif winner == uid:
-            result_line = "🏆 <b>Ты победил!</b>"
-        else:
-            result_line = "💀 <b>Ты проиграл!</b>"
-        return (
-            f'⚔️ <b>БОЙ ЗАВЕРШЁН</b>\n'
-            f'━━━━━━━━━━━━━━━━━━━━\n\n'
-            f'{result_line}\n\n'
+    current = found.get("infinite_dmg", False)
+    found["infinite_dmg"] = not current
+    _save(found["id"], found)
+
+    name = found.get("first_name") or found.get("username") or str(found["id"])
+    status = "✅ <b>Включён</b>" if found["infinite_dmg"] else "❌ <b>Выключен</b>"
+
+    await message.reply(
+        f'⚔️ <b>Бесконечный урон для {name}:</b> {status}',
+        parse_mode="HTML"
+    )
+
+
+
+@dp.message(Command("getstatus"))
+async def cmd_getstatus(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    parts = message.text.strip().split()
+    # /getstatus <username|id> <vip|pr>
+    if len(parts) != 3 or parts[2].lower() not in ("vip", "pr", "premium"):
+        await message.reply(
+            "❌ Неверный формат.\nИспользование: <code>/getstatus username|id vip|pr</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    target_raw = parts[1].lstrip("@")
+    tier_arg   = parts[2].lower()
+    tier       = "premium" if tier_arg in ("pr", "premium") else "vip"
+
+    from database import get_all_users, save_user as _save
+    all_users = get_all_users()
+
+    if target_raw.lstrip("-").isdigit():
+        found = next((u for u in all_users if u["id"] == int(target_raw)), None)
+    else:
+        found = next(
+            (u for u in all_users if (u.get("username") or "").lower() == target_raw.lower()),
+            None
+        )
+
+    if not found:
+        await message.reply(
+            f"❌ Пользователь <code>{target_raw}</code> не найден в базе.",
+            parse_mode="HTML"
+        )
+        return
+
+    ok, msg = activate_status(found, tier)
+    if ok:
+        _save(found["id"], found)
+
+    name  = found.get("first_name") or found.get("username") or str(found["id"])
+    label = "VIP" if tier == "vip" else "Premium"
+    await message.reply(
+        f'✅ <b>Статус {label} выдан!</b>\n\n'
+        f'<blockquote>👤 Игрок: <b>{name}</b> (<code>{found["id"]}</code>)\n'
+        f'📅 Срок: <b>30 дней</b></blockquote>',
+        parse_mode="HTML"
+    )
+
+
+@dp.message(Command("addcheck"))
+async def cmd_addcheck(message: Message):
+    """/addcheck <сумма> <кол-во активаций>"""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    parts = message.text.strip().split()
+    if len(parts) != 3:
+        await message.reply(
+            "❌ Формат: <code>/addcheck сумма кол-во</code>\n"
+            "Пример: <code>/addcheck 10000 10</code>",
+            parse_mode="HTML"
+        )
+        return
+    try:
+        amount = int(parts[1])
+        uses   = int(parts[2])
+    except ValueError:
+        await message.reply("❌ Сумма и кол-во — целые числа.", parse_mode="HTML")
+        return
+    if amount <= 0 or uses <= 0:
+        await message.reply("❌ Сумма и кол-во должны быть > 0.", parse_mode="HTML")
+        return
+
+    bot_me = await bot.get_me()
+    code   = create_check(amount, uses)
+    link   = f"https://t.me/{bot_me.username}?start=check_{code}"
+    coin   = '<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji>'
+    await message.reply(
+        f'<tg-emoji emoji-id="5201691993775818138">✅</tg-emoji> <b>Чек создан!</b>\n\n'
+        f'<blockquote>'
+        f'{coin} <b>Сумма:</b> {format_amount(amount)}\n'
+        f'<tg-emoji emoji-id="5330320040883411678">🎁</tg-emoji> <b>Активаций:</b> {uses}\n'
+        f'<tg-emoji emoji-id="5444856076954520455">🔗</tg-emoji> <b>Код:</b> <code>{code}</code>'
+        f'</blockquote>\n\n'
+        f'<b><tg-emoji emoji-id="5271604874419647061">🔗</tg-emoji>Ссылка:</b> {link}',
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+
+
+@dp.message(Command("addpromo"))
+async def cmd_addpromo(message: Message):
+    """/addpromo <название> <сумма> <кол-во активаций>"""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    parts = message.text.strip().split()
+    if len(parts) != 4:
+        await message.reply(
+            "❌ Формат: <code>/addpromo название сумма кол-во</code>\n"
+            "Пример: <code>/addpromo stars 1000 10</code>",
+            parse_mode="HTML"
+        )
+        return
+    name = parts[1]
+    try:
+        amount = int(parts[2])
+        uses   = int(parts[3])
+    except ValueError:
+        await message.reply("❌ Сумма и кол-во — целые числа.", parse_mode="HTML")
+        return
+    if amount <= 0 or uses <= 0:
+        await message.reply("❌ Сумма и кол-во должны быть > 0.", parse_mode="HTML")
+        return
+
+    ok, reason = create_promo(name, amount, uses)
+    coin = '<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji>'
+    if ok:
+        await message.reply(
+            f'<tg-emoji emoji-id="5201691993775818138">✅</tg-emoji> <b>Промокод создан!</b>\n\n'
             f'<blockquote>'
-            f'👤 <b>{my_name}</b>\n'
-            f'❤️ {my_bar}\n\n'
-            f'👹 <b>{foe_name}</b>\n'
-            f'❤️ {foe_bar}'
-            f'</blockquote>'
-            f'{log_block}'
+            f'<tg-emoji emoji-id="5444856076954520455">🎁</tg-emoji> <b>Код:</b> <code>{name}</code>\n'
+            f'{coin} <b>Сумма:</b> {format_amount(amount)}\n'
+            f'<tg-emoji emoji-id="5330320040883411678">🎟</tg-emoji> <b>Активаций:</b> {uses}'
+            f'</blockquote>',
+            parse_mode="HTML",
+        )
+    else:
+        await message.reply(
+            f'❌ Промокод <code>{name}</code> уже существует.',
+            parse_mode="HTML"
         )
 
-    return (
-        f'⚔️ <b>БОЙ</b>\n'
-        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+
+@dp.message(Command("checks"))
+async def cmd_list_checks(message: Message):
+    """Список активных чеков."""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    items = list_checks()
+    if not items:
+        await message.reply("📭 Чеков нет.", parse_mode="HTML")
+        return
+    coin = '<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji>'
+    lines = [
+        f'<code>{c["code"]}</code> — {coin} {format_amount(c["amount"])} · [{c["uses_left"]}/{c["uses_total"]}]'
+        for c in items
+    ]
+    await message.reply(
+        f'<b>📋 Чеки ({len(items)}):</b>\n\n' + "\n".join(lines),
+        parse_mode="HTML"
+    )
+
+
+@dp.message(Command("promos"))
+async def cmd_list_promos(message: Message):
+    """Список промокодов."""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    items = list_promos()
+    if not items:
+        await message.reply("📭 Промокодов нет.", parse_mode="HTML")
+        return
+    coin = '<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji>'
+    lines = [
+        f'<code>{p["name"]}</code> — {coin} {format_amount(p["amount"])} · [{p["uses_left"]}/{p["uses_total"]}]'
+        for p in items
+    ]
+    await message.reply(
+        f'<b>📋 Промокоды ({len(items)}):</b>\n\n' + "\n".join(lines),
+        parse_mode="HTML"
+    )
+
+
+@dp.message(Command("delcheck"))
+async def cmd_delcheck(message: Message):
+    """Удалить чек. /delcheck код"""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    parts = message.text.strip().split()
+    if len(parts) != 2:
+        await message.reply("❌ Формат: <code>/delcheck код</code>", parse_mode="HTML")
+        return
+    ok = delete_check(parts[1])
+    await message.reply("✅ Чек удалён." if ok else "❌ Чек не найден.", parse_mode="HTML")
+
+
+@dp.message(Command("delpromo"))
+async def cmd_delpromo(message: Message):
+    """Удалить промокод. /delpromo название"""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    parts = message.text.strip().split()
+    if len(parts) != 2:
+        await message.reply("❌ Формат: <code>/delpromo название</code>", parse_mode="HTML")
+        return
+    ok = delete_promo(parts[1])
+    await message.reply("✅ Промокод удалён." if ok else "❌ Промокод не найден.", parse_mode="HTML")
+
+
+# ── /rass — рассылка ─────────────────────────────────────────────────
+
+@dp.message(Command("rass"))
+async def cmd_rass(message: Message):
+    await rass_start(message, ADMIN_IDS)
+
+
+@dp.message(Command("rass_cancel"))
+async def cmd_rass_cancel(message: Message):
+    await rass_cancel(message, ADMIN_IDS)
+
+
+# ── /daily — ежедневный бонус ────────────────────────────────────────
+
+_DAILY_COOLDOWN = 86400  # 24 часа в секундах
+_COIN_DAILY = '<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji>'
+
+@dp.message(Command("daily", "бонус", "bonus", ignore_case=True))
+@dp.message(_text_in("daily", "бонус", "bonus"))
+async def cmd_daily(message: Message):
+    uid  = message.from_user.id
+    lock = await _get_user_lock(uid)
+    async with lock:
+        u = get_or_create_user(message.from_user)
+
+        if not u.get("onboarded", True):
+            return  # онбординг ещё не пройден — молча игнорируем
+
+        now      = now_ts()
+        last     = u.get("last_daily", 0)
+        elapsed  = now - last
+        cooldown = _DAILY_COOLDOWN
+
+        if elapsed < cooldown:
+            left     = cooldown - elapsed
+            hours    = left // 3600
+            minutes  = (left % 3600) // 60
+            lang     = get_lang(u)
+            if lang == "en":
+                await message.reply(
+                    f'<tg-emoji emoji-id="5382194935057372936">🪙</tg-emoji> <b>Daily bonus already claimed!</b>\n\n'
+                    f'<blockquote><tg-emoji emoji-id="5258203794772085854">🪙</tg-emoji>Come back in <b>{hours}h {minutes}m</b> — fortune favours the patient !</blockquote>',
+                    parse_mode="HTML",
+                )
+            else:
+                await message.reply(
+                    f'<tg-emoji emoji-id="5382194935057372936">🪙</tg-emoji> <b>Бонус уже получен!</b>\n\n'
+                    f'<blockquote><tg-emoji emoji-id="5258203794772085854">🪙</tg-emoji>Возвращайся через <b>{hours}ч {minutes}м</b> — удача любит терпеливых !</blockquote>',
+                    parse_mode="HTML",
+                )
+            return
+
+        import random as _rnd_daily
+        reward = _rnd_daily.randint(1000, 5000)
+        u["balance"]    = u.get("balance", 0) + reward
+        u["last_daily"] = now
+        save_user(uid, u)
+
+        lang = get_lang(u)
+        if lang == "en":
+            await message.reply(
+                f'<tg-emoji emoji-id="5222113468051629260">🪙</tg-emoji> <b>Daily bonus!</b>\n'
+                f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                f'<blockquote>'
+                f'<tg-emoji emoji-id="5397916757333654639">🪙</tg-emoji> <b><i>{format_amount(reward)} {_COIN_DAILY} — collected!</i></b>\n'
+                f'<b><i>Keep mining and come back tomorrow </i></b><tg-emoji emoji-id="5325547803936572038">🪙</tg-emoji></blockquote>',
+                parse_mode="HTML",
+            )
+        else:
+            await message.reply(
+                f'<tg-emoji emoji-id="5222113468051629260">🪙</tg-emoji> <b>Ежедневный бонус!</b>\n'
+                f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                f'<blockquote>'
+                f'<tg-emoji emoji-id="5397916757333654639">🪙</tg-emoji> <b><i>{format_amount(reward)} {_COIN_DAILY} — получено!</i></b>\n'
+                f'<b><i>Продолжай добывать и возвращайся завтра </i></b><tg-emoji emoji-id="5325547803936572038">🪙</tg-emoji></blockquote>',
+                parse_mode="HTML",
+            )
+
+
+async def _send_onboarding_step(message: Message, uid: int) -> bool:
+    """
+    Показывает очередной шаг онбординга нового пользователя:
+    1) капча (если не пройдена / если есть блок)
+    2) выбор языка (когда капча уже пройдена)
+    Возвращает True всегда — обработку сообщения нужно прекратить.
+    """
+    # 1) Проверяем, не заблокирован ли пользователь капчей
+    blocked, secs_left = is_captcha_blocked(uid)
+    if blocked:
+        mins = (secs_left + 59) // 60
+        await message.answer(
+            captcha_blocked_text(mins),
+            parse_mode="HTML",
+        )
+        return True
+
+    # 2) Капча ещё не пройдена → показываем (или повторяем) вопрос
+    if not is_captcha_passed(uid):
+        state = create_captcha(uid)
+        sent = await message.answer(
+            captcha_start_text(state["question"]),
+            parse_mode="HTML",
+        )
+        set_captcha_msg(uid, sent.chat.id, sent.message_id)
+        return True
+
+    # 3) Капча пройдена, но язык ещё не выбран → выбор языка
+    await message.answer(
+        lang_choose_text("ru"),
+        parse_mode="HTML",
+        reply_markup=lang_choose_keyboard_start(),
+    )
+    return True
+
+
+@dp.message(Command("start"))
+@dp.message(Command("menu", "меню"))
+@dp.message(_text_in("меню", "menu"))
+async def send_welcome(message: Message):
+    from database import _load_raw
+    uid          = message.from_user.id
+    existing     = _load_raw(uid)
+    is_brand_new = existing is None
+
+    # ── Определяем пригласителя из deep-link (?start=ref_XXXXX) ──
+    args        = message.text.split()
+    inviter_uid = None
+    if len(args) > 1 and args[1].startswith("ref_"):
+        try:
+            inviter_uid = int(args[1].split("_")[1])
+            if inviter_uid == uid:
+                inviter_uid = None  # нельзя пригласить себя
+        except (ValueError, IndexError):
+            pass
+
+    # Создаём/получаем пользователя в БД бота
+    u = get_or_create_user(message.from_user)
+    track_user(uid)
+
+    # Регистрируем в реф. таблице — только для совсем новых пользователей,
+    # чтобы повторные /start не теряли и не путали данные о пригласителе
+    if is_brand_new:
+        register_referral(uid, inviter_uid)
+
+    lang = get_lang(u)
+
+    # ── Активация чека через deep-link: /start check_XXXXXXXX ──
+    # Чек активируется СРАЗУ при запуске, ДО капчи/онбординга —
+    # не важно, прошёл пользователь капчу или нет.
+    if len(args) > 1 and args[1].startswith("check_"):
+        check_code = args[1][6:]
+        lock = await _get_user_lock(uid)
+        async with lock:
+            u = get_or_create_user(message.from_user)
+            ok, reason, amount = activate_check(check_code, uid)
+            if ok:
+                u["balance"] = u.get("balance", 0) + amount
+                save_user(uid, u)
+                await message.answer(check_activate_text(amount, lang), parse_mode="HTML")
+            else:
+                await message.answer(check_error_text(reason, lang), parse_mode="HTML")
+
+        # После активации чека — если онбординг (капча → язык) ещё не пройден,
+        # продолжаем его как обычно.
+        if not u.get("onboarded", True):
+            await _send_onboarding_step(message, uid)
+        return
+
+    # ── Новый пользователь → онбординг: капча → язык → меню ──
+    if not u.get("onboarded", True):
+        if message.chat.type == "private":
+            await _send_onboarding_step(message, uid)
+        return
+
+    # ── Уже онбордженный пользователь → главное меню ──
+    # Reply-клавиатуру (кнопки Menu/Clan) показываем только в личке
+    if message.chat.type == "private":
+        await message.answer(
+            "🎮",
+            reply_markup=main_reply_keyboard(lang),
+        )
+    await message.reply(
+        t(lang, "welcome"),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=main_menu_keyboard(lang),
+    )
+
+
+@dp.message(_text_in("🎮 Меню", "🎮 Menu"), F.chat.type == "private")
+async def reply_btn_menu(message: Message):
+    from database import get_or_create_user as _gou
+    uid  = message.from_user.id
+    u    = _gou(message.from_user)
+    lang = get_lang(u)
+    track_user(uid)
+
+    # Если онбординг (капча/язык) ещё не пройден — продолжаем его
+    if not u.get("onboarded", True):
+        await _send_onboarding_step(message, uid)
+        return
+
+    await message.reply(
+        t(lang, "welcome"),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=main_menu_keyboard(lang),
+    )
+
+
+@dp.message(_text_in("⚔️ Клан", "⚔️ Clan"), F.chat.type == "private")
+@dp.message(Command("klan", "клан"))
+@dp.message(_text_in("клан", "клан-", "klan", "klan-"))
+async def reply_btn_clan(message: Message):
+    from database import get_or_create_user as _gou
+    uid  = message.from_user.id
+    u    = _gou(message.from_user)
+    lang = get_lang(u)
+    track_user(uid)
+
+    if await _check_onboarded(message, u): return
+
+    await message.reply(
+        klan_main_text(lang),
+        parse_mode="HTML",
+        reply_markup=klan_main_keyboard(uid, lang),
+    )
+
+
+# ---------- КОМАНДЫ-АЛИАСЫ ДЛЯ РАЗДЕЛОВ ----------
+
+async def _check_onboarded(message: Message, u: dict) -> bool:
+    """Возвращает True если нужно прервать (онбординг не пройден).
+    В групповых чатах онбординг не показываем — только в личке."""
+    if not u.get("onboarded", True):
+        if message.chat.type == "private":
+            await _send_onboarding_step(message, message.from_user.id)
+            return True
+    return False
+
+
+@dp.message(Command("mine", "шахта", "добыча", "mining"))
+@dp.message(_text_in("шахта", "mine", "добыча", "mining"))
+async def cmd_mine(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+    await message.reply(
+        mine_text(u, lang),
+        parse_mode="HTML",
+        reply_markup=mine_keyboard(u, lang),
+    )
+
+
+@dp.message(Command("profile", "профиль", "prof", "я"))
+@dp.message(_text_in("профиль", "profile", "prof", "я"))
+async def cmd_profile(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+    await message.reply(
+        profile_text(u),
+        parse_mode="HTML",
+        reply_markup=profile_keyboard(lang),
+    )
+
+
+@dp.message(Command("hunt", "охота", "boss", "босс"))
+@dp.message(_text_in("охота", "hunt", "boss", "босс"))
+async def cmd_hunt(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+    await message.reply(
+        hunt_main_text(u, lang),
+        parse_mode="HTML",
+        reply_markup=hunt_main_keyboard(u, lang),
+    )
+
+
+@dp.message(Command("pets", "питомцы", "pet", "питомец"))
+@dp.message(_text_in("питомцы", "pets", "питомец", "pet"))
+async def cmd_pets(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+    await message.reply(
+        pets_main_text(u, lang),
+        parse_mode="HTML",
+        reply_markup=pets_main_keyboard(u, 0, lang),
+    )
+
+
+@dp.message(Command("cases", "кейсы", "case", "кейс", "shop"))
+@dp.message(_text_in("кейсы", "cases", "кейс", "case", "shop"))
+async def cmd_cases(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+    await message.reply(
+        cases_shop_text(u, lang),
+        parse_mode="HTML",
+        reply_markup=cases_shop_keyboard(lang),
+    )
+
+
+@dp.message(Command("ref", "реф", "рефералы", "refs", "friends", "друзья", "invite", "пригласить"))
+@dp.message(_text_in("реф", "ref", "рефералы", "refs", "friends", "друзья", "invite", "пригласить"))
+async def cmd_refs(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+    bot_me = await bot.get_me()
+    await message.reply(
+        refs_main_text(message.from_user.id, bot_me.username, lang),
+        parse_mode="HTML",
+        reply_markup=refs_main_keyboard(bot_me.username, message.from_user.id, lang),
+    )
+
+
+@dp.message(Command("reftop", "topref", "топреф", "рефтоп"))
+@dp.message(_text_in("reftop", "topref", "топреф", "рефтоп"))
+async def cmd_reftop(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+    await message.reply(
+        reftop_text("alltime", message.from_user.id, lang),
+        parse_mode="HTML",
+        reply_markup=reftop_keyboard("alltime", lang),
+    )
+
+
+@dp.message(Command("stats", "статы", "статистика", "stat", "онлайн"))
+@dp.message(_text_in("статистика", "статы", "stats", "stat", "онлайн"))
+async def cmd_stats(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+    await message.reply(
+        stats_text(lang),
+        parse_mode="HTML",
+        reply_markup=stats_keyboard(lang),
+    )
+
+
+@dp.message(Command("leaders", "лидеры", "top", "топ", "leaderboard"))
+@dp.message(_text_in("лидеры", "leaders", "top", "топ", "leaderboard"))
+async def cmd_leaders(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+    await message.reply(
+        leaders_main_text(viewer_uid=message.from_user.id, lang=lang),
+        parse_mode="HTML",
+        reply_markup=leaders_main_keyboard(lang),
+    )
+
+
+@dp.message(Command("status", "статус", "vip", "premium"))
+@dp.message(_text_in("статус", "status", "vip", "premium"))
+async def cmd_status(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+    await message.reply(
+        status_main_text(u, lang),
+        parse_mode="HTML",
+        reply_markup=status_main_keyboard(u, lang),
+    )
+
+
+@dp.message(Command("settings", "настройки", "lang", "язык", "language"))
+@dp.message(_text_in("настройки", "settings", "lang", "язык", "language"))
+async def cmd_settings(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+    await message.reply(
+        settings_text(u),
+        parse_mode="HTML",
+        reply_markup=settings_keyboard(u),
+    )
+
+
+@dp.message(Command("cdl", "вклад", "вклады", "deposit", "deposits", "vklad", "vklady"))
+@dp.message(_text_in("вклад", "вклады", "cdl", "deposit", "deposits", "vklad", "vklady"))
+async def cmd_cdl(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+    await message.reply(
+        cdl_main_text(u),
+        parse_mode="HTML",
+        reply_markup=cdl_main_keyboard(message.from_user.id),
+    )
+
+
+@dp.message(Command("promo", "промо"))
+async def cmd_promo(message: Message):
+    """/promo <название> или /промо <название>"""
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    uid  = message.from_user.id
+    if await _check_onboarded(message, u): return
+
+    parts = message.text.strip().split(maxsplit=1)
+    if len(parts) < 2:
+        _promo_pending[uid] = True
+        await message.reply(promo_input_text(lang), parse_mode="HTML")
+        return
+
+    promo_name = parts[1].strip()
+    lock = await _get_user_lock(uid)
+    async with lock:
+        u = get_or_create_user(message.from_user)
+        ok, reason, amount = activate_promo(promo_name, uid)
+        if ok:
+            u["balance"] = u.get("balance", 0) + amount
+            save_user(uid, u)
+            await message.reply(promo_activate_text(amount, lang), parse_mode="HTML")
+        else:
+            await message.reply(promo_error_text(reason, lang), parse_mode="HTML")
+
+
+
+# ── /gift /дать /пер — перевод баланса другому игроку ────────────────────────
+# Форматы:
+#   1) Ответ на сообщение + команда с суммой:
+#      /gift 500   /дать 500   /пер 500   gift 500   дать 500   пер 500
+#   2) Явное указание получателя:
+#      /gift @username 500   /gift 123456789 500   gift @user 500   gift 123456789 500
+
+_GIFT_MIN = 1          # минимум перевода
+_COIN_GIFT = '<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji>'
+
+
+def _parse_gift_args(message: Message):
+    """
+    Разбирает аргументы команды перевода.
+    Возвращает (target_raw: str | None, amount: int | None, error: str | None).
+    target_raw — @username или числовой id в виде строки, либо None если цель = reply.
+    """
+    text = (message.text or "").strip()
+    # Убираем возможный префикс команды (/gift, /дать, /пер, gift, дать, пер и т.п.)
+    import re as _r
+    text = _r.sub(
+        r'^[/]?(gift|дать|пер|дай|transfer|give|дарю)\s*',
+        '', text, count=1, flags=_r.IGNORECASE
+    ).strip()
+
+    parts = text.split()
+
+    # Случай 1: сумма без явного получателя (цель берётся из reply)
+    if len(parts) == 1:
+        try:
+            amount = int(parts[0])
+            return None, amount, None
+        except ValueError:
+            return None, None, "bad_amount"
+
+    # Случай 2: @username/id + сумма
+    if len(parts) == 2:
+        target_raw = parts[0].lstrip("@")
+        try:
+            amount = int(parts[1])
+            return target_raw, amount, None
+        except ValueError:
+            return None, None, "bad_amount"
+
+    return None, None, "bad_format"
+
+
+@dp.message(Command("gift", "дать", "пер", "дай", "transfer", "give", "дарю"))
+@dp.message(F.text.regexp(r'^[/]?(gift|дать|пер|дай|transfer|give|дарю)\s+\S', flags=_re.IGNORECASE))
+async def cmd_gift(message: Message):
+    """Перевод монет другому игроку."""
+    from database import get_all_users, save_user as _save, get_user
+
+    uid  = message.from_user.id
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(uid)
+
+    if await _check_onboarded(message, u):
+        return
+
+    target_raw, amount, error = _parse_gift_args(message)
+
+    # Ошибка разбора
+    if error == "bad_format":
+        hint = (
+            "❌ <b>Неверный формат.</b>\n\n"
+            "<blockquote>"
+            "Ответьте на сообщение игрока и напишите:\n"
+            "<code>gift 500</code>\n\n"
+            "Или укажите получателя явно:\n"
+            "<code>gift @username 500</code>\n"
+            "<code>gift 123456789 500</code>"
+            "</blockquote>"
+        )
+        await message.reply(hint, parse_mode="HTML")
+        return
+
+    if error == "bad_amount":
+        await message.reply("❌ Сумма должна быть целым числом.", parse_mode="HTML")
+        return
+
+    if amount is None or amount < _GIFT_MIN:
+        await message.reply(
+            f"❌ Минимальная сумма перевода: <b>{format_amount(_GIFT_MIN)}</b> {_COIN_GIFT}",
+            parse_mode="HTML"
+        )
+        return
+
+    # ── Определяем получателя ──────────────────────────────────────────
+    recipient_data = None
+
+    if target_raw:
+        # Явно указан @username или id
+        all_users = get_all_users()
+        if target_raw.lstrip("-").isdigit():
+            recipient_data = next(
+                (u2 for u2 in all_users if u2["id"] == int(target_raw)), None
+            )
+        else:
+            recipient_data = next(
+                (u2 for u2 in all_users
+                 if (u2.get("username") or "").lower() == target_raw.lower()),
+                None
+            )
+    else:
+        # Цель берётся из ответа на сообщение
+        if not message.reply_to_message:
+            hint = (
+                "❌ <b>Укажите получателя.</b>\n\n"
+                "<blockquote>"
+                "Ответьте на сообщение игрока и напишите:\n"
+                "<code>gift 500</code>\n\n"
+                "Или укажите явно:\n"
+                "<code>gift @username 500</code>\n"
+                "<code>gift 123456789 500</code>"
+                "</blockquote>"
+            )
+            await message.reply(hint, parse_mode="HTML")
+            return
+
+        target_uid = message.reply_to_message.from_user.id
+        recipient_data = get_user(target_uid)
+
+    if not recipient_data:
+        await message.reply(
+            "❌ Игрок не найден в базе. Он должен хотя бы раз написать боту.",
+            parse_mode="HTML"
+        )
+        return
+
+    if recipient_data["id"] == uid:
+        await message.reply("❌ Нельзя переводить монеты самому себе.", parse_mode="HTML")
+        return
+
+    # ── Атомарный перевод ─────────────────────────────────────────────
+    lock_sender    = await _get_user_lock(uid)
+    lock_recipient = await _get_user_lock(recipient_data["id"])
+
+    # Берём оба лока в правильном порядке (меньший id первым) чтобы не было дедлоков
+    first_lock, second_lock = (
+        (lock_sender, lock_recipient)
+        if uid < recipient_data["id"]
+        else (lock_recipient, lock_sender)
+    )
+
+    async with first_lock:
+        async with second_lock:
+            # Перечитываем актуальные данные
+            sender_data    = get_or_create_user(message.from_user)
+            recipient_data = get_user(recipient_data["id"])
+
+            sender_balance = sender_data.get("balance", 0)
+            if sender_balance < amount:
+                await message.reply(
+                    f"❌ Недостаточно монет.\n\n"
+                    f"<blockquote>"
+                    f"Ваш баланс: <b>{format_amount(sender_balance)}</b> {_COIN_GIFT}\n"
+                    f"Нужно: <b>{format_amount(amount)}</b> {_COIN_GIFT}"
+                    f"</blockquote>",
+                    parse_mode="HTML"
+                )
+                return
+
+            sender_data["balance"]    = sender_balance - amount
+            recipient_data["balance"] = recipient_data.get("balance", 0) + amount
+
+            _save(uid, sender_data)
+            _save(recipient_data["id"], recipient_data)
+
+    # ── Уведомления ───────────────────────────────────────────────────
+    sender_name    = message.from_user.first_name or message.from_user.username or str(uid)
+    recipient_name = (
+        recipient_data.get("first_name")
+        or recipient_data.get("username")
+        or str(recipient_data["id"])
+    )
+
+    # Отправителю
+    await message.reply(
+        f'<tg-emoji emoji-id="5201691993775818138">✅</tg-emoji> <b>Перевод выполнен!</b>\n\n'
         f'<blockquote>'
-        f'👤 <b>{my_name}</b>\n'
-        f'❤️ {my_bar}'
-        f'{shields}'
-        f'{frozen_note}\n\n'
-        f'👹 <b>{foe_name}</b>\n'
-        f'❤️ {foe_bar}'
-        f'</blockquote>'
-        f'{log_block}\n\n'
-        f'<i>Выбери навык для атаки:</i>'
+        f'<tg-emoji emoji-id="5452085950022707790">✅</tg-emoji> <i><b>Получатель: {recipient_name}</b></i>\n'
+        f'<tg-emoji emoji-id="5224257782013769471">✅</tg-emoji> <i><b>Сумма: {format_amount(amount)}{_COIN_GIFT}</b></i>\n'
+        f'<tg-emoji emoji-id="5278467510604160626">✅</tg-emoji> <i><b>Ваш баланс: {format_amount(sender_data["balance"])}</b></i>'
+        f'</blockquote>',
+        parse_mode="HTML"
     )
 
-
-# ── Боевая клавиатура (навыки с кулдаунами, таймер обновляется) ──────────
-
-def battle_keyboard(battle: dict, uid: int) -> InlineKeyboardMarkup:
-    me  = _get_player_prefix(battle, uid)
-    now = int(time.time())
-    cooldowns = battle.get(f"{me}_cooldowns", {})
-
-    # Экипированные навыки (макс. 5), записаны при старте боя
-    p_skills = battle.get(f"{me}_skills") or SKILLS_ORDER_BASE
-
-    builder = InlineKeyboardBuilder()
-
-    if battle.get("finished"):
-        builder.row(InlineKeyboardButton(
-            text="🔄 Новый поиск", callback_data="duel_search"
-        ))
-        builder.row(InlineKeyboardButton(
-            text="🏠 В меню дуэлей", callback_data="duel_main"
-        ))
-        return builder.as_markup()
-
-    skill_buttons = []
-    for skill_key in p_skills:
-        sk = SKILLS.get(skill_key)
-        if not sk:
-            continue
-        ready_at = cooldowns.get(skill_key, 0)
-        left = ready_at - now
-        if left > 0:
-            btn_text = f"{sk['emoji']} {sk['name']} ⏳{left}с"
-        else:
-            btn_text = f"{sk['emoji']} {sk['name']}"
-        skill_buttons.append(InlineKeyboardButton(
-            text=btn_text,
-            callback_data=f"duel_skill:{skill_key}"
-        ))
-
-    # Раскладка: по 2 в ряд
-    for i in range(0, len(skill_buttons), 2):
-        pair = skill_buttons[i:i+2]
-        builder.row(*pair)
-
-    builder.row(InlineKeyboardButton(
-        text="🏳️ Сдаться", callback_data="duel_surrender"
-    ))
-    return builder.as_markup()
-
-
-# ════════════════════════════════════════════════════════════
-#  МАГАЗИН НАВЫКОВ
-# ════════════════════════════════════════════════════════════
-
-SKILLS_SHOP_PAGE_SIZE = 5   # навыков на страницу
-
-
-def _skill_page_items(page: int) -> list:
-    """Возвращает навыки для страницы магазина (только платные)."""
-    paid = [k for k, v in SKILLS.items() if v["price"] > 0]
-    start = page * SKILLS_SHOP_PAGE_SIZE
-    return paid[start:start + SKILLS_SHOP_PAGE_SIZE], len(paid)
-
-
-import random as _random
-
-_DUEL_SHOP_QUOTES = [
-    "✦ Великий воин побеждает не силой — а правильно потраченными монетами.\n\n— <i>Мудрец дуэльного рынка</i>",
-    "✦ Враг тоже смотрел этот магазин. Вопрос в том, кто купил быстрее.\n\n— <i>Анонимный чемпион</i>",
-    "✦ Зачем годами качать скилл в жизни, если можно купить его здесь за монеты?\n\n— <i>Философ арены</i>",
-    "✦ Деньги — просто ресурс. Вкладывай в победы, а не в сожаления.\n\n— <i>Казначей боевой гильдии</i>",
-    "✦ Побеждают не рождённые — а хорошо экипированные.\n\n— <i>Летопись турнира, том III</i>",
-    "✦ Противник тоже думал сэкономить. Теперь он украшает таблицу проигравших.\n\n— <i>Свидетель дуэли №47</i>",
-    "✦ Точность приходит с практикой. Практика приходит с хорошим навыком.\n\n— <i>Мастер клинка</i>",
-    "✦ Магия не терпит скупости. Она терпит только тех, кто платит.\n\n— <i>Архивариус боевых искусств</i>",
-    "✦ Заморозь врага раньше, чем он разморозит собственный кошелёк.\n\n— <i>Ледяной стратег</i>",
-    "✦ Не важно как ты выглядишь перед боем. Важно — стоит ли противник после.\n\n— <i>Гладиатор без имени</i>",
-    "✦ Тьма — лучший союзник. Особенно если за неё уже уплачено.\n\n— <i>Торговец теневых навыков</i>",
-    "✦ Молния бьёт дважды в одного — если купить правильный навык.\n\n— <i>Громовой советник</i>",
-    "✦ Сила воли — похвально. Сила навыка — эффективнее.\n\n— <i>Прагматик арены</i>",
-    "✦ Каждый навык здесь прошёл боевые испытания. Ну, почти каждый.\n\n— <i>Главный тестировщик (уволен)</i>",
-    "✦ Инвестируй в себя. Или хотя бы в свои боевые навыки.\n\n— <i>Финансовый консультант арены</i>",
-]
-
-
-def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
-    items, total = _skill_page_items(page)
-    total_pages = (total + SKILLS_SHOP_PAGE_SIZE - 1) // SKILLS_SHOP_PAGE_SIZE
-    owned_skills    = get_owned_skills(user_data)
-    equipped_skills = get_equipped_skills(user_data)
-    balance = user_data.get("balance", 0)
-
-    lines = []
-    for sk_key in items:
-        sk = SKILLS[sk_key]
-        is_owned  = sk_key in owned_skills
-        is_equip  = sk_key in equipped_skills
-
-        if is_equip:
-            marker    = "✅"
-            price_str = "экипирован"
-        elif is_owned:
-            marker    = "✅"
-            price_str = "куплен"
-        else:
-            marker    = "🔒"
-            price_str = f"{_fmt(sk['price'])} монет"
-
-        if sk["type"] == "shield":
-            val = f"щит {sk['shield_amount'][0]}–{sk['shield_amount'][1]} HP"
-        else:
-            val = f"урон {sk['base_dmg'][0]}–{sk['base_dmg'][1]}"
-
-        lines.append(
-            f"{marker} {sk['emoji']} <b>{sk['name']}</b> [{price_str}]"
+    # Получателю (тихо — не падаем если бот заблокирован)
+    try:
+        await bot.send_message(
+            recipient_data["id"],
+            f'<tg-emoji emoji-id="5222113468051629260">🎁</tg-emoji> <b>Вам перевели монеты!</b>\n\n'
+            f'<blockquote>'
+            f'<tg-emoji emoji-id="5452085950022707790">✅</tg-emoji> <i><b>От: {sender_name}</b></i>\n'
+            f'<tg-emoji emoji-id="5224257782013769471">✅</tg-emoji> <i><b>Сумма: {format_amount(amount)}{_COIN_GIFT}</b></i>\n'
+            f'<tg-emoji emoji-id="5278467510604160626">✅</tg-emoji> <i><b>Ваш баланс: {format_amount(recipient_data["balance"])}</b></i>'
+            f'</blockquote>',
+            parse_mode="HTML"
         )
-
-    block = "\n".join(lines)
-    eq_count = len(equipped_skills)
-    quote = _random.choice(_DUEL_SHOP_QUOTES)
-    return (
-        f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>МАГАЗИН НАВЫКОВ</b>\n'
-        f'━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote expandable>{quote}</blockquote>\n\n'
-        f'{block}\n\n'
-        f'💰 Баланс: <b>{_fmt(balance)}</b> монет · Стр. {page+1}/{total_pages}\n'
-        f'⚔️ Экипировано в бой: <b>{eq_count}/{MAX_EQUIPPED_SKILLS}</b>'
-    )
+    except Exception:
+        pass
 
 
-def duel_skills_shop_keyboard(user_data: dict, page: int = 0) -> InlineKeyboardMarkup:
-    items, total = _skill_page_items(page)
-    total_pages = (total + SKILLS_SHOP_PAGE_SIZE - 1) // SKILLS_SHOP_PAGE_SIZE
-    owned_skills    = get_owned_skills(user_data)
-    equipped_skills = get_equipped_skills(user_data)
-    balance = user_data.get("balance", 0)
-    builder = InlineKeyboardBuilder()
-
-    for sk_key in items:
-        sk      = SKILLS[sk_key]
-        is_equip = sk_key in equipped_skills
-        is_owned = sk_key in owned_skills
-
-        if is_equip:
-            prefix = "⚔️"
-        elif is_owned:
-            prefix = "✅"
-        elif balance >= sk["price"]:
-            prefix = "🛒"
-        else:
-            prefix = "💸"
-
-        btn = InlineKeyboardButton(
-            text=f"{prefix} {sk['emoji']} {sk['name']}",
-            callback_data=f"duel_skill_card:{sk_key}:{page}",
-        )
-        builder.row(btn)
-
-    # Пагинация
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton(text="◀️", callback_data=f"duel_skills_shop_page:{page-1}"))
-    if page < total_pages - 1:
-        nav.append(InlineKeyboardButton(text="▶️", callback_data=f"duel_skills_shop_page:{page+1}"))
-    if nav:
-        builder.row(*nav)
-
-    builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_skills",
-        icon_custom_emoji_id=EMOJI_BACK,
-    ))
-    return builder.as_markup()
+_KLAN_PENDING_KEYS = (
+    "_klan_search_pending", "_klan_create_pending", "_klan_kick_pending",
+    "_klan_deposit_pending", "_klan_withdraw_pending", "_klan_apply_pending",
+    "_klan_chat_pending",
+)
 
 
-# ════════════════════════════════════════════════════════════
-#  ЭКРАН ПОИСКА
-# ════════════════════════════════════════════════════════════
-
-def duel_search_text(in_queue_flag: bool = False) -> str:
-    if in_queue_flag:
-        return (
-            f'<tg-emoji emoji-id="{EMOJI_SEARCH}">🔍</tg-emoji> <b>ПОИСК ПРОТИВНИКА</b>\n'
-            '━━━━━━━━━━━━━━━━━━━━\n\n'
-            '<blockquote>⏳ <b>Ищем соперника...</b>\n\n'
-            'Ожидай — как только найдётся противник,\n'
-            'бой начнётся автоматически.\n\n'
-            '<i>Нажми «Проверить» чтобы обновить статус.</i></blockquote>'
-        )
-    return (
-        f'<tg-emoji emoji-id="{EMOJI_SEARCH}">🔍</tg-emoji> <b>ПОИСК ПРОТИВНИКА</b>\n'
-        '━━━━━━━━━━━━━━━━━━━━\n\n'
-        '<blockquote>Нажми <b>«Найти бой»</b> для поиска соперника.\n\n'
-        'В бою тебе доступны твои навыки из магазина.\n'
-        'Урон зависит <b>только от навыков</b> — прокачивай их!\n'
-        '🔵 Маг. навыки снижаются магической защитой\n'
-        '💥 Физ. навыки снижаются физической защитой\n'
-        '🛡️ Щитовые навыки поглощают входящий урон</blockquote>'
-    )
+def _clear_klan_pending(d: dict) -> bool:
+    """Сбрасывает все флаги ожидания текстового ввода для системы кланов.
+    Возвращает True, если хотя бы один флаг был установлен."""
+    changed = False
+    for key in _KLAN_PENDING_KEYS:
+        if key in d:
+            d.pop(key, None)
+            changed = True
+    return changed
 
 
-def duel_search_keyboard(in_queue_flag: bool = False) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    if in_queue_flag:
-        builder.row(InlineKeyboardButton(
-            text="🔄 Проверить", callback_data="duel_search_check"
-        ))
-        builder.row(InlineKeyboardButton(
-            text="❌ Отменить поиск", callback_data="duel_search_cancel"
-        ))
-    else:
-        builder.row(InlineKeyboardButton(
-            text="⚔️ Найти бой", callback_data="duel_search_start"
-        ))
-    builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_main",
-        icon_custom_emoji_id=EMOJI_BACK,
-    ))
-    return builder.as_markup()
+async def _handle_klan_text_input(message: Message, data: dict) -> bool:
+    """
+    Обрабатывает текстовый ввод, который пользователь отправляет в ответ
+    на промпты системы кланов (поиск, создание клана, исключение участника,
+    пополнение/вывод казны, заявка на вступление).
+    Возвращает True, если сообщение было обработано (дальше обрабатывать не нужно).
+    """
+    uid = message.from_user.id
 
+    if not any(k in data for k in _KLAN_PENDING_KEYS):
+        return False
 
-# ════════════════════════════════════════════════════════════
-#  ОРИГИНАЛЬНЫЕ ЭКРАНЫ
-# ════════════════════════════════════════════════════════════
+    lock = await _get_user_lock(uid)
+    async with lock:
+        # Перечитываем актуальные данные на случай гонки с callback-хендлером
+        data = get_or_create_user(message.from_user)
+        lang = get_lang(data)
+        text = (message.text or "").strip()
 
-def duel_main_text() -> str:
-    return (
-        '<tg-emoji emoji-id="5424972470023104089">⚔️</tg-emoji> <b>ДУЭЛИ</b>\n'
-        '━━━━━━━━━━━━━━━━━━━━\n\n'
-        '<blockquote>'
-        'Испытай себя в бою один на один.\n'
-        'Собери снаряжение для защиты, купи навыки для урона\n'
-        'и докажи, кто сильнейший в TGStellar.\n\n'
-        '⚔️ <b>Урон</b> — даётся навыками из магазина\n'
-        '🛡️ <b>Защита</b> — даётся снаряжением'
-        '</blockquote>'
-    )
+        if not any(k in data for k in _KLAN_PENDING_KEYS):
+            return False
 
-def duel_main_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text=" Поиск противника", callback_data="duel_search",
-        icon_custom_emoji_id=EMOJI_SEARCH,
-    ))
-    builder.row(InlineKeyboardButton(
-        text=" Бросить вызов", callback_data="duel_challenge_start",
-        icon_custom_emoji_id=EMOJI_INVITE,
-    ))
-    builder.row(
-        InlineKeyboardButton(text=" Снаряжение", callback_data="duel_equip",
-                             icon_custom_emoji_id=EMOJI_EQUIP),
-        InlineKeyboardButton(text=" Навыки", callback_data="duel_skills",
-                             icon_custom_emoji_id=EMOJI_SKILLS),
-    )
-    builder.row(InlineKeyboardButton(
-        text=" Характеристики", callback_data="duel_charstats",
-        icon_custom_emoji_id=EMOJI_STATS_DUEL,
-    ))
-    builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="back_to_menu",
-        icon_custom_emoji_id=EMOJI_BACK,
-    ))
-    return builder.as_markup()
-
-
-def duel_equip_text(user_data: dict) -> str:
-    lines = []
-    for slot in GEAR_SLOTS_ORDER:
-        emoji  = slot_emoji(slot)
-        label  = slot_label(slot)
-        eq_lvl = equipped_level(slot, user_data)
-        ow_lvl = owned_level(slot, user_data)
-
-        if eq_lvl:
-            item   = current_slot_item(slot, user_data)
-            status = f'<b>{item["name"]}</b> ✅'
-        elif ow_lvl:
-            status = f'<b>{slot}-lvl{ow_lvl}</b> 📦 <i>(не надето)</i>'
-        else:
-            status = '<i>пусто</i>'
-
-        lines.append(f'{emoji} <b>{label}:</b> {status}')
-
-    return (
-        '<tg-emoji emoji-id="5445221832074483553">🎒</tg-emoji> <b>СНАРЯЖЕНИЕ</b>\n'
-        '━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote>{chr(10).join(lines)}</blockquote>\n\n'
-        '<i>Снаряжение даёт HP и защиту — урон даётся навыками!</i>'
-    )
-
-_SLOT_EMOJI_IDS = {
-    "armor":  "5454168390685965478",
-    "helmet": "5260546085251739109",
-    "pants":  "4952249553173613188",
-    "boots":  "5776192535890235363",
-    "gloves": "5404591969735308062",
-}
-
-def duel_equip_keyboard(user_data: dict = None) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    row_buf = []
-    for slot in GEAR_SLOTS_ORDER:
-        is_owned = user_data and owned_level(slot, user_data) > 0
-        btn = InlineKeyboardButton(
-            text=f"{slot_emoji(slot)} {slot_label(slot)}",
-            callback_data=f"duel_equip_slot:{slot}",
-            icon_custom_emoji_id=_SLOT_EMOJI_IDS.get(slot),
-        )
-        if is_owned:
-            btn = InlineKeyboardButton(
-                text=f"{slot_emoji(slot)} {slot_label(slot)}",
-                callback_data=f"duel_equip_slot:{slot}",
-                icon_custom_emoji_id=_SLOT_EMOJI_IDS.get(slot),
-                style="success",
+        # --- Поиск клана ---
+        if "_klan_search_pending" in data:
+            _clear_klan_pending(data)
+            save_user(uid, data)
+            results, total = search_clans(text, page=0)
+            await message.answer(
+                klan_search_text(text, results, 0, total, lang),
+                parse_mode="HTML",
+                reply_markup=klan_search_keyboard(results, text, 0, total, lang),
             )
-        row_buf.append(btn)
-        if len(row_buf) == 2:
-            builder.row(*row_buf)
-            row_buf = []
-    if row_buf:
-        builder.row(*row_buf)
-    builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_main",
-        icon_custom_emoji_id=EMOJI_BACK,
-    ))
-    return builder.as_markup()
+            return True
 
+        # --- Создание клана ---
+        if "_klan_create_pending" in data:
+            _clear_klan_pending(data)
+            save_user(uid, data)
+            name = text.strip()
+            if not name:
+                err = (
+                    "❌ Название не может быть пустым."
+                    if lang == "ru" else
+                    "❌ Name cannot be empty."
+                )
+                await message.answer(err, parse_mode="HTML")
+                return True
+            res = create_clan(uid, name)
+            if res["ok"]:
+                m    = get_member(uid)
+                clan = get_clan(m["clan_id"])
+                cnt  = get_member_count(m["clan_id"])
+                ok_text = "✅ <b>Клан создан!</b>" if lang == "ru" else "✅ <b>Clan created!</b>"
+                await message.answer(ok_text, parse_mode="HTML")
+                await message.answer(
+                    my_klan_text(clan, m, cnt, lang),
+                    parse_mode="HTML",
+                    reply_markup=my_klan_keyboard(uid, lang),
+                )
+            else:
+                errs_ru = {
+                    "user_not_found":  "❌ Ошибка профиля. Попробуй /start.",
+                    "already_in_clan": "❌ Ты уже в клане!",
+                    "bad_name_length": f"❌ Название должно быть от {MIN_CLAN_NAME} до {MAX_CLAN_NAME} символов.",
+                    "no_coins":        f"❌ Недостаточно монет. Нужно {format_amount(CREATE_COST)} {_COIN}.",
+                    "name_taken":      "❌ Клан с таким названием уже существует.",
+                }
+                errs_en = {
+                    "user_not_found":  "❌ Profile error. Try /start.",
+                    "already_in_clan": "❌ You are already in a clan!",
+                    "bad_name_length": f"❌ Name must be {MIN_CLAN_NAME}-{MAX_CLAN_NAME} characters.",
+                    "no_coins":        f"❌ Not enough coins. Need {format_amount(CREATE_COST)} {_COIN}.",
+                    "name_taken":      "❌ A clan with that name already exists.",
+                }
+                errs = errs_en if lang == "en" else errs_ru
+                hint = (
+                    "\n\nНажми «➕ Создать клан» ещё раз, чтобы попробовать снова."
+                    if lang == "ru" else
+                    '\n\nTap "➕ Create clan" again to try again.'
+                )
+                await message.answer(errs.get(res["error"], f"❌ {res['error']}") + hint, parse_mode="HTML")
+            return True
 
-def duel_equip_slot_text(slot: str, user_data: dict) -> str:
-    ow_lvl = owned_level(slot, user_data)
-    eq_lvl = equipped_level(slot, user_data)
-    emoji  = slot_emoji(slot)
-    label  = slot_label(slot)
+        # --- Исключение участника ---
+        if "_klan_kick_pending" in data:
+            _clear_klan_pending(data)
+            save_user(uid, data)
+            m = get_member(uid)
+            if not m or m["role"] != "creator":
+                err = "❌ Только создатель может исключать участников." if lang == "ru" \
+                    else "❌ Only the creator can kick members."
+                await message.answer(err, parse_mode="HTML")
+                return True
+            target     = text.lstrip("@").strip()
+            target_uid = None
+            if target.isdigit():
+                target_uid = int(target)
+            else:
+                for mem in get_clan_members(m["clan_id"]):
+                    if (mem.get("username") or "").lower() == target.lower():
+                        target_uid = mem["uid"]
+                        break
+            if not target_uid:
+                err = "❌ Участник не найден. Отправь @username или ID." if lang == "ru" \
+                    else "❌ Member not found. Send @username or ID."
+                await message.answer(err, parse_mode="HTML")
+                return True
+            res = kick_member(uid, target_uid)
+            if res["ok"]:
+                try:
+                    ntf = "🚫 Ты был исключён из клана." if lang == "ru" else "🚫 You were kicked from the clan."
+                    await bot.send_message(target_uid, ntf, parse_mode="HTML")
+                except Exception:
+                    pass
+                ok_text = "✅ Участник исключён из клана." if lang == "ru" else "✅ Member kicked from the clan."
+                await message.answer(ok_text, parse_mode="HTML")
+            else:
+                errs_ru = {
+                    "not_creator":         "❌ Только создатель может исключать участников.",
+                    "not_in_your_clan":    "❌ Этот пользователь не состоит в твоём клане.",
+                    "cannot_kick_creator": "❌ Невозможно исключить создателя клана.",
+                }
+                errs_en = {
+                    "not_creator":         "❌ Only the creator can kick members.",
+                    "not_in_your_clan":    "❌ This user is not in your clan.",
+                    "cannot_kick_creator": "❌ Cannot kick the clan creator.",
+                }
+                errs = errs_en if lang == "en" else errs_ru
+                await message.answer(errs.get(res["error"], f"❌ {res['error']}"), parse_mode="HTML")
+            return True
 
-    lines = []
-    for lvl in range(1, 6):
-        item = GEAR_CATALOG[f"{slot}-lvl{lvl}"]
-        if lvl == eq_lvl:
-            marker = "✅"
-            state  = "<i>надето</i>"
-        elif lvl <= ow_lvl:
-            marker = "📦"
-            state  = "<i>в инвентаре</i>"
-        else:
-            marker = "🔒"
-            state  = f"<i>{_fmt(item['price'])} монет</i>"
+        # --- Пополнение казны ---
+        if "_klan_deposit_pending" in data:
+            _clear_klan_pending(data)
+            save_user(uid, data)
+            cleaned = text.replace(" ", "").replace(",", "").replace("_", "")
+            if not cleaned.isdigit() or int(cleaned) <= 0:
+                err = "❌ Отправь положительное число." if lang == "ru" else "❌ Send a positive number."
+                await message.answer(err, parse_mode="HTML")
+                return True
+            amount = int(cleaned)
+            res    = deposit_treasury(uid, amount)
+            if res["ok"]:
+                m    = get_member(uid)
+                clan = get_clan(m["clan_id"])
+                ok_text = (f"✅ В казну клана внесено <b>{format_amount(amount)}</b> {_COIN}." if lang == "ru"
+                           else f"✅ Deposited <b>{format_amount(amount)}</b> {_COIN} to the clan treasury.")
+                await message.answer(ok_text, parse_mode="HTML")
+                await message.answer(
+                    klan_treasury_text(clan, lang),
+                    parse_mode="HTML",
+                    reply_markup=klan_treasury_keyboard(lang),
+                )
+            else:
+                errs_ru = {
+                    "not_in_clan": "❌ Ты не состоишь в клане.",
+                    "bad_amount":  "❌ Сумма должна быть больше нуля.",
+                    "no_coins":    "❌ У тебя недостаточно монет.",
+                }
+                errs_en = {
+                    "not_in_clan": "❌ You are not in a clan.",
+                    "bad_amount":  "❌ Amount must be greater than zero.",
+                    "no_coins":    "❌ You don't have enough coins.",
+                }
+                errs = errs_en if lang == "en" else errs_ru
+                await message.answer(errs.get(res["error"], f"❌ {res['error']}"), parse_mode="HTML")
+            return True
 
-        lines.append(f"{marker} <b>[{item['name']}]</b> — {item['ru_name']} · {state}")
+        # --- Запрос на вывод из казны ---
+        if "_klan_withdraw_pending" in data:
+            _clear_klan_pending(data)
+            save_user(uid, data)
+            raw_parts  = text.split("|", 1)
+            amount_str = raw_parts[0].strip().replace(" ", "").replace(",", "").replace("_", "")
+            reason     = raw_parts[1].strip() if len(raw_parts) > 1 else ""
+            if not amount_str.isdigit() or int(amount_str) <= 0:
+                err = (
+                    "❌ Неверный формат. Используй: <code>1000 | причина</code>" if lang == "ru"
+                    else "❌ Invalid format. Use: <code>1000 | reason</code>"
+                )
+                await message.answer(err, parse_mode="HTML")
+                return True
+            amount = int(amount_str)
+            res    = request_withdrawal(uid, amount, reason)
+            if res["ok"]:
+                ok_text = (f"✅ Запрос на вывод <b>{format_amount(amount)}</b> {_COIN} отправлен создателю клана." if lang == "ru"
+                           else f"✅ Withdrawal request for <b>{format_amount(amount)}</b> {_COIN} sent to the clan creator.")
+                await message.answer(ok_text, parse_mode="HTML")
+                m = get_member(uid)
+                if m:
+                    clan = get_clan(m["clan_id"])
+                    if clan:
+                        try:
+                            from database import get_user as _gu
+                            _cd    = _gu(clan["creator_uid"])
+                            _clang = get_lang(_cd) if _cd else "ru"
+                            name   = data.get("first_name") or data.get("username") or str(uid)
+                            ntf = (
+                                f"📤 {name} запросил вывод <b>{format_amount(amount)}</b> {_COIN} из казны клана."
+                                if _clang == "ru" else
+                                f"📤 {name} requested a withdrawal of <b>{format_amount(amount)}</b> {_COIN} from the clan treasury."
+                            )
+                            await bot.send_message(clan["creator_uid"], ntf, parse_mode="HTML")
+                        except Exception:
+                            pass
+            else:
+                errs_ru = {
+                    "not_in_clan":         "❌ Ты не состоишь в клане.",
+                    "bad_amount":          "❌ Сумма должна быть больше нуля.",
+                    "not_enough_treasury": "❌ В казне клана недостаточно монет.",
+                    "already_pending":     "❌ У тебя уже есть ожидающий запрос на вывод.",
+                }
+                errs_en = {
+                    "not_in_clan":         "❌ You are not in a clan.",
+                    "bad_amount":          "❌ Amount must be greater than zero.",
+                    "not_enough_treasury": "❌ Not enough coins in the clan treasury.",
+                    "already_pending":     "❌ You already have a pending withdrawal request.",
+                }
+                errs = errs_en if lang == "en" else errs_ru
+                await message.answer(errs.get(res["error"], f"❌ {res['error']}"), parse_mode="HTML")
+            return True
 
-    block = "\n".join(lines)
-    return (
-        f'{emoji} <b>СНАРЯЖЕНИЕ — {label.upper()}</b>\n'
-        '━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote>{block}</blockquote>\n\n'
-        '<i>Нажми на предмет, чтобы узнать подробности</i>'
-    )
+        # --- Заявка на вступление в клан ---
+        if "_klan_apply_pending" in data:
+            clan_id = data.get("_klan_apply_pending")
+            _clear_klan_pending(data)
+            save_user(uid, data)
+            app_msg = "" if text in ("—", "-", "") else text[:200]
+            res     = apply_to_clan(uid, clan_id, app_msg)
+            if res["ok"]:
+                ok_text = "✅ Заявка отправлена! Ожидай решения создателя в разделе «Заявки»." \
+                    if lang == "ru" else "✅ Application sent! Wait for the creator's decision in the Applications section."
+                await message.answer(ok_text, parse_mode="HTML")
+            else:
+                errs_ru = {
+                    "already_in_clan": "❌ Ты уже в клане!",
+                    "clan_full":       "❌ Клан заполнен.",
+                    "already_applied": "❌ Ты уже подал заявку в этот клан.",
+                    "apps_full":       "❌ Очередь заявок в этот клан переполнена.",
+                }
+                errs_en = {
+                    "already_in_clan": "❌ You are already in a clan!",
+                    "clan_full":       "❌ The clan is full.",
+                    "already_applied": "❌ You already applied to this clan.",
+                    "apps_full":       "❌ This clan's application queue is full.",
+                }
+                errs = errs_en if lang == "en" else errs_ru
+                await message.answer(errs.get(res["error"], f"❌ {res['error']}"), parse_mode="HTML")
+            return True
 
-def duel_equip_slot_keyboard(slot: str, user_data: dict) -> InlineKeyboardMarkup:
-    ow_lvl = owned_level(slot, user_data)
-    eq_lvl = equipped_level(slot, user_data)
-    builder = InlineKeyboardBuilder()
-    slot_eid = _SLOT_EMOJI_IDS.get(slot)
+        # --- Привязка чата клана ---
+        if "_klan_chat_pending" in data:
+            _clear_klan_pending(data)
+            save_user(uid, data)
+            m = get_member(uid)
+            if not m or m["role"] != "creator":
+                await message.answer("❌ Только создатель клана!" if lang == "ru" else "❌ Creator only!", parse_mode="HTML")
+                return True
+            clan_id = m["clan_id"]
+            # Парсим ввод: ссылка t.me/username или @username или числовой ID
+            import re as _re_chat
+            raw = text.strip()
+            chat_obj = None
+            try:
+                if raw.lstrip("-").isdigit():
+                    chat_obj = await bot.get_chat(int(raw))
+                else:
+                    username = _re_chat.sub(r'^(https?://)?(t\.me/|@)', '@', raw)
+                    if not username.startswith("@"):
+                        username = "@" + username
+                    chat_obj = await bot.get_chat(username)
+            except Exception as e:
+                err = (
+                    f"❌ Чат не найден. Убедись что:\n"
+                    f"• Бот добавлен в чат как <b>администратор</b>\n"
+                    f"• Ссылка или username введены верно\n"
+                    f"<i>({e})</i>"
+                    if lang == "ru" else
+                    f"❌ Chat not found. Make sure:\n"
+                    f"• The bot is added to the chat as an <b>admin</b>\n"
+                    f"• The link or username is correct\n"
+                    f"<i>({e})</i>"
+                )
+                await message.answer(err, parse_mode="HTML")
+                return True
 
-    for lvl in range(1, 6):
-        item_key = f"{slot}-lvl{lvl}"
-        item     = GEAR_CATALOG[item_key]
-        if lvl == eq_lvl:
-            btn_text = f"✅ [{item['name']}]"
-            builder.row(InlineKeyboardButton(
-                text=btn_text,
-                callback_data=f"duel_item_card:{item_key}",
-                icon_custom_emoji_id=slot_eid,
-                style="success",
-            ))
-        elif lvl <= ow_lvl:
-            btn_text = f"📦 [{item['name']}]"
-            builder.row(InlineKeyboardButton(
-                text=btn_text,
-                callback_data=f"duel_item_card:{item_key}",
-                icon_custom_emoji_id=slot_eid,
-                style="success",
-            ))
-        else:
-            btn_text = f"🔒 [{item['name']}] — {_fmt(item['price'])} монет"
-            builder.row(InlineKeyboardButton(
-                text=btn_text,
-                callback_data=f"duel_item_card:{item_key}",
-                icon_custom_emoji_id=slot_eid,
-            ))
+            # Проверяем что чат — группа или супергруппа
+            if chat_obj.type not in ("group", "supergroup"):
+                err = "❌ Можно привязать только группу или супергруппу." if lang == "ru" else "❌ Only groups or supergroups can be linked."
+                await message.answer(err, parse_mode="HTML")
+                return True
 
-    builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_equip",
-        icon_custom_emoji_id=EMOJI_BACK,
-    ))
-    return builder.as_markup()
+            # Проверяем что бот является администратором
+            try:
+                bot_member = await bot.get_chat_member(chat_obj.id, (await bot.get_me()).id)
+                if bot_member.status not in ("administrator", "creator"):
+                    err = (
+                        "❌ Бот не является администратором в этом чате.\n"
+                        "Добавь бота как администратора и попробуй снова."
+                        if lang == "ru" else
+                        "❌ The bot is not an administrator in this chat.\n"
+                        "Add the bot as admin and try again."
+                    )
+                    await message.answer(err, parse_mode="HTML")
+                    return True
+            except Exception:
+                err = "❌ Не удалось проверить права бота в чате." if lang == "ru" else "❌ Failed to check bot permissions in the chat."
+                await message.answer(err, parse_mode="HTML")
+                return True
 
+            # Сохраняем
+            import html as _html_chat
+            chat_title   = chat_obj.title or "Chat"
+            chat_username = chat_obj.username  # может быть None у закрытых чатов
+            set_clan_chat(clan_id, chat_obj.id, chat_username, chat_title)
 
-def duel_item_card_text(item_key: str, user_data: dict) -> str:
-    item   = GEAR_CATALOG[item_key]
-    slot   = item["slot"]
-    ow_lvl = owned_level(slot, user_data)
-    eq_lvl = equipped_level(slot, user_data)
-    lvl    = item["level"]
-    balance = user_data.get("balance", 0)
-
-    if lvl == eq_lvl:
-        status_line = '✅ <b>Надето прямо сейчас</b>'
-    elif lvl <= ow_lvl:
-        status_line = '📦 <b>Есть в инвентаре</b> — не надето'
-    else:
-        status_line = f'💰 <b>Цена: {_fmt(item["price"])} монет</b>'
-        if balance < item["price"]:
-            deficit = item["price"] - balance
-            status_line += f'\n⚠️ <i>Не хватает {_fmt(deficit)} монет</i>'
-
-    bonus_lines = []
-    for stat, val in item["bonus"].items():
-        if stat == "dmg":
-            continue
-        emoji_s, ru, unit = STAT_META.get(stat, ("▫️", stat, ""))
-        bonus_lines.append(f'  {emoji_s} <b>+{val}</b> {ru} <i>({unit})</i>')
-    bonus_block = "\n".join(bonus_lines)
-
-    stars = "⭐" * lvl + "☆" * (5 - lvl)
-
-    return (
-        f'{item["emoji_char"]} <b>{item["name"]}</b>\n'
-        f'<i>{item["ru_name"]}</i>  {stars}\n'
-        '━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote>{item["description"]}</blockquote>\n\n'
-        f'<b>Боевые бонусы (защита и HP):</b>\n{bonus_block}\n\n'
-        f'<i>💡 Урон в дуэли даётся навыками, а не снаряжением!</i>\n\n'
-        f'{status_line}'
-    )
-
-def duel_item_card_keyboard(item_key: str, user_data: dict) -> InlineKeyboardMarkup:
-    item   = GEAR_CATALOG[item_key]
-    slot   = item["slot"]
-    ow_lvl = owned_level(slot, user_data)
-    eq_lvl = equipped_level(slot, user_data)
-    lvl    = item["level"]
-    balance = user_data.get("balance", 0)
-    slot_eid = _SLOT_EMOJI_IDS.get(slot)
-    builder = InlineKeyboardBuilder()
-
-    if lvl == eq_lvl:
-        builder.row(InlineKeyboardButton(
-            text="❌ Снять",
-            callback_data=f"duel_gear_unequip:{item_key}",
-            icon_custom_emoji_id=slot_eid,
-        ))
-    elif lvl <= ow_lvl:
-        builder.row(InlineKeyboardButton(
-            text="✅ Надеть",
-            callback_data=f"duel_gear_equip:{item_key}",
-            icon_custom_emoji_id=slot_eid,
-            style="success",
-        ))
-    else:
-        if balance >= item["price"]:
-            builder.row(InlineKeyboardButton(
-                text=f"🛒 Купить — {_fmt(item['price'])} монет",
-                callback_data=f"duel_gear_buy:{item_key}",
-                icon_custom_emoji_id=slot_eid,
-                style="success",
-            ))
-        else:
-            builder.row(InlineKeyboardButton(
-                text=f"💸 Недостаточно монет",
-                callback_data="duel_gear_nofunds",
-                icon_custom_emoji_id=slot_eid,
-            ))
-
-    builder.row(InlineKeyboardButton(
-        text="Назад", callback_data=f"duel_equip_slot:{slot}",
-        icon_custom_emoji_id=EMOJI_BACK,
-    ))
-    return builder.as_markup()
-
-
-def apply_gear_purchase(item_key: str, user_data: dict) -> dict:
-    owned    = user_data.setdefault("duel_owned_gear", [])
-    equipped = user_data.setdefault("duel_equipped", {})
-    if item_key not in owned:
-        owned.append(item_key)
-    slot = GEAR_CATALOG[item_key]["slot"]
-    equipped[slot] = item_key
-    return user_data
-
-def apply_gear_equip(item_key: str, user_data: dict) -> dict:
-    slot = GEAR_CATALOG[item_key]["slot"]
-    user_data.setdefault("duel_equipped", {})[slot] = item_key
-    return user_data
-
-def apply_gear_unequip(item_key: str, user_data: dict) -> dict:
-    slot     = GEAR_CATALOG[item_key]["slot"]
-    equipped = user_data.setdefault("duel_equipped", {})
-    if equipped.get(slot) == item_key:
-        del equipped[slot]
-    return user_data
-
-
-def duel_charstats_text(user_data: dict, uid: int = None) -> str:
-    s          = _calc_stats(user_data)
-    equipped   = user_data.get("duel_equipped", {})
-    gear_count = len(equipped)
-    gear_line  = f"надето {gear_count}/5 предм." if gear_count else "снаряжение не надето"
-    owned_sk   = get_owned_skills(user_data)
-    sk_count   = len(owned_sk)
-
-    # Текущий HP (если uid передан)
-    if uid is not None:
-        current_hp = get_player_hp(uid, user_data)
-        hp_max     = s["hp"]
-        hp_display = f"{current_hp}/{hp_max}"
-        hp_regen_note = ""
-        if current_hp < 100:
-            secs = player_hp_regen_seconds(uid, user_data)
-            hp_regen_note = (
-                f'\n⚠️ <b>HP восстанавливается</b> (+{HP_REGEN_AMOUNT} каждые {HP_REGEN_INTERVAL} сек.)\n'
-                f'Следующий тик через <b>{secs} сек.</b>\n'
-                f'<i>Нельзя начать бой пока HP &lt; 100</i>\n'
+            clan = get_clan(clan_id)
+            cnt  = get_member_count(clan_id)
+            ok_text = (
+                f'✅ <b>Чат привязан:</b> {_html_chat.escape(chat_title)}'
+                if lang == "ru" else
+                f'✅ <b>Chat linked:</b> {_html_chat.escape(chat_title)}'
             )
-    else:
-        hp_display    = str(s["hp"])
-        hp_regen_note = ""
+            await message.answer(ok_text, parse_mode="HTML")
+            await message.answer(
+                my_klan_text(clan, m, cnt, lang),
+                parse_mode="HTML",
+                reply_markup=my_klan_keyboard(uid, lang),
+            )
+            return True
 
-    return (
-        f'<tg-emoji emoji-id="{EMOJI_STATS_DUEL}">📊</tg-emoji> <b>ХАРАКТЕРИСТИКИ</b>\n'
-        '━━━━━━━━━━━━━━━━━━━━\n\n'
-        '<blockquote>'
-        f'<tg-emoji emoji-id="{EMOJI_HP}">❤️</tg-emoji> <b>Здоровье</b> — <b>{hp_display}</b> HP\n\n'
-        f'<tg-emoji emoji-id="{EMOJI_REGEN}">💚</tg-emoji> <b>Регенерация</b> — <b>{s["regen"]}</b> HP/ход\n\n'
-        f'<tg-emoji emoji-id="{EMOJI_PHYS_DEF}">🛡️</tg-emoji> <b>Физ. защита</b> — <b>{s["phys_def"]}</b> DEF\n\n'
-        f'<tg-emoji emoji-id="{EMOJI_MAG_DEF}">🔮</tg-emoji> <b>Маг. защита</b> — <b>{s["mag_def"]}</b> MDEF\n\n'
-        f'<tg-emoji emoji-id="{EMOJI_STAMINA}">⚙️</tg-emoji> <b>Стойкость</b> — <b>{s["stamina"]}</b> STM'
-        '</blockquote>\n'
-        f'{hp_regen_note}\n'
-        f'🎽 <i>Снаряжение: {gear_line}</i>\n'
-        f'⚔️ <i>Навыков куплено: {sk_count} шт.</i>\n\n'
-        f'<i>💡 Урон в дуэли зависит от купленных навыков,\nа не от снаряжения!</i>'
-    )
-
-def duel_charstats_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text="Снаряжение", callback_data="duel_equip",
-        icon_custom_emoji_id=EMOJI_EQUIP,
-    ))
-    builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_main",
-        icon_custom_emoji_id=EMOJI_BACK,
-    ))
-    return builder.as_markup()
+    return False
 
 
-# ── Экран навыков (обзор + ссылка в магазин) ─────────────────
+@dp.message(F.text & ~F.text.startswith("/"))
+async def handle_captcha_answer(message: Message):
+    """Перехватчик текстовых сообщений для прохождения капчи при онбординге."""
+    uid = message.from_user.id
+    u   = get_or_create_user(message.from_user)
+    lang = get_lang(u)
 
-def duel_skills_text(user_data: dict = None) -> str:
-    base_lines = []
-    for sk_key in SKILLS_ORDER_BASE:
-        sk = SKILLS[sk_key]
-        base_lines.append(f"{sk['emoji']} <b>{sk['name']}</b> — <i>{sk['description']}</i>")
-    base_block = "\n".join(base_lines)
+    # ── Рассылка: FSM-ввод от админа ──
+    if uid in ADMIN_IDS and is_in_rass(uid):
+        if await rass_fsm_message(message, ADMIN_IDS):
+            return
 
-    paid_count = len([k for k, v in SKILLS.items() if v["price"] > 0])
+    # ── Ожидание ввода промокода ──
+    if _promo_pending.pop(uid, False):
+        promo_name = (message.text or "").strip()
+        if promo_name and u.get("onboarded", True):
+            lock = await _get_user_lock(uid)
+            async with lock:
+                u = get_or_create_user(message.from_user)
+                ok, reason, amount = activate_promo(promo_name, uid)
+                if ok:
+                    u["balance"] = u.get("balance", 0) + amount
+                    save_user(uid, u)
+                    await message.reply(promo_activate_text(amount, lang), parse_mode="HTML")
+                else:
+                    await message.reply(promo_error_text(reason, lang), parse_mode="HTML")
+        return
 
-    # Экипированные навыки
-    equip_block = ""
-    if user_data:
-        equipped = get_equipped_skills(user_data)
-        if equipped:
-            eq_lines = []
-            for sk_key in equipped:
-                sk = SKILLS.get(sk_key)
-                if sk:
-                    if sk["type"] == "shield":
-                        val = f"щит {sk['shield_amount'][0]}–{sk['shield_amount'][1]} HP"
+    # ── Текстовые алиасы промокода: «промо stars», «promo stars» ──
+    if u.get("onboarded", True):
+        _txt = (message.text or "").strip()
+        _txt_low = _txt.lower()
+        for _pfx in ("промо ", "promo ", "старт ", "start "):
+            if _txt_low.startswith(_pfx):
+                promo_name = _txt[len(_pfx):].strip()
+                if promo_name:
+                    lock = await _get_user_lock(uid)
+                    async with lock:
+                        u = get_or_create_user(message.from_user)
+                        ok, reason, amount = activate_promo(promo_name, uid)
+                        if ok:
+                            u["balance"] = u.get("balance", 0) + amount
+                            save_user(uid, u)
+                            await message.reply(promo_activate_text(amount, lang), parse_mode="HTML")
+                        else:
+                            await message.reply(promo_error_text(reason, lang), parse_mode="HTML")
+                return
+
+    # ── Ожидание ввода суммы вклада (один раз) ──
+    if uid in _cdl_input_pending:
+        dep_key  = _cdl_input_pending.pop(uid)   # сразу сбрасываем — больше не ждём
+        msg_info = _cdl_input_msg.pop(uid, None)
+        raw = (message.text or "").strip().replace(" ", "").replace("_", "")
+
+        async def _cdl_edit(text: str, kb=None):
+            """Редактирует бот-сообщение (окно ввода). НЕ удаляет сообщение юзера."""
+            if msg_info:
+                try:
+                    await bot.edit_message_text(
+                        text, chat_id=msg_info[0], message_id=msg_info[1],
+                        parse_mode="HTML", reply_markup=kb
+                    )
+                    return
+                except Exception as _e:
+                    if "message is not modified" in str(_e).lower():
+                        return
+            # Если окно недоступно — шлём новое
+            await bot.send_message(
+                msg_info[0] if msg_info else message.chat.id,
+                text, parse_mode="HTML", reply_markup=kb
+            )
+
+        if not raw.isdigit():
+            await _cdl_edit(
+                f'❌ <b>Некорректный ввод.</b>\nОткрой вклад снова и введи число.',
+                cdl_input_keyboard(dep_key)
+            )
+            return
+
+        amount = int(raw)
+        dep    = _CDL_DEPOSITS_BY_KEY.get(dep_key)
+        if dep is None:
+            return
+
+        lock = await _get_user_lock(uid)
+        async with lock:
+            u2  = get_or_create_user(message.from_user)
+            bal = u2.get("balance", 0)
+            if amount < dep["min"]:
+                await _cdl_edit(
+                    f'❌ <b>Минимум:</b> {format_amount(dep["min"])}\nОткрой вклад снова и введи сумму.',
+                    cdl_input_keyboard(dep_key)
+                )
+                return
+            if amount > bal:
+                await _cdl_edit(
+                    f'❌ <b>Не хватает монет.</b> Баланс: {format_amount(bal)}\nОткрой вклад снова и введи сумму.',
+                    cdl_input_keyboard(dep_key)
+                )
+                return
+
+        await _cdl_edit(
+            cdl_confirm_text(dep_key, amount),
+            cdl_confirm_keyboard(dep_key, amount)
+        )
+        return
+
+    # ── Сначала обрабатываем ожидающие текстовые вводы для системы кланов ──
+    if await _handle_klan_text_input(message, u):
+        return
+
+    # Этот хендлер нужен только пока пользователь проходит онбординг
+    if u.get("onboarded", True):
+        return
+
+    # Если заблокирован — просто игнорируем (сообщение от пользователя удаляем)
+    blocked, secs_left = is_captcha_blocked(uid)
+    if blocked:
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        return
+
+    # Капча уже пройдена, осталось только выбрать язык
+    if is_captcha_passed(uid):
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        await message.answer(
+            lang_choose_text("ru"),
+            parse_mode="HTML",
+            reply_markup=lang_choose_keyboard_start(),
+        )
+        return
+
+    # Пробуем распарсить число
+    try:
+        user_ans = int(message.text.strip())
+    except ValueError:
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        return
+
+    result = check_captcha(uid, user_ans)
+
+    # Удаляем сообщение пользователя с ответом
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    pending = get_captcha_msg(uid)
+
+    if result["status"] == "ok":
+        # Капча пройдена — начисляем награду пригласителю
+        is_premium       = bool(getattr(message.from_user, "is_premium", False))
+        rewarded, amount = reward_inviter(uid, is_premium)
+
+        # Уведомление пригласителю
+        if rewarded:
+            inv_uid = get_inviter(uid)
+            if inv_uid:
+                from database import get_user as _get_inv
+                _inv_data = _get_inv(inv_uid)
+                _inv_lang = get_lang(_inv_data) if _inv_data else "ru"
+                name = message.from_user.first_name or message.from_user.username or "Новый игрок"
+                try:
+                    await bot.send_message(
+                        inv_uid,
+                        refs_notif_text(name, amount, is_premium, _inv_lang),
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
+
+        # Капча пройдена → обновляем старое сообщение на выбор языка
+        if pending:
+            try:
+                await bot.edit_message_text(
+                    lang_choose_text("ru"),
+                    chat_id=pending[0],
+                    message_id=pending[1],
+                    parse_mode="HTML",
+                    reply_markup=lang_choose_keyboard_start(),
+                )
+                return
+            except Exception:
+                pass
+        await message.answer(
+            lang_choose_text("ru"),
+            parse_mode="HTML",
+            reply_markup=lang_choose_keyboard_start(),
+        )
+
+    elif result["status"] == "wrong":
+        if pending:
+            try:
+                await bot.edit_message_text(
+                    captcha_wrong_text(result["question"], result["tries_left"]),
+                    chat_id=pending[0],
+                    message_id=pending[1],
+                    parse_mode="HTML",
+                )
+                return
+            except Exception:
+                pass
+        sent = await message.answer(
+            captcha_wrong_text(result["question"], result["tries_left"]),
+            parse_mode="HTML",
+        )
+        set_captcha_msg(uid, sent.chat.id, sent.message_id)
+
+    elif result["status"] == "blocked":
+        if pending:
+            try:
+                await bot.edit_message_text(
+                    captcha_blocked_text(result["unblock_in_min"]),
+                    chat_id=pending[0],
+                    message_id=pending[1],
+                    parse_mode="HTML",
+                )
+                return
+            except Exception:
+                pass
+        await message.answer(
+            captcha_blocked_text(result["unblock_in_min"]),
+            parse_mode="HTML",
+        )
+
+
+# ── Рассылка: медиа (фото/видео) от админа ───────────────────────────
+
+@dp.message(F.photo | F.video)
+async def handle_rass_media(message: Message):
+    uid = message.from_user.id
+    if uid not in ADMIN_IDS or not is_in_rass(uid):
+        return
+    await rass_fsm_message(message, ADMIN_IDS)
+
+
+# ---------- CALLBACK HANDLER ----------
+
+@dp.callback_query()
+async def handle_callback(call: CallbackQuery):
+    chat_id    = call.message.chat.id
+    message_id = call.message.message_id
+    user       = call.from_user
+
+    # ── Берём персональный Lock и держим его на всё время обработки ──
+    lock = await _get_user_lock(user.id)
+    async with lock:
+        data = get_or_create_user(user)
+        track_user(user.id)
+        lang = get_lang(data)
+
+        async def edit(text, kb, md="HTML"):
+            for attempt in range(2):
+                try:
+                    await call.message.edit_text(
+                        text,
+                        parse_mode=md,
+                        reply_markup=kb,
+                        disable_web_page_preview=True
+                    )
+                    return
+                except Exception as e:
+                    if "message is not modified" in str(e):
+                        return
+                    if attempt == 0:
+                        await asyncio.sleep(0.4)
+                        continue
+                    print(e)
+
+        cd = call.data
+
+        # ── Рассылка: кнопки подтверждения ──
+        if cd in ("rass_confirm_yes", "rass_confirm_no"):
+            await rass_fsm_callback(call, ADMIN_IDS, bot)
+            return
+
+        # ── Проверка владельца кнопок ──
+        # Кнопки может нажимать только тот пользователь, который вызвал команду.
+        # Определяем владельца по reply_to_message (наши хендлеры используют message.reply)
+        _owner_msg = call.message.reply_to_message
+        if _owner_msg and _owner_msg.from_user:
+            _owner_uid = _owner_msg.from_user.id
+            if user.id != _owner_uid:
+                _err = "❌ Это не ваша кнопка!" if lang == "ru" else "❌ This is not your button!"
+                await call.answer(_err, show_alert=True)
+                return
+
+        # Если пользователь уходит из экрана с ожиданием текстового ввода
+        # для клана (поиск/создание/кик/депозит/вывод/заявка) на любой другой
+        # экран — сбрасываем "висящие" флаги, чтобы случайный текст потом
+        # не был принят за этот ввод
+        _KLAN_INPUT_CALLBACKS = {"klan_search", "klan_create", "klan_kick", "klan_deposit", "klan_withdraw", "klan_chat_link", "klan_do_search"}
+        if cd not in _KLAN_INPUT_CALLBACKS and not cd.startswith("klan_apply_"):
+            if _clear_klan_pending(data):
+                save_user(user.id, data)
+
+        # ===== ВКЛАДЫ =====
+
+        if cd == "cdl_main":
+            await edit(cdl_main_text(data), cdl_main_keyboard(user.id))
+            await call.answer()
+            return
+
+        if cd.startswith("cdl_info_"):
+            dep_key = cd[len("cdl_info_"):]
+            if dep_key not in _CDL_DEPOSITS_BY_KEY:
+                await call.answer("Неизвестный вклад", show_alert=True)
+                return
+            can = data.get("balance", 0) >= _CDL_DEPOSITS_BY_KEY[dep_key]["min"]
+            await edit(cdl_detail_text(dep_key, data), cdl_detail_keyboard(dep_key, can))
+            await call.answer()
+            return
+
+        if cd.startswith("cdl_open_"):
+            dep_key = cd[len("cdl_open_"):]
+            if dep_key not in _CDL_DEPOSITS_BY_KEY:
+                await call.answer("Неизвестный вклад", show_alert=True)
+                return
+            dep = _CDL_DEPOSITS_BY_KEY[dep_key]
+            if data.get("balance", 0) < dep["min"]:
+                await call.answer("❌ Недостаточно монет!", show_alert=True)
+                return
+            if _cdl_count_active(user.id) >= 8:
+                await call.answer("❌ Максимум 8 активных вкладов!", show_alert=True)
+                return
+            _cdl_input_pending[user.id] = dep_key
+            _cdl_input_msg[user.id] = (call.message.chat.id, call.message.message_id)
+            await edit(cdl_input_text(dep_key, data), cdl_input_keyboard(dep_key))
+            await call.answer()
+            return
+
+        if cd == "cdl_cant_afford":
+            await call.answer("❌ Пополни баланс — добывай монеты!", show_alert=True)
+            return
+
+        if cd.startswith("cdl_confirm_"):
+            rest = cd[len("cdl_confirm_"):]
+            idx  = rest.rfind("_")
+            if idx < 0:
+                await call.answer("Ошибка", show_alert=True)
+                return
+            dep_key = rest[:idx]
+            try:
+                amount = int(rest[idx + 1:])
+            except ValueError:
+                await call.answer("Ошибка суммы", show_alert=True)
+                return
+            if dep_key not in _CDL_DEPOSITS_BY_KEY:
+                await call.answer("Неизвестный вклад", show_alert=True)
+                return
+            dep = _CDL_DEPOSITS_BY_KEY[dep_key]
+            bal = data.get("balance", 0)
+            if amount < dep["min"]:
+                await call.answer("❌ Сумма ниже минимума!", show_alert=True)
+                return
+            if amount > bal:
+                await call.answer("❌ Недостаточно монет!", show_alert=True)
+                return
+            if _cdl_count_active(user.id) >= 8:
+                await call.answer("❌ Максимум 8 активных вкладов!", show_alert=True)
+                return
+            data["balance"] = bal - amount
+            save_user(user.id, data)
+            _cdl_open_deposit(user.id, dep_key, amount)
+            await edit(cdl_opened_text(dep_key, amount), cdl_main_keyboard(user.id))
+            await call.answer("✅ Вклад открыт!")
+            return
+
+        if cd == "cdl_claim_all":
+            ready = _cdl_get_ready(user.id)
+            if not ready:
+                await call.answer("Нет готовых вкладов!", show_alert=True)
+                return
+            total_payout = 0
+            total_profit = 0
+            count = 0
+            for dep in ready:
+                payout = _cdl_claim(dep["id"])
+                if payout is not None:
+                    total_payout += payout
+                    total_profit += payout - dep["amount"]
+                    count += 1
+            if count == 0:
+                await call.answer("Нет готовых вкладов!", show_alert=True)
+                return
+            data["balance"] = data.get("balance", 0) + total_payout
+            save_user(user.id, data)
+            await edit(cdl_claim_text(total_payout, total_profit, count), cdl_main_keyboard(user.id))
+            await call.answer(f"💰 +{format_amount(total_payout)} монет!")
+            return
+
+        # ===== РЕФЕРАЛЫ =====
+        if cd == "refs_main":
+            bot_me = await bot.get_me()
+            await edit(refs_main_text(user.id, bot_me.username, lang), refs_main_keyboard(bot_me.username, user.id, lang))
+            await call.answer()
+            return
+
+        if cd == "refs_list":
+            await edit(refs_list_text(user.id, lang), refs_list_keyboard(lang))
+            await call.answer()
+            return
+
+        if cd.startswith("reftop_"):
+            period = cd.removeprefix("reftop_")
+            if period not in ("today", "week", "alltime"):
+                period = "alltime"
+            await edit(reftop_text(period, user.id, lang), reftop_keyboard(period, lang))
+            await call.answer()
+            return
+
+        # ===== КЛАНЫ =====
+
+        if cd == "klan_main":
+            await edit(klan_main_text(lang), klan_main_keyboard(user.id, lang))
+            await call.answer()
+            return
+
+        if cd == "klan_top":
+            clans = get_top_clans(10)
+            await edit(klan_top_text(clans, lang), klan_top_keyboard(lang))
+            await call.answer()
+            return
+
+        if cd == "klan_stats":
+            await edit(klan_stats_text(lang), klan_stats_keyboard(lang))
+            await call.answer()
+            return
+
+        if cd == "klan_my":
+            m = get_member(user.id)
+            if not m:
+                await call.answer("⚔️ Ты не в клане!" if lang == "ru" else "⚔️ You are not in a clan!", show_alert=True)
+                return
+            clan = get_clan(m["clan_id"])
+            cnt  = get_member_count(m["clan_id"])
+            await edit(my_klan_text(clan, m, cnt, lang), my_klan_keyboard(user.id, lang))
+            await call.answer()
+            return
+
+        if cd == "klan_members":
+            m = get_member(user.id)
+            if not m:
+                await call.answer()
+                return
+            clan    = get_clan(m["clan_id"])
+            members = get_clan_members(m["clan_id"])
+            await edit(klan_members_text(clan, members, lang), klan_back_keyboard("klan_my", lang))
+            await call.answer()
+            return
+
+        if cd == "klan_treasury":
+            m = get_member(user.id)
+            if not m:
+                await call.answer()
+                return
+            clan = get_clan(m["clan_id"])
+            await edit(klan_treasury_text(clan, lang), klan_treasury_keyboard(lang))
+            await call.answer()
+            return
+
+        if cd == "klan_quests":
+            m = get_member(user.id)
+            if not m:
+                await call.answer()
+                return
+            clan   = get_clan(m["clan_id"])
+            quests = get_daily_quests(m["clan_id"])
+            await edit(klan_quests_text(clan, quests, lang), klan_quests_keyboard(lang))
+            await call.answer()
+            return
+
+        if cd == "klan_apps":
+            m = get_member(user.id)
+            if not m or m["role"] != "creator":
+                await call.answer("❌ Только создатель клана!" if lang == "ru" else "❌ Creator only!", show_alert=True)
+                return
+            clan = get_clan(m["clan_id"])
+            apps, total = get_applications(m["clan_id"], page=0)
+            await edit(klan_applications_text(clan, apps, 0, total, lang), klan_applications_keyboard(apps, 0, total, lang))
+            await call.answer()
+            return
+
+        if cd == "klan_withdraw_list":
+            m = get_member(user.id)
+            if not m or m["role"] != "creator":
+                await call.answer("❌ Только создатель клана!" if lang == "ru" else "❌ Creator only!", show_alert=True)
+                return
+            clan = get_clan(m["clan_id"])
+            reqs = get_withdrawal_requests(m["clan_id"])
+            await edit(klan_withdrawal_requests_text(clan, reqs, lang), klan_withdrawal_keyboard(reqs, lang))
+            await call.answer()
+            return
+
+        if cd == "klan_search":
+            # Показываем все кланы сразу, страница 0
+            results, total = search_clans("", page=0)
+            await edit(
+                klan_search_text("", results, 0, total, lang),
+                klan_search_keyboard(results, "", 0, total, lang),
+            )
+            await call.answer()
+            return
+
+        if cd == "klan_create":
+            if get_member(user.id):
+                await call.answer("❌ Ты уже в клане!" if lang == "ru" else "❌ You are already in a clan!", show_alert=True)
+                return
+            bal = data.get("balance", 0)
+            prompt = (
+                f'➕ <b>Создание клана</b>\n\n'
+                f'<blockquote>'
+                f'Стоимость: <b>{format_amount(CREATE_COST)}</b> {_COIN}  ·  Твой баланс: <b>{format_amount(bal)}</b> {_COIN}\n\n'
+                f'Отправь <b>название</b> клана ({MIN_CLAN_NAME}–{MAX_CLAN_NAME} символов):'
+                f'</blockquote>'
+            ) if lang == "ru" else (
+                f'➕ <b>Create Clan</b>\n\n'
+                f'<blockquote>'
+                f'Cost: <b>{format_amount(CREATE_COST)}</b> {_COIN}  ·  Your balance: <b>{format_amount(bal)}</b> {_COIN}\n\n'
+                f'Send the clan <b>name</b> ({MIN_CLAN_NAME}–{MAX_CLAN_NAME} chars):'
+                f'</blockquote>'
+            )
+            await edit(prompt, klan_back_keyboard("klan_main", lang))
+            data["_klan_create_pending"] = True
+            save_user(user.id, data)
+            await call.answer()
+            return
+
+        if cd == "klan_leave":
+            m = get_member(user.id)
+            if not m:
+                await call.answer()
+                return
+            if m["role"] == "creator":
+                err = (
+                    "❌ Создатель не может покинуть клан — сначала расформируй его."
+                    if lang == "ru" else
+                    "❌ Creator cannot leave — disband the clan instead."
+                )
+                await call.answer(err, show_alert=True)
+                return
+            clan = get_clan(m["clan_id"])
+            clan_name = clan["name"] if clan else "?"
+            if lang == "ru":
+                confirm_text = (
+                    f'<tg-emoji emoji-id="5325547803936572038">⚠️</tg-emoji> <b>Покинуть клан?</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'<tg-emoji emoji-id="5424972470023104089">⚔️</tg-emoji> <b>Клан:</b> {clan_name}\n\n'
+                    f'Ты уверен, что хочешь покинуть клан?\n'
+                    f'Это действие <b>необратимо</b>.'
+                    f'</blockquote>'
+                )
+            else:
+                confirm_text = (
+                    f'<tg-emoji emoji-id="5325547803936572038">⚠️</tg-emoji> <b>Leave Clan?</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'<tg-emoji emoji-id="5424972470023104089">⚔️</tg-emoji> <b>Clan:</b> {clan_name}\n\n'
+                    f'Are you sure you want to leave this clan?\n'
+                    f'This action is <b>irreversible</b>.'
+                    f'</blockquote>'
+                )
+            builder_conf = InlineKeyboardBuilder()
+            builder_conf.row(
+                InlineKeyboardButton(
+                    text="✅ Да, покинуть" if lang == "ru" else "✅ Yes, leave",
+                    callback_data="klan_leave_confirm",
+                    style="danger"
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отмена" if lang == "ru" else "❌ Cancel",
+                    callback_data="klan_my"
+                ),
+            )
+            await edit(confirm_text, builder_conf.as_markup())
+            await call.answer()
+            return
+
+        if cd == "klan_leave_confirm":
+            m = get_member(user.id)
+            if not m:
+                await call.answer()
+                return
+            res = leave_clan(user.id)
+            if res["ok"]:
+                if lang == "ru":
+                    success_text = (
+                        f'<tg-emoji emoji-id="5325547803936572038">👋</tg-emoji> <b>Ты покинул клан</b>\n'
+                        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                        f'<blockquote>Ты успешно вышел из клана.\nУдачи в поисках нового братства!</blockquote>'
+                    )
+                else:
+                    success_text = (
+                        f'<tg-emoji emoji-id="5325547803936572038">👋</tg-emoji> <b>You left the clan</b>\n'
+                        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                        f'<blockquote>You have successfully left the clan.\nGood luck finding a new one!</blockquote>'
+                    )
+                builder_back = InlineKeyboardBuilder()
+                builder_back.row(InlineKeyboardButton(
+                    text="🏠 К кланам" if lang == "ru" else "🏠 Clans",
+                    callback_data="klan_main"
+                ))
+                await edit(success_text, builder_back.as_markup())
+            else:
+                err = (
+                    "❌ Создатель не может покинуть клан — расформируй его."
+                    if lang == "ru" else
+                    "❌ Creator cannot leave — disband the clan instead."
+                )
+                await call.answer(err, show_alert=True)
+            return
+
+        if cd == "klan_disband":
+            m = get_member(user.id)
+            if not m or m["role"] != "creator":
+                await call.answer("❌ Только создатель!" if lang == "ru" else "❌ Creator only!", show_alert=True)
+                return
+            clan = get_clan(m["clan_id"])
+            clan_name = clan["name"] if clan else "?"
+            treasury  = clan.get("treasury", 0) if clan else 0
+            if lang == "ru":
+                confirm_text = (
+                    f'<tg-emoji emoji-id="5325547803936572038">💥</tg-emoji> <b>Расформировать клан?</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'<tg-emoji emoji-id="5424972470023104089">⚔️</tg-emoji> <b>Клан:</b> {clan_name}\n'
+                    f'<tg-emoji emoji-id="5278467510604160626">💰</tg-emoji> <b>Казна:</b> {format_amount(treasury)} монет\n\n'
+                    f'Все участники будут исключены.\n'
+                    f'Казна вернётся тебе на баланс.\n'
+                    f'Это действие <b>необратимо</b>!'
+                    f'</blockquote>'
+                )
+            else:
+                confirm_text = (
+                    f'<tg-emoji emoji-id="5325547803936572038">💥</tg-emoji> <b>Disband Clan?</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'<tg-emoji emoji-id="5424972470023104089">⚔️</tg-emoji> <b>Clan:</b> {clan_name}\n'
+                    f'<tg-emoji emoji-id="5278467510604160626">💰</tg-emoji> <b>Treasury:</b> {format_amount(treasury)} coins\n\n'
+                    f'All members will be removed.\n'
+                    f'Treasury will be returned to you.\n'
+                    f'This action is <b>irreversible</b>!'
+                    f'</blockquote>'
+                )
+            builder_conf = InlineKeyboardBuilder()
+            builder_conf.row(
+                InlineKeyboardButton(
+                    text="💥 Да, расформировать" if lang == "ru" else "💥 Yes, disband",
+                    callback_data="klan_disband_confirm",
+                    style="danger"
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отмена" if lang == "ru" else "❌ Cancel",
+                    callback_data="klan_my"
+                ),
+            )
+            await edit(confirm_text, builder_conf.as_markup())
+            await call.answer()
+            return
+
+        if cd == "klan_disband_confirm":
+            m = get_member(user.id)
+            if not m or m["role"] != "creator":
+                await call.answer("❌ Только создатель!" if lang == "ru" else "❌ Creator only!", show_alert=True)
+                return
+            res = disband_clan(user.id)
+            if res["ok"]:
+                data = get_or_create_user(user)  # обновляем баланс в data
+                if lang == "ru":
+                    success_text = (
+                        f'<tg-emoji emoji-id="5325547803936572038">💥</tg-emoji> <b>Клан расформирован</b>\n'
+                        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                        f'<blockquote>'
+                        f'Клан был расформирован.\n'
+                        f'<tg-emoji emoji-id="5278467510604160626">💰</tg-emoji> Казна возвращена на твой баланс.'
+                        f'</blockquote>'
+                    )
+                else:
+                    success_text = (
+                        f'<tg-emoji emoji-id="5325547803936572038">💥</tg-emoji> <b>Clan Disbanded</b>\n'
+                        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                        f'<blockquote>'
+                        f'The clan has been disbanded.\n'
+                        f'<tg-emoji emoji-id="5278467510604160626">💰</tg-emoji> Treasury returned to your balance.'
+                        f'</blockquote>'
+                    )
+                builder_back = InlineKeyboardBuilder()
+                builder_back.row(InlineKeyboardButton(
+                    text="🏠 К кланам" if lang == "ru" else "🏠 Clans",
+                    callback_data="klan_main"
+                ))
+                await edit(success_text, builder_back.as_markup())
+            return
+
+        if cd == "klan_kick":
+            m = get_member(user.id)
+            if not m or m["role"] != "creator":
+                await call.answer("❌ Только создатель!" if lang == "ru" else "❌ Creator only!", show_alert=True)
+                return
+            prompt = (
+                "🚫 <b>Исключить участника</b>\n\n"
+                "<blockquote>Отправь юзернейм (@username) или ID участника которого хочешь исключить:</blockquote>"
+            ) if lang == "ru" else (
+                "🚫 <b>Kick Member</b>\n\n"
+                "<blockquote>Send the @username or ID of the member you want to kick:</blockquote>"
+            )
+            await edit(prompt, klan_back_keyboard("klan_my", lang))
+            data["_klan_kick_pending"] = True
+            save_user(user.id, data)
+            await call.answer()
+            return
+
+        if cd == "klan_deposit":
+            m = get_member(user.id)
+            if not m:
+                await call.answer()
+                return
+            bal = data.get("balance", 0)
+            prompt = (
+                f'➕ <b>Пополнить казну</b>\n\n'
+                f'<blockquote>Твой баланс: <b>{format_amount(bal)}</b> {_COIN}\n\nОтправь сумму для пополнения:</blockquote>'
+            ) if lang == "ru" else (
+                f'➕ <b>Deposit to Treasury</b>\n\n'
+                f'<blockquote>Your balance: <b>{format_amount(bal)}</b> {_COIN}\n\nSend the amount to deposit:</blockquote>'
+            )
+            await edit(prompt, klan_back_keyboard("klan_treasury", lang))
+            data["_klan_deposit_pending"] = True
+            save_user(user.id, data)
+            await call.answer()
+            return
+
+        if cd == "klan_withdraw":
+            m = get_member(user.id)
+            if not m:
+                await call.answer()
+                return
+            clan = get_clan(m["clan_id"])
+            prompt = (
+                f'➖ <b>Запрос на вывод</b>\n\n'
+                f'<blockquote>Казна клана: <b>{format_amount(clan["treasury"])}</b> {_COIN}\n\n'
+                f'Отправь сумму и причину через «|»:\n'
+                f'<code>1000 | нужно на апгрейд</code></blockquote>'
+            ) if lang == "ru" else (
+                f'➖ <b>Withdrawal Request</b>\n\n'
+                f'<blockquote>Clan treasury: <b>{format_amount(clan["treasury"])}</b> {_COIN}\n\n'
+                f'Send amount and reason separated by «|»:\n'
+                f'<code>1000 | need for upgrade</code></blockquote>'
+            )
+            await edit(prompt, klan_back_keyboard("klan_treasury", lang))
+            data["_klan_withdraw_pending"] = True
+            save_user(user.id, data)
+            await call.answer()
+            return
+
+        # Поиск кланов — активация текстового ввода через отдельную кнопку
+        if cd == "klan_do_search":
+            prompt = (
+                f'<tg-emoji emoji-id="5231012545799666522">🔍</tg-emoji> <b>Поиск клана</b>\n\n'
+                f'<blockquote>Отправь <b>название</b> или <b>ID</b> клана:</blockquote>'
+            ) if lang == "ru" else (
+                f'<tg-emoji emoji-id="5231012545799666522">🔍</tg-emoji> <b>Clan Search</b>\n\n'
+                f'<blockquote>Send the clan <b>name</b> or <b>ID</b>:</blockquote>'
+            )
+            await edit(prompt, klan_back_keyboard("klan_search", lang))
+            data["_klan_search_pending"] = True
+            save_user(user.id, data)
+            await call.answer()
+            return
+
+        # Привязать чат клана
+        if cd == "klan_chat_link":
+            m = get_member(user.id)
+            if not m or m["role"] != "creator":
+                await call.answer("❌ Только создатель!" if lang == "ru" else "❌ Creator only!", show_alert=True)
+                return
+            prompt = (
+                f'<tg-emoji emoji-id="5443038326535759644">💬</tg-emoji> <b>Привязать чат клана</b>\n\n'
+                f'<blockquote>'
+                f'Отправь <b>ссылку</b> или <b>@username</b> чата.\n\n'
+                f'⚠️ Бот должен быть <b>администратором</b> в этом чате.\n\n'
+                f'Примеры:\n'
+                f'<code>@myClanChat</code>\n'
+                f'<code>https://t.me/myClanChat</code>'
+                f'</blockquote>'
+            ) if lang == "ru" else (
+                f'<tg-emoji emoji-id="5443038326535759644">💬</tg-emoji> <b>Link Clan Chat</b>\n\n'
+                f'<blockquote>'
+                f'Send the chat <b>link</b> or <b>@username</b>.\n\n'
+                f'⚠️ The bot must be an <b>administrator</b> in that chat.\n\n'
+                f'Examples:\n'
+                f'<code>@myClanChat</code>\n'
+                f'<code>https://t.me/myClanChat</code>'
+                f'</blockquote>'
+            )
+            await edit(prompt, klan_back_keyboard("klan_my", lang))
+            data["_klan_chat_pending"] = True
+            save_user(user.id, data)
+            await call.answer()
+            return
+
+        # Открепить чат клана
+        if cd == "klan_chat_unlink":
+            m = get_member(user.id)
+            if not m or m["role"] != "creator":
+                await call.answer("❌ Только создатель!" if lang == "ru" else "❌ Creator only!", show_alert=True)
+                return
+            remove_clan_chat(m["clan_id"])
+            clan = get_clan(m["clan_id"])
+            cnt  = get_member_count(m["clan_id"])
+            ok_msg = "✅ Чат откреплён." if lang == "ru" else "✅ Chat unlinked."
+            await call.answer(ok_msg, show_alert=True)
+            await edit(my_klan_text(clan, m, cnt, lang), my_klan_keyboard(user.id, lang))
+            return
+
+        # Открыть чат клана (ссылка — через answer alert или InlineKeyboardButton url)
+        # Закрытый чат — показываем alert (публичные чаты открываются через URL-кнопку напрямую)
+        if cd == "klan_chat_private":
+            await call.answer(
+                "💬 Чат закрытый — обратись к создателю клана за инвайтом." if lang == "ru"
+                else "💬 Chat is private — ask the clan creator for an invite.",
+                show_alert=True
+            )
+            return
+
+        # Просмотр карточки клана
+        if cd.startswith("klan_view_"):
+            clan_id = int(cd.split("_")[-1])
+            clan    = get_clan(clan_id)
+            if not clan:
+                await call.answer("❌ Клан не найден" if lang == "ru" else "❌ Clan not found", show_alert=True)
+                return
+            cnt = get_member_count(clan_id)
+            await edit(klan_card_text(clan, cnt, lang), klan_card_keyboard(clan_id, user.id, lang))
+            await call.answer()
+            return
+
+        # Подача заявки в клан
+        if cd.startswith("klan_apply_"):
+            clan_id = int(cd.split("_")[-1])
+            clan    = get_clan(clan_id)
+            if not clan:
+                await call.answer()
+                return
+            import html as _html_klan
+            _clan_name = _html_klan.escape(clan["name"])
+            prompt = (
+                f'📩 <b>Заявка в {_clan_name}</b>\n\n'
+                f'<blockquote>Отправь сопроводительное сообщение (или «—» чтобы пропустить):</blockquote>'
+            ) if lang == "ru" else (
+                f'📩 <b>Apply to {_clan_name}</b>\n\n'
+                f'<blockquote>Send a short message (or «—» to skip):</blockquote>'
+            )
+            await edit(prompt, klan_back_keyboard(f"klan_view_{clan_id}", lang))
+            data["_klan_apply_pending"] = clan_id
+            save_user(user.id, data)
+            await call.answer()
+            return
+
+        # Принять заявку
+        if cd.startswith("klan_app_accept_"):
+            app_id = int(cd.split("_")[-1])
+            res    = accept_application(user.id, app_id)
+            m      = get_member(user.id)
+            if res["ok"]:
+                # Уведомить принятого
+                try:
+                    ntf = "✅ Твоя заявка в клан принята!" if lang == "ru" else "✅ Your clan application was accepted!"
+                    await bot.send_message(res["uid"], ntf, parse_mode="HTML")
+                except Exception:
+                    pass
+                await call.answer("✅ Принят!" if lang == "ru" else "✅ Accepted!", show_alert=True)
+            else:
+                await call.answer(f"❌ {res['error']}", show_alert=True)
+            # Обновить список заявок
+            if m:
+                clan = get_clan(m["clan_id"])
+                apps, total = get_applications(m["clan_id"], page=0)
+                await edit(klan_applications_text(clan, apps, 0, total, lang), klan_applications_keyboard(apps, 0, total, lang))
+            return
+
+        # Отклонить заявку
+        if cd.startswith("klan_app_reject_"):
+            app_id = int(cd.split("_")[-1])
+            res    = reject_application(user.id, app_id)
+            m      = get_member(user.id)
+            if res["ok"]:
+                try:
+                    ntf = "❌ Твоя заявка в клан отклонена." if lang == "ru" else "❌ Your clan application was rejected."
+                    await bot.send_message(res["uid"], ntf, parse_mode="HTML")
+                except Exception:
+                    pass
+                await call.answer("❌ Отклонено." if lang == "ru" else "❌ Rejected.", show_alert=True)
+            if m:
+                clan = get_clan(m["clan_id"])
+                apps, total = get_applications(m["clan_id"], page=0)
+                await edit(klan_applications_text(clan, apps, 0, total, lang), klan_applications_keyboard(apps, 0, total, lang))
+            return
+
+        # Принять все заявки
+        if cd == "klan_app_accept_all":
+            m = get_member(user.id)
+            if not m or m["role"] != "creator":
+                await call.answer("❌ Только создатель!" if lang == "ru" else "❌ Creator only!", show_alert=True)
+                return
+            res = accept_all_applications(user.id)
+            if res["ok"]:
+                msg = (f'✅ Принято: {res["accepted"]}' + (f', пропущено: {res["skipped"]}' if res["skipped"] else '')) \
+                    if lang == "ru" else \
+                    (f'✅ Accepted: {res["accepted"]}' + (f', skipped: {res["skipped"]}' if res["skipped"] else ''))
+                await call.answer(msg, show_alert=True)
+            clan = get_clan(m["clan_id"])
+            apps, total = get_applications(m["clan_id"], page=0)
+            await edit(klan_applications_text(clan, apps, 0, total, lang), klan_applications_keyboard(apps, 0, total, lang))
+            return
+
+        # Отклонить все заявки
+        if cd == "klan_app_reject_all":
+            m = get_member(user.id)
+            if not m or m["role"] != "creator":
+                await call.answer("❌ Только создатель!" if lang == "ru" else "❌ Creator only!", show_alert=True)
+                return
+            res = reject_all_applications(user.id)
+            if res["ok"]:
+                msg = f'❌ Отклонено: {res["rejected"]}' if lang == "ru" else f'❌ Rejected: {res["rejected"]}'
+                await call.answer(msg, show_alert=True)
+            clan = get_clan(m["clan_id"])
+            apps, total = get_applications(m["clan_id"], page=0)
+            await edit(klan_applications_text(clan, apps, 0, total, lang), klan_applications_keyboard(apps, 0, total, lang))
+            return
+
+        # Пагинация заявок
+        if cd.startswith("klan_apps_page_"):
+            m = get_member(user.id)
+            if not m or m["role"] != "creator":
+                await call.answer()
+                return
+            page = int(cd.removeprefix("klan_apps_page_"))
+            clan = get_clan(m["clan_id"])
+            apps, total = get_applications(m["clan_id"], page=page)
+            await edit(klan_applications_text(clan, apps, page, total, lang), klan_applications_keyboard(apps, page, total, lang))
+            await call.answer()
+            return
+
+        # Пагинация поиска кланов
+        if cd.startswith("klan_search_page_"):
+            raw   = cd.removeprefix("klan_search_page_")
+            parts = raw.split("_", 1)
+            page  = int(parts[0])
+            query = parts[1] if len(parts) > 1 else ""
+            results, total = search_clans(query, page=page)
+            await edit(klan_search_text(query, results, page, total, lang), klan_search_keyboard(results, query, page, total, lang))
+            await call.answer()
+            return
+
+        # Одобрить запрос на вывод
+        if cd.startswith("klan_wd_approve_"):
+            req_id = int(cd.split("_")[-1])
+            res    = approve_withdrawal(user.id, req_id)
+            m      = get_member(user.id)
+            if res["ok"]:
+                try:
+                    ntf = f'✅ Твой запрос на вывод <b>{format_amount(res["amount"])}</b> {_COIN} из казны одобрен!' \
+                        if lang == "ru" else \
+                        f'✅ Your withdrawal request for <b>{format_amount(res["amount"])}</b> {_COIN} was approved!'
+                    await bot.send_message(res["uid"], ntf, parse_mode="HTML")
+                except Exception:
+                    pass
+                await call.answer("✅ Одобрено!" if lang == "ru" else "✅ Approved!", show_alert=True)
+            else:
+                await call.answer(f"❌ {res['error']}", show_alert=True)
+            if m:
+                clan = get_clan(m["clan_id"])
+                reqs = get_withdrawal_requests(m["clan_id"])
+                await edit(klan_withdrawal_requests_text(clan, reqs, lang), klan_withdrawal_keyboard(reqs, lang))
+            return
+
+        # Отклонить запрос на вывод
+        if cd.startswith("klan_wd_reject_"):
+            req_id = int(cd.split("_")[-1])
+            res    = reject_withdrawal(user.id, req_id)
+            m      = get_member(user.id)
+            if res["ok"]:
+                try:
+                    ntf = "❌ Твой запрос на вывод из казны отклонён." \
+                        if lang == "ru" else "❌ Your withdrawal request was rejected."
+                    await bot.send_message(res["uid"], ntf, parse_mode="HTML")
+                except Exception:
+                    pass
+                await call.answer("❌ Отклонено." if lang == "ru" else "❌ Rejected.", show_alert=True)
+            if m:
+                clan = get_clan(m["clan_id"])
+                reqs = get_withdrawal_requests(m["clan_id"])
+                await edit(klan_withdrawal_requests_text(clan, reqs, lang), klan_withdrawal_keyboard(reqs, lang))
+            return
+
+        # ===== NOOP =====
+        if cd == "noop":
+            await call.answer()
+            return
+
+        # ===== ПРОФИЛЬ =====
+        if cd == "profile":
+            await edit(profile_text(data), profile_keyboard(lang))
+            return
+
+        # ===== ПРОМОКОД — кнопка в профиле =====
+        if cd == "promo_input":
+            uid = call.from_user.id
+            _promo_pending[uid] = True
+            await call.answer()
+            await call.message.answer(
+                promo_input_text(lang),
+                parse_mode="HTML",
+            )
+            return
+
+        # ===== МАГАЗИН =====
+        if cd == "shop":
+            await edit(SHOP_TEXT, shop_main_keyboard())
+            return
+
+        if cd == "shop_cases":
+            await edit(cases_shop_text(data, lang), cases_shop_keyboard(lang))
+            return
+
+        # ===== КЕЙСЫ: карточка кейса (инфо + кнопка купить) =====
+        if cd.startswith("case_info_"):
+            case_key = cd.removeprefix("case_info_")
+            from shop import case_detail_text, case_detail_keyboard, CASES
+            case     = CASES.get(case_key)
+            if not case:
+                await call.answer("❌ Кейс не найден.", show_alert=True)
+                return
+            can_buy = data.get("balance", 0) >= case["cost"]
+            await edit(case_detail_text(data, case_key, lang), case_detail_keyboard(case_key, can_buy, lang))
+            return
+
+        # ===== КЕЙСЫ: купить и открыть =====
+        if cd.startswith("case_open_"):
+            case_key = cd.removeprefix("case_open_")
+            ok, msg, instance = open_case(data, case_key, lang)
+            if ok:
+                save_user(data["id"], data)
+                await edit(msg, cases_shop_keyboard(lang))
+            else:
+                await call.answer(_plain(msg), show_alert=True)
+            return
+
+        # ===== ИНВЕНТАРЬ — главная страница выбора раздела =====
+        if cd == "profile_boosters":
+            await edit(inventory_main_text(data, lang), inventory_main_keyboard(lang))
+            return
+
+        # ===== ИНВЕНТАРЬ — раздел ускорителей кирки =====
+        if cd == "inv_boosters":
+            await edit(boosters_inventory_text(data, lang), boosters_inventory_keyboard(data, lang))
+            return
+
+        # ===== ИНВЕНТАРЬ — раздел XP-предметов =====
+        if cd == "inv_xp":
+            await edit(xp_inventory_text(data, lang), xp_inventory_keyboard(data, lang))
+            return
+
+        # ===== КАРТОЧКА УСКОРИТЕЛЯ КИРКИ =====
+        if cd.startswith("boost_info_"):
+            instance_id = cd.removeprefix("boost_info_")
+            await edit(booster_detail_text(data, instance_id, lang), booster_detail_keyboard(data, instance_id, lang))
+            return
+
+        # ===== АКТИВАЦИЯ УСКОРИТЕЛЯ КИРКИ =====
+        if cd.startswith("boost_activate_"):
+            instance_id = cd.removeprefix("boost_activate_")
+            ok, msg = activate_booster(data, instance_id, lang=lang)
+            if ok:
+                save_user(data["id"], data)
+                await call.answer("⚡ Ускоритель активирован!" if lang == "ru" else "⚡ Booster activated!", show_alert=True)
+                await edit(boosters_inventory_text(data, lang), boosters_inventory_keyboard(data, lang))
+            elif msg.startswith("CONFIRM_REPLACE:"):
+                await edit(booster_confirm_replace_text(data, instance_id, lang), booster_confirm_replace_keyboard(instance_id, lang))
+            else:
+                await call.answer(msg, show_alert=True)
+            return
+
+        # ===== ПОДТВЕРЖДЕНИЕ ЗАМЕНЫ УСКОРИТЕЛЯ КИРКИ =====
+        if cd.startswith("boost_replace_"):
+            instance_id = cd.removeprefix("boost_replace_")
+            ok, msg = activate_booster(data, instance_id, force=True, lang=lang)
+            await call.answer(("⚡ Ускоритель заменён!" if lang == "ru" else "⚡ Booster replaced!") if ok else msg, show_alert=True)
+            if ok:
+                save_user(data["id"], data)
+            await edit(boosters_inventory_text(data, lang), boosters_inventory_keyboard(data, lang))
+            return
+
+        # ===== ПРОДАЖА УСКОРИТЕЛЯ КИРКИ =====
+        if cd.startswith("boost_sell_"):
+            instance_id = cd.removeprefix("boost_sell_")
+            ok, msg, price = sell_booster(data, instance_id, lang)
+            await call.answer(f"💸 {'Продано' if lang == 'ru' else 'Sold'} {format_amount(price)}!" if ok else msg, show_alert=True)
+            if ok:
+                save_user(data["id"], data)
+            await edit(boosters_inventory_text(data, lang), boosters_inventory_keyboard(data, lang))
+            return
+
+        # ===== КАРТОЧКА XP-ПРЕДМЕТА =====
+        if cd.startswith("xp_info_"):
+            instance_id = cd.removeprefix("xp_info_")
+            inv  = data.get("xp_inventory", [])
+            item = next((x for x in inv if x["instance_id"] == instance_id), None)
+            if not item:
+                await call.answer("❌ Предмет не найден.", show_alert=True)
+                return
+            is_boost = item["type"] == "xp_boost"
+            await edit(xp_item_detail_text(data, instance_id, lang), xp_item_detail_keyboard(instance_id, is_boost, lang))
+            return
+
+        # ===== ИСПОЛЬЗОВАНИЕ XP-ПРЕДМЕТА =====
+        if cd.startswith("xp_use_"):
+            instance_id = cd.removeprefix("xp_use_")
+            ok, msg = use_xp_item(data, instance_id, lang=lang)
+            if ok:
+                save_user(data["id"], data)
+                await call.answer("✅ Применено!" if lang == "ru" else "✅ Applied!", show_alert=True)
+                await edit(xp_inventory_text(data, lang), xp_inventory_keyboard(data, lang))
+            elif msg.startswith("CONFIRM_REPLACE_XP:"):
+                await edit(xp_confirm_replace_text(data, instance_id, lang), xp_confirm_replace_keyboard(instance_id, lang))
+            else:
+                await call.answer(msg, show_alert=True)
+            return
+
+        # ===== ПОДТВЕРЖДЕНИЕ ЗАМЕНЫ XP-УСКОРИТЕЛЯ =====
+        if cd.startswith("xp_replace_"):
+            instance_id = cd.removeprefix("xp_replace_")
+            ok, msg = use_xp_item(data, instance_id, force=True, lang=lang)
+            await call.answer(("✅ XP-ускоритель заменён!" if lang == "ru" else "✅ XP booster replaced!") if ok else msg, show_alert=True)
+            if ok:
+                save_user(data["id"], data)
+            await edit(xp_inventory_text(data, lang), xp_inventory_keyboard(data, lang))
+            return
+
+        # ===== ПРОДАЖА XP-ПРЕДМЕТА =====
+        if cd.startswith("xp_sell_"):
+            instance_id = cd.removeprefix("xp_sell_")
+            ok, msg, price = sell_xp_item(data, instance_id, lang)
+            await call.answer(f"💸 {'Продано' if lang == 'ru' else 'Sold'} {format_amount(price)}!" if ok else msg, show_alert=True)
+            if ok:
+                save_user(data["id"], data)
+            await edit(xp_inventory_text(data, lang), xp_inventory_keyboard(data, lang))
+            return
+
+        # ===== ИНВЕНТАРЬ — раздел усилителей и ядов =====
+        if cd == "inv_enh":
+            await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
+            return
+
+        # ===== КАРТОЧКА УСИЛИТЕЛЯ / ЯДА =====
+        if cd.startswith("enh_info_"):
+            instance_id = cd.removeprefix("enh_info_")
+            inv  = data.get("enh_inventory", [])
+            item = next((x for x in inv if x["instance_id"] == instance_id), None)
+            if not item:
+                await call.answer("❌ Предмет не найден.", show_alert=True)
+                return
+            await edit(enh_item_detail_text(data, instance_id, lang), enh_item_detail_keyboard(item["type"], instance_id, lang))
+            return
+
+        # ===== ПРИМЕНИТЬ ЯД =====
+        if cd.startswith("enh_use_"):
+            instance_id = cd.removeprefix("enh_use_")
+            ok, msg = use_poison(data, instance_id, lang=lang)
+            if ok:
+                save_user(data["id"], data)
+                await call.answer("☠️ Яд применён!" if lang == "ru" else "☠️ Poison applied!", show_alert=True)
+                await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
+            elif msg.startswith("CONFIRM_REPLACE_POISON:"):
+                await edit(enh_confirm_replace_text(data, instance_id, "poison", lang), enh_confirm_replace_keyboard(instance_id, "poison", lang))
+            else:
+                await call.answer(msg, show_alert=True)
+            return
+
+        # ===== АКТИВИРОВАТЬ УСИЛИТЕЛЬ УРОНА =====
+        if cd.startswith("enh_activate_"):
+            instance_id = cd.removeprefix("enh_activate_")
+            ok, msg = activate_enh_boost(data, instance_id, lang=lang)
+            if ok:
+                save_user(data["id"], data)
+                await call.answer("⚡ Усилитель активирован!" if lang == "ru" else "⚡ Booster activated!", show_alert=True)
+                await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
+            elif msg.startswith("CONFIRM_REPLACE_ENH:"):
+                await edit(enh_confirm_replace_text(data, instance_id, "enh_boost", lang), enh_confirm_replace_keyboard(instance_id, "enh_boost", lang))
+            else:
+                await call.answer(msg, show_alert=True)
+            return
+
+        # ===== ПОДТВЕРЖДЕНИЕ ЗАМЕНЫ ЯДА =====
+        if cd.startswith("enh_poison_replace_"):
+            instance_id = cd.removeprefix("enh_poison_replace_")
+            ok, msg = use_poison(data, instance_id, force=True, lang=lang)
+            await call.answer(("☠️ Яд заменён!" if lang == "ru" else "☠️ Poison replaced!") if ok else msg, show_alert=True)
+            if ok:
+                save_user(data["id"], data)
+            await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
+            return
+
+        # ===== ПОДТВЕРЖДЕНИЕ ЗАМЕНЫ УСИЛИТЕЛЯ УРОНА =====
+        if cd.startswith("enh_boost_replace_"):
+            instance_id = cd.removeprefix("enh_boost_replace_")
+            ok, msg = activate_enh_boost(data, instance_id, force=True, lang=lang)
+            await call.answer(("⚡ Усилитель заменён!" if lang == "ru" else "⚡ Booster replaced!") if ok else msg, show_alert=True)
+            if ok:
+                save_user(data["id"], data)
+            await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
+            return
+
+        # ===== ПРОДАЖА УСИЛИТЕЛЯ / ЯДА =====
+        if cd.startswith("enh_sell_"):
+            instance_id = cd.removeprefix("enh_sell_")
+            ok, msg, price = sell_enh_item(data, instance_id, lang)
+            await call.answer(f"💸 {'Продано' if lang == 'ru' else 'Sold'} {format_amount(price)}!" if ok else msg, show_alert=True)
+            if ok:
+                save_user(data["id"], data)
+            await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
+            return
+            await edit(shop_pickaxes_text(), shop_pickaxes_keyboard(data))
+            return
+
+        # ===== КИРКИ: просмотр карточки =====
+        if cd.startswith("pick_info_"):
+            pick_key = cd.removeprefix("pick_info_")
+            page     = get_pickaxe_page(pick_key)
+            await edit(pickaxe_detail_text(data, pick_key, lang), pickaxe_detail_keyboard(data, pick_key, page, lang))
+            return
+
+        # ===== КИРКИ: купить за монеты =====
+        if cd.startswith("pick_buy_") and not cd.startswith("pick_buy_stars_"):
+            pick_key = cd.removeprefix("pick_buy_")
+            ok, msg  = buy_pickaxe(data, pick_key, lang)
+            await call.answer(_plain(msg), show_alert=True)
+            if ok:
+                save_user(data["id"], data)
+            page = get_pickaxe_page(pick_key)
+            await edit(pickaxe_detail_text(data, pick_key, lang), pickaxe_detail_keyboard(data, pick_key, page, lang))
+            return
+
+        # ===== КИРКИ: купить за звёзды (экран подтверждения + инвойс-кнопка) =====
+        if cd.startswith("pick_buy_stars_"):
+            pick_key = cd.removeprefix("pick_buy_stars_")
+            p        = PICKAXES.get(pick_key)
+            if not p:
+                await call.answer(t(lang, "pick_unknown"), show_alert=True)
+                return
+            page = get_pickaxe_page(pick_key)
+            # Создаём ссылку на инвойс и сразу вставляем в кнопку
+            invoice_url = None
+            try:
+                invoice_url = await bot.create_invoice_link(
+                    title=p['name'],
+                    description=f"{p['name']} — {format_amount(p['dig_min'])}–{format_amount(p['dig_max'])} ударов за кампанию",
+                    payload=f"premium_pickaxe:{pick_key}",
+                    provider_token="",
+                    currency="XTR",
+                    prices=[LabeledPrice(label=p["name"], amount=p["cost_stars"])],
+                )
+            except Exception as e:
+                print(f"Invoice link error: {e}")
+                await call.answer("❌ Ошибка при создании инвойса.", show_alert=True)
+                return
+            # Сохраняем message_id чтобы обновить после оплаты
+            _pending_stars_msg[call.from_user.id] = (
+                call.message.chat.id,
+                call.message.message_id,
+                pick_key
+            )
+            await edit(stars_confirm_text(p), stars_confirm_keyboard(pick_key, page, invoice_url=invoice_url))
+            return
+
+        # ===== КИРКИ: выбрать =====
+        if cd.startswith("pick_select_"):
+            pick_key = cd.removeprefix("pick_select_")
+            ok, msg  = select_pickaxe(data, pick_key, lang)
+            await call.answer(_plain(msg), show_alert=True)
+            if ok:
+                save_user(data["id"], data)
+            page = get_pickaxe_page(pick_key)
+            await edit(pickaxe_detail_text(data, pick_key, lang), pickaxe_detail_keyboard(data, pick_key, page, lang))
+            return
+
+        # ===== ДЛИТЕЛЬНОСТИ: просмотр карточки =====
+        if cd.startswith("dur_info_"):
+            dur_key = cd.removeprefix("dur_info_")
+            await edit(duration_detail_text(data, dur_key, lang), duration_detail_keyboard(data, dur_key, lang))
+            return
+
+        # ===== ДЛИТЕЛЬНОСТИ: купить =====
+        if cd.startswith("dur_buy_"):
+            dur_key = cd.removeprefix("dur_buy_")
+            ok, msg = buy_duration(data, dur_key, lang)
+            await call.answer(_plain(msg), show_alert=True)
+            if ok:
+                save_user(data["id"], data)
+            await edit(duration_detail_text(data, dur_key, lang), duration_detail_keyboard(data, dur_key, lang))
+            return
+
+        # ===== ДЛИТЕЛЬНОСТИ: выбрать =====
+        if cd.startswith("dur_select_"):
+            dur_key = cd.removeprefix("dur_select_")
+            ok, msg = select_duration(data, dur_key, lang)
+            await call.answer(_plain(msg), show_alert=True)
+            if ok:
+                save_user(data["id"], data)
+            await edit(duration_detail_text(data, dur_key, lang), duration_detail_keyboard(data, dur_key, lang))
+            return
+
+        # ===== ШАХТА =====
+        if cd == "mine":
+            await edit(mine_text(data, lang), mine_keyboard(data, lang))
+            return
+
+        if cd == "mine_start":
+            if data["mine_start"] is not None and not data["mine_collected"]:
+                await call.answer(t(lang, "mine_already_running"), show_alert=True)
+                return
+            data["mine_start"]          = now_ts()
+            data["mine_campaigns_done"] = 0
+            data["mine_collected"]      = False
+            save_user(data["id"], data)
+            await edit(mine_text(data, lang), mine_keyboard(data, lang))
+            return
+
+        if cd == "mine_refresh":
+            await edit(mine_text(data, lang), mine_keyboard(data, lang))
+            return
+
+        if cd == "mine_collect":
+            if data["mine_start"] is None:
+                await call.answer(t(lang, "mine_start_first"), show_alert=True)
+                return
+            prog, result_text = collect_mine(data, lang)
+            if not result_text:
+                await call.answer(t(lang, "mine_no_campaigns"), show_alert=True)
+                return
+            save_user(data["id"], data)
+            await edit(result_text, mine_keyboard(data, lang))
+            return
+
+        if cd == "mine_sell_screen":
+            await edit(sell_screen_text(data, lang), sell_keyboard(data, lang))
+            return
+
+        if cd == "mine_sell_all":
+            total, report = sell_all_ores(data, lang)
+            if total == 0:
+                await call.answer(t(lang, "mine_sell_nothing"), show_alert=True)
+                return
+            save_user(data["id"], data)
+            try:
+                add_clan_mine_earnings(user.id, total)
+            except Exception as _qe:
+                print(f"[klan] mine daily quest error: {_qe}")
+            sell_text = (
+                f'<tg-emoji emoji-id="5206607081334906820">🎟</tg-emoji> <b>{t(lang, "mine_sell_success")}</b>\n'
+                f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"{report}\n\n"
+                f'<tg-emoji emoji-id="5429651785352501917">🎟</tg-emoji> <b>{t(lang, "mine_sell_earned")}: {format_amount(total)}</b> <tg-emoji emoji-id="5199552030615558774">🎟</tg-emoji>\n'
+                f'<tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <b>{t(lang, "mine_balance_lbl")}: {format_amount(data["balance"])}</b> <tg-emoji emoji-id="5199552030615558774">🎟</tg-emoji>'
+            )
+            await edit(sell_text, mine_keyboard(data, lang))
+            return
+
+        # ===== ИНВЕНТАРЬ =====
+        if cd == "mine_inventory":
+            await edit(inventory_screen_text(data, lang), inventory_keyboard(data, lang))
+            return
+
+        # ===== МАСТЕРСКАЯ (с поддержкой страниц) =====
+        if cd == "mine_workshop" or cd == "mine_workshop_0":
+            await edit(workshop_text(data, 0, lang), workshop_keyboard(data, 0, lang))
+            return
+
+        if cd.startswith("mine_workshop_"):
+            try:
+                page = int(cd.removeprefix("mine_workshop_"))
+            except ValueError:
+                page = 0
+            await edit(workshop_text(data, page, lang), workshop_keyboard(data, page, lang))
+            return
+
+        if cd == "mine_duration_shop":
+            await edit(duration_shop_text(data, lang), duration_shop_keyboard(data, lang))
+            return
+
+        # ===== НАЗАД В МЕНЮ =====
+        if cd == "back_to_menu":
+            try:
+                await call.message.edit_text(
+                    t(lang, "welcome"),
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                    reply_markup=main_menu_keyboard(lang)
+                )
+            except Exception as e:
+                if "message is not modified" not in str(e):
+                    print(e)
+            return
+
+        # ===== ПИТОМЦЫ: главный экран =====
+        if cd == "pets" or cd == "pets_page_0":
+            await edit(pets_main_text(data, lang), pets_main_keyboard(data, 0, lang))
+            return
+
+        if cd.startswith("pets_page_"):
+            try:
+                page = int(cd.removeprefix("pets_page_"))
+            except ValueError:
+                page = 0
+            await edit(pets_main_text(data, lang), pets_main_keyboard(data, page, lang))
+            return
+
+        # ===== ПИТОМЦЫ: карточка =====
+        if cd.startswith("pet_info_"):
+            pk   = cd.removeprefix("pet_info_")
+            idx  = next((i for i, p in enumerate(PETS) if p["key"] == pk), 0)
+            page = idx // 5
+            await edit(pet_detail_text(data, pk, lang), pet_detail_keyboard(data, pk, page, lang))
+            return
+
+        # ===== ПИТОМЦЫ: покупка =====
+        if cd.startswith("pet_buy_"):
+            pk      = cd.removeprefix("pet_buy_")
+            ok, msg = buy_pet(data, pk, lang)
+            if ok:
+                save_user(data["id"], data)
+                await call.answer("✅", show_alert=False)
+            else:
+                import re
+                plain = re.sub(r'<[^>]+>', '', msg)
+                await call.answer(plain[:200], show_alert=True)
+            idx  = next((i for i, p in enumerate(PETS) if p["key"] == pk), 0)
+            page = idx // 5
+            await edit(pet_detail_text(data, pk, lang), pet_detail_keyboard(data, pk, page, lang))
+            return
+
+        # ===== ОХОТА: главный экран =====
+        if cd == "hunt":
+            await edit(hunt_main_text(data, lang), hunt_main_keyboard(data, lang))
+            return
+
+        # ===== ОХОТА: экран выбора босса =====
+        if cd == "hunt_boss_select":
+            await edit(boss_select_text(lang), boss_select_keyboard(lang))
+            await call.answer()
+            return
+
+        # ===== ОХОТА: мёртвый босс — тихо отвечаем =====
+        if cd == "hunt_boss_dead":
+            await call.answer(
+                "Boss is dead, wait for respawn." if lang == "en" else "Босс мёртв, жди респауна.",
+                show_alert=True
+            )
+            return
+
+        # ===== ОХОТА: магазин мечей =====
+        if cd == "hunt_shop_swords":
+            await edit(sword_shop_text(data, 0, lang), sword_shop_keyboard(data, 0, lang))
+            return
+
+        # ===== ОХОТА: пагинация магазина мечей =====
+        if cd.startswith("sword_shop_page_"):
+            page = int(cd.removeprefix("sword_shop_page_"))
+            await call.answer()
+            await edit(sword_shop_text(data, page, lang), sword_shop_keyboard(data, page, lang))
+            return
+
+        # ===== ОХОТА: мои мечи =====
+        if cd == "hunt_my_swords":
+            await edit(my_swords_text(data, lang), my_swords_keyboard(data, lang))
+            return
+
+        # ===== ОХОТА: карточка меча =====
+        if cd.startswith("sword_info_"):
+            sk = cd.removeprefix("sword_info_")
+            await edit(sword_detail_text(data, sk, lang), sword_detail_keyboard(data, sk, lang))
+            return
+
+        # ===== ОХОТА: купить меч =====
+        if cd.startswith("sword_buy_"):
+            sk = cd.removeprefix("sword_buy_")
+            ok, msg = buy_sword(data, sk, lang)
+            if ok:
+                save_user(data["id"], data)
+                await call.answer(_plain(msg), show_alert=False)
+            else:
+                import re as _re2
+                plain = _re2.sub(r'<[^>]+>', '', msg)
+                await call.answer(plain[:200], show_alert=True)
+            await edit(sword_detail_text(data, sk, lang), sword_detail_keyboard(data, sk, lang))
+            return
+
+        # ===== ОХОТА: экипировать меч =====
+        if cd.startswith("sword_equip_"):
+            sk = cd.removeprefix("sword_equip_")
+            ok, msg = equip_sword(data, sk, lang)
+            if ok:
+                save_user(data["id"], data)
+                await call.answer(_plain(msg), show_alert=False)
+            await edit(my_swords_text(data, lang), my_swords_keyboard(data, lang))
+            return
+
+        # ===== ОХОТА: экран атаки конкретного босса (hunt_boss_N) =====
+        if cd.startswith("hunt_boss_") and cd != "hunt_boss_select" and cd != "hunt_boss_dead":
+            try:
+                slot = int(cd.removeprefix("hunt_boss_"))
+            except ValueError:
+                await call.answer("❌ Неизвестный слот." if lang == "ru" else "❌ Unknown slot.", show_alert=True)
+                return
+            await edit(boss_attack_text(data, lang, slot), boss_attack_keyboard(data, lang, slot))
+            await call.answer()
+            return
+
+        # ===== ОХОТА: удар по боссу (hunt_strike_N) =====
+        if cd.startswith("hunt_strike"):
+            # Парсим слот из hunt_strike_N, дефолт 0
+            try:
+                slot = int(cd.removeprefix("hunt_strike_"))
+            except ValueError:
+                slot = 0
+            result = attack_boss(data, slot=slot)
+            # Кулдаун — тихий игнор, просто отвечаем на callback без действий
+            if result.get("error") == "cooldown":
+                await call.answer()
+                return
+            if result.get("boss_killed") or result.get("hit"):
+                # ── Повышение уровня убийцы ──
+                if result.get("xp", 0) > 0:
+                    _apply_xp(data, result["xp"])
+                save_user(data["id"], data)
+                # ── Запись статистики для лидерборда ──
+                try:
+                    from hunt import _load_slot as _ld_slot
+                    _boss_state = _ld_slot(slot)
+                    _boss_key   = _boss_state.get("boss_key", "unknown")
+                    record_boss_hit(
+                        uid        = user.id,
+                        username   = user.username or "",
+                        first_name = user.first_name or "",
+                        boss_key   = _boss_key,
+                        damage     = result.get("dmg", 0),
+                        killed     = bool(result.get("boss_killed")),
+                    )
+                except Exception as _le:
+                    print(f"[leaders] record_boss_hit error: {_le}")
+                # ── Ежедневные задания клана ──
+                try:
+                    if result.get("dmg", 0) > 0:
+                        add_clan_boss_damage(user.id, result["dmg"])
+                    if result.get("boss_killed"):
+                        register_clan_boss_kill(user.id)
+                except Exception as _qe:
+                    print(f"[klan] daily quest error: {_qe}")
+                # ── Раздача наград остальным участникам урона ──
+                if result.get("boss_killed"):
+                    _distribute_boss_rewards(user.id, result.get("damage_rewards", {}))
+            txt = boss_strike_result_text(data, result, lang, slot)
+            kb  = boss_strike_keyboard(data, lang, slot)
+            if result.get("crit"):
+                await call.answer("⭐ CRITICAL HIT!" if lang == "en" else "⭐ КРИТИЧЕСКИЙ УДАР!", show_alert=False)
+            else:
+                await call.answer()
+            await edit(txt, kb)
+            return
+
+        # ===== КЕЙС АРТЕФАКТОВ: экран информации =====
+        if cd == "artifact_case_info":
+            await edit(artifact_case_detail_text(data, lang), artifact_case_keyboard(lang=lang))
+            return
+
+        # ===== КЕЙС АРТЕФАКТОВ: создать инвойс и обновить сообщение =====
+        if cd == "artifact_case_buy":
+            if lang == "en":
+                _inv_title = "Artifact Case"
+                _inv_desc  = "Open a case and get a permanent artifact bonus forever!"
+                _inv_label = "Artifact Case"
+            else:
+                _inv_title = "Кейс Артефактов"
+                _inv_desc  = "Открой кейс и получи постоянный артефакт с бонусом навсегда!"
+                _inv_label = "Кейс Артефактов"
+            try:
+                invoice_url = await bot.create_invoice_link(
+                    title=_inv_title,
+                    description=_inv_desc,
+                    payload="artifact_case",
+                    provider_token="",
+                    currency="XTR",
+                    prices=[LabeledPrice(label=_inv_label, amount=ARTIFACT_CASE_COST_STARS)],
+                )
+            except Exception as e:
+                print(f"Artifact invoice error: {e}")
+                await call.answer("❌ Ошибка при создании инвойса." if lang == "ru" else "❌ Invoice creation error.", show_alert=True)
+                return
+            _pending_artifact_msg[call.from_user.id] = (
+                call.message.chat.id,
+                call.message.message_id,
+            )
+            await edit(artifact_case_detail_text(data, lang), artifact_case_keyboard(invoice_url=invoice_url, lang=lang))
+            return
+
+        # ===== КЕЙС АРТЕФАКТОВ: коллекция =====
+        if cd == "artifact_collection":
+            await edit(artifact_collection_text(data, lang), artifact_collection_keyboard(lang))
+            return
+
+        # ===== СТАТУС: главный экран =====
+        if cd == "status":
+            await call.answer()
+            await edit(status_main_text(data, lang), status_main_keyboard(data, lang))
+            return
+
+        # ===== СТАТУС: карточка VIP =====
+        if cd == "status_vip_info":
+            await call.answer()
+            _pending_status_msg.pop(call.from_user.id, None)
+            await edit(status_vip_text(data, lang), status_vip_keyboard(data, lang))
+            return
+
+        # ===== СТАТУС: карточка Premium =====
+        if cd == "status_premium_info":
+            await call.answer()
+            _pending_status_msg.pop(call.from_user.id, None)
+            await edit(status_premium_text(data, lang), status_premium_keyboard(data, lang))
+            return
+
+        # ===== СТАТУС: купить VIP (создать инвойс) =====
+        if cd == "status_buy_vip":
+            invoice_url = None
+            if lang == "en":
+                _title = "VIP Status — 30 days"
+                _desc  = "×1.3 to mining, +15% crit, luck in cases, Viper Poison as a gift"
+                _label = "VIP for 30 days"
+            else:
+                _title = "Статус VIP — 30 дней"
+                _desc  = "×1.3 к добыче, +15% крит, удача в кейсах, Яд Гадюки в подарок"
+                _label = "VIP на 30 дней"
+            try:
+                invoice_url = await bot.create_invoice_link(
+                    title=_title,
+                    description=_desc,
+                    payload="status_vip",
+                    provider_token="",
+                    currency="XTR",
+                    prices=[LabeledPrice(label=_label, amount=VIP_COST_STARS)],
+                )
+            except Exception as e:
+                print(f"VIP invoice error: {e}")
+                await call.answer("❌ Ошибка при создании инвойса." if lang == "ru" else "❌ Invoice creation error.", show_alert=True)
+                return
+            await call.answer()
+            _pending_status_msg[call.from_user.id] = (
+                call.message.chat.id,
+                call.message.message_id,
+                "vip",
+            )
+            await edit(status_vip_text(data, lang), status_vip_keyboard_invoice(invoice_url, lang))
+            return
+
+        # ===== СТАТУС: купить Premium (создать инвойс) =====
+        if cd == "status_buy_premium":
+            invoice_url = None
+            if lang == "en":
+                _title = "Premium Status — 30 days"
+                _desc  = "×1.6 to mining, +25% crit, max luck, Cobra Poison as a gift"
+                _label = "Premium for 30 days"
+            else:
+                _title = "Статус Premium — 30 дней"
+                _desc  = "×1.6 к добыче, +25% крит, макс. удача, Яд Кобры в подарок"
+                _label = "Premium на 30 дней"
+            try:
+                invoice_url = await bot.create_invoice_link(
+                    title=_title,
+                    description=_desc,
+                    payload="status_premium",
+                    provider_token="",
+                    currency="XTR",
+                    prices=[LabeledPrice(label=_label, amount=PREMIUM_COST_STARS)],
+                )
+            except Exception as e:
+                print(f"Premium invoice error: {e}")
+                await call.answer("❌ Ошибка при создании инвойса." if lang == "ru" else "❌ Invoice creation error.", show_alert=True)
+                return
+            await call.answer()
+            _pending_status_msg[call.from_user.id] = (
+                call.message.chat.id,
+                call.message.message_id,
+                "premium",
+            )
+            await edit(status_premium_text(data, lang), status_premium_keyboard_invoice(invoice_url, lang))
+            return
+
+        # ===== СТАТУС: апгрейд VIP → Premium (создать инвойс за 59 Stars) =====
+        if cd == "status_upgrade_premium":
+            # Только если VIP активен
+            from status import get_active_status as _gas
+            if _gas(data) != "vip":
+                await call.answer("❌ Апгрейд доступен только при активном VIP." if lang == "ru" else "❌ Upgrade is only available with active VIP.", show_alert=True)
+                return
+            invoice_url = None
+            if lang == "en":
+                _title = "VIP → Premium Upgrade"
+                _desc  = "×1.6 to mining, +25% crit, max luck, Cobra Poison as a gift"
+                _label = "Upgrade to Premium"
+            else:
+                _title = "Улучшение VIP → Premium"
+                _desc  = "×1.6 к добыче, +25% крит, макс. удача, Яд Кобры в подарок"
+                _label = "Апгрейд до Premium"
+            try:
+                invoice_url = await bot.create_invoice_link(
+                    title=_title,
+                    description=_desc,
+                    payload="status_upgrade_premium",
+                    provider_token="",
+                    currency="XTR",
+                    prices=[LabeledPrice(label=_label, amount=UPGRADE_COST_STARS)],
+                )
+            except Exception as e:
+                print(f"Upgrade invoice error: {e}")
+                await call.answer("❌ Ошибка при создании инвойса." if lang == "ru" else "❌ Invoice creation error.", show_alert=True)
+                return
+            await call.answer()
+            _pending_status_msg[call.from_user.id] = (
+                call.message.chat.id,
+                call.message.message_id,
+                "premium",
+            )
+            await edit(status_premium_text(data, lang), status_upgrade_keyboard_invoice(invoice_url, lang))
+            return
+
+
+        # ===== ЛИДЕРЫ: главный экран =====
+        if cd == "leaders":
+            await edit(leaders_main_text(viewer_uid=user.id, lang=lang), leaders_main_keyboard(lang))
+            return
+
+        # ===== ЛИДЕРЫ: переключение категории / периода =====
+        # Формат: leaders_{category}_{period}
+        if cd.startswith("leaders_"):
+            parts = cd.split("_", 2)  # ["leaders", category, period]
+            if len(parts) == 3:
+                _lcat, _lper = parts[1], parts[2]
+                if _lcat in _LEADERS_CATEGORIES and _lper in _LEADERS_PERIODS:
+                    await edit(
+                        leaders_text(_lcat, _lper, viewer_uid=user.id, lang=lang),
+                        leaders_keyboard(_lcat, _lper, lang)
+                    )
+                    return
+
+        # ===== СТАТИСТИКА =====
+        if cd == "stats":
+            await edit(stats_text(lang), stats_keyboard(lang))
+            await call.answer()
+            return
+
+        # ===== НАСТРОЙКИ =====
+        if cd == "settings":
+            await edit(settings_text(data), settings_keyboard(data))
+            await call.answer()
+            return
+
+        # ===== НАСТРОЙКИ: смена языка (из настроек) =====
+        if cd == "settings_lang":
+            await edit(lang_choose_text(lang), lang_choose_keyboard())
+            await call.answer()
+            return
+
+        if cd in ("set_lang_ru", "set_lang_en"):
+            new_lang = "ru" if cd == "set_lang_ru" else "en"
+            data["lang"] = new_lang
+            save_user(data["id"], data)
+            alert = "🇷🇺 Язык установлен: Русский" if new_lang == "ru" else "🇬🇧 Language set: English"
+            await call.answer(alert, show_alert=True)
+            await edit(settings_text(data), settings_keyboard(data))
+            return
+
+        # ===== ВЫБОР ЯЗЫКА ПРИ СТАРТЕ =====
+        if cd in ("start_lang_ru", "start_lang_en"):
+            new_lang = "ru" if cd == "start_lang_ru" else "en"
+            data["lang"] = new_lang
+            data["onboarded"] = True
+            save_user(data["id"], data)
+            await call.message.answer(
+                "🎮",
+                reply_markup=main_reply_keyboard(new_lang),
+            )
+            await call.message.edit_text(
+                t(new_lang, "welcome"),
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=main_menu_keyboard(new_lang),
+            )
+            await call.answer()
+            return
+
+        # ===== ДУЭЛИ: главный экран =====
+        if cd == "duel_main":
+            await call.answer()
+            await edit(duel_main_text(), duel_main_keyboard())
+            return
+
+        # ===== ДУЭЛИ: экипировка — список слотов =====
+        if cd == "duel_equip":
+            await call.answer()
+            await edit(duel_equip_text(data), duel_equip_keyboard(data))
+            return
+
+        # ===== ДУЭЛИ: список уровней слота =====
+        if cd.startswith("duel_equip_slot:"):
+            slot_key = cd.split(":", 1)[1]
+            await call.answer()
+            await edit(duel_equip_slot_text(slot_key, data), duel_equip_slot_keyboard(slot_key, data))
+            return
+
+        # ===== ДУЭЛИ: карточка предмета (отдельное окно) =====
+        if cd.startswith("duel_item_card:"):
+            item_key = cd.split(":", 1)[1]
+            await call.answer()
+            await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data))
+            return
+
+        # ===== ДУЭЛИ: купить предмет =====
+        if cd.startswith("duel_gear_buy:"):
+            item_key = cd.split(":", 1)[1]
+            item     = GEAR_CATALOG.get(item_key)
+            if not item:
+                await call.answer("Неизвестный предмет.", show_alert=True)
+                return
+            price   = item["price"]
+            balance = data.get("balance", 0)
+            if balance < price:
+                await call.answer(
+                    f"Недостаточно монет!\nНужно: {price:,} | У вас: {balance:,}".replace(",", " "),
+                    show_alert=True,
+                )
+                return
+            data["balance"] -= price
+            apply_gear_purchase(item_key, data)
+            save_user(user.id, data)
+            await call.answer(f"✅ Куплено: {item['name']}!", show_alert=True)
+            await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data))
+            return
+
+        # ===== ДУЭЛИ: недостаточно монет (заглушка кнопки) =====
+        if cd == "duel_gear_nofunds":
+            await call.answer("💸 Недостаточно монет для покупки!", show_alert=True)
+            return
+
+        # ===== ДУЭЛИ: карточка навыка (подробное окно) =====
+        if cd.startswith("duel_skill_card:"):
+            parts = cd.split(":", 2)
+            sk_key   = parts[1]
+            from_page = int(parts[2]) if len(parts) > 2 else 0
+            await call.answer()
+            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data, from_page))
+            return
+
+        # ===== ДУЭЛИ: экипировать навык в бой =====
+        if cd.startswith("duel_skill_equip:"):
+            sk_key = cd.split(":", 1)[1]
+            ok, msg = equip_skill(sk_key, data)
+            await call.answer(msg, show_alert=not ok)
+            if ok:
+                save_user(user.id, data)
+            # Возвращаемся на карточку
+            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
+            return
+
+        # ===== ДУЭЛИ: снять навык из боя =====
+        if cd.startswith("duel_skill_unequip:"):
+            sk_key = cd.split(":", 1)[1]
+            ok, msg = unequip_skill(sk_key, data)
+            await call.answer(msg, show_alert=not ok)
+            if ok:
+                save_user(user.id, data)
+            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
+            return
+
+        # ===== ДУЭЛИ: все слоты заняты =====
+        if cd == "duel_skill_slots_full":
+            await call.answer(f"⚠️ Все {MAX_EQUIPPED_SKILLS} слотов в бою заняты! Сначала снимите один навык.", show_alert=True)
+            return
+
+        # ===== ДУЭЛИ: магазин навыков =====
+        if cd == "duel_skills_shop":
+            await call.answer()
+            await edit(duel_skills_shop_text(data, 0), duel_skills_shop_keyboard(data, 0))
+            return
+
+        # ===== ДУЭЛИ: пагинация магазина навыков =====
+        if cd.startswith("duel_skills_shop_page:"):
+            page = int(cd.split(":", 1)[1])
+            await call.answer()
+            await edit(duel_skills_shop_text(data, page), duel_skills_shop_keyboard(data, page))
+            return
+
+        # ===== ДУЭЛИ: купить навык =====
+        if cd.startswith("duel_skill_buy:"):
+            sk_key = cd.split(":", 1)[1]
+            sk = SKILLS.get(sk_key)
+            if not sk:
+                await call.answer("Неизвестный навык.", show_alert=True)
+                return
+            price = sk["price"]
+            balance = data.get("balance", 0)
+            if balance < price:
+                _no_money_msg = f"Недостаточно монет! Нужно: {_fmt_d(price)} | У вас: {_fmt_d(balance)}"
+                await call.answer(_no_money_msg, show_alert=True)
+                return
+            owned_sk = data.setdefault("duel_owned_skills", [])
+            if sk_key in owned_sk:
+                await call.answer("Навык уже куплен!", show_alert=True)
+                await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
+                return
+            data["balance"] -= price
+            owned_sk.append(sk_key)
+            save_user(user.id, data)
+            await call.answer(f"✅ Куплен навык: {sk['name']}!", show_alert=True)
+            # Открываем карточку навыка — теперь можно экипировать
+            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
+            return
+
+        # ===== ДУЭЛИ: навык уже куплен (заглушка) =====
+        if cd.startswith("duel_skill_owned:"):
+            sk_key = cd.split(":", 1)[1]
+            await call.answer()
+            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
+            return
+
+        # ===== ДУЭЛИ: недостаточно монет (навык) =====
+        if cd == "duel_skill_nofunds":
+            await call.answer("💸 Недостаточно монет для покупки навыка!", show_alert=True)
+            return
+
+        # ===== ДУЭЛИ: надеть предмет =====
+        if cd.startswith("duel_gear_equip:"):
+            item_key = cd.split(":", 1)[1]
+            item     = GEAR_CATALOG.get(item_key)
+            owned    = data.get("duel_owned_gear", [])
+            if item_key not in owned:
+                await call.answer("Сначала купи предмет.", show_alert=True)
+                return
+            apply_gear_equip(item_key, data)
+            save_user(user.id, data)
+            await call.answer(f"✅ Надето: {item['name']}!", show_alert=True)
+            await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data))
+            return
+
+        # ===== ДУЭЛИ: снять предмет =====
+        if cd.startswith("duel_gear_unequip:"):
+            item_key = cd.split(":", 1)[1]
+            item     = GEAR_CATALOG.get(item_key)
+            apply_gear_unequip(item_key, data)
+            save_user(user.id, data)
+            await call.answer(f"❌ Снято: {item['name']}.", show_alert=True)
+            await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data))
+            return
+
+        # ===== ДУЭЛИ: поиск — главный экран =====
+        if cd == "duel_search":
+            await call.answer()
+            if user.id in _active_battles:
+                battle = _active_battles[user.id]
+                await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
+                return
+            in_q = in_queue(user.id)
+            await edit(duel_search_text(in_q), duel_search_keyboard(in_q))
+            return
+
+        # ===== ДУЭЛИ: начать поиск =====
+        if cd == "duel_search_start":
+            await call.answer()
+            if user.id in _active_battles:
+                battle = _active_battles[user.id]
+                await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
+                return
+            battle = join_queue(user.id, data)
+            if battle:
+                p1_uid = battle["p1_uid"]
+                p2_uid = battle["p2_uid"]
+                # Сохраняем список навыков каждого игрока в бой
+                from database import get_user as _gu_battle
+                _d1 = _gu_battle(p1_uid) or {}
+                _d2 = _gu_battle(p2_uid) or {}
+                battle["p1_skills"] = get_equipped_skills(_d1) or get_owned_skills(_d1)
+                battle["p2_skills"] = get_equipped_skills(_d2) or get_owned_skills(_d2)
+                _active_battles[p1_uid] = battle
+                _active_battles[p2_uid] = battle
+                # Показываем боевой экран инициатору (p1) — редактируем его сообщение
+                await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
+                # Соперник (p2) был в экране поиска — обновляем его сообщение если знаем
+                foe_msg = _battle_msgs.get(p2_uid)
+                try:
+                    if foe_msg:
+                        await bot.edit_message_text(
+                            chat_id=foe_msg[0],
+                            message_id=foe_msg[1],
+                            text=battle_text(battle, p2_uid),
+                            parse_mode="HTML",
+                            reply_markup=battle_keyboard(battle, p2_uid)
+                        )
                     else:
-                        val = f"урон {sk['base_dmg'][0]}–{sk['base_dmg'][1]}"
-                    eq_lines.append(f"⚔️ {sk['emoji']} <b>{sk['name']}</b> · {val}")
-            equip_block = (
-                f"\n\n<blockquote><b>⚔️ Экипировано в бой ({len(equipped)}/{MAX_EQUIPPED_SKILLS}):</b>\n"
-                + "\n".join(eq_lines)
-                + "\n<i>Только эти навыки доступны в дуэли!</i></blockquote>"
+                        sent = await bot.send_message(
+                            p2_uid,
+                            battle_text(battle, p2_uid),
+                            parse_mode="HTML",
+                            reply_markup=battle_keyboard(battle, p2_uid)
+                        )
+                        _battle_msgs[p2_uid] = (sent.chat.id, sent.message_id)
+                except Exception:
+                    pass
+            else:
+                await edit(duel_search_text(True), duel_search_keyboard(True))
+                _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
+            return
+
+        # ===== ДУЭЛИ: проверить поиск =====
+        if cd == "duel_search_check":
+            await call.answer()
+            if user.id in _active_battles:
+                battle = _active_battles[user.id]
+                await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
+                return
+            in_q = in_queue(user.id)
+            await edit(duel_search_text(in_q), duel_search_keyboard(in_q))
+            return
+
+        # ===== ДУЭЛИ: отменить поиск =====
+        if cd == "duel_search_cancel":
+            leave_queue(user.id)
+            _battle_msgs.pop(user.id, None)
+            await call.answer("Поиск отменён.")
+            await edit(duel_search_text(False), duel_search_keyboard(False))
+            return
+
+        # ===== ДУЭЛИ: применить навык =====
+        if cd.startswith("duel_skill:"):
+            skill_key = cd.split(":", 1)[1]
+            if user.id not in _active_battles:
+                await call.answer("Ты не в бою!", show_alert=True)
+                return
+            battle = _active_battles[user.id]
+            battle, result = battle_use_skill(battle, user.id, skill_key)
+            if not result["ok"]:
+                await call.answer(result["msg"], show_alert=True)
+                return
+            # Обновляем message_id текущего игрока
+            _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
+            await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+            foe_uid = battle["p2_uid"] if battle["p1_uid"] == user.id else battle["p1_uid"]
+            # Обновляем сообщение соперника через edit
+            foe_msg = _battle_msgs.get(foe_uid)
+            if foe_msg:
+                try:
+                    await bot.edit_message_text(
+                        chat_id=foe_msg[0],
+                        message_id=foe_msg[1],
+                        text=battle_text(battle, foe_uid),
+                        parse_mode="HTML",
+                        reply_markup=battle_keyboard(battle, foe_uid)
+                    )
+                except Exception:
+                    pass
+            if battle.get("finished"):
+                _active_battles.pop(user.id, None)
+                _active_battles.pop(foe_uid, None)
+                _battle_msgs.pop(user.id, None)
+                _battle_msgs.pop(foe_uid, None)
+            await call.answer()
+            return
+
+        # ===== ДУЭЛИ: сдаться =====
+        if cd == "duel_surrender":
+            if user.id not in _active_battles:
+                await call.answer("Ты не в бою!", show_alert=True)
+                return
+            battle = _active_battles[user.id]
+            if not battle.get("finished"):
+                foe_uid = battle["p2_uid"] if battle["p1_uid"] == user.id else battle["p1_uid"]
+                battle["finished"] = True
+                battle["winner_uid"] = foe_uid
+                battle["log"].append(f"🏳️ {data.get('first_name', 'Игрок')} сдался.")
+                foe_msg = _battle_msgs.get(foe_uid)
+                if foe_msg:
+                    try:
+                        await bot.edit_message_text(
+                            chat_id=foe_msg[0],
+                            message_id=foe_msg[1],
+                            text=battle_text(battle, foe_uid),
+                            parse_mode="HTML",
+                            reply_markup=battle_keyboard(battle, foe_uid)
+                        )
+                    except Exception:
+                        pass
+                _active_battles.pop(foe_uid, None)
+                _battle_msgs.pop(foe_uid, None)
+            _active_battles.pop(user.id, None)
+            _battle_msgs.pop(user.id, None)
+            await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+            await call.answer("Ты сдался.")
+            return
+
+        # ===== ДУЭЛИ: навыки =====
+        if cd == "duel_skills":
+            await call.answer()
+            await edit(duel_skills_text(data), duel_skills_keyboard())
+            return
+
+        # ===== ДУЭЛИ: подразделы (заглушки) =====
+        if cd == "duel_invite":
+            await call.answer()
+            await edit(duel_soon_text("invite"), duel_back_keyboard())
+            return
+
+        if cd == "duel_charstats":
+            await call.answer()
+            await edit(duel_charstats_text(data), duel_charstats_keyboard())
+            return
+
+        # ===== ЗАГЛУШКИ (в разработке) =====
+        responses = {
+            "exchange": f'<tg-emoji emoji-id="5402186569006210455">💱</tg-emoji> <b>{"БИРЖА" if lang == "ru" else "EXCHANGE"}</b>\n\n<blockquote><b>{t(lang, "in_development")}</b></blockquote>',
+        }
+        text = responses.get(cd, t(lang, "unknown_cmd"))
+        try:
+            await call.message.edit_text(
+                text,
+                parse_mode="HTML",
+                reply_markup=back_button(lang)
             )
-        else:
-            equip_block = (
-                f"\n\n<blockquote>⚠️ <b>Ни один навык не экипирован в бой!</b>\n"
-                f"Перейди в магазин и экипируй до {MAX_EQUIPPED_SKILLS} навыков.</blockquote>"
+        except Exception as e:
+            if "message is not modified" not in str(e):
+                print(e)
+
+
+# ===== ОПЛАТА ЧЕРЕЗ TELEGRAM STARS =====
+
+@dp.pre_checkout_query()
+async def handle_pre_checkout(query: PreCheckoutQuery):
+    await query.answer(ok=True)
+
+
+@dp.message(F.successful_payment)
+async def handle_successful_payment(message: Message):
+    payload = message.successful_payment.invoice_payload
+
+    # ===== ОПЛАТА: Кейс Артефактов =====
+    if payload == "artifact_case":
+        from miner import STAR
+        from database import get_user, save_user
+
+        # Проверяем сумму оплаты — защита от подмены инвойса
+        paid_amount = message.successful_payment.total_amount
+        if paid_amount != ARTIFACT_CASE_COST_STARS:
+            await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
+            return
+
+        # Защита от replay-атаки: один charge_id обрабатывается ровно один раз
+        charge_id = message.successful_payment.telegram_payment_charge_id
+        if charge_id in _processed_charge_ids:
+            return
+        _processed_charge_ids.add(charge_id)
+
+        uid = message.from_user.id
+        lock = await _get_user_lock(uid)
+        async with lock:
+            data = get_user(uid)
+            if not data:
+                return
+            _lang = data.get("lang", "ru")
+            ok, msg, chosen = open_artifact_case(data, _lang)
+            if ok:
+                save_user(data["id"], data)
+
+            # 1) Обновляем старое сообщение — убираем ссылку-инвойс
+            pending = _pending_artifact_msg.pop(uid, None)
+            if pending:
+                old_chat_id, old_msg_id = pending
+                try:
+                    await bot.edit_message_text(
+                        artifact_case_detail_text(data, _lang),
+                        chat_id=old_chat_id,
+                        message_id=old_msg_id,
+                        reply_markup=artifact_case_keyboard(lang=_lang),
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+
+            # 2) Сообщение об успехе
+            from shop import _get_effect_label as _eff_lbl
+            effect_label = _eff_lbl(chosen["effect"], _lang)
+            art_name = chosen.get("name_en", chosen["name"]) if _lang == "en" else chosen["name"]
+            if _lang == "en":
+                success_text = (
+                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>Artifact Case opened!</b>\n'
+                    f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>Artifact: {art_name}</b>\n'
+                    f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Bonus: {chosen["multiplier"]}× {effect_label} forever</b>\n'
+                    f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Spent: {ARTIFACT_CASE_COST_STARS} {STAR}</b>'
+                    f'</blockquote>\n\n'
+                    f'<tg-emoji emoji-id="5206607081334906820">🎟</tg-emoji> <b>Artifact added to collection!</b>'
+                )
+            else:
+                success_text = (
+                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>Кейс Артефактов открыт!</b>\n'
+                    f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>Артефакт: {art_name}</b>\n'
+                    f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Бонус: {chosen["multiplier"]}× {effect_label} навсегда</b>\n'
+                    f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Потрачено: {ARTIFACT_CASE_COST_STARS} {STAR}</b>'
+                    f'</blockquote>\n\n'
+                    f'<tg-emoji emoji-id="5206607081334906820">🎟</tg-emoji> <b>Артефакт добавлен в коллекцию!</b>'
+                )
+            await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
+        return
+
+    if payload.startswith("premium_pickaxe:"):
+        pick_key = payload.split(":", 1)[1]
+        from miner import (
+            grant_premium_pickaxe, pickaxe_detail_text, pickaxe_detail_keyboard,
+            get_pickaxe_page, PICKAXES, TIER_LABELS, STAR
+        )
+        from database import get_user, save_user
+
+        # Проверяем сумму: должна совпадать с ценой кирки в Stars
+        from miner import PICKAXES as _PX
+        _pick_entry = _PX.get(pick_key)
+        paid_amount = message.successful_payment.total_amount
+        if _pick_entry and _pick_entry.get("cost_stars") and paid_amount != _pick_entry["cost_stars"]:
+            await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
+            return
+
+        # Защита от replay-атаки
+        charge_id = message.successful_payment.telegram_payment_charge_id
+        if charge_id in _processed_charge_ids:
+            return
+        _processed_charge_ids.add(charge_id)
+
+        uid = message.from_user.id
+        lock = await _get_user_lock(uid)
+        async with lock:
+            data = get_user(uid)
+            if not data:
+                return
+            ok, _ = grant_premium_pickaxe(data, pick_key)
+            if ok:
+                save_user(data["id"], data)
+            p    = PICKAXES[pick_key]
+            tier = TIER_LABELS.get(p.get("tier", ""), "")
+            page = get_pickaxe_page(pick_key)
+
+            # 1) Обновляем старое сообщение (экран кирки) — теперь с кнопкой «Выбрать»
+            pending = _pending_stars_msg.pop(uid, None)
+            if pending:
+                old_chat_id, old_msg_id, _ = pending
+                try:
+                    await bot.edit_message_text(
+                        pickaxe_detail_text(data, pick_key),
+                        chat_id=old_chat_id,
+                        message_id=old_msg_id,
+                        reply_markup=pickaxe_detail_keyboard(data, pick_key, page),
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+
+            # 2) Новое сообщение об успешной оплате
+            success_text = (
+                f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
+                f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                f'<blockquote>'
+                f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>Кирка: {p["name"]}</b>\n'
+                f'<tg-emoji emoji-id="5444856076954520455">🎟</tg-emoji> <b>Тир: {tier}</b>\n'
+                f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Ударов за кампанию: {format_amount(p["dig_min"])}–{format_amount(p["dig_max"])}</b>\n'
+                f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Потрачено: {format_amount(p["cost_stars"])} {STAR}</b>'
+                f'</blockquote>\n\n'
+                f'<tg-emoji emoji-id="5206607081334906820">🎟</tg-emoji> <b>Кирка добавлена в мастерскую!</b>'
+            )
+            await bot.send_message(
+                message.chat.id,
+                success_text,
+                parse_mode="HTML"
             )
 
-    return (
-        f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>БОЕВЫЕ НАВЫКИ</b>\n'
-        '━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote><b>🆓 Базовые навыки (бесплатно):</b>\n\n{base_block}</blockquote>\n\n'
-        f'<blockquote>🛒 <b>В магазине доступно ещё {paid_count} навыков</b>\n'
-        f'от слабых ударов до разрушительных ультимейтов!\n\n'
-        f'💡 <i>Экипируй до {MAX_EQUIPPED_SKILLS} навыков — именно они будут доступны в бою!</i></blockquote>'
-        f'{equip_block}'
-    )
+    # ===== ОПЛАТА: Статус VIP =====
+    if payload == "status_vip":
+        from database import get_user, save_user
+        paid_amount = message.successful_payment.total_amount
+        if paid_amount != VIP_COST_STARS:
+            await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
+            return
+        charge_id = message.successful_payment.telegram_payment_charge_id
+        if charge_id in _processed_charge_ids:
+            return
+        _processed_charge_ids.add(charge_id)
+        uid = message.from_user.id
+        lock = await _get_user_lock(uid)
+        async with lock:
+            data = get_user(uid)
+            if not data:
+                return
+            _lang = data.get("lang", "ru")
+            ok, msg = activate_status(data, "vip", _lang)
+            if ok:
+                save_user(data["id"], data)
+            # Обновляем старое сообщение
+            pending = _pending_status_msg.pop(uid, None)
+            if pending:
+                old_chat_id, old_msg_id, _ = pending
+                try:
+                    await bot.edit_message_text(
+                        status_vip_text(data, _lang),
+                        chat_id=old_chat_id,
+                        message_id=old_msg_id,
+                        reply_markup=status_vip_keyboard(data, _lang),
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+            if _lang == "en":
+                success_text = (
+                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'<tg-emoji emoji-id="5325547803936572038">👑</tg-emoji> <b>VIP status activated for 30 days!</b>\n'
+                    f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <b>×1.3 to mining · +15% crit · Luck in cases</b>\n'
+                    f'<tg-emoji emoji-id="5348570868752595928">⭐</tg-emoji> <b>Spent: {VIP_COST_STARS} Stars</b>'
+                    f'</blockquote>'
+                )
+            else:
+                success_text = (
+                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'<tg-emoji emoji-id="5325547803936572038">👑</tg-emoji> <b>Статус VIP активирован на 30 дней!</b>\n'
+                    f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <b>×1.3 к добыче · +15% крит · Удача в кейсах</b>\n'
+                    f'<tg-emoji emoji-id="5348570868752595928">⭐</tg-emoji> <b>Потрачено: {VIP_COST_STARS} Stars</b>'
+                    f'</blockquote>'
+                )
+            await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
+        return
 
-def duel_skills_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text="🛒 Магазин навыков", callback_data="duel_skills_shop",
-    ))
-    builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_main",
-        icon_custom_emoji_id=EMOJI_BACK,
-    ))
-    return builder.as_markup()
+    # ===== ОПЛАТА: Статус Premium =====
+    if payload == "status_premium":
+        from database import get_user, save_user
+        paid_amount = message.successful_payment.total_amount
+        if paid_amount != PREMIUM_COST_STARS:
+            await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
+            return
+        charge_id = message.successful_payment.telegram_payment_charge_id
+        if charge_id in _processed_charge_ids:
+            return
+        _processed_charge_ids.add(charge_id)
+        uid = message.from_user.id
+        lock = await _get_user_lock(uid)
+        async with lock:
+            data = get_user(uid)
+            if not data:
+                return
+            _lang = data.get("lang", "ru")
+            ok, msg = activate_status(data, "premium", _lang)
+            if ok:
+                save_user(data["id"], data)
+            pending = _pending_status_msg.pop(uid, None)
+            if pending:
+                old_chat_id, old_msg_id, _ = pending
+                try:
+                    await bot.edit_message_text(
+                        status_premium_text(data, _lang),
+                        chat_id=old_chat_id,
+                        message_id=old_msg_id,
+                        reply_markup=status_premium_keyboard(data, _lang),
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+            if _lang == "en":
+                success_text = (
+                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'<tg-emoji emoji-id="5427168083074628963">⭐</tg-emoji> <b>Premium status activated for 30 days!</b>\n'
+                    f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <b>×1.6 to mining · +25% crit · Max luck</b>\n'
+                    f'<tg-emoji emoji-id="5348570868752595928">⭐</tg-emoji> <b>Spent: {PREMIUM_COST_STARS} Stars</b>'
+                    f'</blockquote>'
+                )
+            else:
+                success_text = (
+                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'<tg-emoji emoji-id="5427168083074628963">⭐</tg-emoji> <b>Статус Premium активирован на 30 дней!</b>\n'
+                    f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <b>×1.6 к добыче · +25% крит · Макс. удача</b>\n'
+                    f'<tg-emoji emoji-id="5348570868752595928">⭐</tg-emoji> <b>Потрачено: {PREMIUM_COST_STARS} Stars</b>'
+                    f'</blockquote>'
+                )
+            await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
+        return
+
+    # ===== ОПЛАТА: Апгрейд VIP → Premium =====
+    if payload == "status_upgrade_premium":
+        from database import get_user, save_user
+        paid_amount = message.successful_payment.total_amount
+        if paid_amount != UPGRADE_COST_STARS:
+            await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
+            return
+        charge_id = message.successful_payment.telegram_payment_charge_id
+        if charge_id in _processed_charge_ids:
+            return
+        _processed_charge_ids.add(charge_id)
+        uid = message.from_user.id
+        lock = await _get_user_lock(uid)
+        async with lock:
+            data = get_user(uid)
+            if not data:
+                return
+            _lang = data.get("lang", "ru")
+            ok, msg = activate_status(data, "premium", _lang)
+            if ok:
+                save_user(data["id"], data)
+            pending = _pending_status_msg.pop(uid, None)
+            if pending:
+                old_chat_id, old_msg_id, _ = pending
+                try:
+                    await bot.edit_message_text(
+                        status_premium_text(data, _lang),
+                        chat_id=old_chat_id,
+                        message_id=old_msg_id,
+                        reply_markup=status_premium_keyboard(data, _lang),
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+            if _lang == "en":
+                success_text = (
+                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'<tg-emoji emoji-id="5427168083074628963">⭐</tg-emoji> <b>VIP upgraded to Premium for 30 days!</b>\n'
+                    f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <b>×1.6 to mining · +25% crit · Max luck</b>\n'
+                    f'<tg-emoji emoji-id="5348570868752595928">⭐</tg-emoji> <b>Spent: {UPGRADE_COST_STARS} Stars</b>'
+                    f'</blockquote>'
+                )
+            else:
+                success_text = (
+                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'<tg-emoji emoji-id="5427168083074628963">⭐</tg-emoji> <b>VIP улучшен до Premium на 30 дней!</b>\n'
+                    f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <b>×1.6 к добыче · +25% крит · Макс. удача</b>\n'
+                    f'<tg-emoji emoji-id="5348570868752595928">⭐</tg-emoji> <b>Потрачено: {UPGRADE_COST_STARS} Stars</b>'
+                    f'</blockquote>'
+                )
+            await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
+        return
 
 
-def duel_challenge_screen_text() -> str:
-    return (
-        f'<tg-emoji emoji-id="{EMOJI_INVITE}">⚔️</tg-emoji> <b>БРОСИТЬ ВЫЗОВ</b>\n'
-        '━━━━━━━━━━━━━━━━━━━━\n\n'
-        '<blockquote>'
-        'Отправь <b>ID</b> или <b>@юзернейм</b> игрока которого хочешь вызвать на дуэль.\n\n'
-        'Примеры:\n'
-        '<code>123456789</code>\n'
-        '<code>@username</code>\n\n'
-        '⏳ <i>Вызов действует 2 минуты — если противник не ответит, он истечёт.</i>'
-        '</blockquote>'
-    )
+async def _cdl_payout_loop():
+    """Фоновая задача: каждую минуту проверяет созревшие вклады,
+    выплачивает баланс и отправляет уведомление пользователю."""
+    import sqlite3 as _sq, json as _js
+
+    while True:
+        await asyncio.sleep(60)
+        try:
+            matured = _cdl_get_matured_all()
+            if not matured:
+                continue
+
+            # Группируем по uid
+            by_uid: dict[int, list] = {}
+            for dep in matured:
+                by_uid.setdefault(dep["uid"], []).append(dep)
+
+            for uid, deps in by_uid.items():
+                # Считаем выплаты и помечаем claimed=1
+                total_payout = 0
+                total_profit = 0
+                paid_deps    = []
+                for dep in deps:
+                    payout = _cdl_claim(dep["id"])
+                    if payout is not None:
+                        total_payout += payout
+                        total_profit += payout - dep["amount"]
+                        paid_deps.append(dep)
+                if not paid_deps:
+                    continue
+
+                # Атомарное начисление баланса: читаем + пишем в одной транзакции.
+                # Исправлено: колонка data_json, ключ uid (не data/id).
+                try:
+                    with _sq.connect("tgstellar.db") as _conn:
+                        _conn.row_factory = _sq.Row
+                        row = _conn.execute(
+                            "SELECT data_json FROM users WHERE uid=?", (uid,)
+                        ).fetchone()
+                        if not row:
+                            print(f"[cdl_payout_loop] uid={uid} не найден в users")
+                            continue
+                        udata = _js.loads(row["data_json"])
+                        udata["balance"] = udata.get("balance", 0) + total_payout
+                        _conn.execute(
+                            "UPDATE users SET data_json=? WHERE uid=?",
+                            (_js.dumps(udata, ensure_ascii=False), uid)
+                        )
+                        _conn.commit()
+                except Exception as _db_e:
+                    print(f"[cdl_payout_loop] ошибка начисления uid={uid}: {_db_e}")
+                    continue
+
+                # Шлём отдельное уведомление на каждый вклад
+                for dep in paid_deps:
+                    cfg = _CDL_DEP_BY_KEY_REF.get(dep["dep_key"], {})
+                    profit = dep["payout"] - dep["amount"]
+                    notif = (
+                        f'<tg-emoji emoji-id="{cfg.get("emoji_id", "5440621591387980068")}">💰</tg-emoji> '
+                        f'<b>Вклад #{dep["id"]} закрыт!</b>\n\n'
+                        f'<blockquote>'
+                        f'<b>{cfg.get("label", dep["dep_key"])}</b> · {cfg.get("hours", "?")}ч\n'
+                        f'<tg-emoji emoji-id="5447183459602669338">💰</tg-emoji> '
+                        f'<b>Вложено:</b> {format_amount(dep["amount"])}\n'
+                        f'<tg-emoji emoji-id="5278467510604160626">💰</tg-emoji> '
+                        f'<b>Получено:</b> +{format_amount(dep["payout"])}\n'
+                        f'<tg-emoji emoji-id="5224257782013769471">💸</tg-emoji> '
+                        f'<b>Прибыль:</b> +{format_amount(profit)}'
+                        f'</blockquote>'
+                    )
+                    try:
+                        await bot.send_message(uid, notif, parse_mode="HTML")
+                    except Exception as _send_e:
+                        print(f"[cdl_payout_loop] send_message uid={uid}: {_send_e}")
+        except Exception as _e:
+            print(f"[cdl_payout_loop] {_e}")
 
 
-def duel_challenge_screen_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_main",
-        icon_custom_emoji_id=EMOJI_BACK,
-    ))
-    return builder.as_markup()
+async def _pets_loop():
+    """Фоновая задача: уведомления и доход питомцев.
+    1 питомец  → сообщение каждые 12 ч от него.
+    2+ питомца → каждые 6 ч случайный питомец шлёт сообщение + начисляет доход.
+    """
+    from database import get_all_users, save_user as _sv
+    import random as _rnd
+
+    INTERVAL_ONE  = 12 * 3600
+    INTERVAL_MANY =  6 * 3600
+
+    while True:
+        try:
+            for _d in get_all_users():
+                owned = _d.get("owned_pets", [])
+                if not owned:
+                    continue
+
+                now      = int(__import__("datetime").datetime.now(
+                               __import__("datetime").timezone.utc).timestamp())
+                last_all = _d.get("pet_last_group_notify", 0)
+                interval = INTERVAL_ONE if len(owned) == 1 else INTERVAL_MANY
+
+                if now - last_all < interval:
+                    continue
+
+                # Выбираем рандомного питомца
+                pk  = _rnd.choice(owned)
+                pet = __import__("pets").PETS_BY_KEY.get(pk)
+                if not pet:
+                    continue
+
+                amount        = _rnd.randint(pet["income_min"], pet["income_max"])
+                # Множитель артефактов к добыче питомцов
+                try:
+                    from shop import get_artifact_pets_multiplier as _apt_mult
+                    amount = int(amount * _apt_mult(_d))
+                except Exception:
+                    pass
+                _d["balance"] = _d.get("balance", 0) + amount
+                _d["pet_last_group_notify"] = now
+
+                msgs       = __import__("pets")._NOTIFICATIONS.get(pk, [])
+                notif_text = _rnd.choice(msgs) if msgs else ""
+                msg_text   = pet_income_text(pk, amount, notif_text)
+                try:
+                    await bot.send_message(_d["id"], msg_text, parse_mode="HTML")
+                except Exception:
+                    pass
+                _sv(_d["id"], _d)
+        except Exception as _e:
+            print(f"[pets_loop] {_e}")
+        await asyncio.sleep(15 * 60)
 
 
-def duel_challenge_sent_text(target_name: str) -> str:
-    return (
-        f'⚔️ <b>Вызов отправлен!</b>\n\n'
-        f'<blockquote>👤 <b>{target_name}</b> получил твой вызов.\n'
-        f'⏳ Ожидай ответа — у него есть 2 минуты.</blockquote>'
-    )
+async def _poison_loop():
+    """Фоновая задача: яд наносит урон боссу каждую минуту.
+    Суммарный урон = damage, распределённый равномерно по 30 тикам (30 мин).
+    Если босс умирает от яда — владелец получает награду.
+    """
+    from database import get_all_users, save_user as _sv
+    from hunt import get_boss_state, _save_boss_state, BOSS_KILL_REWARD, _now_ts as _h_now
+    from shop import get_active_poison_info
+
+    while True:
+        await asyncio.sleep(60)  # тик каждую минуту
+        try:
+            from database import get_all_users as _gau
+            for _d in _gau():
+                poison = get_active_poison_info(_d)
+                if not poison:
+                    continue
+
+                now = _h_now()
+
+                # Считаем сколько тиков уже прошло и сколько урона нанесено
+                applied_at   = poison.get("applied_at", poison["ends_at"] - 1800)
+                total_damage = poison["damage"]
+                duration_sec = 30 * 60  # 30 минут = 1800 сек
+                tick_damage  = round(total_damage / 30)  # урон за 1 тик (1 мин)
+
+                last_tick = poison.get("last_tick", applied_at)
+                if now - last_tick < 55:  # ещё не прошла минута
+                    continue
+
+                # Наносим тик урона боссу
+                state = get_boss_state()
+                if not state.get("boss_alive"):
+                    continue
+
+                hp_before = state["boss_hp"]
+                hp_after  = max(0, hp_before - tick_damage)
+                state["boss_hp"] = hp_after
+
+                poison["last_tick"] = now
+                _d["active_poison"] = poison
+
+                killed = hp_after == 0
+                if killed:
+                    from datetime import datetime, timezone as _tz
+                    died_at      = now
+                    spawned_at   = state.get("boss_spawned", died_at)
+                    kill_duration = died_at - spawned_at
+                    state["boss_alive"]         = False
+                    state["boss_died_at"]        = died_at
+                    state["boss_kill_duration"]  = kill_duration
+                    _d["balance"] = _d.get("balance", 0) + BOSS_KILL_REWARD
+                    _d["active_poison"] = None
+
+                _save_boss_state(state)
+                _sv(_d["id"], _d)
+
+                if killed:
+                    from hunt import BOSSES_BY_KEY
+                    boss_name = BOSSES_BY_KEY.get(state.get("boss_key"), {}).get("name", "Босс")
+                    reward_text = (
+                        f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>Яд добил босса!</b>\n\n'
+                        f'<blockquote>'
+                        f'<b>{boss_name} уничтожен ядом!</b>\n'
+                        f'<tg-emoji emoji-id="5438496463044752972">💰</tg-emoji> <b>Награда: +{format_amount(BOSS_KILL_REWARD)} монет</b>'
+                        f'</blockquote>'
+                    )
+                    try:
+                        await bot.send_message(_d["id"], reward_text, parse_mode="HTML")
+                    except Exception:
+                        pass
+
+        except Exception as _e:
+            print(f"[poison_loop] {_e}")
 
 
-def duel_challenge_sent_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text="❌ Отменить вызов", callback_data="duel_challenge_cancel",
-    ))
-    builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_main",
-        icon_custom_emoji_id=EMOJI_BACK,
-    ))
-    return builder.as_markup()
+
+async def _duel_timer_loop():
+    """Каждые 3 секунды обновляет боевые экраны активных дуэлей,
+    чтобы кнопки отображали актуальный таймер кулдауна."""
+    import time as _time
+    while True:
+        await asyncio.sleep(3)
+        try:
+            processed = set()
+            for uid, battle in list(_active_battles.items()):
+                if battle.get("finished"):
+                    continue
+                me = "p1" if battle["p1_uid"] == uid else "p2"
+                now = int(_time.time())
+                cooldowns = battle.get(f"{me}_cooldowns", {})
+                has_active_cd = any(v > now for v in cooldowns.values())
+                if not has_active_cd:
+                    continue
+                msg_info = _battle_msgs.get(uid)
+                if not msg_info:
+                    continue
+                # Дедупликация — не обновляем одно и то же сообщение дважды
+                msg_key = (msg_info[0], msg_info[1])
+                if msg_key in processed:
+                    continue
+                processed.add(msg_key)
+                try:
+                    await bot.edit_message_text(
+                        chat_id=msg_info[0],
+                        message_id=msg_info[1],
+                        text=battle_text(battle, uid),
+                        parse_mode="HTML",
+                        reply_markup=battle_keyboard(battle, uid),
+                    )
+                except Exception:
+                    pass
+        except Exception as _e:
+            print(f"[duel_timer_loop] {_e}")
+
+async def main():
+    logging.basicConfig(level=logging.INFO)
+
+    init_db()          # создаёт таблицу при первом запуске
+    init_refs_db()     # создаёт таблицы рефералов и капчи
+    init_hunt_db()     # создаёт таблицу боссов
+    init_leaders_db()  # создаёт таблицу статистики боссов для лидерборда
+    init_stats_db()    # создаёт таблицу онлайн-статистики
+    init_klan_db()     # создаёт таблицы кланов
+    init_checks_db()   # создаёт таблицы чеков и промокодов
+    init_cdl_db()      # создаёт таблицу вкладов
+
+    # ── Миграция: добавляем поля питомцев для старых пользователей ──
+    from database import get_all_users, save_user as _save_mig
+    for _u in get_all_users():
+        _changed = False
+        if "owned_pets" not in _u:
+            _u["owned_pets"] = []
+            _changed = True
+        if "pet_last_notify" not in _u:
+            _u["pet_last_notify"] = {}
+            _changed = True
+        if "pet_last_income" not in _u:
+            _u["pet_last_income"] = {}
+            _changed = True
+        if "pet_income_offset" not in _u:
+            _u["pet_income_offset"] = {}
+            _changed = True
+        if "pet_last_group_notify" not in _u:
+            _u["pet_last_group_notify"] = 0
+            _changed = True
+        # Миграция охоты
+        if "owned_swords" not in _u:
+            _u["owned_swords"] = []
+            _changed = True
+        if "equipped_sword" not in _u:
+            _u["equipped_sword"] = None
+            _changed = True
+        if "last_boss_hit" not in _u:
+            _u["last_boss_hit"] = 0
+            _changed = True
+        if _changed:
+            _save_mig(_u["id"], _u)
+
+    # ── Запускаем фоновую задачу вкладов (авто-выплаты) ──
+    asyncio.create_task(_cdl_payout_loop())
+
+    # ── Запускаем фоновую задачу питомцев ──
+    asyncio.create_task(_pets_loop())
+
+    # ── Запускаем фоновую задачу яда ──
+    asyncio.create_task(_poison_loop())
+
+    # ── Запускаем таймер обновления кнопок дуэлей (каждые 3 сек) ──
+    asyncio.create_task(_duel_timer_loop())
+
+    print("🤖 Бот запущен! БД: tgstellar.db")
+    await dp.start_polling(bot)
 
 
-def duel_hp_status_text(uid: int, user_data: dict) -> str:
-    """Текст статуса HP для отображения в поиске/вызове."""
-    hp     = get_player_hp(uid, user_data)
-    hp_max = _calc_stats(user_data)["hp"]
-    if hp >= 100:
-        return ""
-    secs = player_hp_regen_seconds(uid, user_data)
-    return (
-        f'\n\n<blockquote>'
-        f'⚠️ <b>Твоё HP: {hp}/{hp_max}</b>\n'
-        f'Восстановление: +{HP_REGEN_AMOUNT} HP каждые {HP_REGEN_INTERVAL} сек.\n'
-        f'Следующий тик через <b>{secs} сек.</b>\n'
-        f'<i>Нельзя начать бой пока HP &lt; 100!</i>'
-        f'</blockquote>'
-    )
-
-
-
-    labels = {
-        "search": "Поиск противника",
-        "invite": "Пригласить на поединок",
-        "skills": "Навыки",
-    }
-    name = labels.get(section, section)
-    return (
-        f'<tg-emoji emoji-id="{EMOJI_DUEL_MAIN}">⚔️</tg-emoji> <b>{name}</b>\n\n'
-        '<blockquote>🚧 Раздел в разработке.\nСкоро будет доступен!</blockquote>'
-    )
-
-def duel_soon_text(section: str) -> str:
-    labels = {
-        "search": "Поиск противника",
-        "invite": "Пригласить на поединок",
-        "skills": "Навыки",
-    }
-    name = labels.get(section, section)
-    return (
-        f'<tg-emoji emoji-id="{EMOJI_DUEL_MAIN}">⚔️</tg-emoji> <b>{name}</b>\n\n'
-        '<blockquote>🚧 Раздел в разработке.\nСкоро будет доступен!</blockquote>'
-    )
-
-def duel_back_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_main",
-        icon_custom_emoji_id=EMOJI_BACK,
-    ))
-    return builder.as_markup()
+if __name__ == "__main__":
+    asyncio.run(main())
