@@ -1588,7 +1588,7 @@ def apply_gear_unequip(item_key: str, user_data: dict) -> dict:
     return user_data
 
 
-def duel_charstats_text(user_data: dict) -> str:
+def duel_charstats_text(user_data: dict, uid: int = None) -> str:
     s          = _calc_stats(user_data)
     equipped   = user_data.get("duel_equipped", {})
     gear_count = len(equipped)
@@ -1596,16 +1596,34 @@ def duel_charstats_text(user_data: dict) -> str:
     owned_sk   = get_owned_skills(user_data)
     sk_count   = len(owned_sk)
 
+    # Текущий HP (если uid передан)
+    if uid is not None:
+        current_hp = get_player_hp(uid, user_data)
+        hp_max     = s["hp"]
+        hp_display = f"{current_hp}/{hp_max}"
+        hp_regen_note = ""
+        if current_hp < 100:
+            secs = player_hp_regen_seconds(uid, user_data)
+            hp_regen_note = (
+                f'\n⚠️ <b>HP восстанавливается</b> (+{HP_REGEN_AMOUNT} каждые {HP_REGEN_INTERVAL} сек.)\n'
+                f'Следующий тик через <b>{secs} сек.</b>\n'
+                f'<i>Нельзя начать бой пока HP &lt; 100</i>\n'
+            )
+    else:
+        hp_display    = str(s["hp"])
+        hp_regen_note = ""
+
     return (
         f'<tg-emoji emoji-id="{EMOJI_STATS_DUEL}">📊</tg-emoji> <b>ХАРАКТЕРИСТИКИ</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         '<blockquote>'
-        f'<tg-emoji emoji-id="{EMOJI_HP}">❤️</tg-emoji> <b>Здоровье</b> — <b>{s["hp"]}</b> HP\n\n'
+        f'<tg-emoji emoji-id="{EMOJI_HP}">❤️</tg-emoji> <b>Здоровье</b> — <b>{hp_display}</b> HP\n\n'
         f'<tg-emoji emoji-id="{EMOJI_REGEN}">💚</tg-emoji> <b>Регенерация</b> — <b>{s["regen"]}</b> HP/ход\n\n'
         f'<tg-emoji emoji-id="{EMOJI_PHYS_DEF}">🛡️</tg-emoji> <b>Физ. защита</b> — <b>{s["phys_def"]}</b> DEF\n\n'
         f'<tg-emoji emoji-id="{EMOJI_MAG_DEF}">🔮</tg-emoji> <b>Маг. защита</b> — <b>{s["mag_def"]}</b> MDEF\n\n'
         f'<tg-emoji emoji-id="{EMOJI_STAMINA}">⚙️</tg-emoji> <b>Стойкость</b> — <b>{s["stamina"]}</b> STM'
-        '</blockquote>\n\n'
+        '</blockquote>\n'
+        f'{hp_regen_note}\n'
         f'🎽 <i>Снаряжение: {gear_line}</i>\n'
         f'⚔️ <i>Навыков куплено: {sk_count} шт.</i>\n\n'
         f'<i>💡 Урон в дуэли зависит от купленных навыков,\nа не от снаряжения!</i>'
@@ -1738,11 +1756,14 @@ def duel_hp_status_text(uid: int, user_data: dict) -> str:
     hp_max = _calc_stats(user_data)["hp"]
     if hp >= 100:
         return ""
-    secs   = player_hp_regen_seconds(uid, user_data)
+    secs = player_hp_regen_seconds(uid, user_data)
     return (
-        f'\n\n⚠️ <b>Твоё HP: {hp}/{hp_max}</b>\n'
-        f'<i>Следующий тик восстановления через {secs} сек. (+{HP_REGEN_AMOUNT} HP каждые {HP_REGEN_INTERVAL} сек.)\n'
-        f'Нельзя начать бой пока HP < 100!</i>'
+        f'\n\n<blockquote>'
+        f'⚠️ <b>Твоё HP: {hp}/{hp_max}</b>\n'
+        f'Восстановление: +{HP_REGEN_AMOUNT} HP каждые {HP_REGEN_INTERVAL} сек.\n'
+        f'Следующий тик через <b>{secs} сек.</b>\n'
+        f'<i>Нельзя начать бой пока HP &lt; 100!</i>'
+        f'</blockquote>'
     )
 
 
