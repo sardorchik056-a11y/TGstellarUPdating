@@ -3895,6 +3895,14 @@ async def handle_callback(call: CallbackQuery):
                 await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
                 _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
                 return
+            if not is_player_ready(user.id, data):
+                hp_now = get_player_hp(user.id, data)
+                secs   = player_hp_regen_seconds(user.id, data)
+                await call.answer(
+                    f"HP слишком низкий ({hp_now}/100)! Восстановится через {secs} сек.",
+                    show_alert=True
+                )
+                return
             in_q = in_queue(user.id)
             hp_note = duel_hp_status_text(user.id, data)
             await edit(duel_search_text(in_q) + hp_note, duel_search_keyboard(in_q))
