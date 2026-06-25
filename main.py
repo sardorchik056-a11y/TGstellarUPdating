@@ -179,6 +179,7 @@ from duel import (
     duel_soon_text, duel_back_keyboard,
     duel_equip_text, duel_equip_keyboard,
     duel_equip_slot_text, duel_equip_slot_keyboard,
+    duel_charstats_text, duel_charstats_keyboard,
     GEAR_SLOTS,
 )
 
@@ -3706,10 +3707,15 @@ async def handle_callback(call: CallbackQuery):
             return
 
         # ===== ДУЭЛИ: подразделы (заглушки) =====
-        if cd in ("duel_search", "duel_invite", "duel_skills", "duel_charstats"):
+        if cd in ("duel_search", "duel_invite", "duel_skills"):
             await call.answer()
             section = cd.split("_", 1)[1]
             await edit(duel_soon_text(section), duel_back_keyboard())
+            return
+
+        if cd == "duel_charstats":
+            await call.answer()
+            await edit(duel_charstats_text(data), duel_charstats_keyboard())
             return
 
         # ===== ЗАГЛУШКИ (в разработке) =====
