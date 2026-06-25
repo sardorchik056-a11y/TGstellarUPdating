@@ -1209,6 +1209,27 @@ def _skill_page_items(page: int) -> list:
     return paid[start:start + SKILLS_SHOP_PAGE_SIZE], len(paid)
 
 
+import random as _random
+
+_DUEL_SHOP_QUOTES = [
+    "⚔️ <i>Великий воин побеждает не силой, а кошельком.</i>",
+    "💀 <i>Враг тоже читал этот магазин. Покупай быстрее.</i>",
+    "🔥 <i>Зачем качать скилл в жизни, если можно купить в магазине?</i>",
+    "😤 <i>Каждый навык здесь прошёл боевые испытания... на тестовом сервере.</i>",
+    "🧠 <i>Умный воин выбирает навык с умом. Остальные берут всё подряд.</i>",
+    "💸 <i>Деньги — это просто ресурс. Вкладывай в победы.</i>",
+    "🏆 <i>Победители не рождаются — они просто лучше экипированы.</i>",
+    "😂 <i>Противник тоже думал, что сэкономит. Теперь он в таблице проигравших.</i>",
+    "⚡ <i>Молния бьёт дважды в одного — если купить правильный навык.</i>",
+    "🧊 <i>Заморозь врага раньше, чем он разморозит кошелёк.</i>",
+    "🌑 <i>Тьма — лучший союзник. Особенно если за неё заплачено.</i>",
+    "😎 <i>Не важно как ты выглядишь в бою. Важно — остался ли противник стоять.</i>",
+    "🔮 <i>Магия не терпит скупости. Магия терпит только оплату.</i>",
+    "💪 <i>Сила воли — хорошо. Сила навыка — лучше.</i>",
+    "🎯 <i>Точность приходит с практикой. А практика — с хорошим навыком.</i>",
+]
+
+
 def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
     items, total = _skill_page_items(page)
     total_pages = (total + SKILLS_SHOP_PAGE_SIZE - 1) // SKILLS_SHOP_PAGE_SIZE
@@ -1241,15 +1262,16 @@ def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
             f"{marker} {sk['emoji']} <b>{sk['name']}</b> [{price_str}]"
         )
 
-    block = "\n\n".join(lines)
+    block = "\n".join(lines)
     eq_count = len(equipped_skills)
+    quote = _random.choice(_DUEL_SHOP_QUOTES)
     return (
         f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>МАГАЗИН НАВЫКОВ</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>{block}</blockquote>\n\n'
         f'💰 Баланс: <b>{_fmt(balance)}</b> монет · Стр. {page+1}/{total_pages}\n'
-        f'⚔️ Экипировано в бой: <b>{eq_count}/{MAX_EQUIPPED_SKILLS}</b>\n'
-        f'<i>Нажми на навык, чтобы узнать подробности и экипировать его в бой.</i>'
+        f'⚔️ Экипировано в бой: <b>{eq_count}/{MAX_EQUIPPED_SKILLS}</b>\n\n'
+        f'{quote}'
     )
 
 
