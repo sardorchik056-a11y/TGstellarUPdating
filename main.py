@@ -194,6 +194,8 @@ from duel import (
 
 # ── In-memory хранилище активных боёв (uid -> battle_state) ─────────
 _active_battles: dict[int, dict] = {}
+# ── Хранилище message_id боевого экрана (uid -> (chat_id, message_id)) ─
+_battle_msgs: dict[int, tuple] = {}
 
 BOT_TOKEN = '8693034024:AAFQ8rUGuhJ5yT9QNZoZzAmzNMatp_SVSbk'
 
@@ -3732,6 +3734,7 @@ async def handle_callback(call: CallbackQuery):
             if user.id in _active_battles:
                 battle = _active_battles[user.id]
                 await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
                 return
             in_q = in_queue(user.id)
             await edit(duel_search_text(in_q), duel_search_keyboard(in_q))
@@ -3743,6 +3746,7 @@ async def handle_callback(call: CallbackQuery):
             if user.id in _active_battles:
                 battle = _active_battles[user.id]
                 await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
                 return
             battle = join_queue(user.id, data)
             if battle:
@@ -3750,18 +3754,33 @@ async def handle_callback(call: CallbackQuery):
                 p2_uid = battle["p2_uid"]
                 _active_battles[p1_uid] = battle
                 _active_battles[p2_uid] = battle
+                # Показываем боевой экран инициатору (p1) — редактируем его сообщение
                 await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
+                # Соперник (p2) был в экране поиска — обновляем его сообщение если знаем
+                foe_msg = _battle_msgs.get(p2_uid)
                 try:
-                    await bot.send_message(
-                        p2_uid,
-                        battle_text(battle, p2_uid),
-                        parse_mode="HTML",
-                        reply_markup=battle_keyboard(battle, p2_uid)
-                    )
+                    if foe_msg:
+                        await bot.edit_message_text(
+                            chat_id=foe_msg[0],
+                            message_id=foe_msg[1],
+                            text=battle_text(battle, p2_uid),
+                            parse_mode="HTML",
+                            reply_markup=battle_keyboard(battle, p2_uid)
+                        )
+                    else:
+                        sent = await bot.send_message(
+                            p2_uid,
+                            battle_text(battle, p2_uid),
+                            parse_mode="HTML",
+                            reply_markup=battle_keyboard(battle, p2_uid)
+                        )
+                        _battle_msgs[p2_uid] = (sent.chat.id, sent.message_id)
                 except Exception:
                     pass
             else:
                 await edit(duel_search_text(True), duel_search_keyboard(True))
+                _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
             return
 
         # ===== ДУЭЛИ: проверить поиск =====
@@ -3770,6 +3789,7 @@ async def handle_callback(call: CallbackQuery):
             if user.id in _active_battles:
                 battle = _active_battles[user.id]
                 await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
                 return
             in_q = in_queue(user.id)
             await edit(duel_search_text(in_q), duel_search_keyboard(in_q))
@@ -3778,6 +3798,7 @@ async def handle_callback(call: CallbackQuery):
         # ===== ДУЭЛИ: отменить поиск =====
         if cd == "duel_search_cancel":
             leave_queue(user.id)
+            _battle_msgs.pop(user.id, None)
             await call.answer("Поиск отменён.")
             await edit(duel_search_text(False), duel_search_keyboard(False))
             return
@@ -3793,31 +3814,28 @@ async def handle_callback(call: CallbackQuery):
             if not result["ok"]:
                 await call.answer(result["msg"], show_alert=True)
                 return
+            # Обновляем message_id текущего игрока
+            _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
             await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
             foe_uid = battle["p2_uid"] if battle["p1_uid"] == user.id else battle["p1_uid"]
-            try:
-                if battle.get("finished"):
-                    await bot.send_message(
-                        foe_uid,
-                        battle_text(battle, foe_uid),
+            # Обновляем сообщение соперника через edit
+            foe_msg = _battle_msgs.get(foe_uid)
+            if foe_msg:
+                try:
+                    await bot.edit_message_text(
+                        chat_id=foe_msg[0],
+                        message_id=foe_msg[1],
+                        text=battle_text(battle, foe_uid),
                         parse_mode="HTML",
                         reply_markup=battle_keyboard(battle, foe_uid)
                     )
-                    _active_battles.pop(user.id, None)
-                    _active_battles.pop(foe_uid, None)
-                else:
-                    log_entry = result.get("log_entry", "")
-                    if log_entry:
-                        await bot.send_message(
-                            foe_uid,
-                            f"⚔️ {log_entry}\n\n" + battle_text(battle, foe_uid),
-                            parse_mode="HTML",
-                            reply_markup=battle_keyboard(battle, foe_uid)
-                        )
-            except Exception:
-                pass
-            if result["ok"] and battle.get("finished"):
+                except Exception:
+                    pass
+            if battle.get("finished"):
                 _active_battles.pop(user.id, None)
+                _active_battles.pop(foe_uid, None)
+                _battle_msgs.pop(user.id, None)
+                _battle_msgs.pop(foe_uid, None)
             await call.answer()
             return
 
@@ -3832,17 +3850,22 @@ async def handle_callback(call: CallbackQuery):
                 battle["finished"] = True
                 battle["winner_uid"] = foe_uid
                 battle["log"].append(f"🏳️ {data.get('first_name', 'Игрок')} сдался.")
-                try:
-                    await bot.send_message(
-                        foe_uid,
-                        "🏆 Противник сдался!\n\n" + battle_text(battle, foe_uid),
-                        parse_mode="HTML",
-                        reply_markup=battle_keyboard(battle, foe_uid)
-                    )
-                except Exception:
-                    pass
+                foe_msg = _battle_msgs.get(foe_uid)
+                if foe_msg:
+                    try:
+                        await bot.edit_message_text(
+                            chat_id=foe_msg[0],
+                            message_id=foe_msg[1],
+                            text=battle_text(battle, foe_uid),
+                            parse_mode="HTML",
+                            reply_markup=battle_keyboard(battle, foe_uid)
+                        )
+                    except Exception:
+                        pass
                 _active_battles.pop(foe_uid, None)
+                _battle_msgs.pop(foe_uid, None)
             _active_battles.pop(user.id, None)
+            _battle_msgs.pop(user.id, None)
             await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
             await call.answer("Ты сдался.")
             return
