@@ -3733,7 +3733,7 @@ async def handle_callback(call: CallbackQuery):
         # ===== ДУЭЛИ: экипировка — список слотов =====
         if cd == "duel_equip":
             await call.answer()
-            await edit(duel_equip_text(data), duel_equip_keyboard())
+            await edit(duel_equip_text(data), duel_equip_keyboard(data))
             return
 
         # ===== ДУЭЛИ: список уровней слота =====
