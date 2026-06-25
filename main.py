@@ -183,6 +183,7 @@ from duel import (
     duel_charstats_text, duel_charstats_keyboard,
     duel_skills_text, duel_skills_keyboard,
     duel_skills_shop_text, duel_skills_shop_keyboard,
+    duel_skill_card_text, duel_skill_card_keyboard,
     duel_search_text, duel_search_keyboard,
     battle_text, battle_keyboard,
     battle_use_skill,
@@ -190,8 +191,12 @@ from duel import (
     GEAR_CATALOG,
     SKILLS,
     get_owned_skills,
+    get_equipped_skills,
+    equip_skill,
+    unequip_skill,
     owned_level, equipped_level,
     apply_gear_purchase, apply_gear_equip, apply_gear_unequip,
+    MAX_EQUIPPED_SKILLS,
 )
 
 # ── In-memory хранилище активных боёв (uid -> battle_state) ─────────
@@ -3710,6 +3715,41 @@ async def handle_callback(call: CallbackQuery):
             await call.answer("💸 Недостаточно монет для покупки!", show_alert=True)
             return
 
+        # ===== ДУЭЛИ: карточка навыка (подробное окно) =====
+        if cd.startswith("duel_skill_card:"):
+            parts = cd.split(":", 2)
+            sk_key   = parts[1]
+            from_page = int(parts[2]) if len(parts) > 2 else 0
+            await call.answer()
+            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data, from_page))
+            return
+
+        # ===== ДУЭЛИ: экипировать навык в бой =====
+        if cd.startswith("duel_skill_equip:"):
+            sk_key = cd.split(":", 1)[1]
+            ok, msg = equip_skill(sk_key, data)
+            await call.answer(msg, show_alert=not ok)
+            if ok:
+                save_user(user.id, data)
+            # Возвращаемся на карточку
+            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
+            return
+
+        # ===== ДУЭЛИ: снять навык из боя =====
+        if cd.startswith("duel_skill_unequip:"):
+            sk_key = cd.split(":", 1)[1]
+            ok, msg = unequip_skill(sk_key, data)
+            await call.answer(msg, show_alert=not ok)
+            if ok:
+                save_user(user.id, data)
+            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
+            return
+
+        # ===== ДУЭЛИ: все слоты заняты =====
+        if cd == "duel_skill_slots_full":
+            await call.answer(f"⚠️ Все {MAX_EQUIPPED_SKILLS} слотов в бою заняты! Сначала снимите один навык.", show_alert=True)
+            return
+
         # ===== ДУЭЛИ: магазин навыков =====
         if cd == "duel_skills_shop":
             await call.answer()
@@ -3739,19 +3779,21 @@ async def handle_callback(call: CallbackQuery):
             owned_sk = data.setdefault("duel_owned_skills", [])
             if sk_key in owned_sk:
                 await call.answer("Навык уже куплен!", show_alert=True)
+                await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
                 return
             data["balance"] -= price
             owned_sk.append(sk_key)
             save_user(user.id, data)
             await call.answer(f"✅ Куплен навык: {sk['name']}!", show_alert=True)
-            await edit(duel_skills_shop_text(data, 0), duel_skills_shop_keyboard(data, 0))
+            # Открываем карточку навыка — теперь можно экипировать
+            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
             return
 
         # ===== ДУЭЛИ: навык уже куплен (заглушка) =====
         if cd.startswith("duel_skill_owned:"):
             sk_key = cd.split(":", 1)[1]
-            sk = SKILLS.get(sk_key) or {}
-            await call.answer(f"✅ {sk.get('name', 'Навык')} уже в твоём арсенале!", show_alert=True)
+            await call.answer()
+            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
             return
 
         # ===== ДУЭЛИ: недостаточно монет (навык) =====
@@ -3811,8 +3853,8 @@ async def handle_callback(call: CallbackQuery):
                 from database import get_user as _gu_battle
                 _d1 = _gu_battle(p1_uid) or {}
                 _d2 = _gu_battle(p2_uid) or {}
-                battle["p1_skills"] = get_owned_skills(_d1)
-                battle["p2_skills"] = get_owned_skills(_d2)
+                battle["p1_skills"] = get_equipped_skills(_d1) or get_owned_skills(_d1)
+                battle["p2_skills"] = get_equipped_skills(_d2) or get_owned_skills(_d2)
                 _active_battles[p1_uid] = battle
                 _active_battles[p2_uid] = battle
                 # Показываем боевой экран инициатору (p1) — редактируем его сообщение
@@ -3934,7 +3976,7 @@ async def handle_callback(call: CallbackQuery):
         # ===== ДУЭЛИ: навыки =====
         if cd == "duel_skills":
             await call.answer()
-            await edit(duel_skills_text(), duel_skills_keyboard())
+            await edit(duel_skills_text(data), duel_skills_keyboard())
             return
 
         # ===== ДУЭЛИ: подразделы (заглушки) =====
