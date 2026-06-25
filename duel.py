@@ -530,10 +530,12 @@ SKILLS = {
 SKILLS_ORDER_BASE = ["mag_ball", "explosion", "shield"]
 SKILLS_ORDER = list(SKILLS.keys())
 
+# Максимум навыков в бою
+MAX_EQUIPPED_SKILLS = 5
+
 
 def get_owned_skills(user_data: dict) -> list:
     """Возвращает список ключей навыков, которыми владеет пользователь."""
-    # Базовые всегда есть
     base = [k for k, v in SKILLS.items() if v["price"] == 0]
     owned = user_data.get("duel_owned_skills", [])
     result = []
@@ -544,6 +546,131 @@ def get_owned_skills(user_data: dict) -> list:
         if k not in result:
             result.append(k)
     return result
+
+
+def get_equipped_skills(user_data: dict) -> list:
+    """Возвращает список навыков, экипированных в бой (макс. 5)."""
+    equipped = user_data.get("duel_equipped_skills", [])
+    # Фильтруем: только те, которыми владеем
+    owned = get_owned_skills(user_data)
+    return [k for k in equipped if k in owned]
+
+
+def equip_skill(skill_key: str, user_data: dict) -> tuple:
+    """Экипировать навык в бой. Возвращает (ok, msg)."""
+    owned = get_owned_skills(user_data)
+    if skill_key not in owned:
+        return False, "❌ Навык не куплен!"
+    equipped = user_data.setdefault("duel_equipped_skills", [])
+    if skill_key in equipped:
+        return False, "❌ Навык уже экипирован!"
+    if len(equipped) >= MAX_EQUIPPED_SKILLS:
+        return False, f"❌ Максимум {MAX_EQUIPPED_SKILLS} навыков в бою!"
+    equipped.append(skill_key)
+    return True, "✅ Навык экипирован!"
+
+
+def unequip_skill(skill_key: str, user_data: dict) -> tuple:
+    """Снять навык с экипировки. Возвращает (ok, msg)."""
+    equipped = user_data.setdefault("duel_equipped_skills", [])
+    if skill_key not in equipped:
+        return False, "❌ Навык не экипирован!"
+    equipped.remove(skill_key)
+    return True, "✅ Навык снят!"
+
+
+# ── Карточка навыка (подробное окно, как у снаряжения) ────────────────────
+
+def duel_skill_card_text(skill_key: str, user_data: dict) -> str:
+    sk      = SKILLS.get(skill_key)
+    if not sk:
+        return "❌ Навык не найден."
+    owned    = get_owned_skills(user_data)
+    equipped = get_equipped_skills(user_data)
+    balance  = user_data.get("balance", 0)
+    is_owned = skill_key in owned
+    is_equip = skill_key in equipped
+
+    # Тип навыка
+    type_labels = {"magic": "🔮 Магический", "physical": "⚔️ Физический", "shield": "🛡️ Защитный"}
+    type_label  = type_labels.get(sk["type"], sk["type"])
+
+    # Характеристики
+    if sk["type"] == "shield":
+        power_line = f'🛡️ <b>Поглощает:</b> {sk["shield_amount"][0]}–{sk["shield_amount"][1]} HP'
+    else:
+        power_line = f'⚔️ <b>Урон:</b> {sk["base_dmg"][0]}–{sk["base_dmg"][1]}'
+
+    # Статус
+    if is_equip:
+        status_line = '✅ <b>Экипирован в бой</b>'
+    elif is_owned:
+        status_line = '📦 <b>Куплен</b> — не экипирован в бой'
+    else:
+        status_line = f'💰 <b>Цена: {_fmt(sk["price"])} монет</b>'
+        if balance < sk["price"]:
+            deficit = sk["price"] - balance
+            status_line += f'\n⚠️ <i>Не хватает {_fmt(deficit)} монет</i>'
+
+    # Слоты
+    slot_info = f'{len(equipped)}/{MAX_EQUIPPED_SKILLS} навыков экипировано'
+
+    return (
+        f'{sk["emoji"]} <b>{sk["name"]}</b>\n'
+        f'<i>{type_label} · ⏳ Перезарядка: {sk["cooldown"]} сек.</i>\n'
+        '━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>{sk["description"]}</blockquote>\n\n'
+        f'<b>Характеристики:</b>\n'
+        f'{power_line}\n'
+        f'⏳ <b>Кулдаун:</b> {sk["cooldown"]} сек.\n\n'
+        f'<i>Слоты в бою: {slot_info}</i>\n\n'
+        f'{status_line}'
+    )
+
+
+def duel_skill_card_keyboard(skill_key: str, user_data: dict, from_page: int = 0) -> InlineKeyboardMarkup:
+    sk      = SKILLS.get(skill_key)
+    owned   = get_owned_skills(user_data)
+    equipped = get_equipped_skills(user_data)
+    balance = user_data.get("balance", 0)
+    is_owned = skill_key in owned
+    is_equip = skill_key in equipped
+    builder  = InlineKeyboardBuilder()
+
+    if is_equip:
+        builder.row(InlineKeyboardButton(
+            text="❌ Снять из боя",
+            callback_data=f"duel_skill_unequip:{skill_key}",
+        ))
+    elif is_owned:
+        if len(equipped) < MAX_EQUIPPED_SKILLS:
+            builder.row(InlineKeyboardButton(
+                text="⚔️ Экипировать в бой",
+                callback_data=f"duel_skill_equip:{skill_key}",
+            ))
+        else:
+            builder.row(InlineKeyboardButton(
+                text=f"⚠️ Все {MAX_EQUIPPED_SKILLS} слотов заняты",
+                callback_data="duel_skill_slots_full",
+            ))
+    else:
+        if sk and balance >= sk["price"]:
+            builder.row(InlineKeyboardButton(
+                text=f"🛒 Купить — {_fmt(sk['price'])} монет",
+                callback_data=f"duel_skill_buy:{skill_key}",
+            ))
+        elif sk:
+            builder.row(InlineKeyboardButton(
+                text=f"💸 Недостаточно монет",
+                callback_data="duel_skill_nofunds",
+            ))
+
+    builder.row(InlineKeyboardButton(
+        text="Назад",
+        callback_data=f"duel_skills_shop_page:{from_page}",
+        icon_custom_emoji_id=EMOJI_BACK,
+    ))
+    return builder.as_markup()
 
 
 def _calc_skill_damage(skill_key: str, attacker_stats: dict, defender_stats: dict) -> dict:
@@ -860,10 +987,8 @@ def battle_keyboard(battle: dict, uid: int) -> InlineKeyboardMarkup:
     now = int(time.time())
     cooldowns = battle.get(f"{me}_cooldowns", {})
 
-    # Узнаём какими навыками владеет игрок
-    # Нужен user_data, но в battle его нет — храним uid->data в _battle_user_data
-    # Используем _battle_skill_sets если есть, иначе базовые
-    p_skills = battle.get(f"{me}_skills", SKILLS_ORDER_BASE)
+    # Экипированные навыки (макс. 5), записаны при старте боя
+    p_skills = battle.get(f"{me}_skills") or SKILLS_ORDER_BASE
 
     builder = InlineKeyboardBuilder()
 
@@ -920,18 +1045,24 @@ def _skill_page_items(page: int) -> list:
 def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
     items, total = _skill_page_items(page)
     total_pages = (total + SKILLS_SHOP_PAGE_SIZE - 1) // SKILLS_SHOP_PAGE_SIZE
-    owned_skills = get_owned_skills(user_data)
+    owned_skills    = get_owned_skills(user_data)
+    equipped_skills = get_equipped_skills(user_data)
     balance = user_data.get("balance", 0)
 
     lines = []
     for sk_key in items:
         sk = SKILLS[sk_key]
-        owned = sk_key in owned_skills
-        if owned:
-            marker = "✅"
-            price_str = "куплено"
+        is_owned  = sk_key in owned_skills
+        is_equip  = sk_key in equipped_skills
+
+        if is_equip:
+            marker    = "⚔️"
+            price_str = "в бою"
+        elif is_owned:
+            marker    = "✅"
+            price_str = "куплен"
         else:
-            marker = "🔒"
+            marker    = "🔒"
             price_str = f"{_fmt(sk['price'])} монет"
 
         if sk["type"] == "shield":
@@ -946,40 +1077,43 @@ def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
         )
 
     block = "\n\n".join(lines)
+    eq_count = len(equipped_skills)
     return (
         f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>МАГАЗИН НАВЫКОВ</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>{block}</blockquote>\n\n'
         f'💰 Баланс: <b>{_fmt(balance)}</b> монет · Стр. {page+1}/{total_pages}\n'
-        f'<i>Навыки дают урон в бою. Снаряжение урон НЕ даёт.</i>'
+        f'⚔️ Экипировано в бой: <b>{eq_count}/{MAX_EQUIPPED_SKILLS}</b>\n'
+        f'<i>Нажми на навык, чтобы узнать подробности и экипировать его в бой.</i>'
     )
 
 
 def duel_skills_shop_keyboard(user_data: dict, page: int = 0) -> InlineKeyboardMarkup:
     items, total = _skill_page_items(page)
     total_pages = (total + SKILLS_SHOP_PAGE_SIZE - 1) // SKILLS_SHOP_PAGE_SIZE
-    owned_skills = get_owned_skills(user_data)
+    owned_skills    = get_owned_skills(user_data)
+    equipped_skills = get_equipped_skills(user_data)
     balance = user_data.get("balance", 0)
     builder = InlineKeyboardBuilder()
 
     for sk_key in items:
-        sk = SKILLS[sk_key]
-        owned = sk_key in owned_skills
-        if owned:
-            btn = InlineKeyboardButton(
-                text=f"✅ {sk['emoji']} {sk['name']}",
-                callback_data=f"duel_skill_owned:{sk_key}",
-            )
+        sk      = SKILLS[sk_key]
+        is_equip = sk_key in equipped_skills
+        is_owned = sk_key in owned_skills
+
+        if is_equip:
+            prefix = "⚔️"
+        elif is_owned:
+            prefix = "✅"
         elif balance >= sk["price"]:
-            btn = InlineKeyboardButton(
-                text=f"🛒 {sk['emoji']} {sk['name']} — {_fmt(sk['price'])}",
-                callback_data=f"duel_skill_buy:{sk_key}",
-            )
+            prefix = "🛒"
         else:
-            btn = InlineKeyboardButton(
-                text=f"💸 {sk['emoji']} {sk['name']} — {_fmt(sk['price'])}",
-                callback_data="duel_skill_nofunds",
-            )
+            prefix = "💸"
+
+        btn = InlineKeyboardButton(
+            text=f"{prefix} {sk['emoji']} {sk['name']}",
+            callback_data=f"duel_skill_card:{sk_key}:{page}",
+        )
         builder.row(btn)
 
     # Пагинация
@@ -1325,7 +1459,7 @@ def duel_charstats_keyboard() -> InlineKeyboardMarkup:
 
 # ── Экран навыков (обзор + ссылка в магазин) ─────────────────
 
-def duel_skills_text() -> str:
+def duel_skills_text(user_data: dict = None) -> str:
     base_lines = []
     for sk_key in SKILLS_ORDER_BASE:
         sk = SKILLS[sk_key]
@@ -1341,13 +1475,39 @@ def duel_skills_text() -> str:
 
     paid_count = len([k for k, v in SKILLS.items() if v["price"] > 0])
 
+    # Экипированные навыки
+    equip_block = ""
+    if user_data:
+        equipped = get_equipped_skills(user_data)
+        if equipped:
+            eq_lines = []
+            for sk_key in equipped:
+                sk = SKILLS.get(sk_key)
+                if sk:
+                    if sk["type"] == "shield":
+                        val = f"щит {sk['shield_amount'][0]}–{sk['shield_amount'][1]} HP"
+                    else:
+                        val = f"урон {sk['base_dmg'][0]}–{sk['base_dmg'][1]}"
+                    eq_lines.append(f"⚔️ {sk['emoji']} <b>{sk['name']}</b> · {val}")
+            equip_block = (
+                f"\n\n<blockquote><b>⚔️ Экипировано в бой ({len(equipped)}/{MAX_EQUIPPED_SKILLS}):</b>\n"
+                + "\n".join(eq_lines)
+                + "\n<i>Только эти навыки доступны в дуэли!</i></blockquote>"
+            )
+        else:
+            equip_block = (
+                f"\n\n<blockquote>⚠️ <b>Ни один навык не экипирован в бой!</b>\n"
+                f"Перейди в магазин и экипируй до {MAX_EQUIPPED_SKILLS} навыков.</blockquote>"
+            )
+
     return (
         f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>БОЕВЫЕ НАВЫКИ</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote><b>🆓 Базовые навыки (бесплатно):</b>\n\n{base_block}</blockquote>\n\n'
         f'<blockquote>🛒 <b>В магазине доступно ещё {paid_count} навыков</b>\n'
         f'от слабых ударов до разрушительных ультимейтов!\n\n'
-        f'💡 <i>Урон зависит только от навыков — покупай их!</i></blockquote>'
+        f'💡 <i>Экипируй до {MAX_EQUIPPED_SKILLS} навыков — именно они будут доступны в бою!</i></blockquote>'
+        f'{equip_block}'
     )
 
 def duel_skills_keyboard() -> InlineKeyboardMarkup:
