@@ -3889,8 +3889,8 @@ async def handle_callback(call: CallbackQuery):
 
         # ===== ДУЭЛИ: поиск — главный экран =====
         if cd == "duel_search":
-            await call.answer()
             if user.id in _active_battles:
+                await call.answer()
                 battle = _active_battles[user.id]
                 await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
                 _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
@@ -3903,6 +3903,7 @@ async def handle_callback(call: CallbackQuery):
                     show_alert=True
                 )
                 return
+            await call.answer()
             in_q = in_queue(user.id)
             hp_note = duel_hp_status_text(user.id, data)
             await edit(duel_search_text(in_q) + hp_note, duel_search_keyboard(in_q))
@@ -3910,13 +3911,12 @@ async def handle_callback(call: CallbackQuery):
 
         # ===== ДУЭЛИ: начать поиск =====
         if cd == "duel_search_start":
-            await call.answer()
             if user.id in _active_battles:
+                await call.answer()
                 battle = _active_battles[user.id]
                 await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
                 _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
                 return
-            # Проверяем HP
             if not is_player_ready(user.id, data):
                 hp_now = get_player_hp(user.id, data)
                 secs   = player_hp_regen_seconds(user.id, data)
@@ -3925,6 +3925,7 @@ async def handle_callback(call: CallbackQuery):
                     show_alert=True
                 )
                 return
+            await call.answer()
             battle = join_queue(user.id, data)
             if battle:
                 p1_uid = battle["p1_uid"]
@@ -4074,9 +4075,8 @@ async def handle_callback(call: CallbackQuery):
         # ===== ДУЭЛИ: подразделы (заглушки) =====
         # ===== ДУЭЛИ: бросить вызов — экран ввода =====
         if cd == "duel_challenge_start":
-            await call.answer()
             if user.id in _active_battles:
-                await call.answer("❌ Ты уже в бою!", show_alert=True)
+                await call.answer("Ты уже в бою!", show_alert=True)
                 return
             if not is_player_ready(user.id, data):
                 hp_now = get_player_hp(user.id, data)
@@ -4086,6 +4086,7 @@ async def handle_callback(call: CallbackQuery):
                     show_alert=True
                 )
                 return
+            await call.answer()
             _challenge_input_pending[user.id] = True
             await edit(duel_challenge_screen_text(), duel_challenge_screen_keyboard())
             return
@@ -4101,9 +4102,8 @@ async def handle_callback(call: CallbackQuery):
         # ===== ДУЭЛИ: принять вызов =====
         if cd.startswith("duel_challenge_accept:"):
             challenger_uid = int(cd.split(":")[1])
-            await call.answer()
             if user.id in _active_battles:
-                await call.answer("❌ Ты уже в бою!", show_alert=True)
+                await call.answer("Ты уже в бою!", show_alert=True)
                 return
             if not is_player_ready(user.id, data):
                 hp_now = get_player_hp(user.id, data)
@@ -4113,6 +4113,7 @@ async def handle_callback(call: CallbackQuery):
                     show_alert=True
                 )
                 return
+            await call.answer()
             from database import get_user as _gu_ch
             challenger_data = _gu_ch(challenger_uid)
             if not challenger_data:
