@@ -2264,14 +2264,21 @@ def duel_equip_keyboard(user_data: dict = None) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def duel_equip_slot_text(slot: str, user_data: dict) -> str:
+_SLOT_PAGE_SIZE = 5   # уровней на странице
+
+def duel_equip_slot_text(slot: str, user_data: dict, page: int = 0) -> str:
     ow_lvl = owned_level(slot, user_data)
     eq_lvl = equipped_level(slot, user_data)
     emoji  = slot_emoji(slot)
     label  = slot_label(slot)
 
+    total_pages = (25 + _SLOT_PAGE_SIZE - 1) // _SLOT_PAGE_SIZE  # 5 страниц
+    page = max(0, min(page, total_pages - 1))
+    lvl_start = page * _SLOT_PAGE_SIZE + 1
+    lvl_end   = min(lvl_start + _SLOT_PAGE_SIZE - 1, 25)
+
     lines = []
-    for lvl in range(1, 6):
+    for lvl in range(lvl_start, lvl_end + 1):
         item = GEAR_CATALOG[f"{slot}-lvl{lvl}"]
         if lvl == eq_lvl:
             marker = "✅"
@@ -2282,24 +2289,28 @@ def duel_equip_slot_text(slot: str, user_data: dict) -> str:
         else:
             marker = "🔒"
             state  = f"<i>{_fmt(item['price'])} монет</i>"
-
         lines.append(f"{marker} <b>[{item['name']}]</b> — {item['ru_name']} · {state}")
 
     block = "\n".join(lines)
     return (
         f'{emoji} <b>СНАРЯЖЕНИЕ — {label.upper()}</b>\n'
-        '━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n'
+        f'<i>Страница {page + 1}/{total_pages} · уровни {lvl_start}–{lvl_end}</i>\n\n'
         f'<blockquote>{block}</blockquote>\n\n'
         '<i>Нажми на предмет, чтобы узнать подробности</i>'
     )
 
-def duel_equip_slot_keyboard(slot: str, user_data: dict) -> InlineKeyboardMarkup:
+def duel_equip_slot_keyboard(slot: str, user_data: dict, page: int = 0) -> InlineKeyboardMarkup:
     ow_lvl = owned_level(slot, user_data)
     eq_lvl = equipped_level(slot, user_data)
     slot_eid = _SLOT_EMOJI_IDS.get(slot)
+    total_pages = (25 + _SLOT_PAGE_SIZE - 1) // _SLOT_PAGE_SIZE
+    page = max(0, min(page, total_pages - 1))
+    lvl_start = page * _SLOT_PAGE_SIZE + 1
+    lvl_end   = min(lvl_start + _SLOT_PAGE_SIZE - 1, 25)
     builder = InlineKeyboardBuilder()
 
-    for lvl in range(1, 6):
+    for lvl in range(lvl_start, lvl_end + 1):
         item_key = f"{slot}-lvl{lvl}"
         item     = GEAR_CATALOG[item_key]
         if lvl == eq_lvl:
@@ -2311,13 +2322,27 @@ def duel_equip_slot_keyboard(slot: str, user_data: dict) -> InlineKeyboardMarkup
         else:
             btn_text = f"🔒 [{item['name']}] — {_fmt(item['price'])} монет"
             kw = {}
-
         builder.row(InlineKeyboardButton(
             text=btn_text,
             callback_data=f"duel_item_card:{item_key}",
             icon_custom_emoji_id=slot_eid,
             **kw,
         ))
+
+    # Навигация по страницам
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(
+            text="◀️ Назад",
+            callback_data=f"duel_slot_page:{slot}:{page - 1}",
+        ))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton(
+            text="Вперёд ▶️",
+            callback_data=f"duel_slot_page:{slot}:{page + 1}",
+        ))
+    if nav:
+        builder.row(*nav)
 
     builder.row(InlineKeyboardButton(
         text="Назад", callback_data="duel_equip",
