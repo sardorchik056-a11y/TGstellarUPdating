@@ -176,6 +176,10 @@ from rass import (
 )
 from duel import (
     duel_main_text, duel_main_keyboard,
+    is_duel_equip_cmd, is_duel_skills_cmd, is_duel_invite_cmd, is_any_duel_cmd,
+    cmd_no_hp_text, cmd_already_in_battle_text, cmd_invite_usage_text,
+    cmd_invite_self_text, cmd_invite_not_found_text, cmd_invite_in_battle_text,
+    cmd_invite_blocked_text,
     duel_soon_text, duel_back_keyboard,
     duel_equip_text, duel_equip_keyboard,
     duel_equip_slot_text, duel_equip_slot_keyboard,
@@ -1865,6 +1869,123 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
             return True
 
     return False
+
+
+
+# ════════════════════════════════════════════════════════════
+#  БЫСТРЫЕ КОМАНДЫ ДУЭЛИ (со слешем и без, RU + EN)
+# ════════════════════════════════════════════════════════════
+
+async def _handle_duel_cmd(message: Message):
+    """Общий обработчик быстрых команд дуэли. Вызывается из slash и text хендлеров."""
+    uid  = message.from_user.id
+    u    = get_or_create_user(message.from_user)
+    text = (message.text or "").strip()
+
+    if is_duel_equip_cmd(text):
+        # /снар — открыть снаряжение
+        await message.answer(
+            duel_equip_text(u),
+            parse_mode="HTML",
+            reply_markup=duel_equip_keyboard(u),
+        )
+        return
+
+    if is_duel_skills_cmd(text):
+        # /навыки — открыть навыки
+        await message.answer(
+            duel_skills_text(u),
+            parse_mode="HTML",
+            reply_markup=duel_skills_keyboard(),
+        )
+        return
+
+    if is_duel_invite_cmd(text):
+        # /вз — бросить вызов
+        if uid in _active_battles:
+            await message.reply(cmd_already_in_battle_text(), parse_mode="HTML")
+            return
+        if not is_player_ready(uid, u):
+            hp_now = get_player_hp(uid, u)
+            secs   = player_hp_regen_seconds(uid, u)
+            await message.reply(cmd_no_hp_text(hp_now, secs), parse_mode="HTML")
+            return
+
+        # Определяем цель: reply или аргумент
+        target_raw = None
+        if message.reply_to_message and message.reply_to_message.from_user:
+            target_raw = str(message.reply_to_message.from_user.id)
+        else:
+            parts = text.lstrip("/").split(maxsplit=1)
+            if len(parts) > 1:
+                target_raw = parts[1].strip().lstrip("@")
+
+        if not target_raw:
+            await message.reply(cmd_invite_usage_text(), parse_mode="HTML")
+            return
+
+        from database import get_all_users as _gau_duel_cmd
+        all_users = _gau_duel_cmd()
+        target = None
+        if target_raw.lstrip("-").isdigit():
+            target = next((x for x in all_users if x["id"] == int(target_raw)), None)
+        else:
+            target = next(
+                (x for x in all_users if (x.get("username") or "").lower() == target_raw.lower()),
+                None
+            )
+
+        if not target:
+            await message.reply(cmd_invite_not_found_text(), parse_mode="HTML")
+            return
+        if target["id"] == uid:
+            await message.reply(cmd_invite_self_text(), parse_mode="HTML")
+            return
+        if target["id"] in _active_battles:
+            await message.reply(cmd_invite_in_battle_text(), parse_mode="HTML")
+            return
+
+        target_name = target.get("first_name") or target.get("username") or str(target["id"])
+        create_challenge(uid, target["id"], target_name)
+        try:
+            await bot.send_message(
+                target["id"],
+                challenge_invite_text(u),
+                parse_mode="HTML",
+                reply_markup=challenge_invite_keyboard(uid),
+            )
+        except Exception:
+            await message.reply(cmd_invite_blocked_text(target_name), parse_mode="HTML")
+            cancel_challenge(uid)
+            return
+        await message.reply(
+            duel_challenge_sent_text(target_name),
+            parse_mode="HTML",
+            reply_markup=duel_challenge_sent_keyboard(),
+        )
+        return
+
+
+@dp.message(F.text.regexp(
+    r"^/?(?:дуэли-duel-екип|снаряжение|снар|equip|gear|duel-equip"
+    r"|нвык|навыки|skills|skill|умения"
+    r"|вз|вызов|challenge|invite|duel)(?:\s|$)",
+    flags=__import__("re").IGNORECASE
+))
+async def handle_duel_cmd_text(message: Message):
+    """Текстовые алиасы дуэльных команд (без слеша)."""
+    await _handle_duel_cmd(message)
+
+
+@dp.message(F.text.regexp(
+    r"^/(?:дуэли-duel-екип|снаряжение|снар|equip|gear|duel-equip"
+    r"|нвык|навыки|skills|skill|умения"
+    r"|вз|вызов|challenge|invite|duel)(?:\s|$)",
+    flags=__import__("re").IGNORECASE
+))
+async def handle_duel_cmd_slash(message: Message):
+    """Слеш-команды дуэлей."""
+    await _handle_duel_cmd(message)
 
 
 @dp.message(F.text & ~F.text.startswith("/"))
