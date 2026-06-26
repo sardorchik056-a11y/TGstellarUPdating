@@ -2319,21 +2319,22 @@ def duel_equip_slot_keyboard(slot: str, user_data: dict, page: int = 0) -> Inlin
         item_key = f"{slot}-lvl{lvl}"
         item     = GEAR_CATALOG[item_key]
         if lvl == eq_lvl:
-            btn_text = f"✅ {item['name']}"
+            btn_text = f"[{item['name']}]"
             builder.row(InlineKeyboardButton(
                 text=btn_text,
                 callback_data=f"duel_item_card:{item_key}",
                 style="success",
+                icon_custom_emoji_id="5206607081334906820",
             ))
         elif lvl in owned_lvls:
-            btn_text = f"{item['name']}"
+            btn_text = f"[{item['name']}]"
             builder.row(InlineKeyboardButton(
                 text=btn_text,
                 callback_data=f"duel_item_card:{item_key}",
                 style="success",
             ))
         else:
-            btn_text = f"{item['name']} — {_fmt(item['price'])} монет"
+            btn_text = f"{item['name']} | {_fmt(item['price'])}"
             builder.row(InlineKeyboardButton(
                 text=btn_text,
                 callback_data=f"duel_item_card:{item_key}",
@@ -2387,24 +2388,25 @@ def duel_item_card_text(item_key: str, user_data: dict) -> str:
         bonus_lines.append(f'  {emoji_s} <b>+{val}</b> {ru} <i>({unit})</i>')
     bonus_block = "\n".join(bonus_lines)
 
+    _R = '<tg-emoji emoji-id="{}">{}</tg-emoji> {}'  # helper
     if lvl <= 3:
-        rarity = "⬜ Обычный"
+        rarity = _R.format("5789669816297019965", "⬜", "Обычный")
     elif lvl <= 6:
-        rarity = "🟩 Необычный"
+        rarity = _R.format("5789414690265419632", "🟩", "Необычный")
     elif lvl <= 10:
-        rarity = "🟦 Редкий"
+        rarity = _R.format("5789670003017783365", "🟦", "Редкий")
     elif lvl <= 14:
-        rarity = "🟪 Эпический"
+        rarity = _R.format("5789670748385636682", "🟪", "Эпический")
     elif lvl <= 18:
-        rarity = "🟧 Легендарный"
+        rarity = _R.format("5789670748385636682", "🟧", "Легендарный")
     elif lvl <= 21:
-        rarity = "🟥 Мифический"
+        rarity = _R.format("5789670748385636682", "🟥", "Мифический")
     elif lvl <= 23:
-        rarity = "🔶 Древний"
+        rarity = _R.format("5789670748385636682", "🔶", "Древний")
     elif lvl <= 24:
-        rarity = "💠 Реликвийный"
+        rarity = _R.format("5789670748385636682", "💠", "Реликвийный")
     else:
-        rarity = "👑 Абсолютный"
+        rarity = _R.format("5789670748385636682", "👑", "Абсолютный")
 
     return (
         f'{item["emoji_char"]} <b>{item["name"]}</b>\n'
