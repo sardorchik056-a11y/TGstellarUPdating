@@ -2040,6 +2040,8 @@ def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
     equipped_skills = get_equipped_skills(user_data)
     balance = user_data.get("balance", 0)
 
+    type_short = {"magic": "🔮 Маг.", "physical": "⚔️ Физ.", "shield": "🛡️ Щит"}
+
     lines = []
     for sk_key in items:
         sk = SKILLS[sk_key]
@@ -2048,33 +2050,36 @@ def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
 
         if is_equip:
             marker    = "✅"
-            price_str = "экипирован"
+            price_str = "<i>экипирован</i>"
         elif is_owned:
-            marker    = "✅"
-            price_str = "куплен"
+            marker    = "📦"
+            price_str = "<i>куплен</i>"
         else:
             marker    = "🔒"
-            price_str = f"{_fmt(sk['price'])} монет"
+            price_str = f"<i>{_fmt(sk['price'])} монет</i>"
 
         if sk["type"] == "shield":
             val = f"щит {sk['shield_amount'][0]}–{sk['shield_amount'][1]} HP"
         else:
             val = f"урон {sk['base_dmg'][0]}–{sk['base_dmg'][1]}"
 
+        t = type_short.get(sk["type"], sk["type"])
         lines.append(
-            f"{marker} {sk['emoji']} <b>{sk['name']}</b> [{price_str}]"
+            f"{marker} {sk['emoji']} <b>{sk['name']}</b> — {price_str}\n"
+            f"   <i>{t} · {val} · ⏳{sk['cooldown']}с</i>"
         )
 
-    block = "\n".join(lines)
+    block = "\n\n".join(lines)
     eq_count = len(equipped_skills)
     quote = _random.choice(_DUEL_SHOP_QUOTES)
     return (
         f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>МАГАЗИН НАВЫКОВ</b>\n'
-        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n'
+        f'<i>Страница {page+1}/{total_pages} · ⚔️ в бою: {eq_count}/{MAX_EQUIPPED_SKILLS}</i>\n\n'
         f'<blockquote expandable>{quote}</blockquote>\n\n'
-        f'{block}\n\n'
-        f'💰 Баланс: <b>{_fmt(balance)}</b> монет · Стр. {page+1}/{total_pages}\n'
-        f'⚔️ Экипировано в бой: <b>{eq_count}/{MAX_EQUIPPED_SKILLS}</b>'
+        f'<blockquote>{block}</blockquote>\n\n'
+        f'💰 Баланс: <b>{_fmt(balance)}</b> монет\n'
+        f'<i>Нажми навык — купи или экипируй в бой</i>'
     )
 
 
@@ -2092,26 +2097,45 @@ def duel_skills_shop_keyboard(user_data: dict, page: int = 0) -> InlineKeyboardM
         is_owned = sk_key in owned_skills
 
         if is_equip:
-            prefix = "⚔️"
+            kw = dict(
+                text=f"{sk['emoji']} {sk['name']}",
+                callback_data=f"duel_skill_card:{sk_key}:{page}",
+                style="success",
+                icon_custom_emoji_id="5206607081334906820",
+            )
         elif is_owned:
-            prefix = "✅"
+            kw = dict(
+                text=f"{sk['emoji']} {sk['name']}",
+                callback_data=f"duel_skill_card:{sk_key}:{page}",
+                style="success",
+            )
         elif balance >= sk["price"]:
-            prefix = "🛒"
+            kw = dict(
+                text=f"{sk['emoji']} {sk['name']} | {_fmt(sk['price'])}",
+                callback_data=f"duel_skill_card:{sk_key}:{page}",
+            )
         else:
-            prefix = "💸"
+            kw = dict(
+                text=f"{sk['emoji']} {sk['name']} | {_fmt(sk['price'])}",
+                callback_data=f"duel_skill_card:{sk_key}:{page}",
+            )
 
-        btn = InlineKeyboardButton(
-            text=f"{prefix} {sk['emoji']} {sk['name']}",
-            callback_data=f"duel_skill_card:{sk_key}:{page}",
-        )
-        builder.row(btn)
+        builder.row(InlineKeyboardButton(**kw))
 
     # Пагинация
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton(text="◀️", callback_data=f"duel_skills_shop_page:{page-1}"))
+        nav.append(InlineKeyboardButton(
+            text="Назад",
+            callback_data=f"duel_skills_shop_page:{page-1}",
+            icon_custom_emoji_id="5255703720078879038",
+        ))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton(text="▶️", callback_data=f"duel_skills_shop_page:{page+1}"))
+        nav.append(InlineKeyboardButton(
+            text="Вперёд",
+            callback_data=f"duel_skills_shop_page:{page+1}",
+            icon_custom_emoji_id="5253767677670862169",
+        ))
     if nav:
         builder.row(*nav)
 
@@ -2324,7 +2348,7 @@ def duel_equip_slot_keyboard(slot: str, user_data: dict, page: int = 0) -> Inlin
             btn_text = f"[{item['name']}]"
             builder.row(InlineKeyboardButton(
                 text=btn_text,
-                callback_data=f"duel_item_card:{item_key}",
+                callback_data=f"duel_item_card:{item_key}:{page}",
                 style="success",
                 icon_custom_emoji_id="5206607081334906820",
             ))
@@ -2332,14 +2356,14 @@ def duel_equip_slot_keyboard(slot: str, user_data: dict, page: int = 0) -> Inlin
             btn_text = f"[{item['name']}]"
             builder.row(InlineKeyboardButton(
                 text=btn_text,
-                callback_data=f"duel_item_card:{item_key}",
+                callback_data=f"duel_item_card:{item_key}:{page}",
                 style="success",
             ))
         else:
             btn_text = f"{item['name']} | {_fmt(item['price'])}"
             builder.row(InlineKeyboardButton(
                 text=btn_text,
-                callback_data=f"duel_item_card:{item_key}",
+                callback_data=f"duel_item_card:{item_key}:{page}",
             ))
 
     # Навигация по страницам
@@ -2421,7 +2445,7 @@ def duel_item_card_text(item_key: str, user_data: dict) -> str:
         f'{status_line}'
     )
 
-def duel_item_card_keyboard(item_key: str, user_data: dict) -> InlineKeyboardMarkup:
+def duel_item_card_keyboard(item_key: str, user_data: dict, page: int = 0) -> InlineKeyboardMarkup:
     item   = GEAR_CATALOG[item_key]
     slot   = item["slot"]
     owned_lvls = owned_levels_set(slot, user_data)
@@ -2433,18 +2457,18 @@ def duel_item_card_keyboard(item_key: str, user_data: dict) -> InlineKeyboardMar
     if lvl == eq_lvl:
         builder.row(InlineKeyboardButton(
             text="Снять",
-            callback_data=f"duel_gear_unequip:{item_key}",
+            callback_data=f"duel_gear_unequip:{item_key}:{page}",
         ))
     elif lvl in owned_lvls:
         builder.row(InlineKeyboardButton(
             text="Надеть",
-            callback_data=f"duel_gear_equip:{item_key}",
+            callback_data=f"duel_gear_equip:{item_key}:{page}",
         ))
     else:
         if balance >= item["price"]:
             builder.row(InlineKeyboardButton(
                 text=f"Купить — {_fmt(item['price'])} монет",
-                callback_data=f"duel_gear_buy:{item_key}",
+                callback_data=f"duel_gear_buy:{item_key}:{page}",
             ))
         else:
             builder.row(InlineKeyboardButton(
@@ -2453,7 +2477,7 @@ def duel_item_card_keyboard(item_key: str, user_data: dict) -> InlineKeyboardMar
             ))
 
     builder.row(InlineKeyboardButton(
-        text="Назад", callback_data=f"duel_equip_slot:{slot}",
+        text="Назад", callback_data=f"duel_slot_page:{slot}:{page}",
         icon_custom_emoji_id=EMOJI_BACK,
     ))
     return builder.as_markup()
