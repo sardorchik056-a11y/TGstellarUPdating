@@ -2827,13 +2827,18 @@ def duel_back_keyboard() -> InlineKeyboardMarkup:
 # ════════════════════════════════════════════════════════════
 
 # Алиасы → целевой раздел
+DUEL_CMD_MAIN   = frozenset(["дуэли", "дуель", "duel", "duels"])
 DUEL_CMD_EQUIP  = frozenset(["дуэли-duel-екип", "снаряжение", "снар", "equip", "gear", "duel-equip"])
 DUEL_CMD_SKILLS = frozenset(["нвык", "навыки", "skills", "skill", "умения"])
-DUEL_CMD_INVITE = frozenset(["вз", "вызов", "challenge", "invite", "duel"])
+DUEL_CMD_STATS  = frozenset(["стата", "хк", "хар", "stats", "charstats", "характеристики"])
+DUEL_CMD_INVITE = frozenset(["вз", "вызов", "challenge"])
 
 def _normalize_cmd(text: str) -> str:
     """Убирает слеш, пробелы, переводит в нижний регистр."""
     return text.strip().lstrip("/").lower().split()[0]
+
+def is_duel_main_cmd(text: str) -> bool:
+    return _normalize_cmd(text) in DUEL_CMD_MAIN
 
 def is_duel_equip_cmd(text: str) -> bool:
     return _normalize_cmd(text) in DUEL_CMD_EQUIP
@@ -2841,11 +2846,16 @@ def is_duel_equip_cmd(text: str) -> bool:
 def is_duel_skills_cmd(text: str) -> bool:
     return _normalize_cmd(text) in DUEL_CMD_SKILLS
 
+def is_duel_stats_cmd(text: str) -> bool:
+    return _normalize_cmd(text) in DUEL_CMD_STATS
+
 def is_duel_invite_cmd(text: str) -> bool:
     return _normalize_cmd(text) in DUEL_CMD_INVITE
 
 def is_any_duel_cmd(text: str) -> bool:
-    return is_duel_equip_cmd(text) or is_duel_skills_cmd(text) or is_duel_invite_cmd(text)
+    return (is_duel_main_cmd(text) or is_duel_equip_cmd(text) or
+            is_duel_skills_cmd(text) or is_duel_stats_cmd(text) or
+            is_duel_invite_cmd(text))
 
 
 # ── Тексты ошибок/помощи ────────────────────────────────────
