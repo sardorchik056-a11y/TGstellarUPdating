@@ -2177,11 +2177,11 @@ def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
     eq_count = len(equipped_skills)
     quote = _random.choice(_DUEL_SHOP_QUOTES)
     return (
-        f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>МАГАЗИН НАВЫКОВ</b>\n'
+        f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>Изучение Навыков</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━\n'
         f'<i>Страница {page+1}/{total_pages} · ⚔️ в бою: {eq_count}/{MAX_EQUIPPED_SKILLS}</i>\n\n'
-        f'<blockquote expandable>{quote}</blockquote>\n\n'
-        f'💰 Баланс: <b>{_fmt(balance)}</b> монет\n'
+        f'<blockquote expandable><b><i>{quote}</i></b></blockquote>\n\n'
+        f'<tg-emoji emoji-id="5278467510604160626">✨</tg-emoji> Баланс: <b>{_fmt(balance)}</b> <tg-emoji emoji-id="5199552030615558774">✨</tg-emoji>\n'
         f'<i>Нажми навык — купи или экипируй в бой</i>'
     )
 
