@@ -1517,9 +1517,9 @@ def duel_skill_card_text(skill_key: str, user_data: dict) -> str:
 
     # Характеристики
     if sk["type"] == "shield":
-        power_line = f'🛡️ <b>Поглощает:</b> {sk["shield_amount"][0]}–{sk["shield_amount"][1]} HP'
+        power_line = f'<tg-emoji emoji-id="5465154440287757794">✨</tg-emoji> <b>Поглощает:</b> {sk["shield_amount"][0]}–{sk["shield_amount"][1]} HP'
     else:
-        power_line = f'⚔️ <b>Урон:</b> {sk["base_dmg"][0]}–{sk["base_dmg"][1]}'
+        power_line = f'<tg-emoji emoji-id="5454014806950429357">✨</tg-emoji> <b>Урон:</b> {sk["base_dmg"][0]}–{sk["base_dmg"][1]}'
 
     # Статус
     if is_equip:
@@ -1527,7 +1527,7 @@ def duel_skill_card_text(skill_key: str, user_data: dict) -> str:
     elif is_owned:
         status_line = '📦 <b>Куплен</b> — не экипирован в бой'
     else:
-        status_line = f'<tg-emoji emoji-id="5334544901428229844">✨</tg-emoji> <b>Цена: {_fmt(sk["price"])} <tg-emoji emoji-id="5334544901428229844">✨</tg-emoji></b>'
+        status_line = f'<tg-emoji emoji-id="5427168083074628963">✨</tg-emoji> <b>Цена: {_fmt(sk["price"])} <tg-emoji emoji-id="5199552030615558774">✨</tg-emoji></b>'
         if balance < sk["price"]:
             deficit = sk["price"] - balance
             status_line += f'\n⚠️ <i>Не хватает {_fmt(deficit)} монет</i>'
