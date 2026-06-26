@@ -1138,7 +1138,7 @@ SKILLS = {
     },
     "mag_block": {
         "key": "mag_block",
-        "name": "Таран",
+        "name": "Астральный Удар",
         "emoji": "🟣",
         "type": "magic",
         "cooldown": 20,
@@ -1148,7 +1148,7 @@ SKILLS = {
     },
     "arcane_surge": {
         "key": "arcane_surge",
-        "name": "Арканит",
+        "name": "Арканный Удар",
         "emoji": "✨",
         "type": "magic",
         "cooldown": 18,
@@ -1239,7 +1239,7 @@ SKILLS = {
     },
     "earthquake": {
         "key": "earthquake",
-        "name": "Землетряс",
+        "name": "Землетрясение",
         "emoji": "🌍",
         "type": "physical",
         "cooldown": 32,
@@ -1259,7 +1259,7 @@ SKILLS = {
     },
     "mega_shield": {
         "key": "mega_shield",
-        "name": "Цитадель",
+        "name": "Щит Цитадели",
         "emoji": "🔰",
         "type": "shield",
         "cooldown": 40,
@@ -1269,7 +1269,7 @@ SKILLS = {
     },
     "soul_drain": {
         "key": "soul_drain",
-        "name": "Дрейн",
+        "name": "Жизнекрад",
         "emoji": "💜",
         "type": "magic",
         "cooldown": 45,
@@ -1280,7 +1280,7 @@ SKILLS = {
     },
     "void_blast": {
         "key": "void_blast",
-        "name": "Разлом",
+        "name": "Разрыв Бездны",
         "emoji": "🌀",
         "type": "magic",
         "cooldown": 40,
@@ -1310,7 +1310,7 @@ SKILLS = {
     },
     "dark_nova": {
         "key": "dark_nova",
-        "name": "Нова",
+        "name": "Тёмный Взрыв",
         "emoji": "🖤",
         "type": "magic",
         "cooldown": 55,
@@ -1320,7 +1320,7 @@ SKILLS = {
     },
     "divine_wrath": {
         "key": "divine_wrath",
-        "name": "Кара",
+        "name": "Небесная Кара",
         "emoji": "⚜️",
         "type": "magic",
         "cooldown": 60,
@@ -1332,7 +1332,7 @@ SKILLS = {
     # ── Новые навыки ─────────────────────────────────────────
     "bloodlust": {
         "key": "bloodlust",
-        "name": "Кровопийца",
+        "name": "Жажда Крови",
         "emoji": "🩸",
         "type": "physical",
         "cooldown": 28,
@@ -1353,7 +1353,7 @@ SKILLS = {
     },
     "obsidian_edge": {
         "key": "obsidian_edge",
-        "name": "Обсидиан",
+        "name": "Тёмный Клинок",
         "emoji": "🗡️",
         "type": "physical",
         "cooldown": 19,
@@ -1363,7 +1363,7 @@ SKILLS = {
     },
     "echo_blast": {
         "key": "echo_blast",
-        "name": "Эхо",
+        "name": "Ударная Волна",
         "emoji": "🔊",
         "type": "physical",
         "cooldown": 36,
@@ -1384,7 +1384,7 @@ SKILLS = {
     },
     "runic_fortress": {
         "key": "runic_fortress",
-        "name": "Руны",
+        "name": "Рунический Щит",
         "emoji": "🏰",
         "type": "shield",
         "cooldown": 55,
@@ -1394,7 +1394,7 @@ SKILLS = {
     },
     "solar_lance": {
         "key": "solar_lance",
-        "name": "Солнцекопьё",
+        "name": "Солнечное Копьё",
         "emoji": "☀️",
         "type": "magic",
         "cooldown": 38,
