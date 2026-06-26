@@ -399,7 +399,7 @@ def main_menu_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(
         text=" Дуэли" if lang == "ru" else " Duels",
         callback_data="duel_main",
-        icon_custom_emoji_id="5424972470023104089",
+        icon_custom_emoji_id="5454014806950429357",
     ))
     builder.row(InlineKeyboardButton(
         text=" Вклады" if lang == "ru" else " Deposits",
