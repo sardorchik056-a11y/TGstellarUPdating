@@ -1578,7 +1578,7 @@ def duel_skill_card_keyboard(skill_key: str, user_data: dict, from_page: int = 0
     else:
         if sk and balance >= sk["price"]:
             builder.row(InlineKeyboardButton(
-                text=f"🛒 Купить — {_fmt(sk['price'])} монет",
+                text=f"📖 Изучить — {_fmt(sk['price'])} монет",
                 callback_data=f"duel_skill_buy:{skill_key}",
             ))
         elif sk:
@@ -2577,7 +2577,7 @@ def duel_item_card_keyboard(item_key: str, user_data: dict, page: int = 0) -> In
     else:
         if balance >= item["price"]:
             builder.row(InlineKeyboardButton(
-                text=f"Купить — {_fmt(item['price'])} монет",
+                text=f"📖 Изучить — {_fmt(item['price'])} монет",
                 callback_data=f"duel_gear_buy:{item_key}:{page}",
             ))
         else:
@@ -2700,7 +2700,7 @@ def duel_skills_text(user_data: dict = None) -> str:
 def duel_skills_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
-        text="🛒 Магазин навыков", callback_data="duel_skills_shop",
+        text="📖 Изучение навыков", callback_data="duel_skills_shop",
     ))
     builder.row(InlineKeyboardButton(
         text="Назад", callback_data="duel_main",
