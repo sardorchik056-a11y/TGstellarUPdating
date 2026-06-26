@@ -3904,7 +3904,7 @@ async def handle_callback(call: CallbackQuery):
             await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data, page))
             return
 
-        # ===== ДУЭЛИ: поиск — главный экран =====
+        # ===== ДУЭЛИ: поиск — сразу начинаем поиск =====
         if cd == "duel_search":
             if user.id in _active_battles:
                 await call.answer()
@@ -3921,9 +3921,42 @@ async def handle_callback(call: CallbackQuery):
                 )
                 return
             await call.answer()
-            in_q = in_queue(user.id)
-            hp_note = duel_hp_status_text(user.id, data)
-            await edit(duel_search_text(in_q) + hp_note, duel_search_keyboard(in_q))
+            battle = join_queue(user.id, data)
+            if battle:
+                p1_uid = battle["p1_uid"]
+                p2_uid = battle["p2_uid"]
+                from database import get_user as _gu_battle
+                _d1 = _gu_battle(p1_uid) or {}
+                _d2 = _gu_battle(p2_uid) or {}
+                battle["p1_skills"] = get_equipped_skills(_d1) or get_owned_skills(_d1)
+                battle["p2_skills"] = get_equipped_skills(_d2) or get_owned_skills(_d2)
+                _active_battles[p1_uid] = battle
+                _active_battles[p2_uid] = battle
+                await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
+                foe_msg = _battle_msgs.get(p2_uid)
+                try:
+                    if foe_msg:
+                        await bot.edit_message_text(
+                            chat_id=foe_msg[0],
+                            message_id=foe_msg[1],
+                            text=battle_text(battle, p2_uid),
+                            parse_mode="HTML",
+                            reply_markup=battle_keyboard(battle, p2_uid)
+                        )
+                    else:
+                        sent = await bot.send_message(
+                            p2_uid,
+                            battle_text(battle, p2_uid),
+                            parse_mode="HTML",
+                            reply_markup=battle_keyboard(battle, p2_uid)
+                        )
+                        _battle_msgs[p2_uid] = (sent.chat.id, sent.message_id)
+                except Exception:
+                    pass
+            else:
+                await edit(duel_search_text(True), duel_search_keyboard(True))
+                _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
             return
 
         # ===== ДУЭЛИ: начать поиск =====
