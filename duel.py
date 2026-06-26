@@ -2385,7 +2385,7 @@ def duel_equip_text(user_data: dict) -> str:
         lines.append(f'{slot_tg} <b>{label}:</b> {status}')
 
     return (
-        '<tg-emoji emoji-id="5445221832074483553">🎒</tg-emoji> <b>СНАРЯЖЕНИЕ</b>\n'
+        '<tg-emoji emoji-id="5454168390685965478">🎒</tg-emoji> <b>СНАРЯЖЕНИЕ</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>{chr(10).join(lines)}</blockquote>\n\n'
         '<i>Снаряжение даёт HP и защиту — урон даётся навыками!</i>'
@@ -2531,7 +2531,7 @@ def duel_item_card_text(item_key: str, user_data: dict) -> str:
     elif lvl in owned_lvls:
         status_line = '📦 <b>Есть в инвентаре</b> — не надето'
     else:
-        status_line = f'💰 <b>Цена: {_fmt(item["price"])} монет</b>'
+        status_line = f'<tg-emoji emoji-id="5278467510604160626">🎒</tg-emoji> <b>Цена: {_fmt(item["price"])} <tg-emoji emoji-id="5199552030615558774">🎒</tg-emoji></b>'
         if balance < item["price"]:
             deficit = item["price"] - balance
             status_line += f'\n⚠️ <i>Не хватает {_fmt(deficit)} монет</i>'
@@ -2595,7 +2595,7 @@ def duel_item_card_keyboard(item_key: str, user_data: dict, page: int = 0) -> In
     else:
         if balance >= item["price"]:
             builder.row(InlineKeyboardButton(
-                text=f"📖 Изучить — {_fmt(item['price'])} монет",
+                text=f"Купить — {_fmt(item['price'])} монет",
                 callback_data=f"duel_gear_buy:{item_key}:{page}",
             ))
         else:
