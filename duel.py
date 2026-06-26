@@ -2320,14 +2320,24 @@ def duel_equip_slot_keyboard(slot: str, user_data: dict, page: int = 0) -> Inlin
         item     = GEAR_CATALOG[item_key]
         if lvl == eq_lvl:
             btn_text = f"✅ {item['name']}"
+            builder.row(InlineKeyboardButton(
+                text=btn_text,
+                callback_data=f"duel_item_card:{item_key}",
+                style="success",
+            ))
         elif lvl in owned_lvls:
-            btn_text = f"{item['name']} — в инвентаре"
+            btn_text = f"{item['name']}"
+            builder.row(InlineKeyboardButton(
+                text=btn_text,
+                callback_data=f"duel_item_card:{item_key}",
+                style="success",
+            ))
         else:
             btn_text = f"{item['name']} — {_fmt(item['price'])} монет"
-        builder.row(InlineKeyboardButton(
-            text=btn_text,
-            callback_data=f"duel_item_card:{item_key}",
-        ))
+            builder.row(InlineKeyboardButton(
+                text=btn_text,
+                callback_data=f"duel_item_card:{item_key}",
+            ))
 
     # Навигация по страницам
     nav = []
@@ -2377,11 +2387,28 @@ def duel_item_card_text(item_key: str, user_data: dict) -> str:
         bonus_lines.append(f'  {emoji_s} <b>+{val}</b> {ru} <i>({unit})</i>')
     bonus_block = "\n".join(bonus_lines)
 
-    stars = "⭐" * lvl + "☆" * (5 - lvl)
+    if lvl <= 3:
+        rarity = "⬜ Обычный"
+    elif lvl <= 6:
+        rarity = "🟩 Необычный"
+    elif lvl <= 10:
+        rarity = "🟦 Редкий"
+    elif lvl <= 14:
+        rarity = "🟪 Эпический"
+    elif lvl <= 18:
+        rarity = "🟧 Легендарный"
+    elif lvl <= 21:
+        rarity = "🟥 Мифический"
+    elif lvl <= 23:
+        rarity = "🔶 Древний"
+    elif lvl <= 24:
+        rarity = "💠 Реликвийный"
+    else:
+        rarity = "👑 Абсолютный"
 
     return (
         f'{item["emoji_char"]} <b>{item["name"]}</b>\n'
-        f'<i>{item["ru_name"]}</i>  {stars}\n'
+        f'<i>{item["ru_name"]}</i>  {rarity}\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>{item["description"]}</blockquote>\n\n'
         f'<b>Боевые бонусы (защита и HP):</b>\n{bonus_block}\n\n'
