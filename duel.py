@@ -2036,40 +2036,8 @@ _DUEL_SHOP_QUOTES = [
 def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
     items, total = _skill_page_items(page)
     total_pages = (total + SKILLS_SHOP_PAGE_SIZE - 1) // SKILLS_SHOP_PAGE_SIZE
-    owned_skills    = get_owned_skills(user_data)
     equipped_skills = get_equipped_skills(user_data)
     balance = user_data.get("balance", 0)
-
-    type_short = {"magic": "🔮 Маг.", "physical": "⚔️ Физ.", "shield": "🛡️ Щит"}
-
-    lines = []
-    for sk_key in items:
-        sk = SKILLS[sk_key]
-        is_owned  = sk_key in owned_skills
-        is_equip  = sk_key in equipped_skills
-
-        if is_equip:
-            marker    = "✅"
-            price_str = "<i>экипирован</i>"
-        elif is_owned:
-            marker    = "📦"
-            price_str = "<i>куплен</i>"
-        else:
-            marker    = "🔒"
-            price_str = f"<i>{_fmt(sk['price'])} монет</i>"
-
-        if sk["type"] == "shield":
-            val = f"щит {sk['shield_amount'][0]}–{sk['shield_amount'][1]} HP"
-        else:
-            val = f"урон {sk['base_dmg'][0]}–{sk['base_dmg'][1]}"
-
-        t = type_short.get(sk["type"], sk["type"])
-        lines.append(
-            f"{marker} {sk['emoji']} <b>{sk['name']}</b> — {price_str}\n"
-            f"   <i>{t} · {val} · ⏳{sk['cooldown']}с</i>"
-        )
-
-    block = "\n\n".join(lines)
     eq_count = len(equipped_skills)
     quote = _random.choice(_DUEL_SHOP_QUOTES)
     return (
@@ -2077,9 +2045,7 @@ def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
         f'━━━━━━━━━━━━━━━━━━━━\n'
         f'<i>Страница {page+1}/{total_pages} · ⚔️ в бою: {eq_count}/{MAX_EQUIPPED_SKILLS}</i>\n\n'
         f'<blockquote expandable>{quote}</blockquote>\n\n'
-        f'<blockquote>{block}</blockquote>\n\n'
-        f'💰 Баланс: <b>{_fmt(balance)}</b> монет\n'
-        f'<i>Нажми навык — купи или экипируй в бой</i>'
+        f'💰 Баланс: <b>{_fmt(balance)}</b> монет'
     )
 
 
