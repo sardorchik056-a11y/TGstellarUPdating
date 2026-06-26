@@ -1335,7 +1335,7 @@ def _parse_gift_args(message: Message):
     # Убираем возможный префикс команды (/gift, /дать, /пер, gift, дать, пер и т.п.)
     import re as _r
     text = _r.sub(
-        r'^[/]?(gift|дать|пер|дай|transfer|give|дарю)\s*',
+        r'^[/]?(gift|дать|пер|transfer|give|дарю)\s*',
         '', text, count=1, flags=_r.IGNORECASE
     ).strip()
 
@@ -1361,8 +1361,8 @@ def _parse_gift_args(message: Message):
     return None, None, "bad_format"
 
 
-@dp.message(Command("gift", "дать", "пер", "дай", "transfer", "give", "дарю"))
-@dp.message(F.text.regexp(r'^[/]?(gift|дать|пер|дай|transfer|give|дарю)\s+\S', flags=_re.IGNORECASE))
+@dp.message(Command("gift", "дать", "пер", "transfer", "give", "дарю"))
+@dp.message(F.text.regexp(r'^[/]?(gift|дать|пер|transfer|give|дарю)\s+\S', flags=_re.IGNORECASE))
 async def cmd_gift(message: Message):
     """Перевод монет другому игроку."""
     from database import get_all_users, save_user as _save, get_user
@@ -1969,7 +1969,9 @@ async def _handle_duel_cmd(message: Message):
 @dp.message(F.text.regexp(
     r"^/?(?:дуэли-duel-екип|снаряжение|снар|equip|gear|duel-equip"
     r"|нвык|навыки|skills|skill|умения"
-    r"|вз|вызов|challenge|invite|duel)(?:\s|$)",
+    r"|вз|вызов|challenge"
+    r"|стата|хк|хар|stats|charstats|характеристики"
+    r"|дуэли|дуель|duel|duels)(?:\s|$)",
     flags=__import__("re").IGNORECASE
 ))
 async def handle_duel_cmd_text(message: Message):
@@ -1980,7 +1982,9 @@ async def handle_duel_cmd_text(message: Message):
 @dp.message(F.text.regexp(
     r"^/(?:дуэли-duel-екип|снаряжение|снар|equip|gear|duel-equip"
     r"|нвык|навыки|skills|skill|умения"
-    r"|вз|вызов|challenge|invite|duel)(?:\s|$)",
+    r"|вз|вызов|challenge"
+    r"|стата|хк|хар|stats|charstats|характеристики"
+    r"|дуэли|дуель|duel|duels)(?:\s|$)",
     flags=__import__("re").IGNORECASE
 ))
 async def handle_duel_cmd_slash(message: Message):
