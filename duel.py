@@ -2215,10 +2215,12 @@ def duel_main_keyboard() -> InlineKeyboardMarkup:
 def duel_equip_text(user_data: dict) -> str:
     lines = []
     for slot in GEAR_SLOTS_ORDER:
-        emoji  = slot_emoji(slot)
+        eid    = _SLOT_EMOJI_IDS.get(slot, "")
+        char   = slot_emoji(slot)
         label  = slot_label(slot)
         eq_lvl = equipped_level(slot, user_data)
         ow_lvl = owned_level(slot, user_data)
+        slot_tg = f'<tg-emoji emoji-id="{eid}">{char}</tg-emoji>'
 
         if eq_lvl:
             item   = current_slot_item(slot, user_data)
@@ -2228,7 +2230,7 @@ def duel_equip_text(user_data: dict) -> str:
         else:
             status = '<i>пусто</i>'
 
-        lines.append(f'{emoji} <b>{label}:</b> {status}')
+        lines.append(f'{slot_tg} <b>{label}:</b> {status}')
 
     return (
         '<tg-emoji emoji-id="5445221832074483553">🎒</tg-emoji> <b>СНАРЯЖЕНИЕ</b>\n'
@@ -2344,13 +2346,15 @@ def duel_equip_slot_keyboard(slot: str, user_data: dict, page: int = 0) -> Inlin
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton(
-            text="◀️ Назад",
+            text="Назад",
             callback_data=f"duel_slot_page:{slot}:{page - 1}",
+            icon_custom_emoji_id="5255703720078879038",
         ))
     if page < total_pages - 1:
         nav.append(InlineKeyboardButton(
-            text="Вперёд ▶️",
+            text="Вперёд",
             callback_data=f"duel_slot_page:{slot}:{page + 1}",
+            icon_custom_emoji_id="5253767677670862169",
         ))
     if nav:
         builder.row(*nav)
@@ -2388,28 +2392,27 @@ def duel_item_card_text(item_key: str, user_data: dict) -> str:
         bonus_lines.append(f'  {emoji_s} <b>+{val}</b> {ru} <i>({unit})</i>')
     bonus_block = "\n".join(bonus_lines)
 
-    _R = '<tg-emoji emoji-id="{}">{}</tg-emoji> {}'  # helper
     if lvl <= 3:
-        rarity = _R.format("5789669816297019965", "⬜", "Обычный")
+        rarity = "⬜ Обычный"
     elif lvl <= 6:
-        rarity = _R.format("5789414690265419632", "🟩", "Необычный")
+        rarity = "🟩 Необычный"
     elif lvl <= 10:
-        rarity = _R.format("5789670003017783365", "🟦", "Редкий")
+        rarity = "🟦 Редкий"
     elif lvl <= 14:
-        rarity = _R.format("5789670748385636682", "🟪", "Эпический")
+        rarity = "🟪 Эпический"
     elif lvl <= 18:
-        rarity = _R.format("5789670748385636682", "🟧", "Легендарный")
+        rarity = "🟧 Легендарный"
     elif lvl <= 21:
-        rarity = _R.format("5789670748385636682", "🟥", "Мифический")
+        rarity = "🟥 Мифический"
     elif lvl <= 23:
-        rarity = _R.format("5789670748385636682", "🔶", "Древний")
+        rarity = "🔶 Древний"
     elif lvl <= 24:
-        rarity = _R.format("5789670748385636682", "💠", "Реликвийный")
+        rarity = "💠 Реликвийный"
     else:
-        rarity = _R.format("5789670748385636682", "👑", "Абсолютный")
+        rarity = "👑 Абсолютный"
 
     return (
-        f'{item["emoji_char"]} <b>{item["name"]}</b>\n'
+        f'<tg-emoji emoji-id="{item["emoji_id"]}">{item["emoji_char"]}</tg-emoji> <b>{item["name"]}</b>\n'
         f'<i>{item["ru_name"]}</i>  {rarity}\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>{item["description"]}</blockquote>\n\n'
