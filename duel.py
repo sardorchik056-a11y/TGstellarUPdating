@@ -2314,6 +2314,7 @@ def duel_main_text() -> str:
         '<b><i>Испытай себя в бою один на один.\n'
         'Собери снаряжение для защиты, купи навыки для урона\n'
         'и докажи, кто сильнейший в TGStellar!</i></b>\n\n'
+        '</blockquote>'
     )
 
 def duel_main_keyboard() -> InlineKeyboardMarkup:
