@@ -2143,33 +2143,40 @@ def duel_skills_shop_keyboard(user_data: dict, page: int = 0) -> InlineKeyboardM
     builder = InlineKeyboardBuilder()
 
     for sk_key in items:
-        sk      = SKILLS[sk_key]
+        sk       = SKILLS[sk_key]
         is_equip = sk_key in equipped_skills
         is_owned = sk_key in owned_skills
+        eid      = sk.get("emoji_id")
 
         if is_equip:
             kw = dict(
-                text=f"{sk['emoji']} {sk['name']}",
+                text=sk["name"],
                 callback_data=f"duel_skill_card:{sk_key}:{page}",
                 style="success",
-                icon_custom_emoji_id="5206607081334906820",
+                icon_custom_emoji_id=eid or "5206607081334906820",
             )
         elif is_owned:
             kw = dict(
-                text=f"{sk['emoji']} {sk['name']}",
+                text=sk["name"],
                 callback_data=f"duel_skill_card:{sk_key}:{page}",
                 style="success",
             )
+            if eid:
+                kw["icon_custom_emoji_id"] = eid
         elif balance >= sk["price"]:
             kw = dict(
-                text=f"{sk['emoji']} {sk['name']} | {_fmt(sk['price'])}",
+                text=f"{sk['name']} | {_fmt(sk['price'])}",
                 callback_data=f"duel_skill_card:{sk_key}:{page}",
             )
+            if eid:
+                kw["icon_custom_emoji_id"] = eid
         else:
             kw = dict(
-                text=f"{sk['emoji']} {sk['name']} | {_fmt(sk['price'])}",
+                text=f"{sk['name']} | {_fmt(sk['price'])}",
                 callback_data=f"duel_skill_card:{sk_key}:{page}",
             )
+            if eid:
+                kw["icon_custom_emoji_id"] = eid
 
         builder.row(InlineKeyboardButton(**kw))
 
