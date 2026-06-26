@@ -3740,7 +3740,16 @@ async def handle_callback(call: CallbackQuery):
         if cd.startswith("duel_equip_slot:"):
             slot_key = cd.split(":", 1)[1]
             await call.answer()
-            await edit(duel_equip_slot_text(slot_key, data), duel_equip_slot_keyboard(slot_key, data))
+            await edit(duel_equip_slot_text(slot_key, data, 0), duel_equip_slot_keyboard(slot_key, data, 0))
+            return
+
+        # ===== ДУЭЛИ: пагинация уровней слота =====
+        if cd.startswith("duel_slot_page:"):
+            parts    = cd.split(":", 2)
+            slot_key = parts[1]
+            page     = int(parts[2])
+            await call.answer()
+            await edit(duel_equip_slot_text(slot_key, data, page), duel_equip_slot_keyboard(slot_key, data, page))
             return
 
         # ===== ДУЭЛИ: карточка предмета (отдельное окно) =====
