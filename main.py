@@ -2108,7 +2108,8 @@ async def handle_captcha_answer(message: Message):
         )
         return
 
-
+    # ── Ожидание ввода суммы для вклада ──
+    if uid in _cdl_input_pending:
         dep_key  = _cdl_input_pending.pop(uid)   # сразу сбрасываем — больше не ждём
         msg_info = _cdl_input_msg.pop(uid, None)
         raw = (message.text or "").strip().replace(" ", "").replace("_", "")
