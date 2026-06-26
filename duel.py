@@ -2689,10 +2689,10 @@ def duel_skills_text(user_data: dict = None) -> str:
     return (
         f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>БОЕВЫЕ НАВЫКИ</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote expandable>{quote}</blockquote>\n\n'
+        f'<blockquote expandable><b><i>{quote}</i></b></blockquote>\n\n'
         f'<b>Экипировано:</b>\n'
-        f'{slot_lines}\n'
-        f'<i>💡 Экипируй до {MAX_EQUIPPED_SKILLS} навыков — только они доступны в бою!</i>'
+        f'<blockquote>{slot_lines}</blockquote>\n'
+        f'<i><tg-emoji emoji-id="5334544901428229844">✨</tg-emoji> Экипируй до {MAX_EQUIPPED_SKILLS} навыков — только они доступны в бою!</i>'
     )
 
 def duel_skills_keyboard() -> InlineKeyboardMarkup:
