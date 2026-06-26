@@ -2672,31 +2672,29 @@ def duel_charstats_keyboard() -> InlineKeyboardMarkup:
 # ── Экран навыков (обзор + ссылка в магазин) ─────────────────
 
 def duel_skills_text(user_data: dict = None) -> str:
-    total_count = len(SKILLS)
     quote = _random.choice(_DUEL_SHOP_QUOTES)
 
-    equip_block = ""
-    if user_data:
-        equipped = get_equipped_skills(user_data)
-        if equipped:
-            names = " / ".join(_skill_emoji(SKILLS[k]) + " " + SKILLS[k]["name"] for k in equipped if k in SKILLS)
-            equip_block = (
-                f"\n\n<blockquote>⚔️ <b>В бою ({len(equipped)}/{MAX_EQUIPPED_SKILLS}):</b> {names}</blockquote>"
-            )
+    # Формируем строки слотов экипировки (всегда 5 слотов)
+    equipped = get_equipped_skills(user_data) if user_data else []
+    slot_lines = ""
+    for i in range(MAX_EQUIPPED_SKILLS):
+        if i < len(equipped):
+            k = equipped[i]
+            if k in SKILLS:
+                skill = SKILLS[k]
+                slot_lines += f"{_skill_emoji(skill)} <b>{skill['name']}</b>\n"
+            else:
+                slot_lines += f"▫️ <i>пусто</i>\n"
         else:
-            equip_block = (
-                f"\n\n<blockquote>⚠️ <b>Ни один навык не экипирован!</b>\n"
-                f"Зайди в магазин и экипируй до {MAX_EQUIPPED_SKILLS} навыков.</blockquote>"
-            )
+            slot_lines += f"▫️ <i>пусто</i>\n"
 
     return (
         f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>БОЕВЫЕ НАВЫКИ</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote expandable>{quote}</blockquote>\n\n'
-        f'<blockquote>🛒 В магазине <b>{total_count} навыков</b> — базовые открыты сразу,\n'
-        f'остальные покупаются за монеты.\n\n'
-        f'💡 <i>Экипируй до {MAX_EQUIPPED_SKILLS} навыков — только они доступны в бою!</i></blockquote>'
-        f'{equip_block}'
+        f'<b>Экипировано:</b>\n'
+        f'{slot_lines}\n'
+        f'<i>💡 Экипируй до {MAX_EQUIPPED_SKILLS} навыков — только они доступны в бою!</i>'
     )
 
 def duel_skills_keyboard() -> InlineKeyboardMarkup:
