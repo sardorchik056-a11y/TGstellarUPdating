@@ -2818,3 +2818,69 @@ def duel_back_keyboard() -> InlineKeyboardMarkup:
         icon_custom_emoji_id=EMOJI_BACK,
     ))
     return builder.as_markup()
+
+
+# ════════════════════════════════════════════════════════════
+#  БЫСТРЫЕ КОМАНДЫ ДУЭЛИ
+#  Все алиасы работают со слешем и без, на RU и EN.
+#  Логика вызова команд — здесь, в main.py только регистрация.
+# ════════════════════════════════════════════════════════════
+
+# Алиасы → целевой раздел
+DUEL_CMD_EQUIP  = frozenset(["дуэли-duel-екип", "снаряжение", "снар", "equip", "gear", "duel-equip"])
+DUEL_CMD_SKILLS = frozenset(["нвык", "навыки", "skills", "skill", "умения"])
+DUEL_CMD_INVITE = frozenset(["вз", "вызов", "challenge", "invite", "duel"])
+
+def _normalize_cmd(text: str) -> str:
+    """Убирает слеш, пробелы, переводит в нижний регистр."""
+    return text.strip().lstrip("/").lower().split()[0]
+
+def is_duel_equip_cmd(text: str) -> bool:
+    return _normalize_cmd(text) in DUEL_CMD_EQUIP
+
+def is_duel_skills_cmd(text: str) -> bool:
+    return _normalize_cmd(text) in DUEL_CMD_SKILLS
+
+def is_duel_invite_cmd(text: str) -> bool:
+    return _normalize_cmd(text) in DUEL_CMD_INVITE
+
+def is_any_duel_cmd(text: str) -> bool:
+    return is_duel_equip_cmd(text) or is_duel_skills_cmd(text) or is_duel_invite_cmd(text)
+
+
+# ── Тексты ошибок/помощи ────────────────────────────────────
+
+def cmd_no_hp_text(hp_now: int, secs: int) -> str:
+    return (
+        f'⚠️ <b>HP слишком низкий!</b>\n\n'
+        f'<blockquote>Твоё HP: <b>{hp_now}/100</b>\n'
+        f'Восстановится через <b>{secs} сек.</b>\n'
+        f'<i>Нельзя начать бой пока HP &lt; 100</i></blockquote>'
+    )
+
+def cmd_already_in_battle_text() -> str:
+    return '⚔️ <b>Ты уже находишься в бою!</b>'
+
+def cmd_invite_usage_text() -> str:
+    return (
+        f'<tg-emoji emoji-id="{EMOJI_INVITE}">⚔️</tg-emoji> <b>БРОСИТЬ ВЫЗОВ</b>\n'
+        '━━━━━━━━━━━━━━━━━━━━\n\n'
+        '<blockquote>'
+        'Ответь на сообщение игрока командой <b>вз</b> (или <b>challenge</b>),\n'
+        'чтобы бросить ему вызов.\n\n'
+        'Или напиши: <code>вз @username</code> / <code>вз 123456789</code>\n\n'
+        '⏳ <i>Вызов действует 2 минуты.</i>'
+        '</blockquote>'
+    )
+
+def cmd_invite_self_text() -> str:
+    return '❌ <b>Нельзя вызвать самого себя!</b>'
+
+def cmd_invite_not_found_text() -> str:
+    return '❌ <b>Игрок не найден.</b> Он должен хотя бы раз написать боту.'
+
+def cmd_invite_in_battle_text() -> str:
+    return '❌ <b>Этот игрок уже находится в бою.</b>'
+
+def cmd_invite_blocked_text(name: str) -> str:
+    return f'❌ Не удалось отправить уведомление <b>{name}</b> — возможно бот заблокирован.'
