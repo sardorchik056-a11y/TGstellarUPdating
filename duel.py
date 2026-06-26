@@ -1802,17 +1802,33 @@ def challenge_invite_keyboard(challenger_uid: int) -> InlineKeyboardMarkup:
 _match_queue: dict[int, tuple] = {}
 
 
+def _calc_power(user_data: dict) -> int:
+    """Суммарная «сила» игрока для матчмейкинга."""
+    s = _calc_stats(user_data)
+    return s["hp"] + s["phys_def"] * 3 + s["mag_def"] * 3 + s["stamina"] * 2
+
+
 def join_queue(uid: int, user_data: dict) -> dict | None:
     now = int(time.time())
     stale = [k for k, (ts, _) in _match_queue.items() if now - ts > 120]
     for k in stale:
         _match_queue.pop(k, None)
 
+    my_power = _calc_power(user_data)
+
     for opponent_uid, (ts, opp_data) in list(_match_queue.items()):
         if opponent_uid == uid:
             continue
+        opp_power = _calc_power(opp_data)
+        # Пропускаем если кто-то сильнее другого более чем на 25%
+        stronger = max(my_power, opp_power)
+        weaker   = min(my_power, opp_power)
+        if weaker > 0 and (stronger / weaker) > 1.25:
+            continue
         _match_queue.pop(opponent_uid, None)
         battle = _create_battle(uid, user_data, opponent_uid, opp_data)
+        battle["p1_skills"] = get_equipped_skills(user_data) or SKILLS_ORDER_BASE
+        battle["p2_skills"] = get_equipped_skills(opp_data) or SKILLS_ORDER_BASE
         return battle
 
     _match_queue[uid] = (now, user_data)
@@ -2098,12 +2114,11 @@ def battle_keyboard(battle: dict, uid: int) -> InlineKeyboardMarkup:
             continue
         ready_at = cooldowns.get(skill_key, 0)
         left = ready_at - now
-        if left > 0:
-            btn_text = f"{sk['emoji']} {sk['name']} ⏳{left}с"
-        else:
-            btn_text = f"{sk['emoji']} {sk['name']}"
-        btn_kw = dict(text=btn_text, callback_data=f"duel_skill:{skill_key}")
         eid = sk.get("emoji_id")
+        # Если есть кастомный эмодзи — убираем обычный из текста
+        name_part = sk["name"] if eid else f"{sk['emoji']} {sk['name']}"
+        btn_text = f"{name_part} ⏳{left}с" if left > 0 else name_part
+        btn_kw = dict(text=btn_text, callback_data=f"duel_skill:{skill_key}")
         if eid:
             btn_kw["icon_custom_emoji_id"] = eid
         skill_buttons.append(InlineKeyboardButton(**btn_kw))
