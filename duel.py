@@ -2530,6 +2530,7 @@ def duel_charstats_keyboard() -> InlineKeyboardMarkup:
 
 def duel_skills_text(user_data: dict = None) -> str:
     total_count = len(SKILLS)
+    quote = _random.choice(_DUEL_SHOP_QUOTES)
 
     equip_block = ""
     if user_data:
@@ -2548,6 +2549,7 @@ def duel_skills_text(user_data: dict = None) -> str:
     return (
         f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>БОЕВЫЕ НАВЫКИ</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote expandable>{quote}</blockquote>\n\n'
         f'<blockquote>🛒 В магазине <b>{total_count} навыков</b> — базовые открыты сразу,\n'
         f'остальные покупаются за монеты.\n\n'
         f'💡 <i>Экипируй до {MAX_EQUIPPED_SKILLS} навыков — только они доступны в бою!</i></blockquote>'
