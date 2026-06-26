@@ -1210,6 +1210,7 @@ SKILLS = {
         "key": "blade_storm",
         "name": "Вихрь",
         "emoji": "🌪️",
+        "emoji_id": "5220181540222291016",
         "type": "physical",
         "cooldown": 26,
         "base_dmg": (38, 55),
@@ -1220,6 +1221,7 @@ SKILLS = {
         "key": "inferno",
         "name": "Инферно",
         "emoji": "🔥",
+        "emoji_id": "5256047523620995497",
         "type": "magic",
         "cooldown": 28,
         "base_dmg": (40, 60),
@@ -1230,6 +1232,7 @@ SKILLS = {
         "key": "war_cry",
         "name": "Боевой Клич",
         "emoji": "📣",
+        "emoji_id": "5462921117423384478",
         "type": "physical",
         "cooldown": 30,
         "base_dmg": (42, 60),
@@ -1240,6 +1243,7 @@ SKILLS = {
         "key": "freeze",
         "name": "Заморозка",
         "emoji": "❄️",
+        "emoji_id": "5449449325434266744",
         "type": "magic",
         "cooldown": 30,
         "base_dmg": (15, 22),
@@ -1251,6 +1255,7 @@ SKILLS = {
         "key": "earthquake",
         "name": "Землетрясение",
         "emoji": "🌍",
+        "emoji_id": "5361662921208254475",
         "type": "physical",
         "cooldown": 32,
         "base_dmg": (45, 65),
@@ -1261,6 +1266,7 @@ SKILLS = {
         "key": "berserker",
         "name": "Берсерк",
         "emoji": "🔴",
+        "emoji_id": "5463335865235288297",
         "type": "physical",
         "cooldown": 35,
         "base_dmg": (55, 80),
@@ -1271,6 +1277,7 @@ SKILLS = {
         "key": "mega_shield",
         "name": "Щит Цитадели",
         "emoji": "🔰",
+        "emoji_id": "5251203410396458957",
         "type": "shield",
         "cooldown": 40,
         "shield_amount": (50, 80),
@@ -1281,6 +1288,7 @@ SKILLS = {
         "key": "soul_drain",
         "name": "Жизнекрад",
         "emoji": "💜",
+        "emoji_id": "5343545593807521643",
         "type": "magic",
         "cooldown": 45,
         "base_dmg": (50, 75),
@@ -1292,6 +1300,7 @@ SKILLS = {
         "key": "void_blast",
         "name": "Разрыв Бездны",
         "emoji": "🌀",
+        "emoji_id": "5267114941378209946",
         "type": "magic",
         "cooldown": 40,
         "base_dmg": (60, 90),
@@ -1302,6 +1311,7 @@ SKILLS = {
         "key": "titan_slam",
         "name": "Титан",
         "emoji": "⚒️",
+        "emoji_id": "5235917510120861097",
         "type": "physical",
         "cooldown": 42,
         "base_dmg": (62, 88),
@@ -1312,6 +1322,7 @@ SKILLS = {
         "key": "meteor",
         "name": "Метеор",
         "emoji": "☄️",
+        "emoji_id": "6001590126071779800",
         "type": "magic",
         "cooldown": 50,
         "base_dmg": (70, 100),
@@ -1322,6 +1333,7 @@ SKILLS = {
         "key": "dark_nova",
         "name": "Тёмный Взрыв",
         "emoji": "🖤",
+        "emoji_id": "5204470073112146941",
         "type": "magic",
         "cooldown": 55,
         "base_dmg": (80, 115),
@@ -1332,6 +1344,7 @@ SKILLS = {
         "key": "divine_wrath",
         "name": "Небесная Кара",
         "emoji": "⚜️",
+        "emoji_id": "6332360083116132292",
         "type": "magic",
         "cooldown": 60,
         "base_dmg": (90, 130),
@@ -1344,6 +1357,7 @@ SKILLS = {
         "key": "bloodlust",
         "name": "Жажда Крови",
         "emoji": "🩸",
+        "emoji_id": "5269535069550162819",
         "type": "physical",
         "cooldown": 28,
         "base_dmg": (44, 63),
@@ -1355,6 +1369,7 @@ SKILLS = {
         "key": "storm_eye",
         "name": "Око Бури",
         "emoji": "🌊",
+        "emoji_id": "5249454534073276043",
         "type": "magic",
         "cooldown": 33,
         "base_dmg": (48, 70),
@@ -1365,6 +1380,7 @@ SKILLS = {
         "key": "obsidian_edge",
         "name": "Тёмный Клинок",
         "emoji": "🗡️",
+        "emoji_id": "5449883370534238228",
         "type": "physical",
         "cooldown": 19,
         "base_dmg": (30, 45),
@@ -1375,6 +1391,7 @@ SKILLS = {
         "key": "echo_blast",
         "name": "Ударная Волна",
         "emoji": "🔊",
+        "emoji_id": "5818973781707722673",
         "type": "physical",
         "cooldown": 36,
         "base_dmg": (52, 74),
@@ -1385,6 +1402,7 @@ SKILLS = {
         "key": "abyss_call",
         "name": "Зов Бездны",
         "emoji": "🕳️",
+        "emoji_id": "5206523956537865948",
         "type": "magic",
         "cooldown": 48,
         "base_dmg": (65, 95),
@@ -1396,6 +1414,7 @@ SKILLS = {
         "key": "runic_fortress",
         "name": "Рунический Щит",
         "emoji": "🏰",
+        "emoji_id": "6111804548869787620",
         "type": "shield",
         "cooldown": 55,
         "shield_amount": (80, 120),
@@ -1406,6 +1425,7 @@ SKILLS = {
         "key": "solar_lance",
         "name": "Солнечное Копьё",
         "emoji": "☀️",
+        "emoji_id": "5402477260982731644",
         "type": "magic",
         "cooldown": 38,
         "base_dmg": (57, 82),
@@ -1416,6 +1436,14 @@ SKILLS = {
 
 SKILLS_ORDER_BASE = ["mag_ball", "explosion", "shield"]
 SKILLS_ORDER = list(SKILLS.keys())
+
+
+def _skill_emoji(sk: dict) -> str:
+    """Возвращает <tg-emoji> если есть emoji_id, иначе обычный emoji."""
+    eid = sk.get("emoji_id")
+    if eid:
+        return f'<tg-emoji emoji-id="{eid}">{sk["emoji"]}</tg-emoji>'
+    return sk["emoji"]
 
 # Максимум навыков в бою
 MAX_EQUIPPED_SKILLS = 5
@@ -1503,7 +1531,7 @@ def duel_skill_card_text(skill_key: str, user_data: dict) -> str:
     slot_info = f'{len(equipped)}/{MAX_EQUIPPED_SKILLS} навыков экипировано'
 
     return (
-        f'{"<tg-emoji emoji-id=\"" + sk["emoji_id"] + "\">" + sk["emoji"] + "</tg-emoji>" if sk.get("emoji_id") else sk["emoji"]} <b>{sk["name"]}</b>\n'
+        f'{_skill_emoji(sk)} <b>{sk["name"]}</b>\n'
         f'<i>{type_label} · ⏳ Перезарядка: {sk["cooldown"]} сек.</i>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>{sk["description"]}</blockquote>\n\n'
@@ -1896,11 +1924,12 @@ def battle_use_skill(battle: dict, uid: int, skill_key: str) -> tuple:
     result = _calc_skill_damage(skill_key, my_stats, foe_stats)
     effect_msg = ""
 
+    sk_emoji = _skill_emoji(sk)
     if sk["type"] == "shield":
         sh = result["shield"]
         battle[f"{me}_shield"] = sh
         effect_msg = f"🛡️ Щит {sh} HP"
-        log_entry = f"{battle[f'{me}_name']}: {sk['emoji']} {sk['name']} → {effect_msg}"
+        log_entry = f"{battle[f'{me}_name']}: {sk_emoji} {sk['name']} → {effect_msg}"
     else:
         raw_dmg = result["dmg"]
         foe_shield = battle.get(f"{foe}_shield", 0)
@@ -1925,7 +1954,7 @@ def battle_use_skill(battle: dict, uid: int, skill_key: str) -> tuple:
             effect_msg += f" 💜+{drain}HP"
 
         log_entry = (
-            f"{battle[f'{me}_name']}: {sk['emoji']} {sk['name']} "
+            f"{battle[f'{me}_name']}: {sk_emoji} {sk['name']} "
             f"→ -{raw_dmg} HP{effect_msg}"
         )
 
@@ -2066,10 +2095,11 @@ def battle_keyboard(battle: dict, uid: int) -> InlineKeyboardMarkup:
             btn_text = f"{sk['emoji']} {sk['name']} ⏳{left}с"
         else:
             btn_text = f"{sk['emoji']} {sk['name']}"
-        skill_buttons.append(InlineKeyboardButton(
-            text=btn_text,
-            callback_data=f"duel_skill:{skill_key}"
-        ))
+        btn_kw = dict(text=btn_text, callback_data=f"duel_skill:{skill_key}")
+        eid = sk.get("emoji_id")
+        if eid:
+            btn_kw["icon_custom_emoji_id"] = eid
+        skill_buttons.append(InlineKeyboardButton(**btn_kw))
 
     # Раскладка: по 2 в ряд
     for i in range(0, len(skill_buttons), 2):
@@ -2627,7 +2657,7 @@ def duel_skills_text(user_data: dict = None) -> str:
     if user_data:
         equipped = get_equipped_skills(user_data)
         if equipped:
-            names = " / ".join(SKILLS[k]["emoji"] + " " + SKILLS[k]["name"] for k in equipped if k in SKILLS)
+            names = " / ".join(_skill_emoji(SKILLS[k]) + " " + SKILLS[k]["name"] for k in equipped if k in SKILLS)
             equip_block = (
                 f"\n\n<blockquote>⚔️ <b>В бою ({len(equipped)}/{MAX_EQUIPPED_SKILLS}):</b> {names}</blockquote>"
             )
