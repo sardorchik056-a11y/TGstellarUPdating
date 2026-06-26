@@ -1097,7 +1097,8 @@ SKILLS = {
     "mag_ball": {
         "key": "mag_ball",
         "name": "Искра Хаоса",
-        "emoji": "🔵",
+        "emoji": "🔵"
+        "emoji_id": "5222108309795908493",,
         "type": "magic",
         "cooldown": 15,
         "base_dmg": (18, 28),
@@ -1107,7 +1108,8 @@ SKILLS = {
     "explosion": {
         "key": "explosion",
         "name": "Удар",
-        "emoji": "💥",
+        "emoji": "💥"
+        "emoji_id": "5231406626228948265",,
         "type": "physical",
         "cooldown": 18,
         "base_dmg": (22, 35),
@@ -1117,7 +1119,8 @@ SKILLS = {
     "shield": {
         "key": "shield",
         "name": "Барьер",
-        "emoji": "🛡️",
+        "emoji": "🛡️"
+        "emoji_id": "5465154440287757794",,
         "type": "shield",
         "cooldown": 25,
         "shield_amount": (20, 35),
@@ -1129,7 +1132,8 @@ SKILLS = {
     "iron_fist": {
         "key": "iron_fist",
         "name": "Стальной Кулак",
-        "emoji": "✊",
+        "emoji": "✊"
+        "emoji_id": "5458465612839792700",,
         "type": "physical",
         "cooldown": 14,
         "base_dmg": (24, 36),
@@ -1139,7 +1143,8 @@ SKILLS = {
     "mag_block": {
         "key": "mag_block",
         "name": "Астральный Удар",
-        "emoji": "🟣",
+        "emoji": "🟣"
+        "emoji_id": "5226893221191237996",,
         "type": "magic",
         "cooldown": 20,
         "base_dmg": (30, 48),
@@ -1149,7 +1154,8 @@ SKILLS = {
     "arcane_surge": {
         "key": "arcane_surge",
         "name": "Арканный Удар",
-        "emoji": "✨",
+        "emoji": "✨"
+        "emoji_id": "5337037846475720165",,
         "type": "magic",
         "cooldown": 18,
         "base_dmg": (26, 40),
@@ -1159,7 +1165,8 @@ SKILLS = {
     "shadow_strike": {
         "key": "shadow_strike",
         "name": "Тьма",
-        "emoji": "🌑",
+        "emoji": "🌑"
+        "emoji_id": "5335072469441078225",,
         "type": "physical",
         "cooldown": 16,
         "base_dmg": (28, 42),
@@ -1169,7 +1176,8 @@ SKILLS = {
     "poison_dart": {
         "key": "poison_dart",
         "name": "Яд",
-        "emoji": "🧪",
+        "emoji": "🧪"
+        "emoji_id": "5899831875404304784",,
         "type": "magic",
         "cooldown": 20,
         "base_dmg": (20, 30),
@@ -1179,7 +1187,8 @@ SKILLS = {
     "thunder": {
         "key": "thunder",
         "name": "Гром",
-        "emoji": "⚡",
+        "emoji": "⚡"
+        "emoji_id": "5307493878843059915",,
         "type": "magic",
         "cooldown": 22,
         "base_dmg": (35, 52),
@@ -1189,7 +1198,8 @@ SKILLS = {
     "chain_lightning": {
         "key": "chain_lightning",
         "name": "Молния",
-        "emoji": "🌩️",
+        "emoji": "🌩️"
+        "emoji_id": "5438571934210082705",,
         "type": "magic",
         "cooldown": 24,
         "base_dmg": (32, 48),
@@ -1493,7 +1503,7 @@ def duel_skill_card_text(skill_key: str, user_data: dict) -> str:
     slot_info = f'{len(equipped)}/{MAX_EQUIPPED_SKILLS} навыков экипировано'
 
     return (
-        f'{sk["emoji"]} <b>{sk["name"]}</b>\n'
+        f'{"<tg-emoji emoji-id=\"" + sk["emoji_id"] + "\">" + sk["emoji"] + "</tg-emoji>" if sk.get("emoji_id") else sk["emoji"]} <b>{sk["name"]}</b>\n'
         f'<i>{type_label} · ⏳ Перезарядка: {sk["cooldown"]} сек.</i>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>{sk["description"]}</blockquote>\n\n'
