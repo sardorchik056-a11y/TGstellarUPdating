@@ -2045,7 +2045,8 @@ def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
         f'━━━━━━━━━━━━━━━━━━━━\n'
         f'<i>Страница {page+1}/{total_pages} · ⚔️ в бою: {eq_count}/{MAX_EQUIPPED_SKILLS}</i>\n\n'
         f'<blockquote expandable>{quote}</blockquote>\n\n'
-        f'💰 Баланс: <b>{_fmt(balance)}</b> монет'
+        f'💰 Баланс: <b>{_fmt(balance)}</b> монет\n'
+        f'<i>Нажми навык — купи или экипируй в бой</i>'
     )
 
 
