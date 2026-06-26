@@ -2006,10 +2006,10 @@ SKILLS_SHOP_PAGE_SIZE = 5   # навыков на страницу
 
 
 def _skill_page_items(page: int) -> list:
-    """Возвращает навыки для страницы магазина (только платные)."""
-    paid = [k for k, v in SKILLS.items() if v["price"] > 0]
+    """Возвращает навыки для страницы магазина (базовые + платные)."""
+    all_keys = list(SKILLS.keys())
     start = page * SKILLS_SHOP_PAGE_SIZE
-    return paid[start:start + SKILLS_SHOP_PAGE_SIZE], len(paid)
+    return all_keys[start:start + SKILLS_SHOP_PAGE_SIZE], len(all_keys)
 
 
 import random as _random
@@ -2529,46 +2529,28 @@ def duel_charstats_keyboard() -> InlineKeyboardMarkup:
 # ── Экран навыков (обзор + ссылка в магазин) ─────────────────
 
 def duel_skills_text(user_data: dict = None) -> str:
-    base_lines = []
-    for sk_key in SKILLS_ORDER_BASE:
-        sk = SKILLS[sk_key]
-        base_lines.append(f"{sk['emoji']} <b>{sk['name']}</b> — <i>{sk['description']}</i>")
-    base_block = "\n".join(base_lines)
+    total_count = len(SKILLS)
 
-    paid_count = len([k for k, v in SKILLS.items() if v["price"] > 0])
-
-    # Экипированные навыки
     equip_block = ""
     if user_data:
         equipped = get_equipped_skills(user_data)
         if equipped:
-            eq_lines = []
-            for sk_key in equipped:
-                sk = SKILLS.get(sk_key)
-                if sk:
-                    if sk["type"] == "shield":
-                        val = f"щит {sk['shield_amount'][0]}–{sk['shield_amount'][1]} HP"
-                    else:
-                        val = f"урон {sk['base_dmg'][0]}–{sk['base_dmg'][1]}"
-                    eq_lines.append(f"⚔️ {sk['emoji']} <b>{sk['name']}</b> · {val}")
+            names = " / ".join(SKILLS[k]["emoji"] + " " + SKILLS[k]["name"] for k in equipped if k in SKILLS)
             equip_block = (
-                f"\n\n<blockquote><b>⚔️ Экипировано в бой ({len(equipped)}/{MAX_EQUIPPED_SKILLS}):</b>\n"
-                + "\n".join(eq_lines)
-                + "\n<i>Только эти навыки доступны в дуэли!</i></blockquote>"
+                f"\n\n<blockquote>⚔️ <b>В бою ({len(equipped)}/{MAX_EQUIPPED_SKILLS}):</b> {names}</blockquote>"
             )
         else:
             equip_block = (
-                f"\n\n<blockquote>⚠️ <b>Ни один навык не экипирован в бой!</b>\n"
-                f"Перейди в магазин и экипируй до {MAX_EQUIPPED_SKILLS} навыков.</blockquote>"
+                f"\n\n<blockquote>⚠️ <b>Ни один навык не экипирован!</b>\n"
+                f"Зайди в магазин и экипируй до {MAX_EQUIPPED_SKILLS} навыков.</blockquote>"
             )
 
     return (
         f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>БОЕВЫЕ НАВЫКИ</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote><b>🆓 Базовые навыки (бесплатно):</b>\n\n{base_block}</blockquote>\n\n'
-        f'<blockquote>🛒 <b>В магазине доступно ещё {paid_count} навыков</b>\n'
-        f'от слабых ударов до разрушительных ультимейтов!\n\n'
-        f'💡 <i>Экипируй до {MAX_EQUIPPED_SKILLS} навыков — именно они будут доступны в бою!</i></blockquote>'
+        f'<blockquote>🛒 В магазине <b>{total_count} навыков</b> — базовые открыты сразу,\n'
+        f'остальные покупаются за монеты.\n\n'
+        f'💡 <i>Экипируй до {MAX_EQUIPPED_SKILLS} навыков — только они доступны в бою!</i></blockquote>'
         f'{equip_block}'
     )
 
