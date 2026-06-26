@@ -45,7 +45,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 35_000,
         "description": "Грубо выкованный железный шлем. Надёжно прикрывает голову от первого удара.",
-        "bonus": {"hp": 10, "phys_def": 3},
+        "bonus": {"hp": 80, "phys_def": 20},
     },
     "helmet-lvl2": {
         "slot": "helmet", "level": 2, "key": "helmet-lvl2",
@@ -53,7 +53,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 65_000,
         "description": "Усиленный шлем с рунической вставкой. Рассеивает слабые магические атаки.",
-        "bonus": {"hp": 56, "phys_def": 14, "mag_def": 13},
+        "bonus": {"hp": 96, "phys_def": 24, "mag_def": 18, "stamina": 6},
     },
     "helmet-lvl3": {
         "slot": "helmet", "level": 3, "key": "helmet-lvl3",
@@ -61,7 +61,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 120_000,
         "description": "Закалённый шлем королевской гвардии с забралом из мифрила.",
-        "bonus": {"hp": 91, "phys_def": 22, "mag_def": 19, "stamina": 5},
+        "bonus": {"hp": 115, "phys_def": 29, "mag_def": 22, "stamina": 7},
     },
     "helmet-lvl4": {
         "slot": "helmet", "level": 4, "key": "helmet-lvl4",
@@ -69,7 +69,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 220_000,
         "description": "Реликвийный шлем с рунической гравировкой. Входящий урон частично поглощается барьером.",
-        "bonus": {"hp": 122, "phys_def": 29, "mag_def": 25, "stamina": 12},
+        "bonus": {"hp": 137, "phys_def": 35, "mag_def": 26, "stamina": 9},
     },
     "helmet-lvl5": {
         "slot": "helmet", "level": 5, "key": "helmet-lvl5",
@@ -77,7 +77,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 420_000,
         "description": "Артефакт эпохи Первых Воинов. Ни одна стрела не может поколебать носителя.",
-        "bonus": {"hp": 151, "phys_def": 36, "mag_def": 30, "stamina": 17},
+        "bonus": {"hp": 164, "phys_def": 42, "mag_def": 32, "stamina": 11},
     },
     "helmet-lvl6": {
         "slot": "helmet", "level": 6, "key": "helmet-lvl6",
@@ -85,7 +85,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 770_000,
         "description": "Шлем опытного воина, прошедшего сотни битв. Несёт следы многих поединков.",
-        "bonus": {"hp": 178, "phys_def": 42, "mag_def": 35, "stamina": 21},
+        "bonus": {"hp": 197, "phys_def": 51, "mag_def": 39, "stamina": 14},
     },
     "helmet-lvl7": {
         "slot": "helmet", "level": 7, "key": "helmet-lvl7",
@@ -93,7 +93,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 1_400_000,
         "description": "Латный шлем рыцаря с плюмажем из перьев феникса. Символ доблести.",
-        "bonus": {"hp": 205, "phys_def": 48, "mag_def": 40, "stamina": 25},
+        "bonus": {"hp": 235, "phys_def": 62, "mag_def": 47, "stamina": 17},
     },
     "helmet-lvl8": {
         "slot": "helmet", "level": 8, "key": "helmet-lvl8",
@@ -101,7 +101,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 2_700_000,
         "description": "Священный шлем паладина, освящённый в храме. Отражает тёмную магию.",
-        "bonus": {"hp": 230, "phys_def": 54, "mag_def": 44, "stamina": 29},
+        "bonus": {"hp": 282, "phys_def": 74, "mag_def": 56, "stamina": 20},
     },
     "helmet-lvl9": {
         "slot": "helmet", "level": 9, "key": "helmet-lvl9",
@@ -109,7 +109,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 5_000_000,
         "description": "Боевой шлем прославленного воителя. Видавший победы и поражения.",
-        "bonus": {"hp": 255, "phys_def": 60, "mag_def": 49, "stamina": 33},
+        "bonus": {"hp": 337, "phys_def": 90, "mag_def": 68, "stamina": 25},
     },
     "helmet-lvl10": {
         "slot": "helmet", "level": 10, "key": "helmet-lvl10",
@@ -117,7 +117,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 9_200_000,
         "description": "Шлем чемпиона арены. Украшен рунами побед над сильнейшими.",
-        "bonus": {"hp": 279, "phys_def": 66, "mag_def": 53, "stamina": 37},
+        "bonus": {"hp": 404, "phys_def": 108, "mag_def": 82, "stamina": 30},
     },
     "helmet-lvl11": {
         "slot": "helmet", "level": 11, "key": "helmet-lvl11",
@@ -125,7 +125,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 17_000_000,
         "description": "Шлем берсерка с рогами ледяного быка. Дарует ярость в бою.",
-        "bonus": {"hp": 303, "phys_def": 71, "mag_def": 57, "stamina": 40},
+        "bonus": {"hp": 483, "phys_def": 130, "mag_def": 99, "stamina": 37},
     },
     "helmet-lvl12": {
         "slot": "helmet", "level": 12, "key": "helmet-lvl12",
@@ -133,7 +133,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 32_000_000,
         "description": "Шлем ордена темпляров из освящённой стали. Непробиваем для нечисти.",
-        "bonus": {"hp": 326, "phys_def": 76, "mag_def": 61, "stamina": 44},
+        "bonus": {"hp": 579, "phys_def": 157, "mag_def": 120, "stamina": 45},
     },
     "helmet-lvl13": {
         "slot": "helmet", "level": 13, "key": "helmet-lvl13",
@@ -141,7 +141,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 59_000_000,
         "description": "Таинственный шлем из бездонных глубин. Поглощает тёмную энергию.",
-        "bonus": {"hp": 349, "phys_def": 82, "mag_def": 65, "stamina": 47},
+        "bonus": {"hp": 693, "phys_def": 190, "mag_def": 145, "stamina": 55},
     },
     "helmet-lvl14": {
         "slot": "helmet", "level": 14, "key": "helmet-lvl14",
@@ -149,7 +149,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 110_000_000,
         "description": "Шлем Повелителя армий. Золотая инкрустация скрывает мощнейшие руны.",
-        "bonus": {"hp": 371, "phys_def": 87, "mag_def": 69, "stamina": 51},
+        "bonus": {"hp": 829, "phys_def": 229, "mag_def": 175, "stamina": 67},
     },
     "helmet-lvl15": {
         "slot": "helmet", "level": 15, "key": "helmet-lvl15",
@@ -157,7 +157,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 200_000_000,
         "description": "Шлем завоевателя миров. Слава его обладателя гремит по всем землям.",
-        "bonus": {"hp": 393, "phys_def": 92, "mag_def": 73, "stamina": 54},
+        "bonus": {"hp": 993, "phys_def": 276, "mag_def": 211, "stamina": 82},
     },
     "helmet-lvl16": {
         "slot": "helmet", "level": 16, "key": "helmet-lvl16",
@@ -165,7 +165,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 380_000_000,
         "description": "Шлем элитной гвардии дракона. Чешуя дракона вплавлена в металл.",
-        "bonus": {"hp": 415, "phys_def": 97, "mag_def": 77, "stamina": 57},
+        "bonus": {"hp": 1189, "phys_def": 333, "mag_def": 255, "stamina": 100},
     },
     "helmet-lvl17": {
         "slot": "helmet", "level": 17, "key": "helmet-lvl17",
@@ -173,7 +173,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 700_000_000,
         "description": "Шлем великого арканиста. Фокусирует магическую энергию вокруг головы.",
-        "bonus": {"hp": 437, "phys_def": 102, "mag_def": 81, "stamina": 60},
+        "bonus": {"hp": 1423, "phys_def": 402, "mag_def": 309, "stamina": 122},
     },
     "helmet-lvl18": {
         "slot": "helmet", "level": 18, "key": "helmet-lvl18",
@@ -181,7 +181,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 1_300_000_000,
         "description": "Шлем воина, пережившего тысячелетия. Прочнее любого современного металла.",
-        "bonus": {"hp": 458, "phys_def": 107, "mag_def": 85, "stamina": 63},
+        "bonus": {"hp": 1703, "phys_def": 484, "mag_def": 373, "stamina": 148},
     },
     "helmet-lvl19": {
         "slot": "helmet", "level": 19, "key": "helmet-lvl19",
@@ -189,7 +189,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 2_400_000_000,
         "description": "Шлем законного правителя. Никто не смеет поднять руку на его обладателя.",
-        "bonus": {"hp": 479, "phys_def": 112, "mag_def": 88, "stamina": 66},
+        "bonus": {"hp": 2039, "phys_def": 584, "mag_def": 450, "stamina": 181},
     },
     "helmet-lvl20": {
         "slot": "helmet", "level": 20, "key": "helmet-lvl20",
@@ -197,7 +197,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 4_500_000_000,
         "description": "Шлем небесного воителя. Ниспослан богами избранному герою.",
-        "bonus": {"hp": 499, "phys_def": 117, "mag_def": 92, "stamina": 70},
+        "bonus": {"hp": 2441, "phys_def": 705, "mag_def": 544, "stamina": 221},
     },
     "helmet-lvl21": {
         "slot": "helmet", "level": 21, "key": "helmet-lvl21",
@@ -205,7 +205,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 8_400_000_000,
         "description": "Шлем из кости Первородного Титана. Тяжелее горы, прочнее скалы.",
-        "bonus": {"hp": 520, "phys_def": 121, "mag_def": 96, "stamina": 73},
+        "bonus": {"hp": 2922, "phys_def": 850, "mag_def": 657, "stamina": 270},
     },
     "helmet-lvl22": {
         "slot": "helmet", "level": 22, "key": "helmet-lvl22",
@@ -213,7 +213,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 16_000_000_000,
         "description": "Астральный шлем, соткан из звёздного металла. Защищает даже душу.",
-        "bonus": {"hp": 540, "phys_def": 126, "mag_def": 99, "stamina": 76},
+        "bonus": {"hp": 3498, "phys_def": 1026, "mag_def": 794, "stamina": 330},
     },
     "helmet-lvl23": {
         "slot": "helmet", "level": 23, "key": "helmet-lvl23",
@@ -221,7 +221,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 29_000_000_000,
         "description": "Шлем Первородного Воина — до него никто не выжил в тысяче дуэлей.",
-        "bonus": {"hp": 560, "phys_def": 131, "mag_def": 103, "stamina": 78},
+        "bonus": {"hp": 4187, "phys_def": 1237, "mag_def": 959, "stamina": 403},
     },
     "helmet-lvl24": {
         "slot": "helmet", "level": 24, "key": "helmet-lvl24",
@@ -229,7 +229,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 54_000_000_000,
         "description": "Шлем Богоборца. Даже боги дрогнули перед его обладателем.",
-        "bonus": {"hp": 580, "phys_def": 135, "mag_def": 106, "stamina": 81},
+        "bonus": {"hp": 5012, "phys_def": 1492, "mag_def": 1159, "stamina": 491},
     },
     "helmet-lvl25": {
         "slot": "helmet", "level": 25, "key": "helmet-lvl25",
@@ -237,7 +237,7 @@ GEAR_CATALOG = {
         "slot_label": "Шлем", "emoji_char": "⛑️", "emoji_id": "5260546085251739109",
         "price": 100_000_000_000,
         "description": "Абсолютный артефакт. Вершина защиты, недостижимая смертными.",
-        "bonus": {"hp": 600, "phys_def": 140, "mag_def": 110, "stamina": 84},
+        "bonus": {"hp": 6000, "phys_def": 1800, "mag_def": 1400, "stamina": 600},
     },
 
     # ── БРОНЯ ────────────────────────────────────────
@@ -247,7 +247,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 40_000,
         "description": "Доспех из дублёной кожи. Лёгкий, не сковывает движений.",
-        "bonus": {"hp": 15, "phys_def": 5},
+        "bonus": {"hp": 120, "phys_def": 25},
     },
     "armor-lvl2": {
         "slot": "armor", "level": 2, "key": "armor-lvl2",
@@ -255,7 +255,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 74_000,
         "description": "Тысячи закалённых колец. Хорошо поглощает рубящие удары.",
-        "bonus": {"hp": 85, "phys_def": 19, "stamina": 5},
+        "bonus": {"hp": 143, "phys_def": 30, "stamina": 12, "mag_def": 10},
     },
     "armor-lvl3": {
         "slot": "armor", "level": 3, "key": "armor-lvl3",
@@ -263,7 +263,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 140_000,
         "description": "Боевые латы из стальных пластин. Сводят урон к минимуму.",
-        "bonus": {"hp": 136, "phys_def": 30, "stamina": 15},
+        "bonus": {"hp": 170, "phys_def": 36, "stamina": 14, "mag_def": 12},
     },
     "armor-lvl4": {
         "slot": "armor", "level": 4, "key": "armor-lvl4",
@@ -271,7 +271,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 260_000,
         "description": "Прочнейшие латы, выкованные в жерле вулкана тёмными кузнецами.",
-        "bonus": {"hp": 183, "phys_def": 39, "stamina": 22, "mag_def": 8},
+        "bonus": {"hp": 203, "phys_def": 44, "stamina": 17, "mag_def": 15},
     },
     "armor-lvl5": {
         "slot": "armor", "level": 5, "key": "armor-lvl5",
@@ -279,7 +279,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 480_000,
         "description": "Легендарный доспех. Выкован из металла упавшей звезды.",
-        "bonus": {"hp": 226, "phys_def": 48, "stamina": 29, "mag_def": 16},
+        "bonus": {"hp": 242, "phys_def": 53, "stamina": 21, "mag_def": 18},
     },
     "armor-lvl6": {
         "slot": "armor", "level": 6, "key": "armor-lvl6",
@@ -287,7 +287,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 890_000,
         "description": "Доспех ветерана, переживший сотни сражений. Каждая вмятина — история.",
-        "bonus": {"hp": 267, "phys_def": 56, "stamina": 35, "mag_def": 23},
+        "bonus": {"hp": 288, "phys_def": 64, "stamina": 25, "mag_def": 22},
     },
     "armor-lvl7": {
         "slot": "armor", "level": 7, "key": "armor-lvl7",
@@ -295,7 +295,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 1_700_000,
         "description": "Монолитный доспех, прочный как крепостная стена.",
-        "bonus": {"hp": 307, "phys_def": 64, "stamina": 41, "mag_def": 28},
+        "bonus": {"hp": 343, "phys_def": 77, "stamina": 30, "mag_def": 27},
     },
     "armor-lvl8": {
         "slot": "armor", "level": 8, "key": "armor-lvl8",
@@ -303,7 +303,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 3_100_000,
         "description": "Освящённые латы паладина. Тёмная сила отступает перед ними.",
-        "bonus": {"hp": 345, "phys_def": 72, "stamina": 46, "mag_def": 34},
+        "bonus": {"hp": 408, "phys_def": 92, "stamina": 36, "mag_def": 33},
     },
     "armor-lvl9": {
         "slot": "armor", "level": 9, "key": "armor-lvl9",
@@ -311,7 +311,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 5_800_000,
         "description": "Тяжёлые боевые латы великого воителя.",
-        "bonus": {"hp": 382, "phys_def": 80, "stamina": 52, "mag_def": 39},
+        "bonus": {"hp": 487, "phys_def": 111, "stamina": 43, "mag_def": 40},
     },
     "armor-lvl10": {
         "slot": "armor", "level": 10, "key": "armor-lvl10",
@@ -319,7 +319,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 11_000_000,
         "description": "Доспех чемпиона. Противники дрожат, видя его.",
-        "bonus": {"hp": 419, "phys_def": 87, "stamina": 57, "mag_def": 43},
+        "bonus": {"hp": 580, "phys_def": 134, "stamina": 52, "mag_def": 49},
     },
     "armor-lvl11": {
         "slot": "armor", "level": 11, "key": "armor-lvl11",
@@ -327,7 +327,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 20_000_000,
         "description": "Безумные латы берсерка. Впитали кровь тысяч врагов.",
-        "bonus": {"hp": 454, "phys_def": 94, "stamina": 62, "mag_def": 48},
+        "bonus": {"hp": 690, "phys_def": 161, "stamina": 62, "mag_def": 60},
     },
     "armor-lvl12": {
         "slot": "armor", "level": 12, "key": "armor-lvl12",
@@ -335,7 +335,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 37_000_000,
         "description": "Священные доспехи темпляров. Прочнее любых известных материалов.",
-        "bonus": {"hp": 489, "phys_def": 101, "stamina": 67, "mag_def": 52},
+        "bonus": {"hp": 823, "phys_def": 195, "stamina": 75, "mag_def": 73},
     },
     "armor-lvl13": {
         "slot": "armor", "level": 13, "key": "armor-lvl13",
@@ -343,7 +343,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 69_000_000,
         "description": "Тёмная броня стражей бездны. Поглощает тёмные проклятия.",
-        "bonus": {"hp": 523, "phys_def": 108, "stamina": 72, "mag_def": 57},
+        "bonus": {"hp": 980, "phys_def": 235, "stamina": 89, "mag_def": 89},
     },
     "armor-lvl14": {
         "slot": "armor", "level": 14, "key": "armor-lvl14",
@@ -351,7 +351,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 130_000_000,
         "description": "Золочёные латы Повелителя армий с магическим ядром.",
-        "bonus": {"hp": 557, "phys_def": 115, "stamina": 77, "mag_def": 61},
+        "bonus": {"hp": 1167, "phys_def": 283, "stamina": 107, "mag_def": 109},
     },
     "armor-lvl15": {
         "slot": "armor", "level": 15, "key": "armor-lvl15",
@@ -359,7 +359,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 240_000_000,
         "description": "Непробиваемые доспехи завоевателя. Выкованы из драконьей кости.",
-        "bonus": {"hp": 590, "phys_def": 122, "stamina": 82, "mag_def": 65},
+        "bonus": {"hp": 1390, "phys_def": 341, "stamina": 129, "mag_def": 134},
     },
     "armor-lvl16": {
         "slot": "armor", "level": 16, "key": "armor-lvl16",
@@ -367,7 +367,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 450_000_000,
         "description": "Чешуя Древнего Дракона — каждая пластина крепче стали.",
-        "bonus": {"hp": 623, "phys_def": 129, "stamina": 86, "mag_def": 69},
+        "bonus": {"hp": 1656, "phys_def": 410, "stamina": 155, "mag_def": 164},
     },
     "armor-lvl17": {
         "slot": "armor", "level": 17, "key": "armor-lvl17",
@@ -375,7 +375,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 830_000_000,
         "description": "Аркановые латы сотканы из застывшей магии. Меняют форму под удар.",
-        "bonus": {"hp": 655, "phys_def": 135, "stamina": 91, "mag_def": 74},
+        "bonus": {"hp": 1973, "phys_def": 495, "stamina": 186, "mag_def": 200},
     },
     "armor-lvl18": {
         "slot": "armor", "level": 18, "key": "armor-lvl18",
@@ -383,7 +383,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 1_500_000_000,
         "description": "Доспех, который не берут ни годы, ни оружие.",
-        "bonus": {"hp": 687, "phys_def": 142, "stamina": 95, "mag_def": 78},
+        "bonus": {"hp": 2350, "phys_def": 596, "stamina": 223, "mag_def": 245},
     },
     "armor-lvl19": {
         "slot": "armor", "level": 19, "key": "armor-lvl19",
@@ -391,7 +391,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 2_900_000_000,
         "description": "Парадные королевские латы со спрятанными зачарованиями.",
-        "bonus": {"hp": 718, "phys_def": 148, "stamina": 100, "mag_def": 81},
+        "bonus": {"hp": 2800, "phys_def": 718, "stamina": 267, "mag_def": 299},
     },
     "armor-lvl20": {
         "slot": "armor", "level": 20, "key": "armor-lvl20",
@@ -399,7 +399,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 5_400_000_000,
         "description": "Небесный доспех, откованный богами для избранного воина.",
-        "bonus": {"hp": 749, "phys_def": 154, "stamina": 104, "mag_def": 85},
+        "bonus": {"hp": 3335, "phys_def": 866, "stamina": 321, "mag_def": 366},
     },
     "armor-lvl21": {
         "slot": "armor", "level": 21, "key": "armor-lvl21",
@@ -407,7 +407,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 10_000_000_000,
         "description": "Кость первого Титана — вот из чего создан этот доспех.",
-        "bonus": {"hp": 780, "phys_def": 161, "stamina": 109, "mag_def": 89},
+        "bonus": {"hp": 3973, "phys_def": 1043, "stamina": 385, "mag_def": 447},
     },
     "armor-lvl22": {
         "slot": "armor", "level": 22, "key": "armor-lvl22",
@@ -415,7 +415,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 19_000_000_000,
         "description": "Астральные латы, закалённые в ткани самого пространства.",
-        "bonus": {"hp": 810, "phys_def": 167, "stamina": 113, "mag_def": 93},
+        "bonus": {"hp": 4733, "phys_def": 1257, "stamina": 463, "mag_def": 547},
     },
     "armor-lvl23": {
         "slot": "armor", "level": 23, "key": "armor-lvl23",
@@ -423,7 +423,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 35_000_000_000,
         "description": "Броня Первородного: выдержала удар самой Смерти.",
-        "bonus": {"hp": 840, "phys_def": 173, "stamina": 117, "mag_def": 97},
+        "bonus": {"hp": 5638, "phys_def": 1515, "stamina": 555, "mag_def": 669},
     },
     "armor-lvl24": {
         "slot": "armor", "level": 24, "key": "armor-lvl24",
@@ -431,7 +431,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 64_000_000_000,
         "description": "Доспех Богоборца. Ни один бог не пробил его.",
-        "bonus": {"hp": 870, "phys_def": 179, "stamina": 122, "mag_def": 100},
+        "bonus": {"hp": 6716, "phys_def": 1826, "stamina": 666, "mag_def": 818},
     },
     "armor-lvl25": {
         "slot": "armor", "level": 25, "key": "armor-lvl25",
@@ -439,7 +439,7 @@ GEAR_CATALOG = {
         "slot_label": "Броня", "emoji_char": "🛡️", "emoji_id": "5454168390685965478",
         "price": 120_000_000_000,
         "description": "Абсолютная броня. Конец и вершина любой защиты.",
-        "bonus": {"hp": 900, "phys_def": 185, "stamina": 126, "mag_def": 104},
+        "bonus": {"hp": 8000, "phys_def": 2200, "stamina": 800, "mag_def": 1000},
     },
 
     # ── ПЕРЧАТКИ ────────────────────────────────────────
@@ -449,7 +449,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 80_000,
         "description": "Кожаные рукавицы с наклёпками. Защищают кулаки.",
-        "bonus": {"stamina": 5, "phys_def": 2},
+        "bonus": {"hp": 60, "phys_def": 30},
     },
     "gloves-lvl2": {
         "slot": "gloves", "level": 2, "key": "gloves-lvl2",
@@ -457,7 +457,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 150_000,
         "description": "Рукавицы с металлическими пластинами. Усиливают хват оружия.",
-        "bonus": {"stamina": 23, "phys_def": 10},
+        "bonus": {"hp": 72, "phys_def": 36, "mag_def": 24, "stamina": 10, "regen": 6},
     },
     "gloves-lvl3": {
         "slot": "gloves", "level": 3, "key": "gloves-lvl3",
@@ -465,7 +465,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 270_000,
         "description": "Боевые наручи с выдвижными шипами. Оружие теневых воинов.",
-        "bonus": {"stamina": 36, "phys_def": 15, "mag_def": 3},
+        "bonus": {"hp": 87, "phys_def": 44, "mag_def": 29, "stamina": 12, "regen": 7},
     },
     "gloves-lvl4": {
         "slot": "gloves", "level": 4, "key": "gloves-lvl4",
@@ -473,7 +473,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 490_000,
         "description": "Зачарованные наручи элитных убийц гильдии Алой Тени.",
-        "bonus": {"stamina": 48, "phys_def": 21, "mag_def": 9},
+        "bonus": {"hp": 104, "phys_def": 52, "mag_def": 35, "stamina": 14, "regen": 9},
     },
     "gloves-lvl5": {
         "slot": "gloves", "level": 5, "key": "gloves-lvl5",
@@ -481,7 +481,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 900_000,
         "description": "Артефактные перчатки, пронизанные энергией первозданного хаоса.",
-        "bonus": {"stamina": 59, "phys_def": 25, "mag_def": 14, "regen": 3},
+        "bonus": {"hp": 125, "phys_def": 63, "mag_def": 42, "stamina": 17, "regen": 10},
     },
     "gloves-lvl6": {
         "slot": "gloves", "level": 6, "key": "gloves-lvl6",
@@ -489,7 +489,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 1_600_000,
         "description": "Потрёпанные наручи с историей. Каждый ремешок — знак победы.",
-        "bonus": {"stamina": 69, "phys_def": 30, "mag_def": 18, "regen": 7},
+        "bonus": {"hp": 151, "phys_def": 76, "mag_def": 51, "stamina": 20, "regen": 12},
     },
     "gloves-lvl7": {
         "slot": "gloves", "level": 7, "key": "gloves-lvl7",
@@ -497,7 +497,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 3_000_000,
         "description": "Тяжёлые латные рукавицы чемпиона арены.",
-        "bonus": {"stamina": 79, "phys_def": 34, "mag_def": 21, "regen": 9},
+        "bonus": {"hp": 181, "phys_def": 92, "mag_def": 62, "stamina": 24, "regen": 15},
     },
     "gloves-lvl8": {
         "slot": "gloves", "level": 8, "key": "gloves-lvl8",
@@ -505,7 +505,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 5_500_000,
         "description": "Освящённые наручи паладина. Отражают магические удары.",
-        "bonus": {"stamina": 89, "phys_def": 39, "mag_def": 25, "regen": 12},
+        "bonus": {"hp": 218, "phys_def": 110, "mag_def": 74, "stamina": 29, "regen": 18},
     },
     "gloves-lvl9": {
         "slot": "gloves", "level": 9, "key": "gloves-lvl9",
@@ -513,7 +513,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 10_000_000,
         "description": "Мощные рукавицы великого воителя. Хватка — как тиски.",
-        "bonus": {"stamina": 98, "phys_def": 43, "mag_def": 28, "regen": 14},
+        "bonus": {"hp": 262, "phys_def": 133, "mag_def": 90, "stamina": 36, "regen": 22},
     },
     "gloves-lvl10": {
         "slot": "gloves", "level": 10, "key": "gloves-lvl10",
@@ -521,7 +521,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 18_000_000,
         "description": "Наручи победителя. Никто не выбил оружие из этих рук.",
-        "bonus": {"stamina": 108, "phys_def": 47, "mag_def": 32, "regen": 16},
+        "bonus": {"hp": 315, "phys_def": 160, "mag_def": 108, "stamina": 43, "regen": 26},
     },
     "gloves-lvl11": {
         "slot": "gloves", "level": 11, "key": "gloves-lvl11",
@@ -529,7 +529,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 34_000_000,
         "description": "Безумные рукавицы берсерка. Покрыты шипами и рунами ярости.",
-        "bonus": {"stamina": 117, "phys_def": 51, "mag_def": 35, "regen": 19},
+        "bonus": {"hp": 379, "phys_def": 193, "mag_def": 130, "stamina": 52, "regen": 31},
     },
     "gloves-lvl12": {
         "slot": "gloves", "level": 12, "key": "gloves-lvl12",
@@ -537,7 +537,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 62_000_000,
         "description": "Наручи темпляров. Выдерживают прямые удары двуручным мечом.",
-        "bonus": {"stamina": 126, "phys_def": 55, "mag_def": 38, "regen": 21},
+        "bonus": {"hp": 456, "phys_def": 232, "mag_def": 157, "stamina": 62, "regen": 37},
     },
     "gloves-lvl13": {
         "slot": "gloves", "level": 13, "key": "gloves-lvl13",
@@ -545,7 +545,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 110_000_000,
         "description": "Перчатки из тёмной кожи. Пропитаны ядом и тьмой.",
-        "bonus": {"stamina": 134, "phys_def": 58, "mag_def": 41, "regen": 23},
+        "bonus": {"hp": 548, "phys_def": 279, "mag_def": 190, "stamina": 75, "regen": 45},
     },
     "gloves-lvl14": {
         "slot": "gloves", "level": 14, "key": "gloves-lvl14",
@@ -553,7 +553,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 210_000_000,
         "description": "Золотые наручи Повелителя. Скрывают клинки под пластинами.",
-        "bonus": {"stamina": 143, "phys_def": 62, "mag_def": 44, "regen": 24},
+        "bonus": {"hp": 659, "phys_def": 336, "mag_def": 229, "stamina": 90, "regen": 54},
     },
     "gloves-lvl15": {
         "slot": "gloves", "level": 15, "key": "gloves-lvl15",
@@ -561,7 +561,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 380_000_000,
         "description": "Длани завоевателя сокрушали врата крепостей.",
-        "bonus": {"stamina": 151, "phys_def": 66, "mag_def": 47, "regen": 26},
+        "bonus": {"hp": 792, "phys_def": 405, "mag_def": 276, "stamina": 109, "regen": 64},
     },
     "gloves-lvl16": {
         "slot": "gloves", "level": 16, "key": "gloves-lvl16",
@@ -569,7 +569,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 690_000_000,
         "description": "Чешуя Дракона на перчатках даёт невероятную стойкость.",
-        "bonus": {"stamina": 159, "phys_def": 69, "mag_def": 50, "regen": 28},
+        "bonus": {"hp": 952, "phys_def": 488, "mag_def": 333, "stamina": 131, "regen": 77},
     },
     "gloves-lvl17": {
         "slot": "gloves", "level": 17, "key": "gloves-lvl17",
@@ -577,7 +577,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 1_300_000_000,
         "description": "Аркановые рукавицы превращают удар в магический импульс.",
-        "bonus": {"stamina": 168, "phys_def": 73, "mag_def": 53, "regen": 30},
+        "bonus": {"hp": 1145, "phys_def": 588, "mag_def": 402, "stamina": 158, "regen": 93},
     },
     "gloves-lvl18": {
         "slot": "gloves", "level": 18, "key": "gloves-lvl18",
@@ -585,7 +585,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 2_300_000_000,
         "description": "Перчатки, пережившие тысячелетия войн. Нестареющие.",
-        "bonus": {"stamina": 176, "phys_def": 76, "mag_def": 56, "regen": 32},
+        "bonus": {"hp": 1376, "phys_def": 708, "mag_def": 484, "stamina": 190, "regen": 111},
     },
     "gloves-lvl19": {
         "slot": "gloves", "level": 19, "key": "gloves-lvl19",
@@ -593,7 +593,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 4_300_000_000,
         "description": "Парадные, но смертоносные рукавицы монарха.",
-        "bonus": {"stamina": 184, "phys_def": 80, "mag_def": 59, "regen": 34},
+        "bonus": {"hp": 1655, "phys_def": 852, "mag_def": 584, "stamina": 229, "regen": 134},
     },
     "gloves-lvl20": {
         "slot": "gloves", "level": 20, "key": "gloves-lvl20",
@@ -601,7 +601,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 7_800_000_000,
         "description": "Небесные наручи избранного воина богов.",
-        "bonus": {"stamina": 192, "phys_def": 83, "mag_def": 61, "regen": 35},
+        "bonus": {"hp": 1990, "phys_def": 1026, "mag_def": 705, "stamina": 276, "regen": 161},
     },
     "gloves-lvl21": {
         "slot": "gloves", "level": 21, "key": "gloves-lvl21",
@@ -609,7 +609,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 14_000_000_000,
         "description": "Кость Титана — даже прикосновение их разрушает.",
-        "bonus": {"stamina": 199, "phys_def": 87, "mag_def": 64, "regen": 37},
+        "bonus": {"hp": 2392, "phys_def": 1236, "mag_def": 850, "stamina": 332, "regen": 193},
     },
     "gloves-lvl22": {
         "slot": "gloves", "level": 22, "key": "gloves-lvl22",
@@ -617,7 +617,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 26_000_000_000,
         "description": "Астральные рукавицы, сотканные из пространства и времени.",
-        "bonus": {"stamina": 207, "phys_def": 90, "mag_def": 67, "regen": 39},
+        "bonus": {"hp": 2877, "phys_def": 1488, "mag_def": 1026, "stamina": 400, "regen": 231},
     },
     "gloves-lvl23": {
         "slot": "gloves", "level": 23, "key": "gloves-lvl23",
@@ -625,7 +625,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 48_000_000_000,
         "description": "Длани Первородного: держали меч ещё до рождения мира.",
-        "bonus": {"stamina": 215, "phys_def": 93, "mag_def": 70, "regen": 40},
+        "bonus": {"hp": 3459, "phys_def": 1793, "mag_def": 1237, "stamina": 482, "regen": 278},
     },
     "gloves-lvl24": {
         "slot": "gloves", "level": 24, "key": "gloves-lvl24",
@@ -633,7 +633,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 87_000_000_000,
         "description": "Рукавицы Богоборца дробили божественные доспехи.",
-        "bonus": {"stamina": 222, "phys_def": 97, "mag_def": 72, "regen": 42},
+        "bonus": {"hp": 4158, "phys_def": 2159, "mag_def": 1492, "stamina": 581, "regen": 333},
     },
     "gloves-lvl25": {
         "slot": "gloves", "level": 25, "key": "gloves-lvl25",
@@ -641,7 +641,7 @@ GEAR_CATALOG = {
         "slot_label": "Перчатки", "emoji_char": "🥊", "emoji_id": "5404591969735308062",
         "price": 160_000_000_000,
         "description": "Абсолютные перчатки. Стойкость без предела.",
-        "bonus": {"stamina": 230, "phys_def": 100, "mag_def": 75, "regen": 44},
+        "bonus": {"hp": 5000, "phys_def": 2600, "mag_def": 1800, "stamina": 700, "regen": 400},
     },
 
     # ── ШТАНЫ ────────────────────────────────────────
@@ -651,7 +651,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 50_000,
         "description": "Прочные штаны с кожаными вставками. Дают свободу движений.",
-        "bonus": {"hp": 8, "stamina": 5},
+        "bonus": {"hp": 100, "phys_def": 20},
     },
     "pants-lvl2": {
         "slot": "pants", "level": 2, "key": "pants-lvl2",
@@ -659,7 +659,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 93_000,
         "description": "Усиленные поножи с кольчужными вставками на бёдрах.",
-        "bonus": {"hp": 45, "stamina": 20, "phys_def": 4},
+        "bonus": {"hp": 119, "stamina": 18, "phys_def": 24, "regen": 4},
     },
     "pants-lvl3": {
         "slot": "pants", "level": 3, "key": "pants-lvl3",
@@ -667,7 +667,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 170_000,
         "description": "Тяжёлые боевые штаны с наколенниками из закалённой стали.",
-        "bonus": {"hp": 73, "stamina": 32, "phys_def": 13},
+        "bonus": {"hp": 142, "stamina": 21, "phys_def": 29, "regen": 4},
     },
     "pants-lvl4": {
         "slot": "pants", "level": 4, "key": "pants-lvl4",
@@ -675,7 +675,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 320_000,
         "description": "Латные поножи с кристаллами выносливости. Восстанавливают силы в бою.",
-        "bonus": {"hp": 97, "stamina": 42, "phys_def": 19, "regen": 3},
+        "bonus": {"hp": 170, "stamina": 25, "phys_def": 35, "regen": 5},
     },
     "pants-lvl5": {
         "slot": "pants", "level": 5, "key": "pants-lvl5",
@@ -683,7 +683,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 590_000,
         "description": "Реликвийные поножи. Тело бойца отказывается сдаваться.",
-        "bonus": {"hp": 121, "stamina": 52, "phys_def": 25, "regen": 8},
+        "bonus": {"hp": 203, "stamina": 30, "phys_def": 42, "regen": 7},
     },
     "pants-lvl6": {
         "slot": "pants", "level": 6, "key": "pants-lvl6",
@@ -691,7 +691,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 1_100_000,
         "description": "Потёртые поножи с историей. Прошли сотни сражений.",
-        "bonus": {"hp": 143, "stamina": 61, "phys_def": 30, "regen": 11},
+        "bonus": {"hp": 242, "stamina": 36, "phys_def": 50, "regen": 8},
     },
     "pants-lvl7": {
         "slot": "pants", "level": 7, "key": "pants-lvl7",
@@ -699,7 +699,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 2_000_000,
         "description": "Латные штаны чемпиона. Выдерживают удары двуручного оружия.",
-        "bonus": {"hp": 164, "stamina": 69, "phys_def": 36, "regen": 15},
+        "bonus": {"hp": 289, "stamina": 43, "phys_def": 60, "regen": 10},
     },
     "pants-lvl8": {
         "slot": "pants", "level": 8, "key": "pants-lvl8",
@@ -707,7 +707,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 3_700_000,
         "description": "Освящённые поножи паладина. Ускоряют восстановление сил.",
-        "bonus": {"hp": 184, "stamina": 78, "phys_def": 41, "regen": 18},
+        "bonus": {"hp": 345, "stamina": 51, "phys_def": 72, "regen": 12},
     },
     "pants-lvl9": {
         "slot": "pants", "level": 9, "key": "pants-lvl9",
@@ -715,7 +715,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 6_900_000,
         "description": "Тяжёлые поножи воителя. Стабильность в любом бою.",
-        "bonus": {"hp": 204, "stamina": 86, "phys_def": 45, "regen": 21},
+        "bonus": {"hp": 412, "stamina": 61, "phys_def": 86, "regen": 15},
     },
     "pants-lvl10": {
         "slot": "pants", "level": 10, "key": "pants-lvl10",
@@ -723,7 +723,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 13_000_000,
         "description": "Поножи победителя. Никакой удар не заставит упасть.",
-        "bonus": {"hp": 223, "stamina": 94, "phys_def": 50, "regen": 23},
+        "bonus": {"hp": 492, "stamina": 72, "phys_def": 103, "regen": 18},
     },
     "pants-lvl11": {
         "slot": "pants", "level": 11, "key": "pants-lvl11",
@@ -731,7 +731,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 24_000_000,
         "description": "Безумные штаны берсерка с рунами выносливости.",
-        "bonus": {"hp": 242, "stamina": 102, "phys_def": 55, "regen": 26},
+        "bonus": {"hp": 587, "stamina": 86, "phys_def": 124, "regen": 22},
     },
     "pants-lvl12": {
         "slot": "pants", "level": 12, "key": "pants-lvl12",
@@ -739,7 +739,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 44_000_000,
         "description": "Монолитные поножи темпляров. Прочнее стального блока.",
-        "bonus": {"hp": 261, "stamina": 109, "phys_def": 59, "regen": 29},
+        "bonus": {"hp": 701, "stamina": 103, "phys_def": 149, "regen": 27},
     },
     "pants-lvl13": {
         "slot": "pants", "level": 13, "key": "pants-lvl13",
@@ -747,7 +747,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 81_000_000,
         "description": "Тёмные поножи убийцы. Лёгкие, но невероятно прочные.",
-        "bonus": {"hp": 279, "stamina": 117, "phys_def": 63, "regen": 31},
+        "bonus": {"hp": 837, "stamina": 122, "phys_def": 179, "regen": 32},
     },
     "pants-lvl14": {
         "slot": "pants", "level": 14, "key": "pants-lvl14",
@@ -755,7 +755,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 150_000_000,
         "description": "Золочёные поножи Повелителя с рунами регенерации.",
-        "bonus": {"hp": 297, "stamina": 124, "phys_def": 68, "regen": 34},
+        "bonus": {"hp": 999, "stamina": 146, "phys_def": 215, "regen": 40},
     },
     "pants-lvl15": {
         "slot": "pants", "level": 15, "key": "pants-lvl15",
@@ -763,7 +763,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 280_000_000,
         "description": "Поножи завоевателя. Прошли миллион шагов по полям сражений.",
-        "bonus": {"hp": 315, "stamina": 132, "phys_def": 72, "regen": 36},
+        "bonus": {"hp": 1192, "stamina": 174, "phys_def": 258, "regen": 48},
     },
     "pants-lvl16": {
         "slot": "pants", "level": 16, "key": "pants-lvl16",
@@ -771,7 +771,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 510_000_000,
         "description": "Чешуя Дракона защищает ноги лучше любой стали.",
-        "bonus": {"hp": 332, "stamina": 139, "phys_def": 76, "regen": 39},
+        "bonus": {"hp": 1423, "stamina": 207, "phys_def": 309, "regen": 59},
     },
     "pants-lvl17": {
         "slot": "pants", "level": 17, "key": "pants-lvl17",
@@ -779,7 +779,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 950_000_000,
         "description": "Аркановые поножи хранят энергию каждого шага.",
-        "bonus": {"hp": 349, "stamina": 146, "phys_def": 80, "regen": 41},
+        "bonus": {"hp": 1698, "stamina": 247, "phys_def": 371, "regen": 72},
     },
     "pants-lvl18": {
         "slot": "pants", "level": 18, "key": "pants-lvl18",
@@ -787,7 +787,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 1_700_000_000,
         "description": "Нестареющие поножи, переживавшие тысячелетия.",
-        "bonus": {"hp": 366, "stamina": 153, "phys_def": 84, "regen": 43},
+        "bonus": {"hp": 2027, "stamina": 294, "phys_def": 446, "regen": 87},
     },
     "pants-lvl19": {
         "slot": "pants", "level": 19, "key": "pants-lvl19",
@@ -795,7 +795,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 3_200_000_000,
         "description": "Парадные поножи монарха со скрытым зачарованием.",
-        "bonus": {"hp": 383, "stamina": 160, "phys_def": 88, "regen": 46},
+        "bonus": {"hp": 2420, "stamina": 350, "phys_def": 535, "regen": 106},
     },
     "pants-lvl20": {
         "slot": "pants", "level": 20, "key": "pants-lvl20",
@@ -803,7 +803,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 6_000_000_000,
         "description": "Небесные поножи избранного. Ноги не устают никогда.",
-        "bonus": {"hp": 400, "stamina": 167, "phys_def": 92, "regen": 48},
+        "bonus": {"hp": 2889, "stamina": 417, "phys_def": 642, "regen": 130},
     },
     "pants-lvl21": {
         "slot": "pants", "level": 21, "key": "pants-lvl21",
@@ -811,7 +811,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 11_000_000_000,
         "description": "Кость Первородного Титана — крепче любой горной породы.",
-        "bonus": {"hp": 416, "stamina": 174, "phys_def": 96, "regen": 50},
+        "bonus": {"hp": 3448, "stamina": 497, "phys_def": 771, "regen": 158},
     },
     "pants-lvl22": {
         "slot": "pants", "level": 22, "key": "pants-lvl22",
@@ -819,7 +819,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 21_000_000_000,
         "description": "Астральные поножи вне времени и пространства.",
-        "bonus": {"hp": 432, "stamina": 180, "phys_def": 100, "regen": 52},
+        "bonus": {"hp": 4116, "stamina": 592, "phys_def": 925, "regen": 193},
     },
     "pants-lvl23": {
         "slot": "pants", "level": 23, "key": "pants-lvl23",
@@ -827,7 +827,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 38_000_000_000,
         "description": "Поножи Первородного: выдержали всю мощь мироздания.",
-        "bonus": {"hp": 448, "stamina": 187, "phys_def": 104, "regen": 54},
+        "bonus": {"hp": 4913, "stamina": 705, "phys_def": 1111, "regen": 235},
     },
     "pants-lvl24": {
         "slot": "pants", "level": 24, "key": "pants-lvl24",
@@ -835,7 +835,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 70_000_000_000,
         "description": "Поножи Богоборца не знают усталости.",
-        "bonus": {"hp": 464, "stamina": 193, "phys_def": 108, "regen": 57},
+        "bonus": {"hp": 5864, "stamina": 839, "phys_def": 1333, "regen": 287},
     },
     "pants-lvl25": {
         "slot": "pants", "level": 25, "key": "pants-lvl25",
@@ -843,7 +843,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 130_000_000_000,
         "description": "Абсолютные поножи. Совершенная выносливость.",
-        "bonus": {"hp": 480, "stamina": 200, "phys_def": 111, "regen": 59},
+        "bonus": {"hp": 7000, "stamina": 1000, "phys_def": 1600, "regen": 350},
     },
 
     # ── САПОГИ ────────────────────────────────────────
@@ -853,7 +853,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 25_000,
         "description": "Добротные кожаные сапоги. Мягкая подошва гасит шум шагов.",
-        "bonus": {"regen": 3, "stamina": 3},
+        "bonus": {"phys_def": 8},
     },
     "boots-lvl2": {
         "slot": "boots", "level": 2, "key": "boots-lvl2",
@@ -861,7 +861,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 47_000,
         "description": "Лёгкие сапоги из кожи ночной пантеры. Почти бесшумны.",
-        "bonus": {"regen": 14, "stamina": 16, "phys_def": 2},
+        "bonus": {"regen": 4, "stamina": 12, "phys_def": 10},
     },
     "boots-lvl3": {
         "slot": "boots", "level": 3, "key": "boots-lvl3",
@@ -869,7 +869,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 87_000,
         "description": "Сапоги из кожи горного дракона, пропитанные эликсиром скорости.",
-        "bonus": {"regen": 22, "stamina": 26, "phys_def": 8},
+        "bonus": {"regen": 5, "stamina": 15, "phys_def": 12},
     },
     "boots-lvl4": {
         "slot": "boots", "level": 4, "key": "boots-lvl4",
@@ -877,7 +877,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 160_000,
         "description": "Зачарованные сапоги разведчиков. Молниеносное перемещение.",
-        "bonus": {"regen": 29, "stamina": 35, "phys_def": 13},
+        "bonus": {"regen": 6, "stamina": 18, "phys_def": 14},
     },
     "boots-lvl5": {
         "slot": "boots", "level": 5, "key": "boots-lvl5",
@@ -885,7 +885,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 300_000,
         "description": "Реликвийные сапоги Громового Бога. Надевший их — неудержим.",
-        "bonus": {"regen": 36, "stamina": 43, "phys_def": 17},
+        "bonus": {"regen": 7, "stamina": 21, "phys_def": 17},
     },
     "boots-lvl6": {
         "slot": "boots", "level": 6, "key": "boots-lvl6",
@@ -893,7 +893,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 570_000,
         "description": "Потрёпанные сапоги с историей. Прошли тысячи лиг.",
-        "bonus": {"regen": 42, "stamina": 51, "phys_def": 21},
+        "bonus": {"regen": 9, "stamina": 26, "phys_def": 21},
     },
     "boots-lvl7": {
         "slot": "boots", "level": 7, "key": "boots-lvl7",
@@ -901,7 +901,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 1_100_000,
         "description": "Прочные сапоги чемпиона. Держат позицию в любом бою.",
-        "bonus": {"regen": 48, "stamina": 58, "phys_def": 24},
+        "bonus": {"regen": 11, "stamina": 31, "phys_def": 25},
     },
     "boots-lvl8": {
         "slot": "boots", "level": 8, "key": "boots-lvl8",
@@ -909,7 +909,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 2_000_000,
         "description": "Освящённые сапоги паладина. Восстанавливают силы на марше.",
-        "bonus": {"regen": 54, "stamina": 65, "phys_def": 28},
+        "bonus": {"regen": 13, "stamina": 37, "phys_def": 31},
     },
     "boots-lvl9": {
         "slot": "boots", "level": 9, "key": "boots-lvl9",
@@ -917,7 +917,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 3_700_000,
         "description": "Тяжёлые сапоги воителя. Устойчивость как у скалы.",
-        "bonus": {"regen": 60, "stamina": 72, "phys_def": 31},
+        "bonus": {"regen": 17, "stamina": 45, "phys_def": 37},
     },
     "boots-lvl10": {
         "slot": "boots", "level": 10, "key": "boots-lvl10",
@@ -925,7 +925,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 6_900_000,
         "description": "Сапоги победителя. Ни разу не сделали шаг назад.",
-        "bonus": {"regen": 66, "stamina": 79, "phys_def": 34},
+        "bonus": {"regen": 20, "stamina": 54, "phys_def": 45},
     },
     "boots-lvl11": {
         "slot": "boots", "level": 11, "key": "boots-lvl11",
@@ -933,7 +933,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 13_000_000,
         "description": "Безумные сапоги берсерка с рунами скорости и ярости.",
-        "bonus": {"regen": 71, "stamina": 86, "phys_def": 38},
+        "bonus": {"regen": 25, "stamina": 65, "phys_def": 55},
     },
     "boots-lvl12": {
         "slot": "boots", "level": 12, "key": "boots-lvl12",
@@ -941,7 +941,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 24_000_000,
         "description": "Монолитные сапоги темпляров. Не скользят даже на льду.",
-        "bonus": {"regen": 76, "stamina": 92, "phys_def": 41},
+        "bonus": {"regen": 31, "stamina": 79, "phys_def": 66},
     },
     "boots-lvl13": {
         "slot": "boots", "level": 13, "key": "boots-lvl13",
@@ -949,7 +949,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 45_000_000,
         "description": "Тёмные сапоги убийцы. Беззвучны как ночь.",
-        "bonus": {"regen": 82, "stamina": 99, "phys_def": 44},
+        "bonus": {"regen": 39, "stamina": 95, "phys_def": 80},
     },
     "boots-lvl14": {
         "slot": "boots", "level": 14, "key": "boots-lvl14",
@@ -957,7 +957,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 83_000_000,
         "description": "Золочёные сапоги Повелителя с рунами восстановления.",
-        "bonus": {"regen": 87, "stamina": 105, "phys_def": 47},
+        "bonus": {"regen": 48, "stamina": 114, "phys_def": 97},
     },
     "boots-lvl15": {
         "slot": "boots", "level": 15, "key": "boots-lvl15",
@@ -965,7 +965,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 160_000_000,
         "description": "Сапоги завоевателя. Прошли все земли этого мира.",
-        "bonus": {"regen": 92, "stamina": 112, "phys_def": 50},
+        "bonus": {"regen": 59, "stamina": 138, "phys_def": 117},
     },
     "boots-lvl16": {
         "slot": "boots", "level": 16, "key": "boots-lvl16",
@@ -973,7 +973,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 290_000_000,
         "description": "Чешуя Дракона защищает стопы лучше любой кожи.",
-        "bonus": {"regen": 97, "stamina": 118, "phys_def": 53},
+        "bonus": {"regen": 73, "stamina": 166, "phys_def": 142},
     },
     "boots-lvl17": {
         "slot": "boots", "level": 17, "key": "boots-lvl17",
@@ -981,7 +981,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 540_000_000,
         "description": "Арканические сапоги заряжаются от каждого шага.",
-        "bonus": {"regen": 102, "stamina": 124, "phys_def": 56},
+        "bonus": {"regen": 91, "stamina": 201, "phys_def": 172},
     },
     "boots-lvl18": {
         "slot": "boots", "level": 18, "key": "boots-lvl18",
@@ -989,7 +989,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 1_000_000_000,
         "description": "Нестареющие сапоги, переживавшие тысячелетия.",
-        "bonus": {"regen": 107, "stamina": 130, "phys_def": 58},
+        "bonus": {"regen": 112, "stamina": 242, "phys_def": 209},
     },
     "boots-lvl19": {
         "slot": "boots", "level": 19, "key": "boots-lvl19",
@@ -997,7 +997,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 1_900_000_000,
         "description": "Парадные сапоги монарха со скрытым зачарованием скорости.",
-        "bonus": {"regen": 112, "stamina": 136, "phys_def": 61},
+        "bonus": {"regen": 139, "stamina": 292, "phys_def": 253},
     },
     "boots-lvl20": {
         "slot": "boots", "level": 20, "key": "boots-lvl20",
@@ -1005,7 +1005,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 3_500_000_000,
         "description": "Небесные сапоги избранного. Усталость им незнакома.",
-        "bonus": {"regen": 117, "stamina": 142, "phys_def": 64},
+        "bonus": {"regen": 172, "stamina": 352, "phys_def": 306},
     },
     "boots-lvl21": {
         "slot": "boots", "level": 21, "key": "boots-lvl21",
@@ -1013,7 +1013,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 6_600_000_000,
         "description": "Кость Первородного Титана — даже вес их сокрушителен.",
-        "bonus": {"regen": 121, "stamina": 147, "phys_def": 67},
+        "bonus": {"regen": 213, "stamina": 425, "phys_def": 371},
     },
     "boots-lvl22": {
         "slot": "boots", "level": 22, "key": "boots-lvl22",
@@ -1021,7 +1021,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 12_000_000_000,
         "description": "Астральные сапоги, шагающие сквозь пространство.",
-        "bonus": {"regen": 126, "stamina": 153, "phys_def": 69},
+        "bonus": {"regen": 264, "stamina": 513, "phys_def": 450},
     },
     "boots-lvl23": {
         "slot": "boots", "level": 23, "key": "boots-lvl23",
@@ -1029,7 +1029,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 23_000_000_000,
         "description": "Сапоги Первородного: ступали по мирозданию ещё до его рождения.",
-        "bonus": {"regen": 131, "stamina": 159, "phys_def": 72},
+        "bonus": {"regen": 326, "stamina": 619, "phys_def": 545},
     },
     "boots-lvl24": {
         "slot": "boots", "level": 24, "key": "boots-lvl24",
@@ -1037,7 +1037,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 43_000_000_000,
         "description": "Сапоги Богоборца несут следы битв с богами.",
-        "bonus": {"regen": 135, "stamina": 164, "phys_def": 75},
+        "bonus": {"regen": 404, "stamina": 746, "phys_def": 660},
     },
     "boots-lvl25": {
         "slot": "boots", "level": 25, "key": "boots-lvl25",
@@ -1045,7 +1045,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 80_000_000_000,
         "description": "Абсолютные сапоги. Вершина скорости и регенерации.",
-        "bonus": {"regen": 140, "stamina": 170, "phys_def": 77},
+        "bonus": {"regen": 500, "stamina": 900, "phys_def": 800},
     },
 
 }
@@ -1136,7 +1136,7 @@ SKILLS = {
         "emoji_id": "5458465612839792700",
         "type": "physical",
         "cooldown": 14,
-        "base_dmg": (24, 36),
+        "base_dmg": (15, 22),
         "description": "Удар голой рукой — но с такой силой, что броня крошится как глина.",
         "price": 500_000,
     },
@@ -1147,7 +1147,7 @@ SKILLS = {
         "emoji_id": "5226893221191237996",
         "type": "magic",
         "cooldown": 20,
-        "base_dmg": (30, 48),
+        "base_dmg": (17, 24),
         "description": "Концентрированный пучок маг. силы, пробивающий защиту насквозь.",
         "price": 840_000,
     },
@@ -1158,7 +1158,7 @@ SKILLS = {
         "emoji_id": "5337037846475720165",
         "type": "magic",
         "cooldown": 18,
-        "base_dmg": (26, 40),
+        "base_dmg": (18, 27),
         "description": "Выброс чистой аркановой энергии — быстро, метко, без промаха.",
         "price": 1_400_000,
     },
@@ -1169,7 +1169,7 @@ SKILLS = {
         "emoji_id": "5335072469441078225",
         "type": "physical",
         "cooldown": 16,
-        "base_dmg": (28, 42),
+        "base_dmg": (20, 30),
         "description": "Удар рождается в тени и настигает раньше, чем враг успевает моргнуть.",
         "price": 2_400_000,
     },
@@ -1180,7 +1180,7 @@ SKILLS = {
         "emoji_id": "5899831875404304784",
         "type": "magic",
         "cooldown": 20,
-        "base_dmg": (20, 30),
+        "base_dmg": (22, 33),
         "description": "Игла, пропитанная редчайшим ядом. Проникает сквозь магическую защиту.",
         "price": 4_000_000,
     },
@@ -1191,7 +1191,7 @@ SKILLS = {
         "emoji_id": "5307493878843059915",
         "type": "magic",
         "cooldown": 22,
-        "base_dmg": (35, 52),
+        "base_dmg": (25, 36),
         "description": "Молния бьёт из раскрытой ладони. Часть маг. защиты просто испаряется.",
         "price": 6_700_000,
     },
@@ -1202,7 +1202,7 @@ SKILLS = {
         "emoji_id": "5438571934210082705",
         "type": "magic",
         "cooldown": 24,
-        "base_dmg": (32, 48),
+        "base_dmg": (27, 40),
         "description": "Разряд прыгает по противнику снова и снова — стабильный и безжалостный.",
         "price": 11_000_000,
     },
@@ -1213,7 +1213,7 @@ SKILLS = {
         "emoji_id": "5220181540222291016",
         "type": "physical",
         "cooldown": 26,
-        "base_dmg": (38, 55),
+        "base_dmg": (30, 44),
         "description": "Сотни невидимых клинков обрушиваются на врага в вихре стали.",
         "price": 19_000_000,
     },
@@ -1224,7 +1224,7 @@ SKILLS = {
         "emoji_id": "5256047523620995497",
         "type": "magic",
         "cooldown": 28,
-        "base_dmg": (40, 60),
+        "base_dmg": (33, 49),
         "description": "Огонь из глубин преисподней — жжёт, не оставляя следов магической защиты.",
         "price": 31_000_000,
     },
@@ -1235,7 +1235,7 @@ SKILLS = {
         "emoji_id": "5462921117423384478",
         "type": "physical",
         "cooldown": 30,
-        "base_dmg": (42, 60),
+        "base_dmg": (37, 54),
         "description": "Боевой клич, от которого кровь стынет в жилах. Мощнейший физический выброс.",
         "price": 53_000_000,
     },
@@ -1246,7 +1246,7 @@ SKILLS = {
         "emoji_id": "5449449325434266744",
         "type": "magic",
         "cooldown": 30,
-        "base_dmg": (15, 22),
+        "base_dmg": (41, 60),
         "freeze_turns": 1,
         "description": "Враг покрывается льдом и теряет ход. Урон невелик — зато время на твоей стороне.",
         "price": 89_000_000,
@@ -1258,7 +1258,7 @@ SKILLS = {
         "emoji_id": "5361662921208254475",
         "type": "physical",
         "cooldown": 32,
-        "base_dmg": (45, 65),
+        "base_dmg": (45, 66),
         "description": "Земля раскалывается под врагом. Сила удара — как горный обвал.",
         "price": 150_000_000,
     },
@@ -1269,7 +1269,7 @@ SKILLS = {
         "emoji_id": "5463335865235288297",
         "type": "physical",
         "cooldown": 35,
-        "base_dmg": (55, 80),
+        "base_dmg": (50, 73),
         "description": "Разум выключается — остаётся только ярость. Один из самых разрушительных физ. ударов.",
         "price": 250_000_000,
     },
@@ -1280,7 +1280,7 @@ SKILLS = {
         "emoji_id": "5251203410396458957",
         "type": "shield",
         "cooldown": 40,
-        "shield_amount": (50, 80),
+        "shield_amount": (30, 50),
         "description": "Колоссальный щит из сжатой магии. Способен поглотить удар любой силы.",
         "price": 420_000_000,
     },
@@ -1291,7 +1291,7 @@ SKILLS = {
         "emoji_id": "5343545593807521643",
         "type": "magic",
         "cooldown": 45,
-        "base_dmg": (50, 75),
+        "base_dmg": (55, 81),
         "drain_regen": 15,
         "description": "Вытягивает жизненную силу врага прямо в тебя. Часть урона возвращается как HP.",
         "price": 700_000_000,
@@ -1303,7 +1303,7 @@ SKILLS = {
         "emoji_id": "5267114941378209946",
         "type": "magic",
         "cooldown": 40,
-        "base_dmg": (60, 90),
+        "base_dmg": (61, 90),
         "description": "Открывает брешь в ткани мироздания прямо под ногами врага. Боль неизбежна.",
         "price": 1_200_000_000,
     },
@@ -1314,7 +1314,7 @@ SKILLS = {
         "emoji_id": "5235917510120861097",
         "type": "physical",
         "cooldown": 42,
-        "base_dmg": (62, 88),
+        "base_dmg": (67, 99),
         "description": "Удар, от которого трескается камень под ногами. Мощь первородных существ.",
         "price": 2_000_000_000,
     },
@@ -1325,7 +1325,7 @@ SKILLS = {
         "emoji_id": "6001590126071779800",
         "type": "magic",
         "cooldown": 50,
-        "base_dmg": (70, 100),
+        "base_dmg": (74, 110),
         "description": "С небес обрушивается раскалённый камень. Враг не успевает даже вскрикнуть.",
         "price": 3_300_000_000,
     },
@@ -1336,7 +1336,7 @@ SKILLS = {
         "emoji_id": "5204470073112146941",
         "type": "magic",
         "cooldown": 55,
-        "base_dmg": (80, 115),
+        "base_dmg": (82, 121),
         "description": "Взрыв тёмной материи поглощает всё вокруг. Один из разрушительнейших ударов.",
         "price": 5_600_000_000,
     },
@@ -1347,7 +1347,7 @@ SKILLS = {
         "emoji_id": "6332360083116132292",
         "type": "magic",
         "cooldown": 60,
-        "base_dmg": (90, 130),
+        "base_dmg": (90, 134),
         "description": "Священный огонь нисходит с небес. Абсолютное уничтожение — без исключений.",
         "price": 9_300_000_000,
     },
@@ -1360,7 +1360,7 @@ SKILLS = {
         "emoji_id": "5269535069550162819",
         "type": "physical",
         "cooldown": 28,
-        "base_dmg": (44, 63),
+        "base_dmg": (100, 148),
         "drain_regen": 10,
         "description": "Атака, пропитанная животным инстинктом. Часть нанесённого урона возвращается как HP.",
         "price": 16_000_000_000,
@@ -1372,7 +1372,7 @@ SKILLS = {
         "emoji_id": "5249454534073276043",
         "type": "magic",
         "cooldown": 33,
-        "base_dmg": (48, 70),
+        "base_dmg": (110, 164),
         "description": "В центре шторма — абсолютная тишина. А потом — волна, сметающая всё.",
         "price": 26_000_000_000,
     },
@@ -1383,7 +1383,7 @@ SKILLS = {
         "emoji_id": "5449883370534238228",
         "type": "physical",
         "cooldown": 19,
-        "base_dmg": (30, 45),
+        "base_dmg": (122, 182),
         "description": "Клинок из вулканического стекла — острее любой стали. Молниеносный и точный.",
         "price": 44_000_000_000,
     },
@@ -1394,7 +1394,7 @@ SKILLS = {
         "emoji_id": "5818973781707722673",
         "type": "physical",
         "cooldown": 36,
-        "base_dmg": (52, 74),
+        "base_dmg": (134, 201),
         "description": "Ударная волна, отражающаяся от каждой поверхности и бьющая снова и снова.",
         "price": 74_000_000_000,
     },
@@ -1405,7 +1405,7 @@ SKILLS = {
         "emoji_id": "5206523956537865948",
         "type": "magic",
         "cooldown": 48,
-        "base_dmg": (65, 95),
+        "base_dmg": (148, 222),
         "freeze_turns": 1,
         "description": "Из пустоты тянутся щупальца тьмы. Враг получает урон и теряет ход от ужаса.",
         "price": 120_000_000_000,
@@ -1417,7 +1417,7 @@ SKILLS = {
         "emoji_id": "6111804548869787620",
         "type": "shield",
         "cooldown": 55,
-        "shield_amount": (80, 120),
+        "shield_amount": (33, 54),
         "description": "Древние руны складываются в неприступную стену. Поглощает даже самые мощные удары.",
         "price": 210_000_000_000,
     },
@@ -1428,7 +1428,7 @@ SKILLS = {
         "emoji_id": "5402477260982731644",
         "type": "magic",
         "cooldown": 38,
-        "base_dmg": (57, 82),
+        "base_dmg": (164, 245),
         "description": "Луч солнечного света, сжатый до точки и выпущенный как копьё. Жжёт и слепит.",
         "price": 350_000_000_000,
     },
