@@ -2376,7 +2376,7 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer("Неизвестный вклад", show_alert=True)
                 return
             can = data.get("balance", 0) >= _CDL_DEPOSITS_BY_KEY[dep_key]["min"]
-            await edit(cdl_detail_text(dep_key, data), cdl_detail_keyboard(dep_key, can))
+            await edit(cdl_detail_text(dep_key, data), cdl_detail_keyboard(dep_key, can, uid=user.id))
             await call.answer()
             return
 
@@ -2392,6 +2392,11 @@ async def handle_callback(call: CallbackQuery):
             if _cdl_count_active(user.id) >= 8:
                 await call.answer("❌ Максимум 8 активных вкладов!", show_alert=True)
                 return
+            from cdl import check_deposit_limit as _cdl_check_limit
+            _lim_ok, _lim_used, _lim_max = _cdl_check_limit(user.id, dep_key)
+            if not _lim_ok:
+                await call.answer(f"🚫 Лимит исчерпан ({_lim_used}/{_lim_max}). Попробуй позже.", show_alert=True)
+                return
             _cdl_input_pending[user.id] = dep_key
             _cdl_input_msg[user.id] = (call.message.chat.id, call.message.message_id)
             await edit(cdl_input_text(dep_key, data), cdl_input_keyboard(dep_key))
@@ -2400,6 +2405,10 @@ async def handle_callback(call: CallbackQuery):
 
         if cd == "cdl_cant_afford":
             await call.answer("❌ Пополни баланс — добывай монеты!", show_alert=True)
+            return
+
+        if cd == "cdl_limit_reached":
+            await call.answer("🚫 Лимит вкладов исчерпан. Попробуй позже.", show_alert=True)
             return
 
         if cd.startswith("cdl_confirm_"):
@@ -2427,6 +2436,11 @@ async def handle_callback(call: CallbackQuery):
                 return
             if _cdl_count_active(user.id) >= 8:
                 await call.answer("❌ Максимум 8 активных вкладов!", show_alert=True)
+                return
+            from cdl import check_deposit_limit as _cdl_check_limit2
+            _lim_ok2, _lim_used2, _lim_max2 = _cdl_check_limit2(user.id, dep_key)
+            if not _lim_ok2:
+                await call.answer(f"🚫 Лимит исчерпан ({_lim_used2}/{_lim_max2}). Попробуй позже.", show_alert=True)
                 return
             data["balance"] = bal - amount
             save_user(user.id, data)
