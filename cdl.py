@@ -62,6 +62,45 @@ DEPOSITS_BY_KEY = {d["key"]: d for d in DEPOSITS}
 # Emoji кнопки «назад»
 _BACK_EMOJI = "6039539366177541657"
 
+# ---------- Лимиты вкладов ----------
+# dep_24h:  3 раза за 2 недели (14 дней)
+# dep_48h:  2 раза за неделю (7 дней)
+# dep_96h:  2 раза за месяц (30 дней)
+# dep_144h: 2 раза за месяц (30 дней)
+
+DEPOSIT_LIMITS = {
+    "dep_24h":  {"max": 3, "window_days": 14},
+    "dep_48h":  {"max": 2, "window_days": 7},
+    "dep_96h":  {"max": 2, "window_days": 30},
+    "dep_144h": {"max": 2, "window_days": 30},
+}
+
+
+def _count_recent(uid: int, dep_key: str) -> int:
+    """Сколько вкладов dep_key открыл пользователь за окно лимита."""
+    limit = DEPOSIT_LIMITS.get(dep_key)
+    if not limit:
+        return 0
+    since = int(time.time()) - limit["window_days"] * 86400
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM deposits WHERE uid=? AND dep_key=? AND opened_at>=?",
+            (uid, dep_key, since)
+        ).fetchone()
+    return row[0] if row else 0
+
+
+def check_deposit_limit(uid: int, dep_key: str) -> tuple[bool, int, int]:
+    """
+    Проверяет можно ли открыть вклад.
+    Возвращает (ok, used, max).
+    """
+    limit = DEPOSIT_LIMITS.get(dep_key)
+    if not limit:
+        return True, 0, 0
+    used = _count_recent(uid, dep_key)
+    return used < limit["max"], used, limit["max"]
+
 
 # ---------- База данных ----------
 
@@ -274,6 +313,7 @@ def cdl_main_keyboard(uid: int) -> InlineKeyboardMarkup:
 def cdl_detail_text(dep_key: str, d: dict) -> str:
     from database import format_amount
     dep = DEPOSITS_BY_KEY[dep_key]
+    uid = d["id"]
     bal = d.get("balance", 0)
     can_afford = bal >= dep["min"]
 
@@ -286,6 +326,20 @@ def cdl_detail_text(dep_key: str, d: dict) -> str:
         f'✅ <b>Можно открыть</b>'
         if can_afford else
         f'❌ <i>Не хватает {format_amount(dep["min"] - bal)}</i>'
+    )
+
+    # Лимиты
+    lim = DEPOSIT_LIMITS.get(dep_key, {})
+    used = _count_recent(uid, dep_key)
+    max_uses = lim.get("max", 0)
+    win_days = lim.get("window_days", 0)
+    win_label = f"{win_days} дн." if win_days != 7 else "неделю"
+    if win_days == 14:
+        win_label = "2 недели"
+    limit_line = (
+        f'✅ <i>{used}/{max_uses} за {win_label}</i>'
+        if used < max_uses else
+        f'🚫 <b>Лимит исчерпан</b> <i>({used}/{max_uses} за {win_label})</i>'
     )
 
     return (
@@ -303,14 +357,23 @@ def cdl_detail_text(dep_key: str, d: dict) -> str:
         f'</blockquote>\n'
         f'<blockquote>'
         f'<tg-emoji emoji-id="5278467510604160626">👛</tg-emoji> '
-        f'<b>Баланс:</b> {format_amount(bal)} <tg-emoji emoji-id="5199552030615558774">👛</tg-emoji> · {afford_line}'
+        f'<b>Баланс:</b> {format_amount(bal)} <tg-emoji emoji-id="5199552030615558774">👛</tg-emoji> · {afford_line}\n'
+        f'📊 <b>Лимит:</b> {limit_line}'
         f'</blockquote>'
     )
 
 
-def cdl_detail_keyboard(dep_key: str, can_afford: bool) -> InlineKeyboardMarkup:
+def cdl_detail_keyboard(dep_key: str, can_afford: bool, uid: int = 0) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    if can_afford:
+    limit_ok, used, max_uses = check_deposit_limit(uid, dep_key) if uid else (True, 0, 0)
+    if not limit_ok:
+        builder.row(InlineKeyboardButton(
+            text=f"🚫 Лимит исчерпан ({used}/{max_uses})",
+            callback_data="cdl_limit_reached",
+            icon_custom_emoji_id="5400362079783770689",
+            style="danger"
+        ))
+    elif can_afford:
         builder.row(InlineKeyboardButton(
             text="Открыть вклад",
             callback_data=f"cdl_open_{dep_key}",
