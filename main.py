@@ -176,7 +176,7 @@ from rass import (
 )
 from duel import (
     duel_main_text, duel_main_keyboard,
-    is_duel_equip_cmd, is_duel_skills_cmd, is_duel_invite_cmd, is_any_duel_cmd,
+    is_duel_main_cmd, is_duel_equip_cmd, is_duel_skills_cmd, is_duel_stats_cmd, is_duel_invite_cmd, is_any_duel_cmd,
     cmd_no_hp_text, cmd_already_in_battle_text, cmd_invite_usage_text,
     cmd_invite_self_text, cmd_invite_not_found_text, cmd_invite_in_battle_text,
     cmd_invite_blocked_text,
@@ -1882,6 +1882,15 @@ async def _handle_duel_cmd(message: Message):
     u    = get_or_create_user(message.from_user)
     text = (message.text or "").strip()
 
+    if is_duel_main_cmd(text):
+        # /дуэли — главный раздел дуэлей
+        await message.answer(
+            duel_main_text(),
+            parse_mode="HTML",
+            reply_markup=duel_main_keyboard(),
+        )
+        return
+
     if is_duel_equip_cmd(text):
         # /снар — открыть снаряжение
         await message.answer(
@@ -1897,6 +1906,15 @@ async def _handle_duel_cmd(message: Message):
             duel_skills_text(u),
             parse_mode="HTML",
             reply_markup=duel_skills_keyboard(),
+        )
+        return
+
+    if is_duel_stats_cmd(text):
+        # /хар — характеристики
+        await message.answer(
+            duel_charstats_text(u, uid=uid),
+            parse_mode="HTML",
+            reply_markup=duel_charstats_keyboard(),
         )
         return
 
@@ -1967,11 +1985,11 @@ async def _handle_duel_cmd(message: Message):
 
 
 @dp.message(F.text.regexp(
-    r"^/?(?:дуэли-duel-екип|снаряжение|снар|equip|gear|duel-equip"
+    r"^/?(?:дуэли|дуель|duel|duels"
+    r"|дуэли-duel-екип|снаряжение|снар|equip|gear|duel-equip"
     r"|нвык|навыки|skills|skill|умения"
-    r"|вз|вызов|challenge"
     r"|стата|хк|хар|stats|charstats|характеристики"
-    r"|дуэли|дуель|duel|duels)(?:\s|$)",
+    r"|вз|вызов|challenge)(?:\s|$)",
     flags=__import__("re").IGNORECASE
 ))
 async def handle_duel_cmd_text(message: Message):
@@ -1980,11 +1998,11 @@ async def handle_duel_cmd_text(message: Message):
 
 
 @dp.message(F.text.regexp(
-    r"^/(?:дуэли-duel-екип|снаряжение|снар|equip|gear|duel-equip"
+    r"^/(?:дуэли|дуель|duel|duels"
+    r"|дуэли-duel-екип|снаряжение|снар|equip|gear|duel-equip"
     r"|нвык|навыки|skills|skill|умения"
-    r"|вз|вызов|challenge"
     r"|стата|хк|хар|stats|charstats|характеристики"
-    r"|дуэли|дуель|duel|duels)(?:\s|$)",
+    r"|вз|вызов|challenge)(?:\s|$)",
     flags=__import__("re").IGNORECASE
 ))
 async def handle_duel_cmd_slash(message: Message):
