@@ -1477,6 +1477,11 @@ def equip_skill(skill_key: str, user_data: dict) -> tuple:
     if skill_key not in owned:
         return False, "❌ Навык не куплен!"
     equipped = user_data.setdefault("duel_equipped_skills", [])
+    # При первом обращении — добавляем базовые навыки если их ещё нет
+    base_keys = [k for k, v in SKILLS.items() if v["price"] == 0]
+    for bk in base_keys:
+        if bk not in equipped:
+            equipped.append(bk)
     if skill_key in equipped:
         return False, "❌ Навык уже экипирован!"
     if len(equipped) >= MAX_EQUIPPED_SKILLS:
@@ -1554,14 +1559,16 @@ def duel_skill_card_keyboard(skill_key: str, user_data: dict, from_page: int = 0
 
     if is_equip:
         builder.row(InlineKeyboardButton(
-            text="❌ Снять из боя",
+            text="Снять из боя",
             callback_data=f"duel_skill_unequip:{skill_key}",
+            style="danger",
         ))
     elif is_owned:
         if len(equipped) < MAX_EQUIPPED_SKILLS:
             builder.row(InlineKeyboardButton(
-                text="⚔️ Экипировать в бой",
+                text="Экипировать в бой",
                 callback_data=f"duel_skill_equip:{skill_key}",
+                style="primary",
             ))
         else:
             builder.row(InlineKeyboardButton(
@@ -2182,7 +2189,7 @@ def duel_skills_shop_keyboard(user_data: dict, page: int = 0) -> InlineKeyboardM
             kw = dict(
                 text=sk["name"],
                 callback_data=f"duel_skill_card:{sk_key}:{page}",
-                style="success",
+                style="primary",
                 icon_custom_emoji_id=eid or "5206607081334906820",
             )
         elif is_owned:
