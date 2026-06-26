@@ -17,21 +17,21 @@ EMOJI_SKILLS       = "5224607267797606837"
 EMOJI_STATS_DUEL   = "5231200819986047254"
 EMOJI_SHOP         = "5447183459602669338"
 
-EMOJI_HP       = "5262643974912355126"
-EMOJI_DMG      = "5262643974912355126"
-EMOJI_REGEN    = "5262643974912355126"
-EMOJI_PHYS_DEF = "5262643974912355126"
-EMOJI_MAG_DEF  = "5262643974912355126"
-EMOJI_STAMINA  = "5262643974912355126"
+EMOJI_HP       = "5337080053119336309"
+EMOJI_DMG      = "5337080053119336309"
+EMOJI_REGEN    = "5438224604499819092"
+EMOJI_PHYS_DEF = "5465154440287757794"
+EMOJI_MAG_DEF  = "5321022334335724730"
+EMOJI_STAMINA  = "5251281810729480172"
 
 # ── Метки статов ────────────────────────────────────────────
 STAT_META = {
-    "hp":       ("❤️", "Здоровье",    "HP"),
+    "hp":       ('<tg-emoji emoji-id="5337080053119336309">❤️</tg-emoji>', "Здоровье",    "HP"),
     "dmg":      ("⚔️", "Урон",        "ATK"),
-    "regen":    ("💚", "Регенерация", "HP/ход"),
-    "phys_def": ("🛡️", "Физ. защита", "DEF"),
-    "mag_def":  ("🔮", "Маг. защита", "MDEF"),
-    "stamina":  ("⚙️", "Стойкость",   "STM"),
+    "regen":    ('<tg-emoji emoji-id="5438224604499819092">💚</tg-emoji>', "Регенерация", "HP/ход"),
+    "phys_def": ('<tg-emoji emoji-id="5465154440287757794">🛡️</tg-emoji>', "Физ. защита", "DEF"),
+    "mag_def":  ('<tg-emoji emoji-id="5321022334335724730">🔮</tg-emoji>', "Маг. защита", "MDEF"),
+    "stamina":  ('<tg-emoji emoji-id="5251281810729480172">⚙️</tg-emoji>', "Стойкость",   "STM"),
 }
 
 # ── Каталог снаряжения: 5 слотов × 25 уровней ────────────────
@@ -1649,11 +1649,11 @@ def challenge_invite_text(challenger_data: dict) -> str:
         f'<blockquote>'
         f'👤 <b>{name}</b> (уровень {lvl}) бросает тебе вызов!\n\n'
         f'📊 <b>Характеристики противника:</b>\n'
-        f'❤️ HP: <b>{stats["hp"]}</b>\n'
-        f'🛡️ Физ. защита: <b>{stats["phys_def"]}</b>\n'
-        f'🔮 Маг. защита: <b>{stats["mag_def"]}</b>\n'
-        f'💚 Регенерация: <b>{stats["regen"]}</b> HP/ход\n'
-        f'⚙️ Стойкость: <b>{stats["stamina"]}</b>\n\n'
+        f'<tg-emoji emoji-id="5337080053119336309">❤️</tg-emoji> HP: <b>{stats["hp"]}</b>\n'
+        f'<tg-emoji emoji-id="5465154440287757794">🛡️</tg-emoji> Физ. защита: <b>{stats["phys_def"]}</b>\n'
+        f'<tg-emoji emoji-id="5321022334335724730">🔮</tg-emoji> Маг. защита: <b>{stats["mag_def"]}</b>\n'
+        f'<tg-emoji emoji-id="5438224604499819092">💚</tg-emoji> Регенерация: <b>{stats["regen"]}</b> HP/ход\n'
+        f'<tg-emoji emoji-id="5251281810729480172">⚙️</tg-emoji> Стойкость: <b>{stats["stamina"]}</b>\n\n'
         f'⚔️ Навыки: <i>{sk_names}</i>\n\n'
         f'⏳ <i>Вызов действителен 2 минуты</i>'
         f'</blockquote>'
@@ -1927,9 +1927,9 @@ def battle_text(battle: dict, uid: int) -> str:
             f'{result_line}\n\n'
             f'<blockquote>'
             f'👤 <b>{my_name}</b>\n'
-            f'❤️ {my_bar}\n\n'
+            f'<tg-emoji emoji-id="5337080053119336309">❤️</tg-emoji> {my_bar}\n\n'
             f'👹 <b>{foe_name}</b>\n'
-            f'❤️ {foe_bar}'
+            f'<tg-emoji emoji-id="5337080053119336309">❤️</tg-emoji> {foe_bar}'
             f'</blockquote>'
             f'{log_block}'
         )
@@ -1939,11 +1939,11 @@ def battle_text(battle: dict, uid: int) -> str:
         f'━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>'
         f'👤 <b>{my_name}</b>\n'
-        f'❤️ {my_bar}'
+        f'<tg-emoji emoji-id="5337080053119336309">❤️</tg-emoji> {my_bar}'
         f'{shields}'
         f'{frozen_note}\n\n'
         f'👹 <b>{foe_name}</b>\n'
-        f'❤️ {foe_bar}'
+        f'<tg-emoji emoji-id="5337080053119336309">❤️</tg-emoji> {foe_bar}'
         f'</blockquote>'
         f'{log_block}\n\n'
         f'<i>Выбери навык для атаки:</i>'
