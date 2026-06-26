@@ -1083,8 +1083,28 @@ def equipped_level(slot: str, user_data: dict) -> int:
     item = current_slot_item(slot, user_data)
     return item["level"] if item else 0
 
-def _fmt(amount: int) -> str:
-    return f"{amount:,}".replace(",", " ")
+def _fmt(n) -> str:
+    """Сокращает число как format_amount в database.py: 1500->1.5к, 2.3м, 1.5млрд."""
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return str(n)
+    sign = "-" if n < 0 else ""
+    n = abs(n)
+    if n < 1000:
+        return f"{sign}{int(n)}" if n == int(n) else f"{sign}{n:.1f}"
+    for threshold, suffix in [
+        (1_000_000_000_000, "трлн"),
+        (1_000_000_000,     "млрд"),
+        (1_000_000,         "м"),
+        (1_000,             "к"),
+    ]:
+        if n >= threshold:
+            value = int(n / threshold * 10) / 10
+            if value == int(value):
+                return f"{sign}{int(value)}{suffix}"
+            return f"{sign}{value:.1f}{suffix}"
+    return f"{sign}{int(n)}"
 
 
 # ════════════════════════════════════════════════════════════
@@ -1122,7 +1142,7 @@ SKILLS = {
         "emoji": "🛡️",
         "emoji_id": "5465154440287757794",
         "type": "shield",
-        "cooldown": 12,
+        "cooldown": 25,
         "shield_amount": (20, 35),
         "description": "Магический барьер, сотканный из чистой воли бойца. Поглощает следующий удар.",
         "price": 0,
@@ -1279,8 +1299,8 @@ SKILLS = {
         "emoji": "🔰",
         "emoji_id": "5251203410396458957",
         "type": "shield",
-        "cooldown": 19,
-        "shield_amount": (30, 50),
+        "cooldown": 40,
+        "shield_amount": (350, 600),
         "description": "Колоссальный щит из сжатой магии. Способен поглотить удар любой силы.",
         "price": 420_000_000,
     },
@@ -1416,8 +1436,8 @@ SKILLS = {
         "emoji": "🏰",
         "emoji_id": "6111804548869787620",
         "type": "shield",
-        "cooldown": 29,
-        "shield_amount": (34, 56),
+        "cooldown": 55,
+        "shield_amount": (800, 1500),
         "description": "Древние руны складываются в неприступную стену. Поглощает даже самые мощные удары.",
         "price": 210_000_000_000,
     },
