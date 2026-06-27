@@ -1621,3 +1621,336 @@ def xp_confirm_replace_keyboard(instance_id: str, lang: str = "ru") -> InlineKey
         InlineKeyboardButton(text=_L(lang, "Отмена", "Cancel"),             callback_data=f"xp_info_{instance_id}",     icon_custom_emoji_id=_E["cancel"]),
     )
     return builder.as_markup()
+
+
+# ============================================================
+#  ЕДИНЫЙ ИНВЕНТАРЬ — СТАКИНГ И ИСПОЛЬЗОВАНИЕ ПО ID
+#  Все три инвентаря (boosters, xp, enh) объединены в одно
+#  представление. Одинаковые предметы складываются в стопки.
+#  Каждой стопке присваивается slot_id (#1, #2, ...).
+# ============================================================
+
+def _get_or_assign_slot_ids(data: dict) -> dict:
+    """
+    Возвращает dict: key -> slot_id (int).
+    Если slot_id для какого-то key ещё нет — назначает новый.
+    Slot_ids хранятся в data['inv_slot_ids'].
+    """
+    slot_map: dict = data.setdefault("inv_slot_ids", {})
+    used = set(slot_map.values())
+
+    # Собираем все ключи из всех трёх инвентарей
+    all_keys = set()
+    for item in data.get("boosters_inventory", []):
+        all_keys.add(item["key"])
+    for item in data.get("xp_inventory", []):
+        all_keys.add(item["key"])
+    for item in data.get("enh_inventory", []):
+        all_keys.add(item["key"])
+
+    # Назначаем slot_id новым ключам
+    counter = 1
+    for key in sorted(all_keys):
+        if key not in slot_map:
+            while counter in used:
+                counter += 1
+            slot_map[key] = counter
+            used.add(counter)
+            counter += 1
+
+    # Убираем slot_ids для ключей которых больше нет
+    orphan_keys = [k for k in list(slot_map.keys()) if k not in all_keys]
+    for k in orphan_keys:
+        del slot_map[k]
+
+    return slot_map
+
+
+def get_unified_inventory(data: dict) -> list:
+    """
+    Возвращает список стопок:
+    {
+      "slot_id": int,
+      "key": str,
+      "type": str,         # boost / xp_boost / xp_instant / enh_boost / poison
+      "count": int,
+      "display": str,      # HTML-название
+      "display_plain": str,# без HTML
+      "item_sample": dict, # один пример предмета (для отображения характеристик)
+    }
+    Сортировка: по типу, потом по slot_id.
+    """
+    slot_map = _get_or_assign_slot_ids(data)
+
+    stacks: dict = {}  # key -> {"count": int, "items": list, "type": str}
+
+    for item in data.get("boosters_inventory", []):
+        k = item["key"]
+        if k not in stacks:
+            stacks[k] = {"count": 0, "item_sample": item, "type": "boost"}
+        stacks[k]["count"] += 1
+
+    for item in data.get("xp_inventory", []):
+        k = item["key"]
+        if k not in stacks:
+            stacks[k] = {"count": 0, "item_sample": item, "type": item.get("type", "xp_boost")}
+        stacks[k]["count"] += 1
+
+    for item in data.get("enh_inventory", []):
+        k = item["key"]
+        if k not in stacks:
+            stacks[k] = {"count": 0, "item_sample": item, "type": item.get("type", "enh_boost")}
+        stacks[k]["count"] += 1
+
+    result = []
+    for key, stack in stacks.items():
+        sid = slot_map.get(key, 0)
+        sample = stack["item_sample"]
+        itype  = stack["type"]
+        if itype == "boost":
+            disp       = _booster_name(sample)
+            disp_plain = _booster_name(sample)
+        elif itype in ("xp_boost", "xp_instant"):
+            disp       = _xp_item_name(sample)
+            disp_plain = _xp_item_name_plain(sample)
+        else:
+            disp       = _enh_item_name(sample)
+            disp_plain = _enh_item_name_plain(sample)
+        result.append({
+            "slot_id":      sid,
+            "key":          key,
+            "type":         itype,
+            "count":        stack["count"],
+            "display":      disp,
+            "display_plain": disp_plain,
+            "item_sample":  sample,
+        })
+
+    # Сортируем: яды отдельно в конце, остальное по slot_id
+    TYPE_ORDER = {"boost": 0, "xp_instant": 1, "xp_boost": 2, "enh_boost": 3, "poison": 4}
+    result.sort(key=lambda x: (TYPE_ORDER.get(x["type"], 9), x["slot_id"]))
+    return result
+
+
+def unified_inventory_text(data: dict, lang: str = "ru") -> str:
+    """Единый экран инвентаря со стакингом и slot_id."""
+    stacks = get_unified_inventory(data)
+    active   = get_active_booster_info(data)
+    xp_act   = get_active_xp_booster_info(data)
+    enh_act  = get_active_enh_booster_info(data)
+    poison   = get_active_poison_info(data)
+
+    lines = [f"<blockquote>{_pe('inv', '🎒')} <b>{'INVENTORY' if lang == 'en' else 'ИНВЕНТАРЬ'}</b></blockquote>\n"]
+
+    # Активные бусты
+    active_lines = []
+    if active:
+        left = _fmt_time_left(active["ends_at"] - _now_ts(), lang)
+        mult = _multiplier_label(active["multiplier"])
+        active_lines.append(f"{_pe('boost','⚡')} <b>{'Pickaxe' if lang=='en' else 'Кирка'}: {mult} — ⏱ {left}</b>")
+    if xp_act:
+        left = _fmt_time_left(xp_act["ends_at"] - _now_ts(), lang)
+        mult = _multiplier_label(xp_act["multiplier"])
+        active_lines.append(f"{_pe('xp_boost','🔮')} <b>XP: ×{mult} — ⏱ {left}</b>")
+    if enh_act:
+        left = _fmt_time_left(enh_act["ends_at"] - _now_ts(), lang)
+        mult = _multiplier_label(enh_act["multiplier"])
+        active_lines.append(f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>{"Damage" if lang=="en" else "Урон"}: ×{mult} — ⏱ {left}</b>')
+    if poison:
+        left = _fmt_time_left(poison["ends_at"] - _now_ts(), lang)
+        _pn_en = {"Яд Гадюки":"Viper","Яд Кобры":"Cobra","Яд Чёрной Мамбы":"Black Mamba","Яд Василиска":"Basilisk","Яд Левиафана":"Leviathan"}
+        pname = _pn_en.get(poison["name"], poison["name"]) if lang == "en" else poison["name"]
+        active_lines.append(f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>{"Poison" if lang=="en" else "Яд"}: {pname} — ⏱ {left}</b>')
+
+    if active_lines:
+        lbl = "Active" if lang == "en" else "Активно"
+        lines.append(f"\n<blockquote>{_pe('ok','✅')} <b>{lbl}:</b>\n" + "\n".join(active_lines) + "</blockquote>\n")
+
+    if not stacks:
+        lbl = "Inventory is empty. Open cases!" if lang == "en" else "Инвентарь пуст. Открой кейсы!"
+        lines.append(f"\n<blockquote>{_pe('case','📦')} <b>{lbl}</b></blockquote>")
+    else:
+        total = sum(s["count"] for s in stacks)
+        lbl_inv = "In inventory" if lang == "en" else "В инвентаре"
+        lines.append(f"\n<blockquote><b>{lbl_inv} ({total} шт.):</b>\n")
+        for s in stacks:
+            cnt_str = f" ({s['count']} шт.)" if s["count"] > 1 else ""
+            lines.append(f"<b>#{s['slot_id']}</b> {s['display']}{cnt_str}\n")
+        lines.append("</blockquote>")
+
+    lbl_hint = (
+        "\n<blockquote><i>Use: <code>use #N</code> or <code>-use #N</code>\nCancel: <code>stop #N</code></i></blockquote>"
+        if lang == "en" else
+        "\n<blockquote><i>Использовать: <code>исп #N</code> или <code>-use #N</code>\nОтменить: <code>стоп #N</code></i></blockquote>"
+    )
+    lines.append(lbl_hint)
+    return "".join(lines)
+
+
+def use_item_by_slot_id(data: dict, slot_id: int, lang: str = "ru") -> tuple:
+    """
+    Активирует один предмет из стопки по slot_id.
+    Если уже активен бустер того же типа — возвращает ошибку с подсказкой.
+    Возвращает (ok: bool, msg: str).
+    """
+    slot_map = _get_or_assign_slot_ids(data)
+    key = next((k for k, sid in slot_map.items() if sid == slot_id), None)
+    if not key:
+        return False, f"❌ {'Slot #' if lang=='en' else 'Слот #'}{slot_id} {'not found.' if lang=='en' else 'не найден.'}"
+
+    # Ищем один экземпляр в нужном инвентаре
+    for inv_key in ("boosters_inventory", "xp_inventory", "enh_inventory"):
+        inv = data.get(inv_key, [])
+        item = next((x for x in inv if x["key"] == key), None)
+        if item:
+            itype = item.get("type") or ("boost" if inv_key == "boosters_inventory" else "xp_boost")
+            instance_id = item["instance_id"]
+            if inv_key == "boosters_inventory":
+                # Проверяем активный
+                active = get_active_booster_info(data)
+                if active:
+                    left = _fmt_time_left(active["ends_at"] - _now_ts(), lang)
+                    mult = _multiplier_label(active["multiplier"])
+                    return False, (
+                        f"❌ <b>{'Already active' if lang=='en' else 'Уже активен'}: {mult} ⏱ {left}</b>\n"
+                        f"{'Cancel with' if lang=='en' else 'Отменить через'} <code>{'stop' if lang=='en' else 'стоп'} #N</code>"
+                    )
+                return activate_booster(data, instance_id, force=False, lang=lang)
+            elif inv_key == "xp_inventory":
+                if itype == "xp_boost":
+                    xp_act = get_active_xp_booster_info(data)
+                    if xp_act:
+                        left = _fmt_time_left(xp_act["ends_at"] - _now_ts(), lang)
+                        mult = _multiplier_label(xp_act["multiplier"])
+                        return False, (
+                            f"❌ <b>{'XP booster already active' if lang=='en' else 'XP-ускоритель уже активен'}: ×{mult} ⏱ {left}</b>\n"
+                            f"{'Cancel with' if lang=='en' else 'Отменить через'} <code>{'stop' if lang=='en' else 'стоп'} #N</code>"
+                        )
+                return use_xp_item(data, instance_id, force=False, lang=lang)
+            else:
+                if itype == "enh_boost":
+                    enh_act = get_active_enh_booster_info(data)
+                    if enh_act:
+                        left = _fmt_time_left(enh_act["ends_at"] - _now_ts(), lang)
+                        mult = _multiplier_label(enh_act["multiplier"])
+                        return False, (
+                            f"❌ <b>{'Damage booster already active' if lang=='en' else 'Усилитель урона уже активен'}: ×{mult} ⏱ {left}</b>\n"
+                            f"{'Cancel with' if lang=='en' else 'Отменить через'} <code>{'stop' if lang=='en' else 'стоп'} #N</code>"
+                        )
+                    return activate_enh_boost(data, instance_id, force=False, lang=lang)
+                elif itype == "poison":
+                    poison_act = get_active_poison_info(data)
+                    if poison_act:
+                        left = _fmt_time_left(poison_act["ends_at"] - _now_ts(), lang)
+                        return False, (
+                            f"❌ <b>{'Poison already active' if lang=='en' else 'Яд уже активен'} ⏱ {left}</b>\n"
+                            f"{'Cancel with' if lang=='en' else 'Отменить через'} <code>{'stop' if lang=='en' else 'стоп'} #N</code>"
+                        )
+                    return use_poison(data, instance_id, force=False, lang=lang)
+
+    return False, f"❌ {'Item not found.' if lang=='en' else 'Предмет не найден.'}"
+
+
+def cancel_active_by_type(data: dict, boost_type: str, lang: str = "ru") -> tuple:
+    """
+    Отменяет активный буст указанного типа.
+    boost_type: 'boost' | 'xp' | 'enh' | 'poison'
+    Возвращает (ok, msg).
+    """
+    if boost_type == "boost":
+        active = get_active_booster_info(data)
+        if not active:
+            return False, "❌ " + ("No active pickaxe booster." if lang=="en" else "Нет активного ускорителя кирки.")
+        data["active_booster"] = None
+        mult = _multiplier_label(active["multiplier"])
+        return True, f"{'Pickaxe booster' if lang=='en' else 'Ускоритель кирки'} {mult} {'cancelled.' if lang=='en' else 'отменён.'}"
+    if boost_type == "xp":
+        active = get_active_xp_booster_info(data)
+        if not active:
+            return False, "❌ " + ("No active XP booster." if lang=="en" else "Нет активного XP-ускорителя.")
+        data["active_xp_booster"] = None
+        mult = _multiplier_label(active["multiplier"])
+        return True, f"XP-{'booster' if lang=='en' else 'ускоритель'} ×{mult} {'cancelled.' if lang=='en' else 'отменён.'}"
+    if boost_type == "enh":
+        active = get_active_enh_booster_info(data)
+        if not active:
+            return False, "❌ " + ("No active damage booster." if lang=="en" else "Нет активного усилителя урона.")
+        data["active_enh_booster"] = None
+        mult = _multiplier_label(active["multiplier"])
+        return True, f"{'Damage booster' if lang=='en' else 'Усилитель урона'} ×{mult} {'cancelled.' if lang=='en' else 'отменён.'}"
+    if boost_type == "poison":
+        active = get_active_poison_info(data)
+        if not active:
+            return False, "❌ " + ("No active poison." if lang=="en" else "Нет активного яда.")
+        data["active_poison"] = None
+        _pn_en = {"Яд Гадюки":"Viper","Яд Кобры":"Cobra","Яд Чёрной Мамбы":"Black Mamba","Яд Василиска":"Basilisk","Яд Левиафана":"Leviathan"}
+        pname = _pn_en.get(active["name"], active["name"]) if lang == "en" else active["name"]
+        return True, f"{'Poison' if lang=='en' else 'Яд'} {pname} {'cancelled.' if lang=='en' else 'отменён.'}"
+    return False, "❌ Unknown type."
+
+
+def get_all_active_boosters_text(data: dict, lang: str = "ru") -> str:
+    """
+    Текст для команды /boost — показывает все активные бусты
+    и подсказку как отменить.
+    """
+    active   = get_active_booster_info(data)
+    xp_act   = get_active_xp_booster_info(data)
+    enh_act  = get_active_enh_booster_info(data)
+    poison   = get_active_poison_info(data)
+
+    lines = []
+    if active:
+        left = _fmt_time_left(active["ends_at"] - _now_ts(), lang)
+        mult = _multiplier_label(active["multiplier"])
+        dur  = _dur_label(active["dur_key"], lang)
+        lines.append(
+            f"{_pe('boost','⚡')} <b>{'Pickaxe booster' if lang=='en' else 'Ускоритель кирки'}: {mult} {'for' if lang=='en' else 'на'} {dur}</b>\n"
+            f"   ⏱ {'Left' if lang=='en' else 'Осталось'}: <b>{left}</b> — <code>{'stop boost' if lang=='en' else 'стоп буст'}</code>"
+        )
+    if xp_act:
+        left = _fmt_time_left(xp_act["ends_at"] - _now_ts(), lang)
+        mult = _multiplier_label(xp_act["multiplier"])
+        dur  = _dur_label(xp_act["dur_key"], lang)
+        lines.append(
+            f"{_pe('xp_boost','🔮')} <b>XP-{'booster' if lang=='en' else 'ускоритель'}: ×{mult} {'for' if lang=='en' else 'на'} {dur}</b>\n"
+            f"   ⏱ {'Left' if lang=='en' else 'Осталось'}: <b>{left}</b> — <code>{'stop xp' if lang=='en' else 'стоп xp'}</code>"
+        )
+    if enh_act:
+        left = _fmt_time_left(enh_act["ends_at"] - _now_ts(), lang)
+        mult = _multiplier_label(enh_act["multiplier"])
+        dur  = _dur_label(enh_act["dur_key"], lang)
+        lines.append(
+            f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>{"Damage booster" if lang=="en" else "Усилитель урона"}: ×{mult} {"for" if lang=="en" else "на"} {dur}</b>\n'
+            f'   ⏱ {"Left" if lang=="en" else "Осталось"}: <b>{left}</b> — <code>{"stop dmg" if lang=="en" else "стоп урон"}</code>'
+        )
+    if poison:
+        left = _fmt_time_left(poison["ends_at"] - _now_ts(), lang)
+        _pn_en = {"Яд Гадюки":"Viper Venom","Яд Кобры":"Cobra Venom","Яд Чёрной Мамбы":"Black Mamba Venom","Яд Василиска":"Basilisk Venom","Яд Левиафана":"Leviathan Venom"}
+        pname = _pn_en.get(poison["name"], poison["name"]) if lang == "en" else poison["name"]
+        lines.append(
+            f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>{"Poison" if lang=="en" else "Яд"}: {pname}</b>\n'
+            f'   ⏱ {"Left" if lang=="en" else "Осталось"}: <b>{left}</b> — <code>{"stop poison" if lang=="en" else "стоп яд"}</code>'
+        )
+
+    if not lines:
+        empty = "No active boosters." if lang == "en" else "Нет активных ускорителей."
+        return f"<blockquote>{_pe('cancel','❌')} <b>{empty}</b></blockquote>"
+
+    title = "ACTIVE BOOSTERS" if lang == "en" else "АКТИВНЫЕ УСКОРИТЕЛИ"
+    body  = "\n\n".join(lines)
+    hint_ru = (
+        "\n\n<blockquote><i>Команды отмены:\n"
+        "<code>стоп буст</code> — кирка\n"
+        "<code>стоп xp</code> — XP\n"
+        "<code>стоп урон</code> — урон\n"
+        "<code>стоп яд</code> — яд</i></blockquote>"
+    )
+    hint_en = (
+        "\n\n<blockquote><i>Cancel commands:\n"
+        "<code>stop boost</code> — pickaxe\n"
+        "<code>stop xp</code> — XP\n"
+        "<code>stop dmg</code> — damage\n"
+        "<code>stop poison</code> — poison</i></blockquote>"
+    )
+    return f"<blockquote>{_pe('boost','⚡')} <b>{title}</b>\n\n{body}</blockquote>" + (hint_en if lang == "en" else hint_ru)
