@@ -422,7 +422,7 @@ def profile_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(
             text=" Инвентарь" if lang == "ru" else " Inventory",
-            callback_data="profile_boosters",
+            callback_data="profile_inv",
             icon_custom_emoji_id="5445221832074483553"
         ),
         InlineKeyboardButton(
@@ -3250,6 +3250,18 @@ async def handle_callback(call: CallbackQuery):
                 await edit(msg, cases_shop_keyboard(lang))
             else:
                 await call.answer(_plain(msg), show_alert=True)
+            return
+
+        # ===== ИНВЕНТАРЬ — кнопка из профиля =====
+        if cd == "profile_inv":
+            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(
+                    text=t(lang, "btn_back"),
+                    callback_data="profile",
+                    icon_custom_emoji_id=EMOJI_BACK,
+                )
+            ]])
+            await edit(unified_inventory_text(data, lang), kb)
             return
 
         # ===== ИНВЕНТАРЬ — главная страница выбора раздела =====
