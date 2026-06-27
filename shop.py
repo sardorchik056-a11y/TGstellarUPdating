@@ -1808,14 +1808,14 @@ def unified_inventory_text(data: dict, lang: str = "ru") -> str:
         lbl_inv = "In inventory" if lang == "en" else "В инвентаре"
         lines.append(f"\n<blockquote><b>{lbl_inv} ({total} шт.):</b>\n")
         for s in stacks:
-            cnt_str = f" ({s['count']} шт.)" if s["count"] > 1 else ""
-            lines.append(f"<b>#{s['slot_id']}</b> {s['display']}{cnt_str}\n")
+            cnt_str = f" <i>({s['count']} шт.)</i>" if s["count"] > 1 else ""
+            lines.append(f"<b>#{s['slot_id']}</b> <i>{s['display']}</i>{cnt_str}\n")
         lines.append("</blockquote>")
 
     lbl_hint = (
-        "\n<blockquote><i>Use: <code>use #N</code> or <code>-use #N</code>\nCancel: <code>/stop #N</code></i></blockquote>"
+        "\n<blockquote><i>Use: <code>use #N</code> or <code>-use #N</code>\nCancel: <code>/stop #N</code>\nSell: <code>/sell #N</code> or <code>/sell #N 5</code></i></blockquote>"
         if lang == "en" else
-        "\n<blockquote><i>Использовать: <code>исп #N</code> или <code>-use #N</code>\nОтменить: <code>/стоп #N</code></i></blockquote>"
+        "\n<blockquote><i>Использовать: <code>исп #N</code> или <code>-use #N</code>\nОтменить: <code>/стоп #N</code>\nПродать: <code>/sell #N</code> или <code>/sell #N 5</code></i></blockquote>"
     )
     lines.append(lbl_hint)
     return "".join(lines)
@@ -1988,3 +1988,105 @@ def get_all_active_boosters_text(data: dict, lang: str = "ru") -> str:
         "<code>/stop poison</code> — poison</i></blockquote>"
     )
     return f"<blockquote>{_pe('boost','⚡')} <b>{title}</b>\n\n{body}</blockquote>" + (hint_en if lang == "en" else hint_ru)
+
+
+def sell_item_by_slot_id(data: dict, slot_id: int, qty: int = 1, lang: str = "ru") -> tuple[bool, str]:
+    """
+    Продаёт qty предметов из стопки по slot_id.
+    Возвращает (ok, сообщение).
+    """
+    from database import format_amount as _fa
+
+    slot_map = _get_or_assign_slot_ids(data)
+    key = next((k for k, sid in slot_map.items() if sid == slot_id), None)
+    if key is None:
+        err = f"Слот #{slot_id} не найден." if lang == "ru" else f"Slot #{slot_id} not found."
+        return False, f"❌ {err}"
+
+    # Определяем тип и инвентарь
+    inv_key = None
+    item_sample = None
+    sell_price_fn = None
+
+    boost_inv = data.get("boosters_inventory", [])
+    if any(i["key"] == key for i in boost_inv):
+        inv_key = "boosters_inventory"
+        item_sample = next(i for i in boost_inv if i["key"] == key)
+        sell_price_fn = get_sell_price
+
+    if inv_key is None:
+        xp_inv = data.get("xp_inventory", [])
+        if any(i["key"] == key for i in xp_inv):
+            inv_key = "xp_inventory"
+            item_sample = next(i for i in xp_inv if i["key"] == key)
+            sell_price_fn = get_xp_sell_price
+
+    if inv_key is None:
+        enh_inv = data.get("enh_inventory", [])
+        if any(i["key"] == key for i in enh_inv):
+            inv_key = "enh_inventory"
+            item_sample = next(i for i in enh_inv if i["key"] == key)
+            sell_price_fn = get_enh_sell_price
+
+    if inv_key is None:
+        err = f"Слот #{slot_id} не найден." if lang == "ru" else f"Slot #{slot_id} not found."
+        return False, f"❌ {err}"
+
+    inv = data[inv_key]
+    available = sum(1 for i in inv if i["key"] == key)
+
+    if qty < 1:
+        err = "Количество должно быть ≥ 1." if lang == "ru" else "Quantity must be ≥ 1."
+        return False, f"❌ {err}"
+    if qty > available:
+        err = (
+            f"В стопке только {available} шт." if lang == "ru"
+            else f"Only {available} in stack."
+        )
+        return False, f"❌ {err}"
+
+    price_each = sell_price_fn(item_sample)
+    total_earn = price_each * qty
+
+    # Убираем qty предметов из инвентаря
+    removed = 0
+    new_inv = []
+    for i in inv:
+        if i["key"] == key and removed < qty:
+            removed += 1
+        else:
+            new_inv.append(i)
+    data[inv_key] = new_inv
+
+    # Если стопка полностью продана — убираем slot_id
+    remaining = available - qty
+    if remaining == 0:
+        slot_map.pop(key, None)
+        data["inv_slot_ids"] = slot_map
+
+    data["balance"] = data.get("balance", 0) + total_earn
+
+    # Название предмета
+    itype = item_sample.get("type", "boost")
+    if itype == "boost":
+        name = _booster_name(item_sample)
+    elif itype in ("xp_boost", "xp_instant"):
+        name = _xp_item_name_plain(item_sample)
+    else:
+        name = _enh_item_name_plain(item_sample)
+
+    if lang == "en":
+        qty_str = f"{qty} шт. " if qty > 1 else ""
+        msg = (
+            f"<blockquote>💰 <b>Sold {qty_str}{name}</b>\n"
+            f"+ {_fa(total_earn)} {'(× ' + str(qty) + ')' if qty > 1 else ''}\n"
+            f"Balance: <b>{_fa(data['balance'])}</b></blockquote>"
+        )
+    else:
+        qty_str = f"{qty} шт. " if qty > 1 else ""
+        msg = (
+            f"<blockquote>💰 <b>Продано: {qty_str}{name}</b>\n"
+            f"+ {_fa(total_earn)}{' (× ' + str(qty) + ')' if qty > 1 else ''}\n"
+            f"Баланс: <b>{_fa(data['balance'])}</b></blockquote>"
+        )
+    return True, msg
