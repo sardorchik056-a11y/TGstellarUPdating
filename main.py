@@ -171,6 +171,7 @@ from shop import (
     use_item_by_slot_id, cancel_active_by_type,
     get_all_active_boosters_text,
     sell_item_by_slot_id,
+    transfer_item_by_slot_id,
 )
 from rass import (
     is_in_rass,
@@ -2082,6 +2083,136 @@ async def cmd_sell(message: Message):
         from database import save_user
         save_user(uid, u)
     await message.reply(msg, parse_mode="HTML")
+
+
+# ── отп/пер/перевести/отправить #N [qty] [@user|id] — передать предмет ──────
+# Форматы:
+#   отп #45              — 1 шт., получатель из reply
+#   отп #45 3            — 3 шт., получатель из reply
+#   отп #45 @username    — 1 шт., явный получатель
+#   отп #45 3 @username  — 3 шт., явный получатель
+#   пер / перевести / отправить — синонимы
+
+_TRANSFER_RE = _re_inv.compile(
+    r'^/?(отп|пер|перевести|отправить|transfer_item)\s+'
+    r'#(\d+)'
+    r'(?:\s+(\d+))?'
+    r'(?:\s+[@]?(\S+))?'
+    r'\s*$',
+    _re_inv.IGNORECASE,
+)
+
+@dp.message(F.text.regexp(
+    r'^/?(отп|пер|перевести|отправить|transfer_item)\s+#\d+',
+    flags=_re_inv.IGNORECASE,
+))
+async def cmd_transfer_item(message: Message):
+    """Передача предмета из инвентаря другому игроку."""
+    from database import get_all_users, save_user as _save, get_user
+
+    uid  = message.from_user.id
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(uid)
+    if await _check_onboarded(message, u):
+        return
+
+    text = (message.text or "").strip()
+    m = _TRANSFER_RE.match(text)
+    if not m:
+        hint = (
+            "❌ <b>Неверный формат.</b>\n\n"
+            "<blockquote>"
+            "Ответь на сообщение игрока и напиши:\n"
+            "<code>отп #45</code> — 1 шт.\n"
+            "<code>отп #45 3</code> — 3 шт.\n\n"
+            "Или укажи получателя явно:\n"
+            "<code>отп #45 @username</code>\n"
+            "<code>отп #45 3 @username</code>\n"
+            "<code>отп #45 123456789</code>"
+            "</blockquote>"
+        )
+        await message.reply(hint, parse_mode="HTML")
+        return
+
+    slot_id    = int(m.group(2))
+    qty_raw    = m.group(3)
+    target_raw = m.group(4)
+    qty        = int(qty_raw) if qty_raw else 1
+
+    # ── Определяем получателя ──────────────────────────────────────────
+    recipient_data = None
+
+    if target_raw:
+        target_clean = target_raw.lstrip("@")
+        all_users = get_all_users()
+        if target_clean.lstrip("-").isdigit():
+            recipient_data = next(
+                (u2 for u2 in all_users if u2["id"] == int(target_clean)), None
+            )
+        else:
+            recipient_data = next(
+                (u2 for u2 in all_users
+                 if (u2.get("username") or "").lower() == target_clean.lower()),
+                None,
+            )
+    else:
+        if not message.reply_to_message:
+            hint = (
+                "❌ <b>Укажи получателя.</b>\n\n"
+                "<blockquote>"
+                "Ответь на сообщение игрока и напиши:\n"
+                "<code>отп #45</code>\n\n"
+                "Или укажи явно:\n"
+                "<code>отп #45 @username</code>\n"
+                "<code>отп #45 3 @username</code>"
+                "</blockquote>"
+            )
+            await message.reply(hint, parse_mode="HTML")
+            return
+        target_uid     = message.reply_to_message.from_user.id
+        recipient_data = get_user(target_uid)
+
+    if not recipient_data:
+        await message.reply(
+            "❌ Игрок не найден в базе. Он должен хотя бы раз написать боту.",
+            parse_mode="HTML",
+        )
+        return
+
+    if recipient_data["id"] == uid:
+        await message.reply("❌ Нельзя передавать предметы самому себе.", parse_mode="HTML")
+        return
+
+    # ── Атомарный перенос ─────────────────────────────────────────────
+    lock_sender    = await _get_user_lock(uid)
+    lock_recipient = await _get_user_lock(recipient_data["id"])
+
+    first_lock, second_lock = (
+        (lock_sender, lock_recipient)
+        if uid < recipient_data["id"]
+        else (lock_recipient, lock_sender)
+    )
+
+    async with first_lock:
+        async with second_lock:
+            sender_data    = get_or_create_user(message.from_user)
+            recipient_data = get_user(recipient_data["id"])
+
+            ok, sender_msg, recip_msg = transfer_item_by_slot_id(
+                sender_data, recipient_data, slot_id, qty, lang
+            )
+            if ok:
+                _save(uid, sender_data)
+                _save(recipient_data["id"], recipient_data)
+
+    await message.reply(sender_msg if ok else sender_msg, parse_mode="HTML")
+
+    if ok and recip_msg:
+        try:
+            await bot.send_message(recipient_data["id"], recip_msg, parse_mode="HTML")
+        except Exception:
+            pass
 
 
 @dp.message(Command("boost", "буст", "бусты", "boosts"))
