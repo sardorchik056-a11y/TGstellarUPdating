@@ -2188,27 +2188,26 @@ def transfer_item_by_slot_id(
 
     qty_str = f"{qty} шт. " if qty > 1 else ""
 
+    recip_name  = recipient_data.get("first_name") or recipient_data.get("username") or str(recipient_data["id"])
+    sender_name = sender_data.get("first_name") or sender_data.get("username") or str(sender_data["id"])
+
     if lang == "en":
         sender_msg = (
-            f"<blockquote>📦 <b>Transferred {qty_str}{name}</b>\n"
-            f"To: <b>{recipient_data.get('first_name') or recipient_data.get('username') or str(recipient_data['id'])}</b>"
-            f"</blockquote>"
+            f'<tg-emoji emoji-id="5201691993775818138">✅</tg-emoji> '
+            f'<b>You successfully sent {qty_str}{name} to player {recip_name}!</b>'
         )
         recip_msg = (
-            f"<blockquote>🎁 <b>You received {qty_str}{name}</b>\n"
-            f"From: <b>{sender_data.get('first_name') or sender_data.get('username') or str(sender_data['id'])}</b>"
-            f"</blockquote>"
+            f'<tg-emoji emoji-id="5222113468051629260">🎁</tg-emoji> '
+            f'<b>You received {qty_str}{name} from {sender_name}!</b>'
         )
     else:
         sender_msg = (
-            f"<blockquote>📦 <b>Передано: {qty_str}{name}</b>\n"
-            f"Кому: <b>{recipient_data.get('first_name') or recipient_data.get('username') or str(recipient_data['id'])}</b>"
-            f"</blockquote>"
+            f'<tg-emoji emoji-id="5201691993775818138">✅</tg-emoji> '
+            f'<b>Вы успешно передали {qty_str}{name} игроку {recip_name}!</b>'
         )
         recip_msg = (
-            f"<blockquote>🎁 <b>Вам передали: {qty_str}{name}</b>\n"
-            f"От: <b>{sender_data.get('first_name') or sender_data.get('username') or str(sender_data['id'])}</b>"
-            f"</blockquote>"
+            f'<tg-emoji emoji-id="5222113468051629260">🎁</tg-emoji> '
+            f'<b>Вы получили {qty_str}{name} от {sender_name}!</b>'
         )
 
     return True, sender_msg, recip_msg
