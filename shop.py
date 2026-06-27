@@ -1813,9 +1813,9 @@ def unified_inventory_text(data: dict, lang: str = "ru") -> str:
         lines.append("</blockquote>")
 
     lbl_hint = (
-        "\n<blockquote><i>Use: <code>use #N</code> or <code>-use #N</code>\nCancel: <code>stop #N</code></i></blockquote>"
+        "\n<blockquote><i>Use: <code>use #N</code> or <code>-use #N</code>\nCancel: <code>/stop #N</code></i></blockquote>"
         if lang == "en" else
-        "\n<blockquote><i>Использовать: <code>исп #N</code> или <code>-use #N</code>\nОтменить: <code>стоп #N</code></i></blockquote>"
+        "\n<blockquote><i>Использовать: <code>исп #N</code> или <code>-use #N</code>\nОтменить: <code>/стоп #N</code></i></blockquote>"
     )
     lines.append(lbl_hint)
     return "".join(lines)
@@ -1939,24 +1939,24 @@ def get_all_active_boosters_text(data: dict, lang: str = "ru") -> str:
         mult = _multiplier_label(active["multiplier"])
         dur  = _dur_label(active["dur_key"], lang)
         lines.append(
-            f"{_pe('boost','⚡')} <b>{'Pickaxe booster' if lang=='en' else 'Ускоритель кирки'}: {mult} {'for' if lang=='en' else 'на'} {dur}</b>\n"
-            f"   ⏱ {'Left' if lang=='en' else 'Осталось'}: <b>{left}</b> — <code>{'stop boost' if lang=='en' else 'стоп буст'}</code>"
+            f"{_pe('boost','⚡')} <b>{'Pickaxe booster' if lang=='en' else 'Ускоритель кирки'}: {mult} {'for' if lang=='en' else 'на'} <i>{dur}</i></b>\n"
+            f"   ⏱ <i>{'Left' if lang=='en' else 'Осталось'}: {left}</i> — <code>{'/stop boost' if lang=='en' else '/стоп буст'}</code>"
         )
     if xp_act:
         left = _fmt_time_left(xp_act["ends_at"] - _now_ts(), lang)
         mult = _multiplier_label(xp_act["multiplier"])
         dur  = _dur_label(xp_act["dur_key"], lang)
         lines.append(
-            f"{_pe('xp_boost','🔮')} <b>XP-{'booster' if lang=='en' else 'ускоритель'}: ×{mult} {'for' if lang=='en' else 'на'} {dur}</b>\n"
-            f"   ⏱ {'Left' if lang=='en' else 'Осталось'}: <b>{left}</b> — <code>{'stop xp' if lang=='en' else 'стоп xp'}</code>"
+            f"{_pe('xp_boost','🔮')} <b>XP-{'booster' if lang=='en' else 'ускоритель'}: ×{mult} {'for' if lang=='en' else 'на'} <i>{dur}</i></b>\n"
+            f"   ⏱ <i>{'Left' if lang=='en' else 'Осталось'}: {left}</i> — <code>{'/stop xp' if lang=='en' else '/стоп xp'}</code>"
         )
     if enh_act:
         left = _fmt_time_left(enh_act["ends_at"] - _now_ts(), lang)
         mult = _multiplier_label(enh_act["multiplier"])
         dur  = _dur_label(enh_act["dur_key"], lang)
         lines.append(
-            f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>{"Damage booster" if lang=="en" else "Усилитель урона"}: ×{mult} {"for" if lang=="en" else "на"} {dur}</b>\n'
-            f'   ⏱ {"Left" if lang=="en" else "Осталось"}: <b>{left}</b> — <code>{"stop dmg" if lang=="en" else "стоп урон"}</code>'
+            f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>{"Damage booster" if lang=="en" else "Усилитель урона"}: ×{mult} {"for" if lang=="en" else "на"} <i>{dur}</i></b>\n'
+            f'   ⏱ <i>{"Left" if lang=="en" else "Осталось"}: {left}</i> — <code>{"/stop dmg" if lang=="en" else "/стоп урон"}</code>'
         )
     if poison:
         left = _fmt_time_left(poison["ends_at"] - _now_ts(), lang)
@@ -1964,7 +1964,7 @@ def get_all_active_boosters_text(data: dict, lang: str = "ru") -> str:
         pname = _pn_en.get(poison["name"], poison["name"]) if lang == "en" else poison["name"]
         lines.append(
             f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>{"Poison" if lang=="en" else "Яд"}: {pname}</b>\n'
-            f'   ⏱ {"Left" if lang=="en" else "Осталось"}: <b>{left}</b> — <code>{"stop poison" if lang=="en" else "стоп яд"}</code>'
+            f'   ⏱ <i>{"Left" if lang=="en" else "Осталось"}: {left}</i> — <code>{"/stop poison" if lang=="en" else "/стоп яд"}</code>'
         )
 
     if not lines:
@@ -1975,16 +1975,16 @@ def get_all_active_boosters_text(data: dict, lang: str = "ru") -> str:
     body  = "\n\n".join(lines)
     hint_ru = (
         "\n\n<blockquote><i>Команды отмены:\n"
-        "<code>стоп буст</code> — кирка\n"
-        "<code>стоп xp</code> — XP\n"
-        "<code>стоп урон</code> — урон\n"
-        "<code>стоп яд</code> — яд</i></blockquote>"
+        "<code>/стоп буст</code> — кирка\n"
+        "<code>/стоп xp</code> — XP\n"
+        "<code>/стоп урон</code> — урон\n"
+        "<code>/стоп яд</code> — яд</i></blockquote>"
     )
     hint_en = (
         "\n\n<blockquote><i>Cancel commands:\n"
-        "<code>stop boost</code> — pickaxe\n"
-        "<code>stop xp</code> — XP\n"
-        "<code>stop dmg</code> — damage\n"
-        "<code>stop poison</code> — poison</i></blockquote>"
+        "<code>/stop boost</code> — pickaxe\n"
+        "<code>/stop xp</code> — XP\n"
+        "<code>/stop dmg</code> — damage\n"
+        "<code>/stop poison</code> — poison</i></blockquote>"
     )
     return f"<blockquote>{_pe('boost','⚡')} <b>{title}</b>\n\n{body}</blockquote>" + (hint_en if lang == "en" else hint_ru)
