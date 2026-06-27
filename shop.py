@@ -541,8 +541,6 @@ def open_case(data: dict, case_key: str, lang: str = "ru") -> tuple:
             return False, f"❌ {_L(lang, 'Инвентарь ускорителей полон!', 'Booster inventory is full!')}\n{_L(lang, f'Максимум {MAX_INVENTORY} шт. Активируй или продай лишние.', f'Max {MAX_INVENTORY} items. Activate or sell some.')}", None
     elif case["type"] == "enhancer":
         inv = data.setdefault("enh_inventory", [])
-        if len(inv) >= MAX_ENH_INVENTORY:
-            return False, f"❌ {_L(lang, 'Инвентарь усилителей полон!', 'Enhancer inventory is full!')}\n{_L(lang, f'Максимум {MAX_ENH_INVENTORY} шт. Используй или продай лишние.', f'Max {MAX_ENH_INVENTORY} items. Use or sell some.')}", None
     else:
         inv = data.setdefault("xp_inventory", [])
         if len(inv) >= MAX_XP_INVENTORY:
@@ -1813,9 +1811,19 @@ def unified_inventory_text(data: dict, lang: str = "ru") -> str:
         lines.append("</blockquote>")
 
     lbl_hint = (
-        "\n<blockquote><i>Use: <code>use #N</code> or <code>-use #N</code>\nCancel: <code>/stop #N</code>\nSell: <code>/sell #N</code> or <code>/sell #N 5</code></i></blockquote>"
+        "\n<blockquote><i>"
+        "Use: <code>use #N</code> or <code>-use #N</code>\n"
+        "Cancel: <code>/stop #N</code>\n"
+        "Sell: <code>/sell #N</code> or <code>/sell #N 5</code>\n"
+        "Transfer: <code>отп #N</code> or <code>отп #N 3 @username</code>"
+        "</i></blockquote>"
         if lang == "en" else
-        "\n<blockquote><i>Использовать: <code>исп #N</code> или <code>-use #N</code>\nОтменить: <code>/стоп #N</code>\nПродать: <code>/sell #N</code> или <code>/sell #N 5</code></i></blockquote>"
+        "\n<blockquote><i>"
+        "Использовать: <code>исп #N</code> или <code>-use #N</code>\n"
+        "Отменить: <code>/стоп #N</code>\n"
+        "Продать: <code>/sell #N</code> или <code>/sell #N 5</code>\n"
+        "Передать: <code>отп #N</code> или <code>отп #N 3 @username</code>"
+        "</i></blockquote>"
     )
     lines.append(lbl_hint)
     return "".join(lines)
@@ -2090,3 +2098,117 @@ def sell_item_by_slot_id(data: dict, slot_id: int, qty: int = 1, lang: str = "ru
             f"Баланс: <b>{_fa(data['balance'])}</b></blockquote>"
         )
     return True, msg
+
+
+def transfer_item_by_slot_id(
+    sender_data: dict,
+    recipient_data: dict,
+    slot_id: int,
+    qty: int = 1,
+    lang: str = "ru",
+) -> tuple[bool, str, str]:
+    """
+    Передаёт qty предметов из инвентаря sender_data → recipient_data по slot_id.
+    Возвращает (ok, sender_msg, recipient_msg).
+    Модифицирует оба словаря на месте — сохранение в БД на стороне вызывающего.
+    """
+
+    # ── Найти ключ стопки по slot_id ──────────────────────────────────
+    slot_map = _get_or_assign_slot_ids(sender_data)
+    key = next((k for k, sid in slot_map.items() if sid == slot_id), None)
+    if key is None:
+        err = f"Слот #{slot_id} не найден." if lang == "ru" else f"Slot #{slot_id} not found."
+        return False, f"❌ {err}", ""
+
+    # ── Определяем инвентарь и тип предмета ───────────────────────────
+    inv_key       = None
+    item_sample   = None
+    item_name_fn  = None
+
+    boost_inv = sender_data.get("boosters_inventory", [])
+    if any(i["key"] == key for i in boost_inv):
+        inv_key      = "boosters_inventory"
+        item_sample  = next(i for i in boost_inv if i["key"] == key)
+        item_name_fn = lambda it: _booster_name(it)
+
+    if inv_key is None:
+        xp_inv = sender_data.get("xp_inventory", [])
+        if any(i["key"] == key for i in xp_inv):
+            inv_key      = "xp_inventory"
+            item_sample  = next(i for i in xp_inv if i["key"] == key)
+            item_name_fn = lambda it: _xp_item_name_plain(it)
+
+    if inv_key is None:
+        enh_inv = sender_data.get("enh_inventory", [])
+        if any(i["key"] == key for i in enh_inv):
+            inv_key      = "enh_inventory"
+            item_sample  = next(i for i in enh_inv if i["key"] == key)
+            item_name_fn = lambda it: _enh_item_name_plain(it)
+
+    if inv_key is None:
+        err = f"Слот #{slot_id} не найден." if lang == "ru" else f"Slot #{slot_id} not found."
+        return False, f"❌ {err}", ""
+
+    # ── Проверяем наличие ──────────────────────────────────────────────
+    sender_inv = sender_data[inv_key]
+    available  = sum(1 for i in sender_inv if i["key"] == key)
+
+    if qty < 1:
+        err = "Количество должно быть ≥ 1." if lang == "ru" else "Quantity must be ≥ 1."
+        return False, f"❌ {err}", ""
+    if qty > available:
+        err = (
+            f"В стопке только {available} шт." if lang == "ru"
+            else f"Only {available} in stack."
+        )
+        return False, f"❌ {err}", ""
+
+    # ── Перемещаем предметы ────────────────────────────────────────────
+    transferred = []
+    remaining   = []
+    for item in sender_inv:
+        if item["key"] == key and len(transferred) < qty:
+            transferred.append(item)
+        else:
+            remaining.append(item)
+
+    sender_data[inv_key] = remaining
+
+    # Если стопка опустела — убираем slot_id
+    if available - qty == 0:
+        slot_map.pop(key, None)
+        sender_data["inv_slot_ids"] = slot_map
+
+    # Добавляем получателю
+    recipient_inv = recipient_data.setdefault(inv_key, [])
+    recipient_inv.extend(transferred)
+
+    # ── Формируем имя предмета ─────────────────────────────────────────
+    name = item_name_fn(item_sample)
+
+    qty_str = f"{qty} шт. " if qty > 1 else ""
+
+    if lang == "en":
+        sender_msg = (
+            f"<blockquote>📦 <b>Transferred {qty_str}{name}</b>\n"
+            f"To: <b>{recipient_data.get('first_name') or recipient_data.get('username') or str(recipient_data['id'])}</b>"
+            f"</blockquote>"
+        )
+        recip_msg = (
+            f"<blockquote>🎁 <b>You received {qty_str}{name}</b>\n"
+            f"From: <b>{sender_data.get('first_name') or sender_data.get('username') or str(sender_data['id'])}</b>"
+            f"</blockquote>"
+        )
+    else:
+        sender_msg = (
+            f"<blockquote>📦 <b>Передано: {qty_str}{name}</b>\n"
+            f"Кому: <b>{recipient_data.get('first_name') or recipient_data.get('username') or str(recipient_data['id'])}</b>"
+            f"</blockquote>"
+        )
+        recip_msg = (
+            f"<blockquote>🎁 <b>Вам передали: {qty_str}{name}</b>\n"
+            f"От: <b>{sender_data.get('first_name') or sender_data.get('username') or str(sender_data['id'])}</b>"
+            f"</blockquote>"
+        )
+
+    return True, sender_msg, recip_msg
