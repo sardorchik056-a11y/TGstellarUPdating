@@ -2091,14 +2091,14 @@ async def cmd_use_item(message: Message):
 
 # стоп буст / stop boost / стоп xp / stop xp / стоп урон / stop dmg / стоп яд / stop poison
 _STOP_PATTERNS = {
-    "boost":  _re_inv.compile(r'^(?:стоп|stop)\s+(?:буст|boost)\s*$', _re_inv.IGNORECASE),
-    "xp":     _re_inv.compile(r'^(?:стоп|stop)\s+xp\s*$', _re_inv.IGNORECASE),
-    "enh":    _re_inv.compile(r'^(?:стоп|stop)\s+(?:урон|dmg|damage)\s*$', _re_inv.IGNORECASE),
-    "poison": _re_inv.compile(r'^(?:стоп|stop)\s+(?:яд|poison)\s*$', _re_inv.IGNORECASE),
+    "boost":  _re_inv.compile(r'^/(?:стоп|stop)\s+(?:буст|boost)\s*$', _re_inv.IGNORECASE),
+    "xp":     _re_inv.compile(r'^/(?:стоп|stop)\s+xp\s*$', _re_inv.IGNORECASE),
+    "enh":    _re_inv.compile(r'^/(?:стоп|stop)\s+(?:урон|dmg|damage)\s*$', _re_inv.IGNORECASE),
+    "poison": _re_inv.compile(r'^/(?:стоп|stop)\s+(?:яд|poison)\s*$', _re_inv.IGNORECASE),
 }
 
 @dp.message(F.text.regexp(
-    r'^(?:стоп|stop)\s+(?:буст|boost|xp|урон|dmg|damage|яд|poison)\s*$',
+    r'^/(?:стоп|stop)\s+(?:буст|boost|xp|урон|dmg|damage|яд|poison)\s*$',
     flags=_re_inv.IGNORECASE
 ))
 async def cmd_stop_boost(message: Message):
@@ -3254,14 +3254,35 @@ async def handle_callback(call: CallbackQuery):
 
         # ===== ИНВЕНТАРЬ — кнопка из профиля =====
         if cd == "profile_inv":
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=" Активные" if lang == "ru" else " Active",
+                        callback_data="inv_active_boosters",
+                        icon_custom_emoji_id="5206607081334906820",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=t(lang, "btn_back"),
+                        callback_data="profile",
+                        icon_custom_emoji_id=EMOJI_BACK,
+                    )
+                ],
+            ])
+            await edit(unified_inventory_text(data, lang), kb)
+            return
+
+        # ===== ИНВЕНТАРЬ — активные бусты =====
+        if cd == "inv_active_boosters":
             kb = InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(
                     text=t(lang, "btn_back"),
-                    callback_data="profile",
+                    callback_data="profile_inv",
                     icon_custom_emoji_id=EMOJI_BACK,
                 )
             ]])
-            await edit(unified_inventory_text(data, lang), kb)
+            await edit(get_all_active_boosters_text(data, lang), kb)
             return
 
         # ===== ИНВЕНТАРЬ — главная страница выбора раздела =====
