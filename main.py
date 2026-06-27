@@ -1362,7 +1362,7 @@ def _parse_gift_args(message: Message):
 
 
 @dp.message(Command("gift", "дать", "пер", "transfer", "give", "дарю"))
-@dp.message(F.text.regexp(r'^[/]?(gift|дать|пер|transfer|give|дарю)\s+\S', flags=_re.IGNORECASE))
+@dp.message(F.text.regexp(r'^[/]?(gift|дать|пер|transfer|give|дарю)(\s+\S|\s*$)', flags=_re.IGNORECASE))
 async def cmd_gift(message: Message):
     """Перевод монет другому игроку."""
     from database import get_all_users, save_user as _save, get_user
@@ -1376,6 +1376,31 @@ async def cmd_gift(message: Message):
         return
 
     target_raw, amount, error = _parse_gift_args(message)
+
+    # Команда без аргументов — показываем подсказку
+    text_stripped = (message.text or "").strip()
+    import re as _re_gift
+    bare = _re_gift.fullmatch(r"[/]?(gift|дать|пер|transfer|give|дарю)", text_stripped, flags=_re_gift.IGNORECASE)
+    if bare and not amount and not target_raw and not error:
+        hint = (
+            "❌ <b>Укажи получателя и сумму.</b>
+
+"
+            "<blockquote>"
+            "Ответь на сообщение игрока и напиши:
+"
+            "<code>дать 500</code>
+
+"
+            "Или укажи явно:
+"
+            "<code>дать @username 500</code>
+"
+            "<code>дать 123456789 500</code>"
+            "</blockquote>"
+        )
+        await message.reply(hint, parse_mode="HTML")
+        return
 
     # Ошибка разбора
     if error == "bad_format":
@@ -1881,6 +1906,8 @@ async def _handle_duel_cmd(message: Message):
     uid  = message.from_user.id
     u    = get_or_create_user(message.from_user)
     text = (message.text or "").strip()
+    # Сбрасываем ожидание ввода цели вызова — команда дуэли сама управляет флагом
+    _challenge_input_pending.pop(uid, None)
 
     if is_duel_main_cmd(text):
         # /дуэли — главный раздел дуэлей
@@ -2363,6 +2390,11 @@ async def handle_callback(call: CallbackQuery):
         if cd not in _KLAN_INPUT_CALLBACKS and not cd.startswith("klan_apply_"):
             if _clear_klan_pending(data):
                 save_user(user.id, data)
+
+        # Сбрасываем ожидание ввода цели вызова при любом callback,
+        # кроме самого экрана ввода (duel_challenge_start) и кнопки отмены.
+        if cd not in ("duel_challenge_start", "duel_challenge_cancel"):
+            _challenge_input_pending.pop(user.id, None)
 
         # ===== ВКЛАДЫ =====
 
