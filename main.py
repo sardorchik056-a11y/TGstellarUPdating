@@ -170,6 +170,7 @@ from shop import (
     unified_inventory_text, get_unified_inventory,
     use_item_by_slot_id, cancel_active_by_type,
     get_all_active_boosters_text,
+    sell_item_by_slot_id,
 )
 from rass import (
     is_in_rass,
@@ -2054,6 +2055,33 @@ async def cmd_inv(message: Message):
     track_user(uid)
     if await _check_onboarded(message, u): return
     await message.reply(unified_inventory_text(u, lang), parse_mode="HTML")
+
+
+@dp.message(Command("sell"))
+@dp.message(F.text.regexp(r'^/sell\s+#(\d+)(?:\s+(\d+))?\s*$', flags=_re_inv.IGNORECASE))
+async def cmd_sell(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    uid  = message.from_user.id
+    track_user(uid)
+    if await _check_onboarded(message, u): return
+    import re as _re_sell
+    m = _re_sell.match(r'/sell\s+#(\d+)(?:\s+(\d+))?\s*$', message.text.strip(), _re_sell.IGNORECASE)
+    if not m:
+        hint = (
+            "Использование: <code>/sell #N</code> или <code>/sell #N 5</code>"
+            if lang == "ru" else
+            "Usage: <code>/sell #N</code> or <code>/sell #N 5</code>"
+        )
+        await message.reply(f"❌ {hint}", parse_mode="HTML")
+        return
+    slot_id = int(m.group(1))
+    qty     = int(m.group(2)) if m.group(2) else 1
+    ok, msg = sell_item_by_slot_id(u, slot_id, qty, lang)
+    if ok:
+        from database import save_user
+        save_user(uid, u)
+    await message.reply(msg, parse_mode="HTML")
 
 
 @dp.message(Command("boost", "буст", "бусты", "boosts"))
