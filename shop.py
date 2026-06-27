@@ -595,6 +595,40 @@ def open_case(data: dict, case_key: str, lang: str = "ru") -> tuple:
         if dropped["type"] == "xp_instant":
             instance["xp"] = dropped["xp"]
             name = _xp_item_name(dropped, lang)
+            # xp_instant применяется сразу — не кладём в инвентарь
+            from miner import xp_for_level, MAX_LEVEL
+            gained = dropped["xp"]
+            level   = data.get("level", 1)
+            xp      = data.get("xp", 0) + gained
+            xp_max  = data.get("xp_max", xp_for_level(level))
+            lvl_ups = 0
+            while xp >= xp_max and level < MAX_LEVEL:
+                xp    -= xp_max
+                level += 1
+                lvl_ups += 1
+                xp_max  = xp_for_level(level)
+            if level >= MAX_LEVEL:
+                xp = min(xp, xp_max)
+            data["level"]  = level
+            data["xp"]     = xp
+            data["xp_max"] = xp_max
+            if lvl_ups:
+                if lang == "en":
+                    lvl_msg = f"\n🎉 <b>Level up to {level}!</b>" if lvl_ups <= 3 else f"\n🎉 <b>Level up to {level} (+{lvl_ups} lvl)!</b>"
+                else:
+                    lvl_msg = f"\n🎉 <b>Уровень повышен до {level}!</b>" * min(lvl_ups, 3) if lvl_ups <= 3 else f"\n🎉 <b>Уровень повышен до {level} (+{lvl_ups} ур.)!</b>"
+            else:
+                lvl_msg = ""
+            data["cases_total_opened"] = data.get("cases_total_opened", 0) + 1
+            data["cases_total_spent"]  = data.get("cases_total_spent",  0) + cost
+            msg = (
+                f"<blockquote>{_pe('case', '📦')} <b>{_L(lang, 'Кейс открыт!', 'Case opened!')}</b>\n"
+                f"{_pe('arrow', '➡️')} <b>{_L(lang, 'Выпало', 'Dropped')}:</b> {name}</blockquote>\n"
+                f"\n<blockquote>{_pe('xp_instant', '✨')} <b>+{_fmt_num(gained)} XP {_L(lang, 'начислено сразу!', 'applied instantly!')}</b>{lvl_msg}</blockquote>\n"
+                f"\n<blockquote>{_pe('spent', '💸')} <b>{_L(lang, 'Потрачено', 'Spent')}: {_fmt_num(cost)}</b> {_pe('coin', '💰')}\n"
+                f"{_pe('balance', '💰')} <b>{_L(lang, 'Баланс', 'Balance')}: {_fmt_num(data['balance'])}</b> {_pe('coin', '💰')}</blockquote>"
+            )
+            return True, msg, instance
         else:
             instance["multiplier"]   = dropped["multiplier"]
             instance["dur_key"]      = dropped["dur_key"]
