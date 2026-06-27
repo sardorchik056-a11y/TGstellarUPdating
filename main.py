@@ -166,6 +166,10 @@ from shop import (
     artifact_case_detail_text, artifact_case_keyboard,
     artifact_collection_text, artifact_collection_keyboard,
     open_artifact_case, ARTIFACT_CASE_COST_STARS, ARTIFACT_POOL_BY_KEY,
+    # Единый инвентарь
+    unified_inventory_text, get_unified_inventory,
+    use_item_by_slot_id, cancel_active_by_type,
+    get_all_active_boosters_text,
 )
 from rass import (
     is_in_rass,
@@ -2028,6 +2032,98 @@ async def handle_duel_cmd_text(message: Message):
 async def handle_duel_cmd_slash(message: Message):
     """Слеш-команды дуэлей."""
     await _handle_duel_cmd(message)
+
+
+
+# ============================================================
+#  КОМАНДЫ ЕДИНОГО ИНВЕНТАРЯ
+#  /инв /inv /инвентарь inventory
+#  исп #N / use #N / -use #N
+#  стоп буст / stop boost  и т.д.
+#  /boost /буст  — активные бусты
+# ============================================================
+
+import re as _re_inv
+
+@dp.message(Command("inv", "инв", "инвентарь", "inventory"))
+@dp.message(F.text.regexp(r'^/?(инв|inv|инвентарь|inventory)\s*$', flags=_re_inv.IGNORECASE))
+async def cmd_inv(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    uid  = message.from_user.id
+    track_user(uid)
+    if await _check_onboarded(message, u): return
+    await message.reply(unified_inventory_text(u, lang), parse_mode="HTML")
+
+
+@dp.message(Command("boost", "буст", "бусты", "boosts"))
+@dp.message(F.text.regexp(r'^/?(boost|буст|бусты|boosts)\s*$', flags=_re_inv.IGNORECASE))
+async def cmd_boost_status(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    uid  = message.from_user.id
+    track_user(uid)
+    if await _check_onboarded(message, u): return
+    await message.reply(get_all_active_boosters_text(u, lang), parse_mode="HTML")
+
+
+@dp.message(F.text.regexp(r'^(?:исп|use|-use)\s+#(\d+)\s*$', flags=_re_inv.IGNORECASE))
+async def cmd_use_item(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    uid  = message.from_user.id
+    track_user(uid)
+    if await _check_onboarded(message, u): return
+
+    m = _re_inv.match(r'^(?:исп|use|-use)\s+#(\d+)\s*$', (message.text or '').strip(), _re_inv.IGNORECASE)
+    if not m:
+        return
+    slot_id = int(m.group(1))
+
+    lock = await _get_user_lock(uid)
+    async with lock:
+        u = get_or_create_user(message.from_user)
+        ok, msg = use_item_by_slot_id(u, slot_id, lang)
+        if ok:
+            save_user(uid, u)
+        await message.reply(msg, parse_mode="HTML")
+
+
+# стоп буст / stop boost / стоп xp / stop xp / стоп урон / stop dmg / стоп яд / stop poison
+_STOP_PATTERNS = {
+    "boost":  _re_inv.compile(r'^(?:стоп|stop)\s+(?:буст|boost)\s*$', _re_inv.IGNORECASE),
+    "xp":     _re_inv.compile(r'^(?:стоп|stop)\s+xp\s*$', _re_inv.IGNORECASE),
+    "enh":    _re_inv.compile(r'^(?:стоп|stop)\s+(?:урон|dmg|damage)\s*$', _re_inv.IGNORECASE),
+    "poison": _re_inv.compile(r'^(?:стоп|stop)\s+(?:яд|poison)\s*$', _re_inv.IGNORECASE),
+}
+
+@dp.message(F.text.regexp(
+    r'^(?:стоп|stop)\s+(?:буст|boost|xp|урон|dmg|damage|яд|poison)\s*$',
+    flags=_re_inv.IGNORECASE
+))
+async def cmd_stop_boost(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    uid  = message.from_user.id
+    track_user(uid)
+    if await _check_onboarded(message, u): return
+
+    text = (message.text or '').strip()
+    boost_type = None
+    for btype, pat in _STOP_PATTERNS.items():
+        if pat.match(text):
+            boost_type = btype
+            break
+    if not boost_type:
+        return
+
+    lock = await _get_user_lock(uid)
+    async with lock:
+        u = get_or_create_user(message.from_user)
+        ok, msg = cancel_active_by_type(u, boost_type, lang)
+        if ok:
+            save_user(uid, u)
+        await message.reply(msg, parse_mode="HTML")
 
 
 @dp.message(F.text & ~F.text.startswith("/"))
