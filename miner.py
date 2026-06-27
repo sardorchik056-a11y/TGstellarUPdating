@@ -56,14 +56,14 @@ ORES = [
     # ── Common ───────────────────────────────────────────────────────────
     {"name": "🪨 Камень",  "name_en": "🪨 Stone",    "key": "stone",    "chance": 75.000, "weight": 500, "price":         50},
     {"name": '<tg-emoji emoji-id="5773638078321135255">🖤</tg-emoji> Уголь',    "name_en": '<tg-emoji emoji-id="5773638078321135255">🖤</tg-emoji> Coal',      "key": "coal",     "chance": 30.000, "weight": 200, "price":         85},
-    {"name": "🪨 Кремень", "name_en": "🪨 Flint",    "key": "flint",    "chance": 22.000, "weight": 160, "price":        105},
+    {"name": '<tg-emoji emoji-id="5431869843903102028">🪨</tg-emoji> Кремень', "name_en": '<tg-emoji emoji-id="5431869843903102028">🪨</tg-emoji> Flint',    "key": "flint",    "chance": 22.000, "weight": 160, "price":        105},
     {"name": '<tg-emoji emoji-id="5339390195768774311">🟤</tg-emoji> Медь',     "name_en": '<tg-emoji emoji-id="5339390195768774311">🟤</tg-emoji> Copper',    "key": "copper",   "chance": 20.000, "weight": 120, "price":        125},
     # ── Rare ─────────────────────────────────────────────────────────────
     {"name": '<tg-emoji emoji-id="5206502799528976649">⚙️</tg-emoji> Железо',  "name_en": '<tg-emoji emoji-id="5206502799528976649">⚙️</tg-emoji> Iron',      "key": "iron",     "chance":  8.000, "weight":  60, "price":        280},
-    {"name": "🩶 Серебро", "name_en": "🩶 Silver",   "key": "silver",   "chance":  5.500, "weight":  45, "price":        420},
-    {"name": "🔵 Лазурит", "name_en": "🔵 Lazurite", "key": "lazurite", "chance":  5.000, "weight":  40, "price":        450},
+    {"name": '<tg-emoji emoji-id="6005900138638218214">🩶</tg-emoji> Серебро', "name_en": '<tg-emoji emoji-id="6005900138638218214">🩶</tg-emoji> Silver',   "key": "silver",   "chance":  5.500, "weight":  45, "price":        420},
+    {"name": '<tg-emoji emoji-id="5773878407511150045">🔵</tg-emoji> Лазурит', "name_en": '<tg-emoji emoji-id="5773878407511150045">🔵</tg-emoji> Lazurite', "key": "lazurite", "chance":  5.000, "weight":  40, "price":        450},
     {"name": '<tg-emoji emoji-id="5445256208992718797">🌕</tg-emoji> Золото',   "name_en": '<tg-emoji emoji-id="5445256208992718797">🌕</tg-emoji> Gold',      "key": "gold",     "chance":  3.000, "weight":  20, "price":        800},
-    {"name": "🧱 Гранит",  "name_en": "🧱 Granite",  "key": "granite",  "chance":  2.000, "weight":  14, "price":      2_500},
+    {"name": '<tg-emoji emoji-id="5219909303720233242">🧱</tg-emoji> Гранит',  "name_en": '<tg-emoji emoji-id="5219909303720233242">🧱</tg-emoji> Granite',  "key": "granite",  "chance":  2.000, "weight":  14, "price":      2_500},
     # ── Epic ─────────────────────────────────────────────────────────────
     {"name": '<tg-emoji emoji-id="5201914481671682382">💎</tg-emoji> Алмаз',    "name_en": '<tg-emoji emoji-id="5201914481671682382">💎</tg-emoji> Diamond',   "key": "diamond",  "chance":  1.000, "weight":   8, "price":      5_000},
     # ── Legendary ────────────────────────────────────────────────────────
@@ -71,10 +71,10 @@ ORES = [
     {"name": '<tg-emoji emoji-id="5447225730670813734">☢️</tg-emoji> Уран',     "name_en": '<tg-emoji emoji-id="5447225730670813734">☢️</tg-emoji> Uranium',   "key": "uranium",  "chance":  0.040, "weight":   2, "price":    150_000},
     {"name": '<tg-emoji emoji-id="5314686299796427450">💜</tg-emoji> Аметист',  "name_en": '<tg-emoji emoji-id="5314686299796427450">💜</tg-emoji> Amethyst',  "key": "amethyst", "chance":  0.010, "weight":   1, "price":    500_000},
     # ── Mythic ───────────────────────────────────────────────────────────
-    {"name": "🟢 Нефрит",  "name_en": "🟢 Jade",     "key": "jade",     "chance":  0.005, "weight":   1, "price":  2_000_000},
-    {"name": "🌿 Изумруд", "name_en": "🌿 Emerald",  "key": "emerald",  "chance":  0.002, "weight":   1, "price":  5_000_000},
-    {"name": "💀 Обсидиан","name_en": "💀 Obsidian", "key": "obsidian", "chance":  0.001, "weight":   1, "price":  8_000_000},
-    {"name": "🔷 Сапфир",  "name_en": "🔷 Sapphire", "key": "sapphire", "chance":  0.0005,"weight":   1, "price": 15_000_000},
+    {"name": '<tg-emoji emoji-id="5850500039956239502">🟢</tg-emoji> Нефрит',  "name_en": '<tg-emoji emoji-id="5850500039956239502">🟢</tg-emoji> Jade',     "key": "jade",     "chance":  0.005, "weight":   1, "price":  2_000_000},
+    {"name": '<tg-emoji emoji-id="5470105163190515289">🌿</tg-emoji> Изумруд', "name_en": '<tg-emoji emoji-id="5470105163190515289">🌿</tg-emoji> Emerald',  "key": "emerald",  "chance":  0.002, "weight":   1, "price":  5_000_000},
+    {"name": '<tg-emoji emoji-id="6138471781767319985">💀</tg-emoji> Обсидиан',"name_en": '<tg-emoji emoji-id="6138471781767319985">💀</tg-emoji> Obsidian', "key": "obsidian", "chance":  0.001, "weight":   1, "price":  8_000_000},
+    {"name": '<tg-emoji emoji-id="5465283645788937267">🔷</tg-emoji> Сапфир',  "name_en": '<tg-emoji emoji-id="5465283645788937267">🔷</tg-emoji> Sapphire', "key": "sapphire", "chance":  0.0005,"weight":   1, "price": 15_000_000},
 ]
 ORES_BY_KEY = {o["key"]: o for o in ORES}
 
