@@ -1383,20 +1383,13 @@ async def cmd_gift(message: Message):
     bare = _re_gift.fullmatch(r"[/]?(gift|дать|пер|transfer|give|дарю)", text_stripped, flags=_re_gift.IGNORECASE)
     if bare and not amount and not target_raw and not error:
         hint = (
-            "❌ <b>Укажи получателя и сумму.</b>
-
-"
+            "\u274c <b>\u0423\u043a\u0430\u0436\u0438 \u043f\u043e\u043b\u0443\u0447\u0430\u0442\u0435\u043b\u044f \u0438 \u0441\u0443\u043c\u043c\u0443.</b>\n\n"
             "<blockquote>"
-            "Ответь на сообщение игрока и напиши:
-"
-            "<code>дать 500</code>
-
-"
-            "Или укажи явно:
-"
-            "<code>дать @username 500</code>
-"
-            "<code>дать 123456789 500</code>"
+            "\u041e\u0442\u0432\u0435\u0442\u044c \u043d\u0430 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435 \u0438\u0433\u0440\u043e\u043a\u0430 \u0438 \u043d\u0430\u043f\u0438\u0448\u0438:\n"
+            "<code>\u0434\u0430\u0442\u044c 500</code>\n\n"
+            "\u0418\u043b\u0438 \u0443\u043a\u0430\u0436\u0438 \u044f\u0432\u043d\u043e:\n"
+            "<code>\u0434\u0430\u0442\u044c @username 500</code>\n"
+            "<code>\u0434\u0430\u0442\u044c 123456789 500</code>"
             "</blockquote>"
         )
         await message.reply(hint, parse_mode="HTML")
