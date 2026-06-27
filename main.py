@@ -1362,7 +1362,7 @@ def _parse_gift_args(message: Message):
 
 
 @dp.message(Command("gift", "дать", "пер", "transfer", "give", "дарю"))
-@dp.message(F.text.regexp(r'^[/]?(gift|дать|пер|transfer|give|дарю)(\s+\S|\s*$)', flags=_re.IGNORECASE))
+@dp.message(F.text.regexp(r'^[/]?(gift|дать|пер|transfer|give|дарю)(\s+[@\d]\S*(\s+\d+)?\s*|\s*$)', flags=_re.IGNORECASE))
 async def cmd_gift(message: Message):
     """Перевод монет другому игроку."""
     from database import get_all_users, save_user as _save, get_user
