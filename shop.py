@@ -1742,7 +1742,7 @@ def get_unified_inventory(data: dict) -> list:
         sample = stack["item_sample"]
         itype  = stack["type"]
         if itype == "boost":
-            disp       = _booster_name(sample)
+            disp       = f"{_pe('boost', '⚡')} {_booster_name(sample)}"
             disp_plain = _booster_name(sample)
         elif itype in ("xp_boost", "xp_instant"):
             disp       = _xp_item_name(sample)
