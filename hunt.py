@@ -1905,3 +1905,473 @@ def boss_strike_keyboard(data: dict, lang: str = "ru", slot: int = 0) -> InlineK
         icon_custom_emoji_id=_E["back"]
     ))
     return builder.as_markup()
+
+
+# ════════════════════════════════════════════════════════════
+#  АРСЕНАЛ — передача, подарок, аренда мечей
+# ════════════════════════════════════════════════════════════
+
+import time as _time_mod
+
+# ─── Вспомогательные функции аренды ───
+
+def get_rented_out(data: dict) -> dict:
+    """Мечи, которые ты СДАЛ в аренду. {sword_key: {uid, until, name}}"""
+    return data.get("arsenal_rented_out", {})
+
+def get_rented_in(data: dict) -> dict:
+    """Мечи, которые ты ВЗЯЛ в аренду. {sword_key: {from_uid, until, from_name}}"""
+    return data.get("arsenal_rented_in", {})
+
+def get_transferred(data: dict) -> dict:
+    """Мечи, переданные тебе кем-то. {sword_key: from_name} — просто информация."""
+    return data.get("arsenal_transferred_from", {})
+
+def sword_is_rented_out(data: dict, sword_key: str) -> bool:
+    """Этот меч сейчас сдан в аренду (и срок ещё не истёк)."""
+    entry = get_rented_out(data).get(sword_key)
+    if not entry:
+        return False
+    return entry["until"] > int(_time_mod.time())
+
+def sword_is_rented_in(data: dict, sword_key: str) -> bool:
+    """Этот меч взят в аренду у кого-то."""
+    entry = get_rented_in(data).get(sword_key)
+    if not entry:
+        return False
+    return entry["until"] > int(_time_mod.time())
+
+def cleanup_expired_rentals(data: dict):
+    """Убирает истёкшие аренды из user_data. Вызывать при открытии арсенала."""
+    now = int(_time_mod.time())
+    rented_out = data.get("arsenal_rented_out", {})
+    rented_in  = data.get("arsenal_rented_in", {})
+    expired_out = [k for k, v in rented_out.items() if v["until"] <= now]
+    expired_in  = [k for k, v in rented_in.items()  if v["until"] <= now]
+    for k in expired_out:
+        del rented_out[k]
+    for k in expired_in:
+        # Меч возвращается — убрать из owned_swords если он был добавлен временно
+        owned = data.get("owned_swords", [])
+        if k in owned and k not in [s for s in data.get("owned_swords_original", [])]:
+            owned.remove(k)
+        del rented_in[k]
+
+def parse_duration(text: str) -> int | None:
+    """
+    Парсит строку длительности: '5м', '30м', '2ч', '24ч', '1д', '2д'.
+    Возвращает секунды или None если не распознано.
+    Минимум 5 минут, максимум 48 часов.
+    """
+    text = text.strip().lower()
+    import re as _re
+    m = _re.match(r'^(\d+)\s*(м|мин|ч|час|д|день|дней|h|m|d)$', text)
+    if not m:
+        return None
+    val, unit = int(m.group(1)), m.group(2)
+    if unit in ('м', 'мин', 'm'):
+        secs = val * 60
+    elif unit in ('ч', 'час', 'h'):
+        secs = val * 3600
+    elif unit in ('д', 'день', 'дней', 'd'):
+        secs = val * 86400
+    else:
+        return None
+    if secs < 5 * 60:
+        return None      # меньше 5 минут
+    if secs > 48 * 3600:
+        return None      # больше 48 часов
+    return secs
+
+def _fmt_duration(secs: int) -> str:
+    """Красиво форматирует длительность: '2ч 30м', '45м' и т.д."""
+    secs = max(0, int(secs))
+    h, rem = divmod(secs, 3600)
+    m = rem // 60
+    if h and m:
+        return f"{h}ч {m}м"
+    elif h:
+        return f"{h}ч"
+    else:
+        return f"{m}м"
+
+def _fmt_until(until_ts: int) -> str:
+    """Сколько времени осталось до истечения аренды."""
+    left = until_ts - int(_time_mod.time())
+    if left <= 0:
+        return "истекла"
+    return _fmt_duration(left)
+
+
+# ─── Арсенал: главный экран ───
+
+def arsenal_main_text(data: dict) -> str:
+    cleanup_expired_rentals(data)
+    owned     = get_owned_swords(data)
+    eq_key    = get_equipped_sword(data)
+    rented_in = get_rented_in(data)
+
+    title_line = (
+        f'{_tg(_E["my_swords"], "⚔️")} <b>АРСЕНАЛ</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━'
+    )
+
+    if not owned and not rented_in:
+        return (
+            f'{title_line}\n\n'
+            f'<blockquote>'
+            f'{_tg(_E["lock"], "🔒")} <b>Арсенал пуст.</b>\n'
+            f'Загляни в магазин оружия — там ждут клинки!'
+            f'</blockquote>'
+        )
+
+    lines = []
+    idx = 1
+    for sk in owned:
+        sw = SWORDS_BY_KEY.get(sk)
+        if not sw:
+            continue
+        sword_emoji = _tg(sw["emoji_id"], "🗡")
+        eq_mark = f' {_tg(_E["fire"], "⚡")}' if sk == eq_key else ""
+        rented_mark = ""
+        if sword_is_rented_out(data, sk):
+            entry = get_rented_out(data)[sk]
+            rented_mark = f'\n   {_tg(_E["timer"], "⏱")} <i>В аренде у <b>{entry["name"]}</b> — ещё {_fmt_until(entry["until"])}</i>'
+        lines.append(
+            f'<b>#{idx}</b> {sword_emoji} <b>{sw["name"]}</b>{eq_mark}{rented_mark}\n'
+            f'   {_tg(_E["dmg"], "💥")} {_fmt(sw["dmg_min"])}–{_fmt(sw["dmg_max"])} урона'
+        )
+        idx += 1
+
+    # Арендованные у других
+    for sk, entry in rented_in.items():
+        if entry["until"] <= int(_time_mod.time()):
+            continue
+        sw = SWORDS_BY_KEY.get(sk)
+        if not sw:
+            continue
+        sword_emoji = _tg(sw["emoji_id"], "🗡")
+        lines.append(
+            f'<b>#{idx}</b> {sword_emoji} <b>{sw["name"]}</b> {_tg(_E["timer"], "⏱")}\n'
+            f'   <i>Аренда от <b>{entry["from_name"]}</b> — ещё {_fmt_until(entry["until"])}</i>\n'
+            f'   {_tg(_E["dmg"], "💥")} {_fmt(sw["dmg_min"])}–{_fmt(sw["dmg_max"])} урона'
+        )
+        idx += 1
+
+    body = "\n\n".join(lines)
+
+    hint = (
+        f'\n\n<blockquote expandable>'
+        f'<b>Команды арсенала:</b>\n'
+        f'<code>подарить #N @user</code> — подарить меч навсегда\n'
+        f'<code>передать #N @user</code> — передать меч\n'
+        f'<code>арн #N 2ч @user</code> — сдать в аренду на срок\n'
+        f'<i>Срок аренды: от 5м до 48ч</i>'
+        f'</blockquote>'
+    )
+
+    return (
+        f'{title_line}\n\n'
+        f'<blockquote>{body}</blockquote>'
+        f'{hint}'
+    )
+
+
+def arsenal_main_keyboard(data: dict) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    owned = get_owned_swords(data)
+
+    # Кнопки быстрого экипа для НЕ экипированных мечей
+    eq_key = get_equipped_sword(data)
+    equippable = [sk for sk in owned if sk != eq_key and not sword_is_rented_out(data, sk)]
+    if equippable:
+        builder.row(InlineKeyboardButton(
+            text="Сменить меч",
+            callback_data="arsenal_equip_menu",
+            icon_custom_emoji_id=_E["sword"]
+        ))
+
+    builder.row(InlineKeyboardButton(
+        text="Назад",
+        callback_data="hunt",
+        icon_custom_emoji_id=_E["back"]
+    ))
+    return builder.as_markup()
+
+
+# ─── Арсенал: экран выбора меча для экипировки ───
+
+def arsenal_equip_menu_text(data: dict) -> str:
+    owned  = get_owned_swords(data)
+    eq_key = get_equipped_sword(data)
+    lines  = []
+    idx    = 1
+    for sk in owned:
+        sw = SWORDS_BY_KEY.get(sk)
+        if not sw:
+            continue
+        sword_emoji = _tg(sw["emoji_id"], "🗡")
+        eq_mark = f' {_tg(_E["fire"], "⚡")} <b>[Экип.]</b>' if sk == eq_key else ""
+        lines.append(f'<b>#{idx}</b> {sword_emoji} <b>{sw["name"]}</b>{eq_mark}')
+        idx += 1
+    body = "\n".join(lines)
+    return (
+        f'{_tg(_E["my_swords"], "⚔️")} <b>ВЫБОР МЕЧА</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>{body}</blockquote>'
+    )
+
+
+def arsenal_equip_menu_keyboard(data: dict) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    owned  = get_owned_swords(data)
+    eq_key = get_equipped_sword(data)
+    for sk in owned:
+        sw = SWORDS_BY_KEY.get(sk)
+        if not sw or sk == eq_key:
+            continue
+        builder.row(InlineKeyboardButton(
+            text=sw["name"],
+            callback_data=f'sword_equip_{sk}',
+            icon_custom_emoji_id=sw["emoji_id"]
+        ))
+    builder.row(InlineKeyboardButton(
+        text="Назад",
+        callback_data="hunt_arsenal",
+        icon_custom_emoji_id=_E["back"]
+    ))
+    return builder.as_markup()
+
+
+# ─── Логика: подарить меч ───
+
+def arsenal_gift_sword(sender_data: dict, recipient_data: dict,
+                       sword_key: str, sender_name: str) -> tuple[bool, str]:
+    """
+    Безвозвратно передаёт меч от sender к recipient.
+    После передачи sender может купить этот меч снова.
+    """
+    sw = SWORDS_BY_KEY.get(sword_key)
+    if not sw:
+        return False, "❌ Меч не найден."
+    if not has_sword(sender_data, sword_key):
+        return False, "❌ У тебя нет этого меча."
+    if sword_is_rented_out(sender_data, sword_key):
+        return False, "❌ Этот меч сейчас в аренде — дождись возврата."
+    if sword_is_rented_in(sender_data, sword_key):
+        return False, "❌ Нельзя подарить арендованный меч."
+    if has_sword(recipient_data, sword_key):
+        return False, f"❌ У получателя уже есть <b>{sw['name']}</b>."
+
+    # Убираем у отправителя
+    sender_data["owned_swords"].remove(sword_key)
+    if sender_data.get("equipped_sword") == sword_key:
+        remaining = sender_data.get("owned_swords", [])
+        sender_data["equipped_sword"] = remaining[0] if remaining else None
+
+    # Добавляем получателю
+    recipient_data.setdefault("owned_swords", []).append(sword_key)
+    if not recipient_data.get("equipped_sword"):
+        recipient_data["equipped_sword"] = sword_key
+    recipient_data.setdefault("arsenal_transferred_from", {})[sword_key] = sender_name
+
+    return True, f'✅ Меч <b>{sw["name"]}</b> подарен!'
+
+
+# ─── Логика: передать меч (псевдоним подарить) ───
+
+def arsenal_transfer_sword(sender_data: dict, recipient_data: dict,
+                            sword_key: str, sender_name: str) -> tuple[bool, str]:
+    """Передача = подарок, но с другим сообщением."""
+    ok, msg = arsenal_gift_sword(sender_data, recipient_data, sword_key, sender_name)
+    if ok:
+        sw = SWORDS_BY_KEY.get(sword_key)
+        msg = f'✅ Меч <b>{sw["name"]}</b> передан!'
+    return ok, msg
+
+
+# ─── Логика: сдать в аренду ───
+
+def arsenal_rent_sword(owner_data: dict, renter_data: dict,
+                       sword_key: str, duration_secs: int,
+                       owner_name: str, renter_name: str) -> tuple[bool, str]:
+    """
+    Владелец сдаёт меч в аренду арендатору на duration_secs секунд.
+    Владелец не может купить другую копию (меч остаётся в owned_swords).
+    Арендатор получает временный доступ.
+    """
+    sw = SWORDS_BY_KEY.get(sword_key)
+    if not sw:
+        return False, "❌ Меч не найден."
+    if not has_sword(owner_data, sword_key):
+        return False, "❌ У тебя нет этого меча."
+    if sword_is_rented_out(owner_data, sword_key):
+        return False, "❌ Этот меч уже сдан в аренду."
+    if sword_is_rented_in(owner_data, sword_key):
+        return False, "❌ Нельзя сдавать арендованный меч."
+    if has_sword(renter_data, sword_key) and not sword_is_rented_in(renter_data, sword_key):
+        return False, f"❌ У арендатора уже есть <b>{sw['name']}</b>."
+    if duration_secs is None:
+        return False, "❌ Неверный срок аренды. Пример: <code>арн #1 2ч @user</code>"
+
+    until = int(_time_mod.time()) + duration_secs
+
+    # Помечаем у владельца
+    owner_data.setdefault("arsenal_rented_out", {})[sword_key] = {
+        "uid":   renter_data.get("uid", 0),
+        "name":  renter_name,
+        "until": until,
+    }
+
+    # Добавляем арендатору временный меч
+    renter_data.setdefault("arsenal_rented_in", {})[sword_key] = {
+        "from_uid":  owner_data.get("uid", 0),
+        "from_name": owner_name,
+        "until":     until,
+    }
+    if sword_key not in renter_data.get("owned_swords", []):
+        renter_data.setdefault("owned_swords", []).append(sword_key)
+    if not renter_data.get("equipped_sword"):
+        renter_data["equipped_sword"] = sword_key
+
+    dur_str = _fmt_duration(duration_secs)
+    return True, f'✅ Меч <b>{sw["name"]}</b> сдан в аренду на <b>{dur_str}</b>!'
+
+
+# ─── Тексты подтверждений (отображаются после операции) ───
+
+def arsenal_gift_confirm_text(sword_key: str, recipient_name: str) -> str:
+    sw = SWORDS_BY_KEY.get(sword_key)
+    sword_emoji = _tg(sw["emoji_id"], "🗡") if sw else "🗡"
+    sword_name  = sw["name"] if sw else sword_key
+    return (
+        f'{_tg(_E["ok"], "✅")} <b>ПОДАРОК ОТПРАВЛЕН</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>'
+        f'{sword_emoji} <b>{sword_name}</b>\n'
+        f'подарен игроку <b>{recipient_name}</b>.\n\n'
+        f'<i>Теперь ты можешь купить этот меч снова.</i>'
+        f'</blockquote>'
+    )
+
+def arsenal_transfer_confirm_text(sword_key: str, recipient_name: str) -> str:
+    sw = SWORDS_BY_KEY.get(sword_key)
+    sword_emoji = _tg(sw["emoji_id"], "🗡") if sw else "🗡"
+    sword_name  = sw["name"] if sw else sword_key
+    return (
+        f'{_tg(_E["ok"], "✅")} <b>МЕЧ ПЕРЕДАН</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>'
+        f'{sword_emoji} <b>{sword_name}</b>\n'
+        f'передан игроку <b>{recipient_name}</b>.\n\n'
+        f'<i>Теперь ты можешь купить этот меч снова.</i>'
+        f'</blockquote>'
+    )
+
+def arsenal_rent_confirm_text(sword_key: str, renter_name: str, duration_secs: int) -> str:
+    sw = SWORDS_BY_KEY.get(sword_key)
+    sword_emoji = _tg(sw["emoji_id"], "🗡") if sw else "🗡"
+    sword_name  = sw["name"] if sw else sword_key
+    dur_str = _fmt_duration(duration_secs)
+    return (
+        f'{_tg(_E["timer"], "⏱")} <b>АРЕНДА ОФОРМЛЕНА</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>'
+        f'{sword_emoji} <b>{sword_name}</b>\n'
+        f'сдан в аренду <b>{renter_name}</b>\n'
+        f'на <b>{dur_str}</b>.\n\n'
+        f'<i>Пока меч в аренде — ты не можешь купить его снова.</i>'
+        f'</blockquote>'
+    )
+
+def arsenal_received_text(sword_key: str, from_name: str, mode: str = "gift") -> str:
+    """Уведомление получателю."""
+    sw = SWORDS_BY_KEY.get(sword_key)
+    sword_emoji = _tg(sw["emoji_id"], "🗡") if sw else "🗡"
+    sword_name  = sw["name"] if sw else sword_key
+    if mode == "rent":
+        return (
+            f'{_tg(_E["timer"], "⏱")} <b>АРЕНДА ПОЛУЧЕНА</b>\n\n'
+            f'<blockquote>'
+            f'Игрок <b>{from_name}</b> сдал тебе в аренду:\n'
+            f'{sword_emoji} <b>{sword_name}</b>\n\n'
+            f'<i>Меч уже в твоём арсенале!</i>'
+            f'</blockquote>'
+        )
+    action = "подарил" if mode == "gift" else "передал"
+    return (
+        f'{_tg(_E["ok"], "✅")} <b>МЕЧ ПОЛУЧЕН</b>\n\n'
+        f'<blockquote>'
+        f'Игрок <b>{from_name}</b> {action} тебе:\n'
+        f'{sword_emoji} <b>{sword_name}</b>\n\n'
+        f'<i>Меч уже в твоём арсенале!</i>'
+        f'</blockquote>'
+    )
+
+
+# ─── Парсинг команд арсенала ───
+# Ожидаемые форматы:
+#   подарить #3 @user  /  передать #2 @user
+#   арн #1 2ч @user    /  арн #1 2ч 123456789
+
+import re as _re_ars
+
+_CMD_GIFT     = _re_ars.compile(r'^(подарить|gift)\s+#(\d+)\s+(\S+)', _re_ars.IGNORECASE)
+_CMD_TRANSFER = _re_ars.compile(r'^(передать|transfer)\s+#(\d+)\s+(\S+)', _re_ars.IGNORECASE)
+_CMD_RENT     = _re_ars.compile(r'^(арн|аренда|rent)\s+#(\d+)\s+(\S+)\s+(\S+)', _re_ars.IGNORECASE)
+
+def parse_arsenal_cmd(text: str):
+    """
+    Возвращает dict с полями:
+      action: 'gift' | 'transfer' | 'rent'
+      index:  int (1-based номер меча в арсенале)
+      target: str (@username или числовой uid)
+      duration_secs: int | None (только для rent)
+    Или None если не распознано.
+    """
+    text = text.strip()
+    m = _CMD_GIFT.match(text)
+    if m:
+        return {"action": "gift", "index": int(m.group(2)), "target": m.group(3), "duration_secs": None}
+    m = _CMD_TRANSFER.match(text)
+    if m:
+        return {"action": "transfer", "index": int(m.group(2)), "target": m.group(3), "duration_secs": None}
+    m = _CMD_RENT.match(text)
+    if m:
+        dur = parse_duration(m.group(3))
+        return {"action": "rent", "index": int(m.group(2)), "target": m.group(4), "duration_secs": dur}
+    return None
+
+
+def get_sword_by_arsenal_index(data: dict, index: int) -> str | None:
+    """
+    Возвращает sword_key по номеру #N из арсенала (как в arsenal_main_text).
+    Порядок: сначала owned_swords, потом rented_in.
+    """
+    cleanup_expired_rentals(data)
+    owned     = get_owned_swords(data)
+    rented_in = get_rented_in(data)
+    items = list(owned) + [k for k in rented_in if rented_in[k]["until"] > int(_time_mod.time())]
+    if 1 <= index <= len(items):
+        return items[index - 1]
+    return None
+
+
+def arsenal_error_text(msg: str) -> str:
+    return (
+        f'{_tg(_E["alert"], "⚠️")} <b>АРСЕНАЛ</b>\n\n'
+        f'<blockquote>{msg}</blockquote>'
+    )
+
+def arsenal_back_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="Назад в арсенал",
+        callback_data="hunt_arsenal",
+        icon_custom_emoji_id=_E["back"]
+    ))
+    return builder.as_markup()
+
+def is_arsenal_cmd(text: str) -> bool:
+    t = text.strip().lstrip("/").lower()
+    return t in ("арс", "арсенал", "arsenal", "ars")
