@@ -55,6 +55,16 @@ from hunt import (
     buy_sword, equip_sword, attack_boss,
     get_boss_state,
     BOSSES_BY_KEY as _BOSSES_BY_KEY,
+    # Арсенал
+    is_arsenal_cmd,
+    arsenal_main_text, arsenal_main_keyboard,
+    arsenal_equip_menu_text, arsenal_equip_menu_keyboard,
+    arsenal_gift_sword, arsenal_transfer_sword, arsenal_rent_sword,
+    arsenal_gift_confirm_text, arsenal_transfer_confirm_text, arsenal_rent_confirm_text,
+    arsenal_received_text,
+    parse_arsenal_cmd, get_sword_by_arsenal_index,
+    arsenal_error_text, arsenal_back_keyboard,
+    cleanup_expired_rentals,
 )
 
 from stats import init_stats_db, track_user, stats_text, stats_keyboard
@@ -1165,6 +1175,21 @@ async def cmd_hunt(message: Message):
         hunt_main_text(u, lang),
         parse_mode="HTML",
         reply_markup=hunt_main_keyboard(u, lang),
+    )
+
+
+@dp.message(Command("арс", "арсенал", "arsenal", "ars"))
+@dp.message(_text_in("арс", "арсенал", "arsenal", "ars"))
+async def cmd_arsenal(message: Message):
+    u   = get_or_create_user(message.from_user)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+    cleanup_expired_rentals(u)
+    save_user(message.from_user.id, u)
+    await message.reply(
+        arsenal_main_text(u),
+        parse_mode="HTML",
+        reply_markup=arsenal_main_keyboard(u),
     )
 
 
@@ -2485,6 +2510,99 @@ async def handle_captcha_answer(message: Message):
     # ── Сначала обрабатываем ожидающие текстовые вводы для системы кланов ──
     if await _handle_klan_text_input(message, u):
         return
+
+    # ── Команды арсенала: подарить/передать/арн ──
+    if u.get("onboarded", True):
+        _ars_parsed = parse_arsenal_cmd((message.text or "").strip())
+        if _ars_parsed:
+            from database import get_all_users as _gau_ars, get_user as _gu_ars, save_user as _su_ars
+            action       = _ars_parsed["action"]
+            sword_idx    = _ars_parsed["index"]
+            target_raw   = _ars_parsed["target"].lstrip("@")
+            duration_secs = _ars_parsed["duration_secs"]
+
+            # Ищем меч по индексу в арсенале
+            cleanup_expired_rentals(u)
+            sword_key = get_sword_by_arsenal_index(u, sword_idx)
+            if not sword_key:
+                await message.reply(
+                    arsenal_error_text(f"❌ Меча <b>#{sword_idx}</b> нет в арсенале. Открой <code>арс</code> и проверь номера."),
+                    parse_mode="HTML", reply_markup=arsenal_back_keyboard()
+                )
+                return
+
+            # Ищем получателя
+            all_users_ars = _gau_ars()
+            if target_raw.lstrip("-").isdigit():
+                recipient_data = next((x for x in all_users_ars if x["id"] == int(target_raw)), None)
+            else:
+                recipient_data = next(
+                    (x for x in all_users_ars if (x.get("username") or "").lower() == target_raw.lower()), None
+                )
+            if not recipient_data:
+                await message.reply(
+                    arsenal_error_text("❌ Игрок не найден. Он должен хотя бы раз написать боту."),
+                    parse_mode="HTML", reply_markup=arsenal_back_keyboard()
+                )
+                return
+            if recipient_data["id"] == uid:
+                await message.reply(
+                    arsenal_error_text("❌ Нельзя отправить меч самому себе."),
+                    parse_mode="HTML", reply_markup=arsenal_back_keyboard()
+                )
+                return
+
+            sender_name = message.from_user.first_name or message.from_user.username or str(uid)
+            recip_name  = recipient_data.get("first_name") or recipient_data.get("username") or str(recipient_data["id"])
+
+            lock_s = await _get_user_lock(uid)
+            lock_r = await _get_user_lock(recipient_data["id"])
+            first_lock, second_lock = (lock_s, lock_r) if uid < recipient_data["id"] else (lock_r, lock_s)
+
+            async with first_lock:
+                async with second_lock:
+                    u_fresh   = get_or_create_user(message.from_user)
+                    r_fresh   = _gu_ars(recipient_data["id"]) or recipient_data
+                    cleanup_expired_rentals(u_fresh)
+
+                    if action == "gift":
+                        ok, msg = arsenal_gift_sword(u_fresh, r_fresh, sword_key, sender_name)
+                        confirm_text = arsenal_gift_confirm_text(sword_key, recip_name) if ok else None
+                        notif_mode   = "gift"
+                    elif action == "transfer":
+                        ok, msg = arsenal_transfer_sword(u_fresh, r_fresh, sword_key, sender_name)
+                        confirm_text = arsenal_transfer_confirm_text(sword_key, recip_name) if ok else None
+                        notif_mode   = "transfer"
+                    else:  # rent
+                        if not duration_secs:
+                            await message.reply(
+                                arsenal_error_text("❌ Неверный срок аренды.\nПример: <code>арн #1 2ч @user</code>\nМин: 5м, макс: 48ч"),
+                                parse_mode="HTML", reply_markup=arsenal_back_keyboard()
+                            )
+                            return
+                        ok, msg = arsenal_rent_sword(u_fresh, r_fresh, sword_key, duration_secs, sender_name, recip_name)
+                        confirm_text = arsenal_rent_confirm_text(sword_key, recip_name, duration_secs) if ok else None
+                        notif_mode   = "rent"
+
+                    if ok:
+                        _su_ars(uid, u_fresh)
+                        _su_ars(recipient_data["id"], r_fresh)
+                        await message.reply(confirm_text, parse_mode="HTML", reply_markup=arsenal_back_keyboard())
+                        # Уведомление получателю
+                        try:
+                            await bot.send_message(
+                                recipient_data["id"],
+                                arsenal_received_text(sword_key, sender_name, notif_mode),
+                                parse_mode="HTML",
+                            )
+                        except Exception:
+                            pass
+                    else:
+                        await message.reply(
+                            arsenal_error_text(msg),
+                            parse_mode="HTML", reply_markup=arsenal_back_keyboard()
+                        )
+            return
 
     # Этот хендлер нужен только пока пользователь проходит онбординг
     if u.get("onboarded", True):
@@ -3911,6 +4029,20 @@ async def handle_callback(call: CallbackQuery):
         # ===== ОХОТА: мои мечи =====
         if cd == "hunt_my_swords":
             await edit(my_swords_text(data, lang), my_swords_keyboard(data, lang))
+            return
+
+        # ===== АРСЕНАЛ: главный экран =====
+        if cd == "hunt_arsenal":
+            cleanup_expired_rentals(data)
+            save_user(user.id, data)
+            await call.answer()
+            await edit(arsenal_main_text(data), arsenal_main_keyboard(data))
+            return
+
+        # ===== АРСЕНАЛ: меню выбора меча для экипировки =====
+        if cd == "arsenal_equip_menu":
+            await call.answer()
+            await edit(arsenal_equip_menu_text(data), arsenal_equip_menu_keyboard(data))
             return
 
         # ===== ОХОТА: карточка меча =====
