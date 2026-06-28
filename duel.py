@@ -2109,9 +2109,9 @@ def battle_text(battle: dict, uid: int) -> str:
             result_line = "⚔️ <b>Ничья!</b>"
             reward_line = ""
         elif winner == uid:
-            result_line = "🏆 <b>Ты победил!</b>"
+            result_line = '<tg-emoji emoji-id="5413566144986503832">❤️</tg-emoji> <b>Ты победил!</b>'
             if reward:
-                reward_line = f'\n\n💰 <b>+{_fmt(reward)} монет</b> <i>(титул врага: {loser_title})</i>'
+                reward_line = f'\n\n<tg-emoji emoji-id="5397916757333654639">❤️</tg-emoji> <b>+{_fmt(reward)} <tg-emoji emoji-id="5199552030615558774">❤️</tg-emoji></b> <i>(титул врага: {loser_title})</i>'
             else:
                 reward_line = ""
         else:
@@ -2374,8 +2374,8 @@ def duel_main_text(user_data: dict = None) -> str:
         '<tg-emoji emoji-id="5424972470023104089">⚔️</tg-emoji> <b>ДУЭЛИ</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         '<blockquote>'
-        f'🏅 Титул — <b>{title}</b>\n'
-        f'🏆 Победы: <b>{wins}</b>  💀 Поражения: <b>{losses}</b>\n\n'
+        f'<tg-emoji emoji-id="5848400681416793625">⚔️</tg-emoji> Титул — <b>{title}</b>\n'
+        f'<tg-emoji emoji-id="5413566144986503832">⚔️</tg-emoji> Победы: <b>{wins}</b>  <tg-emoji emoji-id="5206523956537865948">⚔️</tg-emoji> Поражения: <b>{losses}</b>\n\n'
         '<b><i>Испытай себя в бою один на один.\n'
         'Собери снаряжение для защиты, купи навыки для урона\n'
         'и докажи, кто сильнейший в TGStellar!</i></b>\n\n'
