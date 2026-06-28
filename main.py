@@ -4559,11 +4559,38 @@ async def handle_callback(call: CallbackQuery):
             if not result["ok"]:
                 await call.answer(result["msg"], show_alert=True)
                 return
+            foe_uid = battle["p2_uid"] if battle["p1_uid"] == user.id else battle["p1_uid"]
+            # Если бой завершён — сначала считаем награду и пишем в battle,
+            # потом уже рендерим battle_text (чтобы reward отобразился)
+            if battle.get("finished"):
+                from database import get_user as _gu_hp, save_user as _su_hp
+                _d1 = _gu_hp(battle["p1_uid"]) or {}
+                _d2 = _gu_hp(battle["p2_uid"]) or {}
+                set_player_hp(battle["p1_uid"], battle["p1_hp"], _d1)
+                set_player_hp(battle["p2_uid"], battle["p2_hp"], _d2)
+                winner_uid = battle.get("winner_uid")
+                if winner_uid is not None:
+                    loser_uid = battle["p2_uid"] if winner_uid == battle["p1_uid"] else battle["p1_uid"]
+                    _dw = _gu_hp(winner_uid) or {}
+                    _dl = _gu_hp(loser_uid)  or {}
+                    loser_wins  = _dl.get("duel_wins", 0)
+                    loser_title = get_duel_title(loser_wins)
+                    reward      = TITLE_REWARDS.get(loser_title, 0)
+                    battle["reward"] = reward
+                    battle["loser_title"] = loser_title
+                    _dw["duel_wins"]    = _dw.get("duel_wins", 0) + 1
+                    _dw["balance"]      = _dw.get("balance", 0) + reward
+                    _su_hp(winner_uid, _dw)
+                    _dl["duel_losses"]  = _dl.get("duel_losses", 0) + 1
+                    _su_hp(loser_uid, _dl)
+                _active_battles.pop(user.id, None)
+                _active_battles.pop(foe_uid, None)
+                _battle_msgs.pop(user.id, None)
+                _battle_msgs.pop(foe_uid, None)
             # Обновляем message_id текущего игрока
             _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
             await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
-            foe_uid = battle["p2_uid"] if battle["p1_uid"] == user.id else battle["p1_uid"]
-            # Обновляем сообщение соперника через edit
+            # Обновляем сообщение соперника
             foe_msg = _battle_msgs.get(foe_uid)
             if foe_msg:
                 try:
@@ -4576,33 +4603,6 @@ async def handle_callback(call: CallbackQuery):
                     )
                 except Exception:
                     pass
-            if battle.get("finished"):
-                _active_battles.pop(user.id, None)
-                _active_battles.pop(foe_uid, None)
-                _battle_msgs.pop(user.id, None)
-                _battle_msgs.pop(foe_uid, None)
-                # Сохраняем HP и начисляем награды/статистику
-                from database import get_user as _gu_hp, save_user as _su_hp
-                _d1 = _gu_hp(battle["p1_uid"]) or {}
-                _d2 = _gu_hp(battle["p2_uid"]) or {}
-                set_player_hp(battle["p1_uid"], battle["p1_hp"], _d1)
-                set_player_hp(battle["p2_uid"], battle["p2_hp"], _d2)
-                winner_uid = battle.get("winner_uid")
-                if winner_uid is not None:
-                    loser_uid = battle["p2_uid"] if winner_uid == battle["p1_uid"] else battle["p1_uid"]
-                    _dw = _gu_hp(winner_uid) or {}
-                    _dl = _gu_hp(loser_uid)  or {}
-                    # Читаем титул проигравшего ДО обновления его статы
-                    loser_wins  = _dl.get("duel_wins", 0)
-                    loser_title = get_duel_title(loser_wins)
-                    reward      = TITLE_REWARDS.get(loser_title, 0)
-                    # Победитель
-                    _dw["duel_wins"]    = _dw.get("duel_wins", 0) + 1
-                    _dw["balance"]      = _dw.get("balance", 0) + reward
-                    _su_hp(winner_uid, _dw)
-                    # Проигравший
-                    _dl["duel_losses"]  = _dl.get("duel_losses", 0) + 1
-                    _su_hp(loser_uid, _dl)
             await call.answer()
             return
 
@@ -4617,6 +4617,25 @@ async def handle_callback(call: CallbackQuery):
                 battle["finished"] = True
                 battle["winner_uid"] = foe_uid
                 battle["log"].append(f"🏳️ {data.get('first_name', 'Игрок')} сдался.")
+                # Считаем награду ДО рендера battle_text
+                from database import get_user as _gu_sr, save_user as _su_sr
+                _d1 = _gu_sr(battle["p1_uid"]) or {}
+                _d2 = _gu_sr(battle["p2_uid"]) or {}
+                set_player_hp(battle["p1_uid"], battle["p1_hp"], _d1)
+                set_player_hp(battle["p2_uid"], battle["p2_hp"], _d2)
+                loser_uid2   = battle["p2_uid"] if foe_uid == battle["p1_uid"] else battle["p1_uid"]
+                _dw2 = _gu_sr(foe_uid) or {}
+                _dl2 = _gu_sr(loser_uid2) or {}
+                loser_wins2  = _dl2.get("duel_wins", 0)
+                loser_title2 = get_duel_title(loser_wins2)
+                reward2      = TITLE_REWARDS.get(loser_title2, 0)
+                battle["reward"] = reward2
+                battle["loser_title"] = loser_title2
+                _dw2["duel_wins"]   = _dw2.get("duel_wins", 0) + 1
+                _dw2["balance"]     = _dw2.get("balance", 0) + reward2
+                _su_sr(foe_uid, _dw2)
+                _dl2["duel_losses"] = _dl2.get("duel_losses", 0) + 1
+                _su_sr(loser_uid2, _dl2)
                 foe_msg = _battle_msgs.get(foe_uid)
                 if foe_msg:
                     try:
@@ -4633,25 +4652,6 @@ async def handle_callback(call: CallbackQuery):
                 _battle_msgs.pop(foe_uid, None)
             _active_battles.pop(user.id, None)
             _battle_msgs.pop(user.id, None)
-            # Сохраняем HP и начисляем награды/статистику
-            from database import get_user as _gu_sr, save_user as _su_sr
-            _d1 = _gu_sr(battle["p1_uid"]) or {}
-            _d2 = _gu_sr(battle["p2_uid"]) or {}
-            set_player_hp(battle["p1_uid"], battle["p1_hp"], _d1)
-            set_player_hp(battle["p2_uid"], battle["p2_hp"], _d2)
-            winner_uid = battle.get("winner_uid")
-            if winner_uid is not None:
-                loser_uid2 = battle["p2_uid"] if winner_uid == battle["p1_uid"] else battle["p1_uid"]
-                _dw2 = _gu_sr(winner_uid) or {}
-                _dl2 = _gu_sr(loser_uid2) or {}
-                loser_wins2  = _dl2.get("duel_wins", 0)
-                loser_title2 = get_duel_title(loser_wins2)
-                reward2      = TITLE_REWARDS.get(loser_title2, 0)
-                _dw2["duel_wins"]   = _dw2.get("duel_wins", 0) + 1
-                _dw2["balance"]     = _dw2.get("balance", 0) + reward2
-                _su_sr(winner_uid, _dw2)
-                _dl2["duel_losses"] = _dl2.get("duel_losses", 0) + 1
-                _su_sr(loser_uid2, _dl2)
             await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
             await call.answer("Ты сдался.")
             return
