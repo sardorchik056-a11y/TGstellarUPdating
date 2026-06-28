@@ -172,6 +172,7 @@ from shop import (
     get_all_active_boosters_text,
     sell_item_by_slot_id,
     transfer_item_by_slot_id,
+    open_case_multi, CASE_NUM_TO_KEY,
 )
 from rass import (
     is_in_rass,
@@ -2243,6 +2244,43 @@ async def cmd_use_item(message: Message):
     async with lock:
         u = get_or_create_user(message.from_user)
         ok, msg = use_item_by_slot_id(u, slot_id, lang)
+        if ok:
+            save_user(uid, u)
+        await message.reply(msg, parse_mode="HTML")
+
+
+
+# ── открыть/купить/open #N qty — открыть кейсы пачкой ───────────────────────
+# Форматы (слеш опционален):
+#   открыть #1 5        купить #2 10        open #3 1
+#   /открыть #1 5       /купить #2 10       /open #3 1
+
+_OPEN_CASE_RE = _re_inv.compile(
+    r'^/?(?:открыть|купить|open)\s+#([123])(?:\s+(\d+))?\s*$',
+    _re_inv.IGNORECASE,
+)
+
+@dp.message(F.text.regexp(
+    r'^/?(?:открыть|купить|open)\s+#[123](?:\s+\d+)?\s*$',
+    flags=_re_inv.IGNORECASE,
+))
+async def cmd_open_case_multi(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    uid  = message.from_user.id
+    track_user(uid)
+    if await _check_onboarded(message, u): return
+
+    m = _OPEN_CASE_RE.match((message.text or '').strip())
+    if not m:
+        return
+    case_num = int(m.group(1))
+    qty      = int(m.group(2)) if m.group(2) else 1
+
+    lock = await _get_user_lock(uid)
+    async with lock:
+        u = get_or_create_user(message.from_user)
+        ok, msg = open_case_multi(u, case_num, qty, lang)
         if ok:
             save_user(uid, u)
         await message.reply(msg, parse_mode="HTML")
