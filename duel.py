@@ -2103,16 +2103,24 @@ def battle_text(battle: dict, uid: int) -> str:
 
     if battle.get("finished"):
         winner = battle.get("winner_uid")
+        reward = battle.get("reward", 0)
+        loser_title = battle.get("loser_title", "")
         if winner is None:
             result_line = "⚔️ <b>Ничья!</b>"
+            reward_line = ""
         elif winner == uid:
             result_line = "🏆 <b>Ты победил!</b>"
+            if reward:
+                reward_line = f'\n\n💰 <b>+{_fmt(reward)} монет</b> <i>(титул врага: {loser_title})</i>'
+            else:
+                reward_line = ""
         else:
             result_line = "💀 <b>Ты проиграл!</b>"
+            reward_line = ""
         return (
             f'⚔️ <b>БОЙ ЗАВЕРШЁН</b>\n'
             f'━━━━━━━━━━━━━━━━━━━━\n\n'
-            f'{result_line}\n\n'
+            f'{result_line}{reward_line}\n\n'
             f'<blockquote>'
             f'<tg-emoji emoji-id="5452085950022707790">❤️</tg-emoji> <b>{my_name}</b>\n'
             f'<tg-emoji emoji-id="5337080053119336309">❤️</tg-emoji> {my_bar}\n\n'
