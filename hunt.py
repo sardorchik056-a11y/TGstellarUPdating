@@ -1185,6 +1185,8 @@ def buy_sword(data: dict, sword_key: str, lang: str = "ru") -> tuple[bool, str]:
 def equip_sword(data: dict, sword_key: str, lang: str = "ru") -> tuple[bool, str]:
     if not has_sword(data, sword_key):
         return False, ("❌ This sword is not purchased." if lang == "en" else "❌ Этот меч не куплен.")
+    if sword_is_rented_out(data, sword_key):
+        return False, ("❌ This sword is rented out — wait for it to return." if lang == "en" else "❌ Этот меч сдан в аренду — дождись возврата.")
     data["equipped_sword"] = sword_key
     return True, ("✅ Sword equipped!" if lang == "en" else "✅ Меч экипирован!")
 
@@ -1470,7 +1472,7 @@ def sword_detail_keyboard(data: dict, sword_key: str, lang: str = "ru") -> Inlin
                 callback_data=f'sword_buy_{sword_key}',
                 icon_custom_emoji_id=_E["coin"]
             ))
-        elif not equipped:
+        elif not equipped and not sword_is_rented_out(data, sword_key):
             sword_name = sword.get("name_en", sword["name"]) if lang == "en" else sword["name"]
             builder.row(InlineKeyboardButton(
                 text=f'{"Equip" if lang == "en" else "Экипировать"} {sword_name}',
@@ -1540,7 +1542,7 @@ def my_swords_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
         if not sw:
             continue
         sw_name = sw.get("name_en", sw["name"]) if lang == "en" else sw["name"]
-        if sk != eq_key:
+        if sk != eq_key and not sword_is_rented_out(data, sk):
             builder.row(InlineKeyboardButton(
                 text=f'{"Equip" if lang == "en" else "Экипировать"}: {sw_name}',
                 callback_data=f'sword_equip_{sk}',
@@ -1955,6 +1957,10 @@ def cleanup_expired_rentals(data: dict):
         owned = data.get("owned_swords", [])
         if k in owned and k not in [s for s in data.get("owned_swords_original", [])]:
             owned.remove(k)
+        # Если игрок экипировал арендованный меч — сбросить экипировку
+        if data.get("equipped_sword") == k:
+            remaining = [s for s in data.get("owned_swords", []) if s != k and not sword_is_rented_in(data, s)]
+            data["equipped_sword"] = remaining[0] if remaining else None
         del rented_in[k]
 
 def parse_duration(text: str) -> int | None:
@@ -2068,8 +2074,13 @@ def arsenal_main_text(data: dict) -> str:
         f'<code>арн #N 5м @user</code> — аренда на 5 минут\n'
         f'<code>арн #N 2ч @user</code> — аренда на 2 часа\n'
         f'<code>арн #N 24ч @user</code> — аренда на 24 часа\n'
-        f'<i>Срок аренды: от 5м до 48ч</i>\n'
-        f'<i>Пока меч в аренде — им нельзя бить босса</i>'
+        f'<i>Срок аренды: от 5м до 48ч</i>\n\n'
+        f'<b>Аренда — важно знать:</b>\n'
+        f'• Пока меч в аренде — ты не можешь им ударить босса\n'
+        f'• Арендованный меч нельзя подарить или передать\n'
+        f'• Арендатор не может экипировать чужой меч для боя\n'
+        f'• После истечения срока меч автоматически возвращается\n'
+        f'• Чтобы сдать в аренду: <code>арн #N 2ч @user</code>'
         f'</blockquote>'
     )
 
@@ -2132,6 +2143,8 @@ def arsenal_equip_menu_keyboard(data: dict) -> InlineKeyboardMarkup:
     for sk in owned:
         sw = SWORDS_BY_KEY.get(sk)
         if not sw or sk == eq_key:
+            continue
+        if sword_is_rented_out(data, sk):
             continue
         builder.row(InlineKeyboardButton(
             text=sw["name"],
