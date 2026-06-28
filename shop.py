@@ -537,14 +537,10 @@ def open_case(data: dict, case_key: str, lang: str = "ru") -> tuple:
         return False, f"❌ {_L(lang, 'Недостаточно монет!', 'Not enough coins!')}\n{_L(lang, 'Нужно', 'Need')}: {_fmt_num(cost)} {_pe('coin', '💰')}", None
     if case["type"] == "booster":
         inv = data.setdefault("boosters_inventory", [])
-        if len(inv) >= MAX_INVENTORY:
-            return False, f"❌ {_L(lang, 'Инвентарь ускорителей полон!', 'Booster inventory is full!')}\n{_L(lang, f'Максимум {MAX_INVENTORY} шт. Активируй или продай лишние.', f'Max {MAX_INVENTORY} items. Activate or sell some.')}", None
     elif case["type"] == "enhancer":
         inv = data.setdefault("enh_inventory", [])
     else:
         inv = data.setdefault("xp_inventory", [])
-        if len(inv) >= MAX_XP_INVENTORY:
-            return False, f"❌ {_L(lang, 'XP-инвентарь полон!', 'XP inventory is full!')}\n{_L(lang, f'Максимум {MAX_XP_INVENTORY} шт. Используй или продай лишние.', f'Max {MAX_XP_INVENTORY} items. Use or sell some.')}", None
     pool    = case["pool"]
     weights = [b["chance"] for b in pool]
     dropped = random.choices(pool, weights=weights, k=1)[0]
@@ -563,7 +559,7 @@ def open_case(data: dict, case_key: str, lang: str = "ru") -> tuple:
         }
         inv.append(instance)
         name     = f"{_pe('boost', '⚡')} {_booster_name(dropped, lang)}"
-        inv_line = f"{_L(lang, 'В инвентаре', 'In inventory')}: {len(inv)}/{MAX_INVENTORY}"
+        inv_line = f"{_L(lang, 'В инвентаре', 'In inventory')}: {len(inv)}"
     elif case["type"] == "enhancer":
         instance = {
             "instance_id": instance_id,
@@ -582,7 +578,7 @@ def open_case(data: dict, case_key: str, lang: str = "ru") -> tuple:
             instance["duration_sec"] = _DUR[dropped["dur_key"]]
         inv.append(instance)
         name     = _enh_item_name(instance, lang)
-        inv_line = f"{_L(lang, 'В инвентаре усилителей', 'Enhancer inventory')}: {len(inv)}/{MAX_ENH_INVENTORY}"
+        inv_line = f"{_L(lang, 'В инвентаре усилителей', 'Enhancer inventory')}: {len(inv)}"
     else:
         instance = {
             "instance_id": instance_id,
@@ -633,7 +629,7 @@ def open_case(data: dict, case_key: str, lang: str = "ru") -> tuple:
             instance["duration_sec"] = _DUR[dropped["dur_key"]]
             name = _xp_item_name(dropped, lang)
         inv.append(instance)
-        inv_line = f"{_L(lang, 'В XP-инвентаре', 'XP inventory')}: {len(inv)}/{MAX_XP_INVENTORY}"
+        inv_line = f"{_L(lang, 'В XP-инвентаре', 'XP inventory')}: {len(inv)}"
     data["cases_total_opened"] = data.get("cases_total_opened", 0) + 1
     data["cases_total_spent"]  = data.get("cases_total_spent",  0) + cost
     msg = (
@@ -644,6 +640,110 @@ def open_case(data: dict, case_key: str, lang: str = "ru") -> tuple:
         f"{_pe('inv', '🎒')} <b>{inv_line}</b></blockquote>"
     )
     return True, msg, instance
+
+
+# ============================================================
+#  МАППИНГ НОМЕР КЕЙСА → КЛЮЧ
+# ============================================================
+
+CASE_NUM_TO_KEY = {1: "common", 2: "xp", 3: "enhancer"}
+CASE_KEY_TO_NUM = {v: k for k, v in CASE_NUM_TO_KEY.items()}
+
+
+def open_case_multi(data: dict, case_num: int, qty: int, lang: str = "ru") -> tuple:
+    """
+    Открывает qty кейсов с номером case_num (#1/#2/#3).
+    Команды: открыть #1 5  /купить #2 10  open #1 5  /open #3 3
+    Возвращает (ok, итоговое_сообщение).
+    """
+    case_key = CASE_NUM_TO_KEY.get(case_num)
+    if not case_key:
+        if lang == "en":
+            err = f"Case #{case_num} not found. Available: #1 (boosters), #2 (XP), #3 (enhancers)."
+        else:
+            err = f"Кейс #{case_num} не найден. Доступны: #1 (ускорители), #2 (XP), #3 (усилители)."
+        return False, f"❌ {err}"
+
+    if qty < 1:
+        err = "Количество должно быть ≥ 1." if lang == "ru" else "Quantity must be ≥ 1."
+        return False, f"❌ {err}"
+    if qty > 100:
+        err = "Максимум 100 кейсов за раз." if lang == "ru" else "Maximum 100 cases at once."
+        return False, f"❌ {err}"
+
+    case       = CASES[case_key]
+    total_cost = case["cost"] * qty
+
+    if data.get("balance", 0) < total_cost:
+        can_open = data.get("balance", 0) // case["cost"]
+        if lang == "en":
+            err = (
+                f"Not enough coins for {qty} cases!\n"
+                f"Need: {_fmt_num(total_cost)} | Balance: {_fmt_num(data.get('balance', 0))}\n"
+                f"Can open: {can_open}"
+            )
+        else:
+            err = (
+                f"Недостаточно монет для {qty} кейсов!\n"
+                f"Нужно: {_fmt_num(total_cost)} | Баланс: {_fmt_num(data.get('balance', 0))}\n"
+                f"Можно открыть: {can_open}"
+            )
+        return False, f"❌ {err}"
+
+    # Открываем qty кейсов подряд
+    results: dict = {}  # item_key -> count
+    opened_count  = 0
+    for _ in range(qty):
+        ok, _msg, instance = open_case(data, case_key, lang=lang)
+        if not ok:
+            break  # прерываем если закончились монеты в процессе
+        if instance:
+            k = instance.get("key", "?")
+            results[k] = results.get(k, 0) + 1
+            opened_count += 1
+
+    if opened_count == 0:
+        err = "Не удалось открыть ни одного кейса." if lang == "ru" else "Failed to open any cases."
+        return False, f"❌ {err}"
+
+    spent = case["cost"] * opened_count
+
+    _CASE_NAMES_SHORT    = {"common": "Ускорителей", "xp": "XP", "enhancer": "Усилителей"}
+    _CASE_NAMES_SHORT_EN = {"common": "Booster",     "xp": "XP", "enhancer": "Enhancer"}
+    cname = _CASE_NAMES_SHORT_EN.get(case_key, case_key) if lang == "en" else _CASE_NAMES_SHORT.get(case_key, case_key)
+
+    # Формируем список дропа
+    result_lines = []
+    for item_key, count in sorted(results.items(), key=lambda x: -x[1]):
+        if case_key == "common":
+            b = BOOSTERS_BY_KEY.get(item_key)
+            name = _booster_name(b, lang) if b else item_key
+        elif case_key == "xp":
+            x = XP_POOL_BY_KEY.get(item_key)
+            name = _xp_item_name_plain(x, lang) if x else item_key
+        else:
+            e = ENH_POOL_BY_KEY.get(item_key)
+            name = _enh_item_name_plain(e, lang) if e else item_key
+        qty_str = f" ×{count}" if count > 1 else ""
+        result_lines.append(f"<b>{name}</b>{qty_str}")
+
+    loot_text = "\n".join(f"  • {l}" for l in result_lines)
+
+    if lang == "en":
+        msg = (
+            f"<blockquote>{_pe('case', '📦')} <b>Opened {opened_count}× {cname} case{'s' if opened_count != 1 else ''}!</b></blockquote>\n"
+            f"\n<blockquote><b>Loot:</b>\n{loot_text}</blockquote>\n"
+            f"\n<blockquote>{_pe('spent', '💸')} <b>Spent: {_fmt_num(spent)}</b> {_pe('coin', '💰')}\n"
+            f"{_pe('balance', '💰')} <b>Balance: {_fmt_num(data['balance'])}</b> {_pe('coin', '💰')}</blockquote>"
+        )
+    else:
+        msg = (
+            f"<blockquote>{_pe('case', '📦')} <b>Открыто {opened_count}× кейс {cname}!</b></blockquote>\n"
+            f"\n<blockquote><b>Лут:</b>\n{loot_text}</blockquote>\n"
+            f"\n<blockquote>{_pe('spent', '💸')} <b>Потрачено: {_fmt_num(spent)}</b> {_pe('coin', '💰')}\n"
+            f"{_pe('balance', '💰')} <b>Баланс: {_fmt_num(data['balance'])}</b> {_pe('coin', '💰')}</blockquote>"
+        )
+    return True, msg
 
 
 def activate_booster(data: dict, instance_id: str, force: bool = False, lang: str = "ru") -> tuple:
@@ -1221,12 +1321,28 @@ def case_detail_text(data: dict, case_key: str, lang: str = "ru") -> str:
         if can_buy else
         f"{_pe('cancel', '❌')} <b>{_L(lang, 'Недостаточно монет', 'Not enough coins')}</b>"
     )
+    # Номера кейсов для команды открытия
+    _CASE_NUM = {"common": 1, "xp": 2, "enhancer": 3}
+    case_num = _CASE_NUM.get(case_key, 1)
+    if lang == "en":
+        cmd_hint = (
+            f"\n\n<blockquote><i>"
+            f"Quick open: <code>open #{case_num} 5</code> or <code>/open #{case_num} 5</code>"
+            f"</i></blockquote>"
+        )
+    else:
+        cmd_hint = (
+            f"\n\n<blockquote><i>"
+            f"Быстрое открытие: <code>открыть #{case_num} 5</code> или <code>/купить #{case_num} 5</code>"
+            f"</i></blockquote>"
+        )
     return (
         f"<blockquote>{_pe(e_key, '📦')} <b>{cname} {case_label}</b>\n"
         f"{_pe('coin', '💰')} <b>{_L(lang, 'Цена', 'Price')}:</b> <b>{_fmt_num(case['cost'])}</b>\n"
         f"{_pe('balance', '💰')} <b>{_L(lang, 'Баланс', 'Balance')}:</b> <b>{bal_str}</b></blockquote>\n"
         f"\n<blockquote><b>{_L(lang, 'Возможный лут', 'Possible loot')}:</b>\n{loot_lines}</blockquote>\n"
         f"\n<blockquote>{status}</blockquote>"
+        f"{cmd_hint}"
     )
 
 
@@ -1815,14 +1931,16 @@ def unified_inventory_text(data: dict, lang: str = "ru") -> str:
         "Use: <code>use #N</code> or <code>-use #N</code>\n"
         "Cancel: <code>/stop #N</code>\n"
         "Sell: <code>/sell #N</code> or <code>/sell #N 5</code>\n"
-        "Transfer: <code>отп #N</code> or <code>отп #N 3 @username</code>"
+        "Transfer: <code>отп #N</code> or <code>отп #N 3 @username</code>\n"
+        "Open cases: <code>open #1 5</code> or <code>/open #2 10</code>"
         "</i></blockquote>"
         if lang == "en" else
         "\n<blockquote><i>"
         "Использовать: <code>исп #N</code> или <code>-use #N</code>\n"
         "Отменить: <code>/стоп #N</code>\n"
         "Продать: <code>/sell #N</code> или <code>/sell #N 5</code>\n"
-        "Передать: <code>отп #N</code> или <code>отп #N 3 @username</code>"
+        "Передать: <code>отп #N</code> или <code>отп #N 3 @username</code>\n"
+        "Открыть кейсы: <code>открыть #1 5</code> или <code>/купить #2 10</code>"
         "</i></blockquote>"
     )
     lines.append(lbl_hint)
