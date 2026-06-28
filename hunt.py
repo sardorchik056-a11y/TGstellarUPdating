@@ -2037,6 +2037,9 @@ def arsenal_main_text(data: dict) -> str:
         sw = SWORDS_BY_KEY.get(sk)
         if not sw:
             continue
+        # Арендованные у других отображаются отдельно ниже
+        if sword_is_rented_in(data, sk):
+            continue
         sword_emoji = _tg(sw["emoji_id"], "🗡")
         eq_mark = f' {_tg(_E["fire"], "⚡")}' if sk == eq_key else ""
         rented_mark = ""
