@@ -342,7 +342,17 @@ _COMMON_WEIGHTS = [o["weight"] for o in _COMMON_ORES]
 
 
 def roll_ore(pick_key: str, multiplier: float = 1.0,
-             total_ticks_done: int = 0) -> list:
+             tick_counter: int = 0) -> tuple:
+    """
+    Бросок руд за одну кампанию.
+
+    tick_counter : глобальный счётчик ударов кирки ДО начала кампании
+                   (хранится в data[\'total_ticks\'], передаётся из collect_mine)
+
+    Возвращает (список (ore, qty), новый tick_counter после кампании).
+
+    Каждый удар = 1 тик. Пороговые руды проверяются на каждом тике.
+    """
     """
     Бросок руд за одну кампанию.
 
@@ -369,19 +379,20 @@ def roll_ore(pick_key: str, multiplier: float = 1.0,
     n_digs  = random.randint(dig_min, dig_max)
     found   = {}
 
-    # ── Обычные руды ──────────────────────────────────────────────────────
     for _ in range(n_digs):
+        tick_counter += 1
+
+        # ── Обычная руда на каждый удар ──────────────────────────────────
         ore = random.choices(_COMMON_ORES, weights=_COMMON_WEIGHTS, k=1)[0]
         found[ore["key"]] = found.get(ore["key"], 0) + 1
 
-    # ── Пороговые руды (аметист и выше) ───────────────────────────────────
-    if total_ticks_done > 0:
+        # ── Пороговые руды: проверяем на каждом тике ─────────────────────
         for ore_key, (tick_threshold, chance_pct) in THRESHOLD_ORES.items():
-            if total_ticks_done % tick_threshold == 0:
+            if tick_counter % tick_threshold == 0:
                 if random.random() * 100 < chance_pct:
                     found[ore_key] = found.get(ore_key, 0) + 1
 
-    return [(ORES_BY_KEY[k], v) for k, v in found.items()]
+    return [(ORES_BY_KEY[k], v) for k, v in found.items()], tick_counter
 
 
 def get_session_params(data: dict) -> tuple:
@@ -883,13 +894,15 @@ def collect_mine(data: dict, lang: str = "ru") -> tuple:
     from status import get_status_multiplier as _status_mine_mult
     multiplier = get_active_booster_multiplier(data) * get_artifact_mine_multiplier(data) * _status_mine_mult(data)
     pick_key = data.get("pickaxe", "wood_1")
-    results  = {}
-    base_done = data["mine_campaigns_done"]          # кампании до этого сбора
-    for i in range(new_campaigns):
-        tick_num = base_done + i + 1                 # порядковый номер кампании (1-based)
-        for ore, qty in roll_ore(pick_key, multiplier, total_ticks_done=tick_num):
+    results      = {}
+    # Глобальный счётчик ударов кирки — накапливается между всеми сессиями
+    tick_counter = data.get("total_ticks", 0)
+    for _ in range(new_campaigns):
+        ores, tick_counter = roll_ore(pick_key, multiplier, tick_counter=tick_counter)
+        for ore, qty in ores:
             results[ore["key"]] = results.get(ore["key"], 0) + qty
             data["ores"][ore["key"]] = data["ores"].get(ore["key"], 0) + qty
+    data["total_ticks"] = tick_counter  # сохраняем обратно в профиль
     data["mine_campaigns_done"] = prog["campaigns_done"]
     if prog["finished"]:
         data["mine_collected"] = True
