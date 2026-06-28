@@ -2064,9 +2064,12 @@ def arsenal_main_text(data: dict) -> str:
         f'\n\n<blockquote expandable>'
         f'<b>Команды арсенала:</b>\n'
         f'<code>подарить #N @user</code> — подарить меч навсегда\n'
-        f'<code>передать #N @user</code> — передать меч\n'
-        f'<code>арн #N 2ч @user</code> — сдать в аренду на срок\n'
-        f'<i>Срок аренды: от 5м до 48ч</i>'
+        f'<code>передать #N @user</code> — передать меч навсегда\n'
+        f'<code>арн #N 5м @user</code> — аренда на 5 минут\n'
+        f'<code>арн #N 2ч @user</code> — аренда на 2 часа\n'
+        f'<code>арн #N 24ч @user</code> — аренда на 24 часа\n'
+        f'<i>Срок аренды: от 5м до 48ч</i>\n'
+        f'<i>Пока меч в аренде — им нельзя бить босса</i>'
         f'</blockquote>'
     )
 
@@ -2245,13 +2248,8 @@ def arsenal_gift_confirm_text(sword_key: str, recipient_name: str) -> str:
     sword_emoji = _tg(sw["emoji_id"], "🗡") if sw else "🗡"
     sword_name  = sw["name"] if sw else sword_key
     return (
-        f'{_tg(_E["ok"], "✅")} <b>ПОДАРОК ОТПРАВЛЕН</b>\n'
-        f'━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote>'
-        f'{sword_emoji} <b>{sword_name}</b>\n'
-        f'подарен игроку <b>{recipient_name}</b>.\n\n'
+        f'{sword_emoji} <b>{sword_name}</b> подарен игроку <b>{recipient_name}</b>\n'
         f'<i>Теперь ты можешь купить этот меч снова.</i>'
-        f'</blockquote>'
     )
 
 def arsenal_transfer_confirm_text(sword_key: str, recipient_name: str) -> str:
@@ -2259,13 +2257,8 @@ def arsenal_transfer_confirm_text(sword_key: str, recipient_name: str) -> str:
     sword_emoji = _tg(sw["emoji_id"], "🗡") if sw else "🗡"
     sword_name  = sw["name"] if sw else sword_key
     return (
-        f'{_tg(_E["ok"], "✅")} <b>МЕЧ ПЕРЕДАН</b>\n'
-        f'━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote>'
-        f'{sword_emoji} <b>{sword_name}</b>\n'
-        f'передан игроку <b>{recipient_name}</b>.\n\n'
+        f'{sword_emoji} <b>{sword_name}</b> передан игроку <b>{recipient_name}</b>\n'
         f'<i>Теперь ты можешь купить этот меч снова.</i>'
-        f'</blockquote>'
     )
 
 def arsenal_rent_confirm_text(sword_key: str, renter_name: str, duration_secs: int) -> str:
@@ -2274,38 +2267,25 @@ def arsenal_rent_confirm_text(sword_key: str, renter_name: str, duration_secs: i
     sword_name  = sw["name"] if sw else sword_key
     dur_str = _fmt_duration(duration_secs)
     return (
-        f'{_tg(_E["timer"], "⏱")} <b>АРЕНДА ОФОРМЛЕНА</b>\n'
-        f'━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote>'
-        f'{sword_emoji} <b>{sword_name}</b>\n'
-        f'сдан в аренду <b>{renter_name}</b>\n'
-        f'на <b>{dur_str}</b>.\n\n'
-        f'<i>Пока меч в аренде — ты не можешь купить его снова.</i>'
-        f'</blockquote>'
+        f'{sword_emoji} <b>{sword_name}</b> сдан в аренду игроку <b>{renter_name}</b> на <b>{dur_str}</b>\n'
+        f'<i>Пока меч в аренде — им нельзя бить босса.</i>'
     )
 
-def arsenal_received_text(sword_key: str, from_name: str, mode: str = "gift") -> str:
+def arsenal_received_text(sword_key: str, from_name: str, mode: str = "gift", duration_secs: int = 0) -> str:
     """Уведомление получателю."""
     sw = SWORDS_BY_KEY.get(sword_key)
     sword_emoji = _tg(sw["emoji_id"], "🗡") if sw else "🗡"
     sword_name  = sw["name"] if sw else sword_key
     if mode == "rent":
+        dur_str = f' на <b>{_fmt_duration(duration_secs)}</b>' if duration_secs else ''
         return (
-            f'{_tg(_E["timer"], "⏱")} <b>АРЕНДА ПОЛУЧЕНА</b>\n\n'
-            f'<blockquote>'
-            f'Игрок <b>{from_name}</b> сдал тебе в аренду:\n'
-            f'{sword_emoji} <b>{sword_name}</b>\n\n'
+            f'Получен {sword_emoji} <b>{sword_name}</b> от <b>{from_name}</b>{dur_str}\n'
             f'<i>Меч уже в твоём арсенале!</i>'
-            f'</blockquote>'
         )
     action = "подарил" if mode == "gift" else "передал"
     return (
-        f'{_tg(_E["ok"], "✅")} <b>МЕЧ ПОЛУЧЕН</b>\n\n'
-        f'<blockquote>'
-        f'Игрок <b>{from_name}</b> {action} тебе:\n'
-        f'{sword_emoji} <b>{sword_name}</b>\n\n'
+        f'Получен {sword_emoji} <b>{sword_name}</b> от <b>{from_name}</b>\n'
         f'<i>Меч уже в твоём арсенале!</i>'
-        f'</blockquote>'
     )
 
 
