@@ -69,11 +69,11 @@ ORES = [
     # ── Legendary ────────────────────────────────────────────────────────
     {"name": '<tg-emoji emoji-id="5217620305194800391">🔮</tg-emoji> Мифрил',   "name_en": '<tg-emoji emoji-id="5217620305194800391">🔮</tg-emoji> Mithril',   "key": "mithril",  "chance":  0.100, "weight":   3, "price":     45_000},
     {"name": '<tg-emoji emoji-id="5447225730670813734">☢️</tg-emoji> Уран',     "name_en": '<tg-emoji emoji-id="5447225730670813734">☢️</tg-emoji> Uranium',   "key": "uranium",  "chance":  0.040, "weight":   2, "price":    150_000},
-    {"name": '<tg-emoji emoji-id="5314686299796427450">💜</tg-emoji> Аметист',  "name_en": '<tg-emoji emoji-id="5314686299796427450">💜</tg-emoji> Amethyst',  "key": "amethyst", "chance":  0.010, "weight":   1, "price":    500_000},
+    {"name": '<tg-emoji emoji-id="5314686299796427450">💜</tg-emoji> Аметист',  "name_en": '<tg-emoji emoji-id="5314686299796427450">💜</tg-emoji> Amethyst',  "key": "amethyst", "chance":  0.010, "weight":  20, "price":    500_000},
     # ── Mythic ───────────────────────────────────────────────────────────
-    {"name": '<tg-emoji emoji-id="5850500039956239502">🟢</tg-emoji> Нефрит',  "name_en": '<tg-emoji emoji-id="5850500039956239502">🟢</tg-emoji> Jade',     "key": "jade",     "chance":  0.005, "weight":   1, "price":  2_000_000},
-    {"name": '<tg-emoji emoji-id="5470105163190515289">🌿</tg-emoji> Изумруд', "name_en": '<tg-emoji emoji-id="5470105163190515289">🌿</tg-emoji> Emerald',  "key": "emerald",  "chance":  0.002, "weight":   1, "price":  5_000_000},
-    {"name": '<tg-emoji emoji-id="6138471781767319985">💀</tg-emoji> Обсидиан',"name_en": '<tg-emoji emoji-id="6138471781767319985">💀</tg-emoji> Obsidian', "key": "obsidian", "chance":  0.001, "weight":   1, "price":  8_000_000},
+    {"name": '<tg-emoji emoji-id="5850500039956239502">🟢</tg-emoji> Нефрит',  "name_en": '<tg-emoji emoji-id="5850500039956239502">🟢</tg-emoji> Jade',     "key": "jade",     "chance":  0.005, "weight":  10, "price":  2_000_000},
+    {"name": '<tg-emoji emoji-id="5470105163190515289">🌿</tg-emoji> Изумруд', "name_en": '<tg-emoji emoji-id="5470105163190515289">🌿</tg-emoji> Emerald',  "key": "emerald",  "chance":  0.002, "weight":   4, "price":  5_000_000},
+    {"name": '<tg-emoji emoji-id="6138471781767319985">💀</tg-emoji> Обсидиан',"name_en": '<tg-emoji emoji-id="6138471781767319985">💀</tg-emoji> Obsidian', "key": "obsidian", "chance":  0.001, "weight":   2, "price":  8_000_000},
     {"name": '<tg-emoji emoji-id="5465283645788937267">🔷</tg-emoji> Сапфир',  "name_en": '<tg-emoji emoji-id="5465283645788937267">🔷</tg-emoji> Sapphire', "key": "sapphire", "chance":  0.0005,"weight":   1, "price": 15_000_000},
 ]
 ORES_BY_KEY = {o["key"]: o for o in ORES}
@@ -320,19 +320,67 @@ def _fmt_num(n) -> str:
     return f"{sign}{int(n)}"
 
 
-def roll_ore(pick_key: str, multiplier: float = 1.0) -> list:
+
+# ── Руды с пороговой (тиковой) логикой выпадения ────────────────────────────
+# Начиная с аметиста: выпадает НЕ через веса, а раз в TICK_THRESHOLD тиков
+# с заданным шансом (в процентах).
+THRESHOLD_ORES = {
+    # key        : (tick_threshold, chance_pct)
+    "amethyst"   : (300, 70.0),
+    "jade"       : (300, 40.0),
+    "emerald"    : (300, 20.0),
+    "obsidian"   : (300, 10.0),
+    "sapphire"   : (300,  5.0),
+}
+
+# Множество ключей, исключённых из обычного weight-броска
+_THRESHOLD_KEYS = set(THRESHOLD_ORES.keys())
+
+# Обычные руды (без пороговых) — список и веса пересчитываются один раз
+_COMMON_ORES    = [o for o in ORES if o["key"] not in _THRESHOLD_KEYS]
+_COMMON_WEIGHTS = [o["weight"] for o in _COMMON_ORES]
+
+
+def roll_ore(pick_key: str, multiplier: float = 1.0,
+             total_ticks_done: int = 0) -> list:
+    """
+    Бросок руд за одну кампанию.
+
+    Параметры
+    ---------
+    pick_key        : ключ кирки игрока
+    multiplier      : множитель (бустеры / артефакты)
+    total_ticks_done: суммарное кол-во кампаний, выполненных игроком
+                      (нужно для проверки порогового условия).
+                      Передаётся из collect_mine.
+
+    Логика
+    ------
+    * Обычные руды (до аметиста) — как прежде: random.choices с весами.
+    * Пороговые руды (аметист и выше):
+        - проверяется каждые TICK_THRESHOLD кампаний
+          (т.е. когда total_ticks_done % tick_threshold == 0)
+        - при наступлении порога — бросок с chance_pct% вероятностью
+        - если выпало — добавляется 1 единица руды
+    """
     pick    = PICKAXES[pick_key]
     dig_min = max(1, int(pick["dig_min"] * multiplier))
     dig_max = max(1, int(pick["dig_max"] * multiplier))
     n_digs  = random.randint(dig_min, dig_max)
     found   = {}
-    weights = [o["weight"] for o in ORES]
+
+    # ── Обычные руды ──────────────────────────────────────────────────────
     for _ in range(n_digs):
-        ore = random.choices(ORES, weights=weights, k=1)[0]
+        ore = random.choices(_COMMON_ORES, weights=_COMMON_WEIGHTS, k=1)[0]
         found[ore["key"]] = found.get(ore["key"], 0) + 1
-        for o in ORES:
-            if random.random() * 100 < o["chance"] * 0.3:
-                found[o["key"]] = found.get(o["key"], 0) + 1
+
+    # ── Пороговые руды (аметист и выше) ───────────────────────────────────
+    if total_ticks_done > 0:
+        for ore_key, (tick_threshold, chance_pct) in THRESHOLD_ORES.items():
+            if total_ticks_done % tick_threshold == 0:
+                if random.random() * 100 < chance_pct:
+                    found[ore_key] = found.get(ore_key, 0) + 1
+
     return [(ORES_BY_KEY[k], v) for k, v in found.items()]
 
 
@@ -836,8 +884,10 @@ def collect_mine(data: dict, lang: str = "ru") -> tuple:
     multiplier = get_active_booster_multiplier(data) * get_artifact_mine_multiplier(data) * _status_mine_mult(data)
     pick_key = data.get("pickaxe", "wood_1")
     results  = {}
-    for _ in range(new_campaigns):
-        for ore, qty in roll_ore(pick_key, multiplier):
+    base_done = data["mine_campaigns_done"]          # кампании до этого сбора
+    for i in range(new_campaigns):
+        tick_num = base_done + i + 1                 # порядковый номер кампании (1-based)
+        for ore, qty in roll_ore(pick_key, multiplier, total_ticks_done=tick_num):
             results[ore["key"]] = results.get(ore["key"], 0) + qty
             data["ores"][ore["key"]] = data["ores"].get(ore["key"], 0) + qty
     data["mine_campaigns_done"] = prog["campaigns_done"]
