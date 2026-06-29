@@ -466,7 +466,7 @@ def profile_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
             icon_custom_emoji_id="5359664288241829619"
         ),
         InlineKeyboardButton(
-            text="💝 Донат" if lang == "ru" else "💝 Donate",
+            text=" Донат" if lang == "ru" else " Donate",
             callback_data="donate_main",
             icon_custom_emoji_id="5262643974912355126"
         ),
