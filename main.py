@@ -564,21 +564,8 @@ async def cmd_add_balance(message: Message):
         return
 
     # Поиск пользователя в БД
-    from database import get_all_users, save_user as _save
-    all_users = get_all_users()
-    found = None
-
-    # Сначала пробуем по числовому ID
-    if target_raw.lstrip("-").isdigit():
-        uid = int(target_raw)
-        found = next((u for u in all_users if u["id"] == uid), None)
-    else:
-        # По username (без учёта регистра)
-        found = next(
-            (u for u in all_users
-             if (u.get("username") or "").lower() == target_raw.lower()),
-            None
-        )
+    from database import get_user_by_id_or_username, save_user as _save
+    found = get_user_by_id_or_username(target_raw)
 
     if not found:
         await message.reply(
@@ -614,7 +601,7 @@ async def cmd_getallart(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return
     from shop import _ARTIFACT_POOL, ARTIFACT_POOL_BY_KEY, get_artifact_mine_multiplier, get_artifact_damage_multiplier, get_artifact_pets_multiplier
-    from database import get_user, get_all_users, save_user as _save
+    from database import get_user, get_user_by_id_or_username, save_user as _save
 
     parts = message.text.strip().split()
 
@@ -622,14 +609,7 @@ async def cmd_getallart(message: Message):
     if len(parts) >= 2:
         # /getallart @username  или  /getallart 123456789
         target_raw = parts[1].lstrip("@")
-        all_users  = get_all_users()
-        if target_raw.lstrip("-").isdigit():
-            data = next((u for u in all_users if u["id"] == int(target_raw)), None)
-        else:
-            data = next(
-                (u for u in all_users if (u.get("username") or "").lower() == target_raw.lower()),
-                None,
-            )
+        data = get_user_by_id_or_username(target_raw)
         if not data:
             await message.reply(
                 f"❌ Пользователь <code>{target_raw}</code> не найден в базе.",
@@ -697,16 +677,8 @@ async def cmd_updamage(message: Message):
         return
 
     target_raw = parts[1].lstrip("@")
-    from database import get_all_users, save_user as _save
-    all_users = get_all_users()
-
-    if target_raw.lstrip("-").isdigit():
-        found = next((u for u in all_users if u["id"] == int(target_raw)), None)
-    else:
-        found = next(
-            (u for u in all_users if (u.get("username") or "").lower() == target_raw.lower()),
-            None
-        )
+    from database import get_user_by_id_or_username, save_user as _save
+    found = get_user_by_id_or_username(target_raw)
 
     if not found:
         await message.reply(
@@ -747,16 +719,8 @@ async def cmd_getstatus(message: Message):
     tier_arg   = parts[2].lower()
     tier       = "premium" if tier_arg in ("pr", "premium") else "vip"
 
-    from database import get_all_users, save_user as _save
-    all_users = get_all_users()
-
-    if target_raw.lstrip("-").isdigit():
-        found = next((u for u in all_users if u["id"] == int(target_raw)), None)
-    else:
-        found = next(
-            (u for u in all_users if (u.get("username") or "").lower() == target_raw.lower()),
-            None
-        )
+    from database import get_user_by_id_or_username, save_user as _save
+    found = get_user_by_id_or_username(target_raw)
 
     if not found:
         await message.reply(
@@ -1432,7 +1396,7 @@ def _parse_gift_args(message: Message):
 @dp.message(F.text.regexp(r'^[/]?(gift|дать|пер|transfer|give|дарю)(\s+[@\d]\S*(\s+\d+)?\s*|\s*$)', flags=_re.IGNORECASE))
 async def cmd_gift(message: Message):
     """Перевод монет другому игроку."""
-    from database import get_all_users, save_user as _save, get_user
+    from database import save_user as _save, get_user
 
     uid  = message.from_user.id
     u    = get_or_create_user(message.from_user)
@@ -1493,17 +1457,8 @@ async def cmd_gift(message: Message):
 
     if target_raw:
         # Явно указан @username или id
-        all_users = get_all_users()
-        if target_raw.lstrip("-").isdigit():
-            recipient_data = next(
-                (u2 for u2 in all_users if u2["id"] == int(target_raw)), None
-            )
-        else:
-            recipient_data = next(
-                (u2 for u2 in all_users
-                 if (u2.get("username") or "").lower() == target_raw.lower()),
-                None
-            )
+        from database import get_user_by_id_or_username as _find_user
+        recipient_data = _find_user(target_raw)
     else:
         # Цель берётся из ответа на сообщение
         if not message.reply_to_message:
@@ -2029,16 +1984,8 @@ async def _handle_duel_cmd(message: Message):
             await message.reply(cmd_invite_usage_text(), parse_mode="HTML")
             return
 
-        from database import get_all_users as _gau_duel_cmd
-        all_users = _gau_duel_cmd()
-        target = None
-        if target_raw.lstrip("-").isdigit():
-            target = next((x for x in all_users if x["id"] == int(target_raw)), None)
-        else:
-            target = next(
-                (x for x in all_users if (x.get("username") or "").lower() == target_raw.lower()),
-                None
-            )
+        from database import get_user_by_id_or_username as _find_duel_target
+        target = _find_duel_target(target_raw)
 
         if not target:
             await message.reply(cmd_invite_not_found_text(), parse_mode="HTML")
@@ -2169,7 +2116,7 @@ _TRANSFER_RE = _re_inv.compile(
 ))
 async def cmd_transfer_item(message: Message):
     """Передача предмета из инвентаря другому игроку."""
-    from database import get_all_users, save_user as _save, get_user
+    from database import save_user as _save, get_user
 
     uid  = message.from_user.id
     u    = get_or_create_user(message.from_user)
@@ -2205,18 +2152,8 @@ async def cmd_transfer_item(message: Message):
     recipient_data = None
 
     if target_raw:
-        target_clean = target_raw.lstrip("@")
-        all_users = get_all_users()
-        if target_clean.lstrip("-").isdigit():
-            recipient_data = next(
-                (u2 for u2 in all_users if u2["id"] == int(target_clean)), None
-            )
-        else:
-            recipient_data = next(
-                (u2 for u2 in all_users
-                 if (u2.get("username") or "").lower() == target_clean.lower()),
-                None,
-            )
+        from database import get_user_by_id_or_username as _find_transfer
+        recipient_data = _find_transfer(target_raw.lstrip("@"))
     else:
         if not message.reply_to_message:
             hint = (
@@ -2433,20 +2370,12 @@ async def handle_captcha_answer(message: Message):
 
     # ── Ожидание ввода цели вызова на дуэль ──
     if _challenge_input_pending.pop(uid, False):
-        from database import get_all_users as _gau_ch, get_user as _gu_ch2
+        from database import get_user_by_id_or_username as _find_ch
         target_raw = (message.text or "").strip().lstrip("@")
         if not target_raw:
             await message.reply("❌ Укажи ID или @юзернейм.", parse_mode="HTML")
             return
-        all_users = _gau_ch()
-        target = None
-        if target_raw.lstrip("-").isdigit():
-            target = next((u for u in all_users if u["id"] == int(target_raw)), None)
-        else:
-            target = next(
-                (u for u in all_users if (u.get("username") or "").lower() == target_raw.lower()),
-                None
-            )
+        target = _find_ch(target_raw)
         if not target:
             await message.reply("❌ Игрок не найден. Он должен хотя бы раз написать боту.", parse_mode="HTML")
             return
@@ -2548,7 +2477,7 @@ async def handle_captcha_answer(message: Message):
     if u.get("onboarded", True):
         _ars_parsed = parse_arsenal_cmd((message.text or "").strip())
         if _ars_parsed:
-            from database import get_all_users as _gau_ars, get_user as _gu_ars, save_user as _su_ars
+            from database import get_user_by_id_or_username as _find_ars, get_user as _gu_ars, save_user as _su_ars
             action       = _ars_parsed["action"]
             sword_idx    = _ars_parsed["index"]
             target_raw   = _ars_parsed["target"].lstrip("@")
@@ -2565,13 +2494,7 @@ async def handle_captcha_answer(message: Message):
                 return
 
             # Ищем получателя
-            all_users_ars = _gau_ars()
-            if target_raw.lstrip("-").isdigit():
-                recipient_data = next((x for x in all_users_ars if x["id"] == int(target_raw)), None)
-            else:
-                recipient_data = next(
-                    (x for x in all_users_ars if (x.get("username") or "").lower() == target_raw.lower()), None
-                )
+            recipient_data = _find_ars(target_raw)
             if not recipient_data:
                 await message.reply(
                     arsenal_error_text("❌ Игрок не найден. Он должен хотя бы раз написать боту."),
