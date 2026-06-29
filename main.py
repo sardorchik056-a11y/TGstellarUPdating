@@ -13,6 +13,7 @@ from aiogram.filters import Command
 from database import (
     init_db, get_or_create_user, save_user,
     profile_text, format_amount,
+    is_charge_processed, mark_charge_processed,
 )
 from miner import (
     ORES, PICKAXES, PICKAXES_ORDER,
@@ -4932,20 +4933,23 @@ async def handle_successful_payment(message: Message):
 
         # Защита от replay-атаки: один charge_id обрабатывается ровно один раз
         charge_id = message.successful_payment.telegram_payment_charge_id
-        if charge_id in _processed_charge_ids:
+        if is_charge_processed(charge_id):
             return
-        _processed_charge_ids.add(charge_id)
+        mark_charge_processed(charge_id, message.from_user.id, payload)
 
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
             data = get_user(uid)
             if not data:
-                return
+                # Пользователь не найден в БД — создаём и пробуем снова
+                data = get_or_create_user(message.from_user)
+
             _lang = data.get("lang", "ru")
             ok, msg, chosen = open_artifact_case(data, _lang)
-            if ok:
-                save_user(data["id"], data)
+
+            # Сохраняем ВСЕГДА — деньги уже списаны, артефакт должен попасть в БД
+            save_user(data["id"], data)
 
             # 1) Обновляем старое сообщение — убираем ссылку-инвойс
             pending = _pending_artifact_msg.pop(uid, None)
@@ -4962,21 +4966,26 @@ async def handle_successful_payment(message: Message):
                 except Exception:
                     pass
 
-            # 2) Сообщение об успехе
+            # 2) Формируем текст результата
+            # chosen всегда есть (open_artifact_case всегда возвращает артефакт)
             from shop import _get_effect_label as _eff_lbl
             effect_label = _eff_lbl(chosen["effect"], _lang)
             art_name = chosen.get("name_en", chosen["name"]) if _lang == "en" else chosen["name"]
+            art_emoji_id = chosen.get("emoji_id", "")
+            art_emoji = f'<tg-emoji emoji-id="{art_emoji_id}">♦️</tg-emoji> ' if art_emoji_id else ""
+
+            # msg уже содержит правильный текст (новый артефакт или дубликат+компенсация)
             if _lang == "en":
                 success_text = (
                     f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
                     f'━━━━━━━━━━━━━━━━━━━━\n\n'
                     f'<blockquote>'
                     f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>Artifact Case opened!</b>\n'
-                    f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>Artifact: {art_name}</b>\n'
+                    f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>Artifact: {art_emoji}{art_name}</b>\n'
                     f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Bonus: {chosen["multiplier"]}× {effect_label} forever</b>\n'
                     f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Spent: {ARTIFACT_CASE_COST_STARS} {STAR}</b>'
                     f'</blockquote>\n\n'
-                    f'<tg-emoji emoji-id="5206607081334906820">🎟</tg-emoji> <b>Artifact added to collection!</b>'
+                    f'{msg}'
                 )
             else:
                 success_text = (
@@ -4984,11 +4993,11 @@ async def handle_successful_payment(message: Message):
                     f'━━━━━━━━━━━━━━━━━━━━\n\n'
                     f'<blockquote>'
                     f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>Кейс Артефактов открыт!</b>\n'
-                    f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>Артефакт: {art_name}</b>\n'
+                    f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>Артефакт: {art_emoji}{art_name}</b>\n'
                     f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Бонус: {chosen["multiplier"]}× {effect_label} навсегда</b>\n'
                     f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Потрачено: {ARTIFACT_CASE_COST_STARS} {STAR}</b>'
                     f'</blockquote>\n\n'
-                    f'<tg-emoji emoji-id="5206607081334906820">🎟</tg-emoji> <b>Артефакт добавлен в коллекцию!</b>'
+                    f'{msg}'
                 )
             await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
         return
@@ -5011,9 +5020,9 @@ async def handle_successful_payment(message: Message):
 
         # Защита от replay-атаки
         charge_id = message.successful_payment.telegram_payment_charge_id
-        if charge_id in _processed_charge_ids:
+        if is_charge_processed(charge_id):
             return
-        _processed_charge_ids.add(charge_id)
+        mark_charge_processed(charge_id, message.from_user.id, payload)
 
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
@@ -5069,9 +5078,9 @@ async def handle_successful_payment(message: Message):
             await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
             return
         charge_id = message.successful_payment.telegram_payment_charge_id
-        if charge_id in _processed_charge_ids:
+        if is_charge_processed(charge_id):
             return
-        _processed_charge_ids.add(charge_id)
+        mark_charge_processed(charge_id, message.from_user.id, payload)
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
@@ -5127,9 +5136,9 @@ async def handle_successful_payment(message: Message):
             await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
             return
         charge_id = message.successful_payment.telegram_payment_charge_id
-        if charge_id in _processed_charge_ids:
+        if is_charge_processed(charge_id):
             return
-        _processed_charge_ids.add(charge_id)
+        mark_charge_processed(charge_id, message.from_user.id, payload)
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
@@ -5184,9 +5193,9 @@ async def handle_successful_payment(message: Message):
             await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
             return
         charge_id = message.successful_payment.telegram_payment_charge_id
-        if charge_id in _processed_charge_ids:
+        if is_charge_processed(charge_id):
             return
-        _processed_charge_ids.add(charge_id)
+        mark_charge_processed(charge_id, message.from_user.id, payload)
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
