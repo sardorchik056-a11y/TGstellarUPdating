@@ -1356,14 +1356,47 @@ _GIFT_MIN = 1          # минимум перевода
 _COIN_GIFT = '<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji>'
 
 
+def _parse_amount(s: str) -> int | None:
+    """
+    Парсит число с суффиксами: 100м → 100000000, 1.5к → 1500, 2млрд → 2000000000.
+    Поддерживает: к/k, м/m/mil, млрд/b/bil, трлн/t/tri.
+    Возвращает int или None если не распознано.
+    """
+    import re as _r
+    s = s.strip().lower().replace(" ", "").replace("_", "")
+    # Суффиксы: самые длинные сначала чтобы не срезать часть
+    _SUFFIXES = [
+        (("трлн", "tri", "t"), 1_000_000_000_000),
+        (("млрд", " млд", "bil", "b"),  1_000_000_000),
+        (("mil", "м", "m"),             1_000_000),
+        (("к", "k"),                    1_000),
+    ]
+    for aliases, multiplier in _SUFFIXES:
+        for alias in aliases:
+            if s.endswith(alias):
+                num_str = s[:-len(alias)]
+                if not num_str:
+                    return None
+                try:
+                    num = float(num_str)
+                    return int(num * multiplier)
+                except ValueError:
+                    return None
+    # Без суффикса — целое число
+    try:
+        return int(s)
+    except ValueError:
+        return None
+
+
 def _parse_gift_args(message: Message):
     """
     Разбирает аргументы команды перевода.
     Возвращает (target_raw: str | None, amount: int | None, error: str | None).
     target_raw — @username или числовой id в виде строки, либо None если цель = reply.
+    Поддерживает суффиксы: дать 100м, дать @user 1.5к, дать @user 2млрд
     """
     text = (message.text or "").strip()
-    # Убираем возможный префикс команды (/gift, /дать, /пер, gift, дать, пер и т.п.)
     import re as _r
     text = _r.sub(
         r'^[/]?(gift|дать|пер|transfer|give|дарю)\s*',
@@ -1372,28 +1405,26 @@ def _parse_gift_args(message: Message):
 
     parts = text.split()
 
-    # Случай 1: сумма без явного получателя (цель берётся из reply)
+    # Случай 1: одно слово — либо сумма (цель из reply), либо плохой ввод
     if len(parts) == 1:
-        try:
-            amount = int(parts[0])
+        amount = _parse_amount(parts[0])
+        if amount is not None:
             return None, amount, None
-        except ValueError:
-            return None, None, "bad_amount"
+        return None, None, "bad_amount"
 
-    # Случай 2: @username/id + сумма
+    # Случай 2: два слова — @username/id + сумма
     if len(parts) == 2:
         target_raw = parts[0].lstrip("@")
-        try:
-            amount = int(parts[1])
+        amount = _parse_amount(parts[1])
+        if amount is not None:
             return target_raw, amount, None
-        except ValueError:
-            return None, None, "bad_amount"
+        return None, None, "bad_amount"
 
     return None, None, "bad_format"
 
 
 @dp.message(Command("gift", "дать", "пер", "transfer", "give", "дарю"))
-@dp.message(F.text.regexp(r'^[/]?(gift|дать|пер|transfer|give|дарю)(\s+[@\d]\S*(\s+\d+)?\s*|\s*$)', flags=_re.IGNORECASE))
+@dp.message(F.text.regexp(r'^[/]?(gift|дать|пер|transfer|give|дарю)(\s+[@\d]\S*(\s+\S+)?\s*|\s*$)', flags=_re.IGNORECASE))
 async def cmd_gift(message: Message):
     """Перевод монет другому игроку."""
     from database import save_user as _save, get_user
