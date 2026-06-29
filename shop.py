@@ -1082,7 +1082,7 @@ def enh_inventory_text(data: dict, lang: str = "ru") -> str:
             f' <b>{_L(lang, "Инвентарь пуст. Открой Кейс усилителей!", "Inventory empty. Open an Enhancer case!")}</b></blockquote>'
         )
     else:
-        lines.append(f'\n<blockquote expandable><b>{_L(lang, "В инвентаре", "In inventory")} ({len(inv)}/{MAX_ENH_INVENTORY}):</b>')
+        lines.append(f'\n<blockquote><b>{_L(lang, "В инвентаре", "In inventory")} ({len(inv)}/{MAX_ENH_INVENTORY}):</b>')
         for i, item in enumerate(inv, 1):
             price = get_enh_sell_price(item)
             lines.append(f'\n<b>{i}. {_enh_item_name(item, lang)}</b>\n{_pe("coin", "💰")} <b>{_fmt_num(price)}</b>')
@@ -1579,7 +1579,7 @@ def boosters_inventory_text(data: dict, lang: str = "ru") -> str:
         if not inv:
             lines.append(f"\n<blockquote>{_pe('case', '📦')} <b>Inventory empty. Open a Booster case!</b></blockquote>")
         else:
-            inv_lines = [f"\n<blockquote expandable><b>In inventory ({len(inv)}/{MAX_INVENTORY}):</b>"]
+            inv_lines = [f"\n<blockquote><b>In inventory ({len(inv)}/{MAX_INVENTORY}):</b>"]
             for i, item in enumerate(inv, 1):
                 price = get_sell_price(item)
                 inv_lines.append(f"\n<b>{i}. {_booster_name(item, lang)}</b>\n{_pe('coin', '💰')} <b>{_fmt_num(price)}</b>")
@@ -1598,7 +1598,7 @@ def boosters_inventory_text(data: dict, lang: str = "ru") -> str:
         if not inv:
             lines.append(f"\n<blockquote>{_pe('case', '📦')} <b>Инвентарь пуст. Открой Кейс ускорителей!</b></blockquote>")
         else:
-            inv_lines = [f"\n<blockquote expandable><b>В инвентаре ({len(inv)}/{MAX_INVENTORY}):</b>"]
+            inv_lines = [f"\n<blockquote><b>В инвентаре ({len(inv)}/{MAX_INVENTORY}):</b>"]
             for i, item in enumerate(inv, 1):
                 price = get_sell_price(item)
                 inv_lines.append(f"\n<b>{i}. {_booster_name(item, lang)}</b>\n{_pe('coin', '💰')} <b>{_fmt_num(price)}</b>")
@@ -1702,7 +1702,7 @@ def xp_inventory_text(data: dict, lang: str = "ru") -> str:
     if not inv:
         lines.append(f"\n<blockquote>{_pe('xp_case', '🔮')} <b>{_L(lang, 'XP-инвентарь пуст. Открой XP-кейс!', 'XP inventory empty. Open an XP case!')}</b></blockquote>")
     else:
-        inv_lines = [f"\n<blockquote expandable><b>{_L(lang, 'В инвентаре', 'In inventory')} ({len(inv)}/{MAX_XP_INVENTORY}):</b>"]
+        inv_lines = [f"\n<blockquote><b>{_L(lang, 'В инвентаре', 'In inventory')} ({len(inv)}/{MAX_XP_INVENTORY}):</b>"]
         for i, item in enumerate(inv, 1):
             price = get_xp_sell_price(item)
             inv_lines.append(f"\n<b>{i}. {_xp_item_name(item, lang)}</b>\n{_pe('coin', '💰')} <b>{_fmt_num(price)}</b>")
@@ -1944,7 +1944,7 @@ def unified_inventory_text(data: dict, lang: str = "ru") -> str:
     else:
         total = sum(s["count"] for s in stacks)
         lbl_inv = "In inventory" if lang == "en" else "В инвентаре"
-        lines.append(f"\n<blockquote><b>{lbl_inv} ({total} шт.):</b>\n")
+        lines.append(f"\n<blockquote expandable><b>{lbl_inv} ({total} шт.):</b>\n")
         for s in stacks:
             cnt_str = f" <i>({s['count']} шт.)</i>" if s["count"] > 1 else ""
             lines.append(f"<b>#{s['slot_id']}</b> <i>{s['display']}</i>{cnt_str}\n")
