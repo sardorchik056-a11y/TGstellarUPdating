@@ -614,12 +614,40 @@ async def cmd_getallart(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return
     from shop import _ARTIFACT_POOL, ARTIFACT_POOL_BY_KEY, get_artifact_mine_multiplier, get_artifact_damage_multiplier, get_artifact_pets_multiplier
-    from database import get_user, save_user as _save
-    uid  = message.from_user.id
-    data = get_user(uid)
-    if not data:
-        await message.reply("❌ Пользователь не найден в БД. Напиши /start сначала.", parse_mode="HTML")
-        return
+    from database import get_user, get_all_users, save_user as _save
+
+    parts = message.text.strip().split()
+
+    # Определяем целевого пользователя
+    if len(parts) >= 2:
+        # /getallart @username  или  /getallart 123456789
+        target_raw = parts[1].lstrip("@")
+        all_users  = get_all_users()
+        if target_raw.lstrip("-").isdigit():
+            data = next((u for u in all_users if u["id"] == int(target_raw)), None)
+        else:
+            data = next(
+                (u for u in all_users if (u.get("username") or "").lower() == target_raw.lower()),
+                None,
+            )
+        if not data:
+            await message.reply(
+                f"❌ Пользователь <code>{target_raw}</code> не найден в базе.",
+                parse_mode="HTML",
+            )
+            return
+        uid = data["id"]
+    else:
+        # без аргумента — выдаём себе
+        uid  = message.from_user.id
+        data = get_user(uid)
+        if not data:
+            await message.reply(
+                "❌ Пользователь не найден в БД. Напиши /start сначала.",
+                parse_mode="HTML",
+            )
+            return
+
     artifacts = data.setdefault("artifacts", [])
     already   = {e["key"] for e in artifacts}
     added     = []
@@ -629,16 +657,21 @@ async def cmd_getallart(message: Message):
             added.append(a)
     data["artifact_cases_opened"] = data.get("artifact_cases_opened", 0) + len(added)
     _save(uid, data)
+
     mine_mult   = get_artifact_mine_multiplier(data)
     damage_mult = get_artifact_damage_multiplier(data)
     pets_mult   = get_artifact_pets_multiplier(data)
+
+    name = data.get("first_name") or data.get("username") or str(uid)
     if added:
-        lines = "\n".join(f'<b>✅ {a["name"]} — {a["multiplier"]}×</b>' for a in added)
+        lines  = "\n".join(f'<b>✅ {a["name"]} — {a["multiplier"]}×</b>' for a in added)
         status = f"<b>Добавлено: {len(added)} шт.</b>\n{lines}"
     else:
         status = "<b>Все артефакты уже были в коллекции.</b>"
+
     await message.reply(
-        f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>GETALLART</b>\n\n'
+        f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>GETALLART</b>\n'
+        f'👤 <b>{name}</b> (<code>{uid}</code>)\n\n'
         f'<blockquote>{status}</blockquote>\n\n'
         f'<blockquote>'
         f'<b>Итоговые бонусы:</b>\n'
@@ -646,7 +679,7 @@ async def cmd_getallart(message: Message):
         f'<b>⚔️ Урон по боссу: ×{damage_mult}</b>\n'
         f'<b>🐾 Добыча питомцов: ×{pets_mult}</b>'
         f'</blockquote>',
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
 
