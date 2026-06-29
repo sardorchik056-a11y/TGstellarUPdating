@@ -1859,6 +1859,38 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
                 ok_text = "✅ Заявка отправлена! Ожидай решения создателя в разделе «Заявки»." \
                     if lang == "ru" else "✅ Application sent! Wait for the creator's decision in the Applications section."
                 await message.answer(ok_text, parse_mode="HTML")
+
+                # ── Уведомление создателю клана ──────────────────────────
+                try:
+                    _clan_info = get_clan(clan_id)
+                    if _clan_info:
+                        _creator_uid = _clan_info["creator_uid"]
+                        from database import get_user as _get_user_db
+                        _creator_data = _get_user_db(_creator_uid)
+                        _creator_lang = _creator_data.get("lang", "ru") if _creator_data else "ru"
+                        _applicant_name = (
+                            data.get("first_name") or
+                            (f"@{data.get('username')}" if data.get("username") else None) or
+                            str(uid)
+                        )
+                        _clan_name = _clan_info.get("name", "")
+                        if _creator_lang == "en":
+                            _notif = (
+                                f'<tg-emoji emoji-id="5397916757333654639">🎁</tg-emoji> '
+                                f'<b>New application to clan «{_clan_name}»!</b>\n'
+                                f'<tg-emoji emoji-id="5452085950022707790">🎁</tg-emoji> <b>{_applicant_name}</b> wants to join.\n'
+                                f'<i>Go to Clan → Applications to review.</i>'
+                            )
+                        else:
+                            _notif = (
+                                f'<tg-emoji emoji-id="5397916757333654639">🎁</tg-emoji> '
+                                f'<b>Новая заявка в клан «{_clan_name}»!</b>\n'
+                                f'<tg-emoji emoji-id="5452085950022707790">🎁</tg-emoji> <b>{_applicant_name}</b> хочет вступить.\n'
+                                f'<i>Зайди в Клан → Заявки, чтобы рассмотреть.</i>'
+                            )
+                        await bot.send_message(_creator_uid, _notif, parse_mode="HTML")
+                except Exception:
+                    pass  # Уведомление не критично — не ломаем основной флоу
             else:
                 errs_ru = {
                     "already_in_clan": "❌ Ты уже в клане!",
