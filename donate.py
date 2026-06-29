@@ -236,27 +236,27 @@ def donate_package_text(pkg_key: str, lang: str = "ru") -> str:
     if lang == "en":
         return (
             f"<blockquote>"
-            f"{p['emoji']} <b>{name} Package</b>\n"
+            f'<tg-emoji emoji-id="5400362079783770689">🌟</tg-emoji> <b>{name} Package</b>\n'
             f"{_coin()} <b>Coins: {coins_str}</b>\n"
             f"{_star()} <b>Price: {stars_str}</b>\n"
-            f"📈 <b>Value: {per_star_str} coins / ⭐</b>"
+            f'<tg-emoji emoji-id="5429651785352501917">🌟</tg-emoji> <b>Value: {per_star_str} coins</b>'
             f"</blockquote>\n"
             f"\n<blockquote>"
-            f"✅ <b>Coins are credited instantly after payment.</b>\n"
-            f"⚡ <b>No expiry — yours forever.</b>"
+            f'<tg-emoji emoji-id="5206607081334906820">🌟</tg-emoji> <b>Coins are credited instantly after payment.</b>\n'
+            f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> <b>No expiry — yours forever.</b>'
             f"</blockquote>"
         )
     else:
         return (
             f"<blockquote>"
-            f"{p['emoji']} <b>Пакет «{name}»</b>\n"
+            f'<tg-emoji emoji-id="5400362079783770689">🌟</tg-emoji> <b>Пакет «{name}»</b>\n'
             f"{_coin()} <b>Монеты: {coins_str}</b>\n"
             f"{_star()} <b>Цена: {stars_str}</b>\n"
-            f"📈 <b>Выгода: {per_star_str} монет / ⭐</b>"
+            f'<tg-emoji emoji-id="5429651785352501917">🌟</tg-emoji> <b>Выгода: {per_star_str} монет</b>'
             f"</blockquote>\n"
             f"\n<blockquote>"
-            f"✅ <b>Монеты зачисляются мгновенно после оплаты.</b>\n"
-            f"⚡ <b>Срок действия не ограничен — твои навсегда.</b>"
+            f'<tg-emoji emoji-id="5206607081334906820">🌟</tg-emoji> <b>Монеты зачисляются мгновенно после оплаты.</b>\n'
+            f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> <b>Срок действия не ограничен — твои навсегда.</b>'
             f"</blockquote>"
         )
 
@@ -283,7 +283,7 @@ def donate_main_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         icon_custom_emoji_id=_CROWN_EMOJI_ID,
     ))
     builder.row(InlineKeyboardButton(
-        text=_L(lang, "← Назад в профиль", "← Back to profile"),
+        text=_L(lang, "Назад в профиль", "← Back to profile"),
         callback_data="profile",
         icon_custom_emoji_id=_BACK_EMOJI_ID,
     ))
