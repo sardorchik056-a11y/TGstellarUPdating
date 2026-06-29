@@ -288,9 +288,34 @@ def _artifact_desc(a: dict, lang: str = "ru") -> str:
     return f'{emoji}<b>{name}</b> — {a["multiplier"]}× {effect_label}'
 
 
+_ARTIFACT_CASE_COIN_REWARD = 50_000_000  # монеты за 25%-шанс вместо артефакта
+
 def open_artifact_case(data: dict, lang: str = "ru") -> tuple:
     """Открыть кейс артефактов. Оплата Stars уже прошла — выдаём артефакт.
+    25% шанс: выдаём 50М монет вместо артефакта.
+    75% шанс: выдаём артефакт из пула.
     ВСЕГДА возвращает (True, msg, chosen) — сохранение на стороне вызывающего."""
+
+    # Счётчик инкрементируется всегда — деньги потрачены в любом случае
+    data["artifact_cases_opened"] = data.get("artifact_cases_opened", 0) + 1
+
+    # ── 25% шанс: монеты вместо артефакта ──────────────────────────────
+    if random.random() < 0.25:
+        coins = _ARTIFACT_CASE_COIN_REWARD
+        data["balance"] = data.get("balance", 0) + coins
+        if lang == "en":
+            msg = (
+                f"<blockquote>{_pe('stats', '💎')} <b>Artifact Case opened!</b>\n"
+                f"{_pe('coin', '💰')} <b>Lucky coins drop: +{_fmt_num(coins)} {COIN}</b></blockquote>"
+            )
+        else:
+            msg = (
+                f"<blockquote>{_pe('stats', '💎')} <b>Кейс Артефактов открыт!</b>\n"
+                f"{_pe('coin', '💰')} <b>Монеты вместо артефакта: +{_fmt_num(coins)} {COIN}</b></blockquote>"
+            )
+        return True, msg, None
+
+    # ── 75% шанс: артефакт из пула ─────────────────────────────────────
     pool    = _ARTIFACT_POOL
     weights = [a["chance"] for a in pool]
     chosen  = random.choices(pool, weights=weights, k=1)[0]
@@ -309,9 +334,6 @@ def open_artifact_case(data: dict, lang: str = "ru") -> tuple:
             f"{_pe('warn', '⚠️')} <b>{_L(lang, 'Этот артефакт у тебя уже есть!', 'You already have this artifact!')}</b>\n"
             f"{_pe('coin', '💰')} <b>{_L(lang, 'Компенсация', 'Compensation')}: +{_fmt_num(_dup_coins)} {COIN}</b>"
         )
-
-    # Счётчик инкрементируется всегда — даже при дубликате деньги потрачены
-    data["artifact_cases_opened"] = data.get("artifact_cases_opened", 0) + 1
 
     msg = (
         f"<blockquote>{_pe('stats', '💎')} <b>{_L(lang, 'Кейс Артефактов открыт!', 'Artifact Case opened!')}</b>\n"
