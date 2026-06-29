@@ -283,7 +283,7 @@ def donate_main_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         icon_custom_emoji_id=_CROWN_EMOJI_ID,
     ))
     builder.row(InlineKeyboardButton(
-        text=_L(lang, "Назад в профиль", "← Back to profile"),
+        text=_L(lang, "Назад в профиль", "Back to profile"),
         callback_data="profile",
         icon_custom_emoji_id=_BACK_EMOJI_ID,
     ))
