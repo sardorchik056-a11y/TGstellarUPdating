@@ -1179,6 +1179,20 @@ async def cmd_profile(message: Message):
     )
 
 
+@dp.message(Command("донат", "донаты", "donate", "donates"))
+@dp.message(_text_in("донат", "донаты", "donate", "donates"))
+async def cmd_donate(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+    await message.reply(
+        donate_main_text(lang),
+        parse_mode="HTML",
+        reply_markup=donate_main_keyboard(lang),
+    )
+
+
 @dp.message(Command("hunt", "охота", "boss", "босс"))
 @dp.message(_text_in("охота", "hunt", "boss", "босс"))
 async def cmd_hunt(message: Message):
@@ -1876,16 +1890,16 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
                         _clan_name = _clan_info.get("name", "")
                         if _creator_lang == "en":
                             _notif = (
-                                f'<tg-emoji emoji-id="5397916757333654639">🎁</tg-emoji> '
+                                f'<tg-emoji emoji-id="5222113468051629260">🎁</tg-emoji> '
                                 f'<b>New application to clan «{_clan_name}»!</b>\n'
-                                f'<tg-emoji emoji-id="5452085950022707790">🎁</tg-emoji> <b>{_applicant_name}</b> wants to join.\n'
+                                f'👤 <b>{_applicant_name}</b> wants to join.\n'
                                 f'<i>Go to Clan → Applications to review.</i>'
                             )
                         else:
                             _notif = (
-                                f'<tg-emoji emoji-id="5397916757333654639">🎁</tg-emoji> '
+                                f'<tg-emoji emoji-id="5222113468051629260">🎁</tg-emoji> '
                                 f'<b>Новая заявка в клан «{_clan_name}»!</b>\n'
-                                f'<tg-emoji emoji-id="5452085950022707790">🎁</tg-emoji> <b>{_applicant_name}</b> хочет вступить.\n'
+                                f'👤 <b>{_applicant_name}</b> хочет вступить.\n'
                                 f'<i>Зайди в Клан → Заявки, чтобы рассмотреть.</i>'
                             )
                         await bot.send_message(_creator_uid, _notif, parse_mode="HTML")
