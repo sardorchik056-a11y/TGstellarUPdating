@@ -317,7 +317,7 @@ def donate_package_keyboard(pkg_key: str, invoice_url: str = None, lang: str = "
         icon_custom_emoji_id=_CROWN_EMOJI_ID,
     ))
     builder.row(InlineKeyboardButton(
-        text=_L(lang, "← Все пакеты", "← All packages"),
+        text=_L(lang, " Все пакеты", " All packages"),
         callback_data="donate_main",
         icon_custom_emoji_id=_BACK_EMOJI_ID,
     ))
