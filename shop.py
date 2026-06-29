@@ -289,7 +289,8 @@ def _artifact_desc(a: dict, lang: str = "ru") -> str:
 
 
 def open_artifact_case(data: dict, lang: str = "ru") -> tuple:
-    """Открыть кейс артефактов. Оплата Stars уже прошла — выдаём артефакт."""
+    """Открыть кейс артефактов. Оплата Stars уже прошла — выдаём артефакт.
+    ВСЕГДА возвращает (True, msg, chosen) — сохранение на стороне вызывающего."""
     pool    = _ARTIFACT_POOL
     weights = [a["chance"] for a in pool]
     chosen  = random.choices(pool, weights=weights, k=1)[0]
@@ -309,6 +310,7 @@ def open_artifact_case(data: dict, lang: str = "ru") -> tuple:
             f"{_pe('coin', '💰')} <b>{_L(lang, 'Компенсация', 'Compensation')}: +{_fmt_num(_dup_coins)} {COIN}</b>"
         )
 
+    # Счётчик инкрементируется всегда — даже при дубликате деньги потрачены
     data["artifact_cases_opened"] = data.get("artifact_cases_opened", 0) + 1
 
     msg = (
