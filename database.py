@@ -79,6 +79,35 @@ def init_db():
                 data_json TEXT    NOT NULL
             )
         """)
+        # Таблица для дедупликации платежей Stars (сохраняется между перезапусками)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS processed_charges (
+                charge_id TEXT PRIMARY KEY,
+                uid       INTEGER NOT NULL,
+                payload   TEXT,
+                ts        INTEGER NOT NULL
+            )
+        """)
+        conn.commit()
+
+
+def is_charge_processed(charge_id: str) -> bool:
+    """Проверяет, был ли этот charge_id уже обработан."""
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM processed_charges WHERE charge_id=?", (charge_id,)
+        ).fetchone()
+    return row is not None
+
+
+def mark_charge_processed(charge_id: str, uid: int, payload: str = ""):
+    """Записывает charge_id как обработанный. Вызывать ДО выдачи товара."""
+    import time as _time
+    with _get_conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO processed_charges (charge_id, uid, payload, ts) VALUES (?,?,?,?)",
+            (charge_id, uid, payload, int(_time.time()))
+        )
         conn.commit()
 
 
