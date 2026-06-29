@@ -28,6 +28,8 @@ from miner import (
     inventory_screen_text, inventory_keyboard,
     init_mine_data,
     collect_mine,
+    stop_mine,
+    can_stop_mine,
     sell_all_ores,
     buy_pickaxe, select_pickaxe,
     buy_duration, select_duration,
@@ -3880,6 +3882,19 @@ async def handle_callback(call: CallbackQuery):
             prog, result_text = collect_mine(data, lang)
             if not result_text:
                 await call.answer(t(lang, "mine_no_campaigns"), show_alert=True)
+                return
+            save_user(data["id"], data)
+            await edit(result_text, mine_keyboard(data, lang))
+            return
+
+        if cd == "mine_stop":
+            if data["mine_start"] is None or data.get("mine_collected"):
+                await call.answer("Шахта не запущена.", show_alert=True)
+                return
+            prog, result_text = stop_mine(data, lang)
+            if prog is None:
+                # can_stop вернул False — показываем причину алертом
+                await call.answer(_plain(result_text), show_alert=True)
                 return
             save_user(data["id"], data)
             await edit(result_text, mine_keyboard(data, lang))
