@@ -28,6 +28,8 @@ EMOJI_BTN_INV          = "5445221832074483553"
 EMOJI_BTN_WORKSHOP     = "5278702045883292456"
 EMOJI_BTN_DURATION     = "5440621591387980068"
 
+EMOJI_BTN_STOP         = "5907027122446145395"
+
 EMOJI_BTN_BUY_COINS  = "5199552030615558774"
 EMOJI_BTN_BUY_STARS  = "5267500801240092311"
 EMOJI_BTN_FREE       = "5199552030615558774"
@@ -181,6 +183,7 @@ DURATIONS = {
 DURATIONS_ORDER = ["5min", "10min", "15min", "30min", "45min", "1h", "2h", "4h", "12h", "24h"]
 
 CAMPAIGN_SECONDS = 5 * 60
+MINE_STOP_MIN_SECONDS = 5 * 60   # нельзя остановить раньше чем через 5 минут после старта
 XP_PER_ORE      = 20
 
 
@@ -638,6 +641,11 @@ def mine_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
             _prem_btn(EMOJI_BTN_REFRESH, t(lang, "mine_btn_refresh"), "mine_refresh"),
             _prem_btn(EMOJI_BTN_COLLECT_PART, t(lang, "mine_btn_partial"), "mine_collect"),
         )
+        # Кнопка остановки — только если прошло ≥5 минут с момента старта
+        can_stop, _ = can_stop_mine(data)
+        if can_stop:
+            stop_lbl = "Остановить" if lang == "ru" else "Stop"
+            builder.row(_prem_btn(EMOJI_BTN_STOP, stop_lbl, "mine_stop"))
     has_ores = any(data["ores"].get(o["key"], 0) > 0 for o in ORES)
     if has_ores:
         builder.row(
@@ -882,6 +890,56 @@ def select_duration(data: dict, dur_key: str, lang: str = "ru") -> tuple:
     data["mine_duration_key"] = dur_key
     dur_lbl = _dur_label(DURATIONS[dur_key], lang)
     return True, t(lang, "dur_selected").format(label=dur_lbl)
+
+
+def can_stop_mine(data: dict) -> tuple:
+    """
+    Проверяет можно ли остановить шахту.
+    Возвращает (can: bool, seconds_left: int).
+    seconds_left — сколько секунд ещё надо подождать (0 если уже можно).
+    """
+    if data.get("mine_start") is None or data.get("mine_collected"):
+        return False, 0   # шахта не запущена
+    elapsed = now_ts() - float(data["mine_start"])
+    wait    = MINE_STOP_MIN_SECONDS - elapsed
+    if wait > 0:
+        return False, int(wait)
+    return True, 0
+
+
+def stop_mine(data: dict, lang: str = "ru") -> tuple:
+    """
+    Досрочная остановка шахты.
+    Засчитывает все завершённые кампании (через collect_mine),
+    затем сбрасывает состояние шахты.
+    Возвращает (prog, result_text) — как collect_mine, плюс строку об остановке.
+    """
+    from lang import t
+    can, wait = can_stop_mine(data)
+    if not can:
+        mins = (wait + 59) // 60
+        msg  = (
+            f'❌ <b>Нельзя остановить так рано!</b>\n\n'
+            f'<blockquote>Подожди ещё <b>{mins} мин.</b> после старта.</blockquote>'
+        ) if lang == "ru" else (
+            f'❌ <b>Too early to stop!</b>\n\n'
+            f'<blockquote>Wait <b>{mins} more min.</b> after start.</blockquote>'
+        )
+        return None, msg
+
+    # Забираем всё что накопилось
+    prog, collect_text = collect_mine(data, lang)
+
+    # Сбрасываем шахту в исходное состояние
+    data["mine_start"]          = None
+    data["mine_campaigns_done"] = 0
+    data["mine_collected"]      = False
+
+    stop_line = (
+        f'\n\n<tg-emoji emoji-id="{EMOJI_BTN_STOP}">⏹</tg-emoji> '
+        f'<b>{"Шахта остановлена." if lang == "ru" else "Mine stopped."}</b>'
+    )
+    return prog, (collect_text or "") + stop_line
 
 
 def collect_mine(data: dict, lang: str = "ru") -> tuple:
