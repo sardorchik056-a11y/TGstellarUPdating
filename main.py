@@ -187,6 +187,13 @@ from shop import (
     transfer_item_by_slot_id,
     open_case_multi, CASE_NUM_TO_KEY,
 )
+from donate import (
+    DONATE_PACKAGES, DONATE_BY_KEY,
+    donate_main_text, donate_main_keyboard,
+    donate_package_text, donate_package_keyboard,
+    apply_donate,
+)
+
 from rass import (
     is_in_rass,
     rass_start,
@@ -287,6 +294,9 @@ _pending_artifact_msg: dict[int, tuple] = {}
 
 # Хранит message_id экрана статуса перед оплатой: uid -> (chat_id, message_id, tier)
 _pending_status_msg: dict[int, tuple] = {}
+
+# Хранит message_id экрана доната перед оплатой: uid -> (chat_id, message_id, pkg_key)
+_pending_donate_msg: dict[int, tuple] = {}
 
 # Защита от повторной обработки одного charge_id (replay-attack)
 _processed_charge_ids: set[str] = set()
@@ -454,6 +464,11 @@ def profile_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
             text=" Промокод" if lang == "ru" else " Promo",
             callback_data="promo_input",
             icon_custom_emoji_id="5359664288241829619"
+        ),
+        InlineKeyboardButton(
+            text="💝 Донат" if lang == "ru" else "💝 Donate",
+            callback_data="donate_main",
+            icon_custom_emoji_id="5262643974912355126"
         ),
     )
     builder.row(_back_btn("back_to_menu", t(lang, "btn_back")))
@@ -4181,7 +4196,48 @@ async def handle_callback(call: CallbackQuery):
             await edit(artifact_collection_text(data, lang), artifact_collection_keyboard(lang))
             return
 
-        # ===== СТАТУС: главный экран =====
+        # ===== ДОНАТЫ: главный экран =====
+        if cd == "donate_main":
+            await edit(donate_main_text(lang), donate_main_keyboard(lang))
+            return
+
+        # ===== ДОНАТЫ: экран конкретного пакета =====
+        if cd.startswith("donate_pkg_"):
+            pkg_key = cd.removeprefix("donate_pkg_")
+            await edit(donate_package_text(pkg_key, lang), donate_package_keyboard(pkg_key, lang=lang))
+            return
+
+        # ===== ДОНАТЫ: создать инвойс и обновить сообщение =====
+        if cd.startswith("donate_buy_"):
+            pkg_key = cd.removeprefix("donate_buy_")
+            pkg = DONATE_BY_KEY.get(pkg_key)
+            if not pkg:
+                await call.answer("❌ Пакет не найден." if lang == "ru" else "❌ Package not found.", show_alert=True)
+                return
+            name = pkg["label"] if lang == "ru" else pkg["label_en"]
+            from shop import _fmt_num as _shop_fmt
+            desc_ru = f"Получи {_shop_fmt(pkg['coins'])} монет мгновенно!"
+            desc_en = f"Get {_shop_fmt(pkg['coins'])} coins instantly!"
+            try:
+                invoice_url = await bot.create_invoice_link(
+                    title=name,
+                    description=desc_ru if lang == "ru" else desc_en,
+                    payload=f"donate:{pkg_key}",
+                    provider_token="",
+                    currency="XTR",
+                    prices=[LabeledPrice(label=name, amount=pkg["stars"])],
+                )
+            except Exception as e:
+                print(f"Donate invoice error: {e}")
+                await call.answer("❌ Ошибка при создании инвойса." if lang == "ru" else "❌ Invoice error.", show_alert=True)
+                return
+            _pending_donate_msg[call.from_user.id] = (
+                call.message.chat.id,
+                call.message.message_id,
+                pkg_key,
+            )
+            await edit(donate_package_text(pkg_key, lang), donate_package_keyboard(pkg_key, invoice_url=invoice_url, lang=lang))
+            return
         if cd == "status":
             await call.answer()
             await edit(status_main_text(data, lang), status_main_keyboard(data, lang))
@@ -5185,7 +5241,72 @@ async def handle_successful_payment(message: Message):
             await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
         return
 
-    # ===== ОПЛАТА: Апгрейд VIP → Premium =====
+    # ===== ОПЛАТА: Донат (пакет монет) =====
+    if payload.startswith("donate:"):
+        from database import get_user, save_user
+        pkg_key    = payload.split(":", 1)[1]
+        pkg        = DONATE_BY_KEY.get(pkg_key)
+        if not pkg:
+            await bot.send_message(message.chat.id, "❌ Пакет доната не найден.")
+            return
+
+        paid_amount = message.successful_payment.total_amount
+        if paid_amount != pkg["stars"]:
+            await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
+            return
+
+        charge_id = message.successful_payment.telegram_payment_charge_id
+        if is_charge_processed(charge_id):
+            return
+        mark_charge_processed(charge_id, message.from_user.id, payload)
+
+        uid  = message.from_user.id
+        lock = await _get_user_lock(uid)
+        async with lock:
+            data = get_user(uid)
+            if not data:
+                data = get_or_create_user(message.from_user)
+
+            _lang = data.get("lang", "ru")
+            ok, msg, coins = apply_donate(data, pkg_key)
+            if ok:
+                save_user(data["id"], data)
+
+            # Обновляем старое сообщение — убираем кнопку-инвойс
+            pending = _pending_donate_msg.pop(uid, None)
+            if pending:
+                old_chat_id, old_msg_id, _pkg_key = pending
+                try:
+                    await bot.edit_message_text(
+                        donate_package_text(_pkg_key, _lang),
+                        chat_id=old_chat_id,
+                        message_id=old_msg_id,
+                        reply_markup=donate_package_keyboard(_pkg_key, lang=_lang),
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+
+            name = pkg["label_en"] if _lang == "en" else pkg["label"]
+            from donate import _fmt_num as _d_fmt
+            coins_str = _d_fmt(pkg["coins"])
+            stars_str = str(pkg["stars"])
+
+            if _lang == "en":
+                success_text = (
+                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'{msg}'
+                )
+            else:
+                success_text = (
+                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'{msg}'
+                )
+            await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
+        return
+
     if payload == "status_upgrade_premium":
         from database import get_user, save_user
         paid_amount = message.successful_payment.total_amount
