@@ -129,6 +129,18 @@ def get_or_create_user(user) -> dict:
     else:
         # Миграция: добавляем поля если отсутствуют
         changed = False
+
+        # ── Обновляем username и first_name при каждом визите ──
+        # Без этого поиск по @username не работает после смены ника
+        new_username   = user.username or "Аноним"
+        new_first_name = user.first_name or ""
+        if data.get("username") != new_username:
+            data["username"] = new_username
+            changed = True
+        if data.get("first_name") != new_first_name:
+            data["first_name"] = new_first_name
+            changed = True
+
         defaults = {
             "owned_pickaxes":      ["wood_1"],
             "mine_duration_key":   "5min",
@@ -164,6 +176,36 @@ def get_or_create_user(user) -> dict:
 
 def get_user(uid: int) -> dict | None:
     return _load_raw(uid)
+
+
+def get_user_by_username(username: str) -> dict | None:
+    """
+    Поиск пользователя по username (без @, регистронезависимо).
+    Перебирает БД на стороне SQLite через LIKE — не грузит всё в память.
+    """
+    uname_lower = username.lower()
+    with _get_conn() as conn:
+        rows = conn.execute("SELECT data_json FROM users").fetchall()
+    for row in rows:
+        try:
+            d = json.loads(row["data_json"])
+            if (d.get("username") or "").lower() == uname_lower:
+                return d
+        except Exception:
+            continue
+    return None
+
+
+def get_user_by_id_or_username(target_raw: str) -> dict | None:
+    """
+    Универсальный поиск: если target_raw — число → ищем по uid,
+    иначе → ищем по username (без @).
+    Используй везде вместо get_all_users() + линейного поиска.
+    """
+    target_raw = target_raw.lstrip("@")
+    if target_raw.lstrip("-").isdigit():
+        return get_user(int(target_raw))
+    return get_user_by_username(target_raw)
 
 
 def update_user(uid: int, fields: dict):
