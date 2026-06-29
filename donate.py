@@ -196,28 +196,6 @@ def donate_main_text(lang: str = "ru") -> str:
         coin_label = "монет"
 
     lines = [header]
-    lines.append(f"\n<blockquote><b>{packages_title}</b>\n\n")
-
-    prev_tier = 0
-    for p in DONATE_PACKAGES:
-        tier = p["tier"]
-        if tier != prev_tier:
-            div = _TIER_DIVIDERS.get(tier)
-            if div and prev_tier != 0:
-                lines.append("\n")
-            if div:
-                div_label = div[2] if lang == "en" else div[1]
-                lines.append(f"<b>── {div[0]} {div_label} ──</b>\n")
-            prev_tier = tier
-
-        name = p["label_en"] if lang == "en" else p["label"]
-        coins_str = _fmt_num(p["coins"])
-        stars_str = _fmt_stars(p["stars"])
-        lines.append(
-            f"{p['emoji']} <b>{name}</b> — <b>{coins_str} {coin_label}</b>  {_star()} <b>{stars_str}</b>\n"
-        )
-
-    lines.append("</blockquote>\n")
 
     if lang == "en":
         lines.append(
@@ -295,7 +273,7 @@ def donate_main_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         coins_str = _fmt_num(p["coins"])
         stars_str = _fmt_stars(p["stars"])
         builder.row(InlineKeyboardButton(
-            text=f"{p['emoji']} {name} — {coins_str} | {stars_str}",
+            text=f"{name} — {coins_str} | {stars_str}",
             callback_data=f"donate_pkg_{p['key']}",
             icon_custom_emoji_id=_STAR_EMOJI_ID,
         ))
