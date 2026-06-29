@@ -1648,22 +1648,40 @@ def duel_skill_card_keyboard(skill_key: str, user_data: dict, from_page: int = 0
 
 
 def _calc_skill_damage(skill_key: str, attacker_stats: dict, defender_stats: dict) -> dict:
-    """Вычислить урон от навыка."""
+    """Вычислить урон от навыка.
+
+    Формула защиты: resist = min(0.65, def / (def + 300))
+    Это процентное смягчение с кэпом 65% — защита никогда не делает урон
+    близким к нулю, даже у самых прокачанных игроков.
+
+    Бонус атаки: к base_dmg добавляется stamina * 0.5, чтобы урон
+    масштабировался вместе с уровнем снаряжения и бои не становились
+    вечными у равно прокачанных игроков.
+    """
+    _DEF_K   = 300    # кривизна кривой защиты (больше → защита слабее)
+    _DEF_CAP = 0.65   # максимум 65% поглощения
+    _STM_DMG = 0.5    # бонус урона за единицу стойкости
+
     sk = SKILLS[skill_key]
     result = {"type": sk["type"], "skill": skill_key}
 
+    # Бонус атаки от стойкости атакующего
+    stam_bonus = int(attacker_stats.get("stamina", 0) * _STM_DMG)
+
     if sk["type"] == "magic":
         base_min, base_max = sk["base_dmg"]
-        base = random.randint(base_min, base_max)
-        enemy_resist = max(0, defender_stats.get("mag_def", 10) * 0.5)
-        dmg = max(1, int(base - enemy_resist))
+        base = random.randint(base_min, base_max) + stam_bonus
+        def_val = max(0, defender_stats.get("mag_def", 10))
+        resist  = min(_DEF_CAP, def_val / (def_val + _DEF_K))
+        dmg = max(1, int(base * (1.0 - resist)))
         result["dmg"] = dmg
 
     elif sk["type"] == "physical":
         base_min, base_max = sk["base_dmg"]
-        base = random.randint(base_min, base_max)
-        enemy_resist = max(0, defender_stats.get("phys_def", 10) * 0.4)
-        dmg = max(1, int(base - enemy_resist))
+        base = random.randint(base_min, base_max) + stam_bonus
+        def_val = max(0, defender_stats.get("phys_def", 10))
+        resist  = min(_DEF_CAP, def_val / (def_val + _DEF_K))
+        dmg = max(1, int(base * (1.0 - resist)))
         result["dmg"] = dmg
 
     elif sk["type"] == "shield":
