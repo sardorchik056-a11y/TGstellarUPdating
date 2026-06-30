@@ -888,7 +888,7 @@ def _help_text() -> str:
 #  /inventory, /sell и т.д. из main.py)
 # ──────────────────────────────────────────────────────────────────────────
 
-@router.message(Command("city", "трейдер", "trader", "тор", "торговля", "город"))
+@router.message(Command("city", "трейдер", "trader", "торг", "торговля", "город"))
 async def cmd_city_profile(message: Message):
     u = get_city_user(message.from_user.id, message.from_user.username or "")
     inv = get_inventory(u["user_id"])
@@ -900,7 +900,7 @@ async def cmd_city_profile(message: Message):
 
 
 @router.message(F.text.regexp(
-    r"^(?:тор|торговля|город)(?:\s|$)",
+    r"^(?:торг|торговля|город)(?:\s|$)",
     flags=__import__("re").IGNORECASE
 ))
 async def cmd_city_profile_noslash(message: Message):
