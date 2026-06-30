@@ -2811,7 +2811,7 @@ async def handle_rass_media(message: Message):
 
 # ---------- CALLBACK HANDLER ----------
 
-@dp.callback_query()
+@dp.callback_query(~F.data.startswith("city_"))
 async def handle_callback(call: CallbackQuery):
     chat_id    = call.message.chat.id
     message_id = call.message.message_id
