@@ -245,19 +245,19 @@ MAX_ENH_INVENTORY = 10
 
 _ARTIFACT_POOL = [
     # ── 50% шанс — множитель 1.3× ──────────────────────────
-    {"key": "art_kulon_iskazheniya",   "type": "artifact", "name": "Кулон Искажения",      "name_en": "Distortion Pendant",    "emoji_id": "5938541999031325561", "effect": "mine",   "multiplier": 1.3, "chance": 50},
-    {"key": "art_oracle",              "type": "artifact", "name": "Оракул",               "name_en": "Oracle",                "emoji_id": "5165898384870999138", "effect": "damage", "multiplier": 1.3, "chance": 50},
-    {"key": "art_amulet_hranitelya",   "type": "artifact", "name": "Амулет Хранителя",     "name_en": "Guardian Amulet",       "emoji_id": "5938082716703528871", "effect": "pets",   "multiplier": 1.3, "chance": 50},
+    {"key": "art_kulon_iskazheniya",   "type": "artifact", "name": "Кулон Искажения",      "name_en": "Distortion Pendant",    "emoji_id": "5938541999031325561", "effect": "mine",   "multiplier": 1.25, "chance": 50},
+    {"key": "art_oracle",              "type": "artifact", "name": "Оракул",               "name_en": "Oracle",                "emoji_id": "5165898384870999138", "effect": "damage", "multiplier": 1.25, "chance": 50},
+    {"key": "art_amulet_hranitelya",   "type": "artifact", "name": "Амулет Хранителя",     "name_en": "Guardian Amulet",       "emoji_id": "5938082716703528871", "effect": "pets",   "multiplier": 1.25, "chance": 50},
     # ── 25% шанс — множитель 1.5× ──────────────────────────
-    {"key": "art_lunnaya_relikviya",   "type": "artifact", "name": "Лунная Реликвия",      "name_en": "Lunar Relic",           "emoji_id": "5226662903569989373", "effect": "mine",   "multiplier": 1.5, "chance": 25},
-    {"key": "art_sfera_zhadnosti",     "type": "artifact", "name": "Сфера Жадности",       "name_en": "Sphere of Greed",       "emoji_id": "5080262187302257610", "effect": "damage", "multiplier": 1.5, "chance": 25},
-    {"key": "art_amulet_zhizni",       "type": "artifact", "name": "Амулет Жизни и Смерти","name_en": "Amulet of Life & Death","emoji_id": "6228938636428052300", "effect": "pets",   "multiplier": 1.5, "chance": 25},
+    {"key": "art_lunnaya_relikviya",   "type": "artifact", "name": "Лунная Реликвия",      "name_en": "Lunar Relic",           "emoji_id": "5226662903569989373", "effect": "mine",   "multiplier": 1.4, "chance": 25},
+    {"key": "art_sfera_zhadnosti",     "type": "artifact", "name": "Сфера Жадности",       "name_en": "Sphere of Greed",       "emoji_id": "5080262187302257610", "effect": "damage", "multiplier": 1.4, "chance": 25},
+    {"key": "art_amulet_zhizni",       "type": "artifact", "name": "Амулет Жизни и Смерти","name_en": "Amulet of Life & Death","emoji_id": "6228938636428052300", "effect": "pets",   "multiplier": 1.4, "chance": 25},
     # ── 15% шанс — множитель 1.8× ──────────────────────────
-    {"key": "art_sfera_illyuziy",      "type": "artifact", "name": "Сфера Иллюзий",        "name_en": "Sphere of Illusions",   "emoji_id": "5343583990815156847", "effect": "mine",   "multiplier": 1.8, "chance": 15},
-    {"key": "art_serdtse_morey",       "type": "artifact", "name": "Сердце Морей",          "name_en": "Heart of the Seas",     "emoji_id": "6201647288947839133", "effect": "damage", "multiplier": 1.8, "chance": 15},
-    {"key": "art_kristall_egzorcizma", "type": "artifact", "name": "Кристалл Экзорцизма",  "name_en": "Exorcism Crystal",      "emoji_id": "5451889386549425709", "effect": "pets",   "multiplier": 1.8, "chance": 15},
+    {"key": "art_sfera_illyuziy",      "type": "artifact", "name": "Сфера Иллюзий",        "name_en": "Sphere of Illusions",   "emoji_id": "5343583990815156847", "effect": "mine",   "multiplier": 1.65, "chance": 15},
+    {"key": "art_serdtse_morey",       "type": "artifact", "name": "Сердце Морей",          "name_en": "Heart of the Seas",     "emoji_id": "6201647288947839133", "effect": "damage", "multiplier": 1.65, "chance": 15},
+    {"key": "art_kristall_egzorcizma", "type": "artifact", "name": "Кристалл Экзорцизма",  "name_en": "Exorcism Crystal",      "emoji_id": "5451889386549425709", "effect": "pets",   "multiplier": 1.65, "chance": 15},
     # ── 1% шанс — комбо-артефакт ────────────────────────────
-    {"key": "art_vsevlastniy",         "type": "artifact", "name": "Кольцо Перерождений",  "name_en": "Ring of Rebirths",      "emoji_id": "5872990619021875271", "effect": "all",    "multiplier": 1.4, "chance": 1},
+    {"key": "art_vsevlastniy",         "type": "artifact", "name": "Кольцо Перерождений",  "name_en": "Ring of Rebirths",      "emoji_id": "5872990619021875271", "effect": "all",    "multiplier": 1.35, "chance": 1},
 ]
 
 ARTIFACT_POOL_BY_KEY = {a["key"]: a for a in _ARTIFACT_POOL}
