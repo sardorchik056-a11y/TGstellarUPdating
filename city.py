@@ -775,7 +775,7 @@ def _news_text() -> str:
     for n in news:
         published = datetime.fromtimestamp(n["created_at"]).strftime("%H:%M")
         lines.append(
-            f"🔮 <i>{n['news_text']}</i>\n"
+            f'<tg-emoji emoji-id="5337313450232140345">🌟</tg-emoji> <i>{n['news_text']}</i>\n'
             f"🕒 <i>опубликовано в {published}</i>"
         )
     return "\n\n".join(lines)
@@ -785,21 +785,21 @@ def _route_text() -> str:
     best = best_trade_route()
     if not best:
         return (
-            "📈 <b>ЛУЧШИЙ ТОРГОВЫЙ МАРШРУТ</b>\n"
+            '<tg-emoji emoji-id="5422439311196834318">🌟</tg-emoji> <b>ЛУЧШИЙ ТОРГОВЫЙ МАРШРУТ</b>\n'
             "━━━━━━━━━━━━━━━━━━━━\n\n"
             "<i>Сейчас нет выгодных маршрутов — цены во всех городах примерно равны.</i>"
         )
     info = ITEMS[best["item"]]
     margin_pct = round(best["profit"] / max(1, best["buy_price"]) * 100)
     return (
-        f"📈 <b>ЛУЧШИЙ ТОРГОВЫЙ МАРШРУТ</b>\n"
+        f'<tg-emoji emoji-id="5422439311196834318">🌟</tg-emoji> <b>ЛУЧШИЙ ТОРГОВЫЙ МАРШРУТ</b>\n'
         "<i>Подсказка гильдии — где заработать прямо сейчас</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{info['emoji']} Товар: <b>{info['name']}</b>\n\n"
         f"{_tge('buy', '🛒')} Купить в {_city_emoji_tag(best['buy_city'])} <b>{best['buy_city']}</b> — <b>{best['buy_price']}</b> {_tge('currency', CURRENCY_EMOJI)}\n"
         f"{_tge('sell', '💰')} Продать в {_city_emoji_tag(best['sell_city'])} <b>{best['sell_city']}</b> — <b>{best['sell_price']}</b> {_tge('currency', CURRENCY_EMOJI)}\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        f"📊 Прибыль с единицы: <b>+{best['profit']}</b> {_tge('currency', CURRENCY_EMOJI)} <i>(≈{margin_pct}%)</i>"
+        f'<tg-emoji emoji-id="5397916757333654639">🌟</tg-emoji> Прибыль с единицы: <b>+{best['profit']}</b> {_tge('currency', CURRENCY_EMOJI)} <i>(≈{margin_pct}%)</i>'
     )
 
 
