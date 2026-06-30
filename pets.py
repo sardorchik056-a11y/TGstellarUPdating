@@ -3,28 +3,43 @@
 #  10 уникальных питомцев-шахтёров
 #  Каждые 12 часов питомец приносит монеты + шлёт уведомление
 #  Переписан для aiogram 3.x
+#
+#  ВАЖНО ДЛЯ ВЫЗЫВАЮЩЕГО КОДА (breaking changes в этой ревизии):
+#  • buy_pet()           теперь async -> используйте `await buy_pet(...)`
+#  • get_pending_income() теперь async -> используйте `await get_pending_income(...)`
+#  • Обеим желательно передавать user_id=<id пользователя>, чтобы
+#    включилась блокировка на пользователя и исключился дюп монет/
+#    питомцев при гонке параллельных запросов (двойной клик и т.п.).
+#    Без user_id функции работают как раньше, но без этой защиты.
 # ============================================================
 
+import asyncio
 import random
 from datetime import datetime, timezone
+from typing import Dict, List, Tuple
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from miner import COIN, EMOJI_BACK
 
 _E = {
-    "paw":   "5337047059180566409",
-    "coin":  "5199552030615558774",
-    "lock":  "5240241223632954241",
-    "ok":    "5206607081334906820",
-    "back":  "6039539366177541657",
-    "alert": "5258203794772085854",
-    "chest": "5310278924616356636",
-    "timer": "5440621591387980068",
-    "mine":  "5197371802136892976",
-    "fire":  "5438571934210082705",
-    "arrow": "5427168083074628963",
-    "income":"5449683594425410231",
-    "price": "5397782960512444700",
+    "paw":    "5337047059180566409",
+    "coin":   "5199552030615558774",
+    "lock":   "5240241223632954241",
+    "ok":     "5206607081334906820",
+    "back":   "6039539366177541657",
+    "alert":  "5258203794772085854",
+    "chest":  "5310278924616356636",
+    "timer":  "5440621591387980068",
+    "mine":   "5197371802136892976",
+    "fire":   "5438571934210082705",
+    "arrow":  "5427168083074628963",
+    "income": "5449683594425410231",
+    "price":  "5397782960512444700",
+    # Раньше были захардкожены прямо в коде — вынесены сюда,
+    # чтобы все premium-emoji id хранились в одном месте.
+    "ticket": "5443038326535759644",
+    "page1":  "5255703720078879038",
+    "page2":  "5253767677670862169",
 }
 
 # Прем-эмодзи для каждого питомца
@@ -84,8 +99,45 @@ def _fmt(n) -> str:
 
     return f"{sign}{int(n)}"
 
-def _now_ts(): 
+def _now_ts():
     return int(datetime.now(timezone.utc).timestamp())
+
+# ------------------------------------------------------------------
+# Защита от гонок (race condition).
+#
+# buy_pet() и get_pending_income() читают/изменяют data, и если их
+# вызвать дважды подряд для одного и того же пользователя до того,
+# как изменения будут сохранены во внешнее хранилище (БД/файл),
+# можно купить питомца дважды на одну сумму баланса или получить
+# начисление дохода несколько раз за один и тот же интервал
+# (классический дюп-баг в игровых ботах при двойном клике/повторе
+# запроса).
+#
+# Решение: реестр asyncio.Lock на user_id. Вызывающий код должен
+# передавать user_id в buy_pet()/get_pending_income(), чтобы операции
+# над данными одного пользователя выполнялись строго последовательно.
+# Если user_id не передан, функции по-прежнему работают (обратная
+# совместимость), но без защиты — выводится предупреждение в лог.
+# ------------------------------------------------------------------
+_USER_LOCKS: Dict[int, asyncio.Lock] = {}
+_NO_LOCK_WARNED = False
+
+def _get_user_lock(user_id: int) -> asyncio.Lock:
+    lock = _USER_LOCKS.get(user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _USER_LOCKS[user_id] = lock
+    return lock
+
+def _warn_no_lock():
+    global _NO_LOCK_WARNED
+    if not _NO_LOCK_WARNED:
+        _NO_LOCK_WARNED = True
+        import logging
+        logging.getLogger(__name__).warning(
+            "pets.py: buy_pet()/get_pending_income() вызваны без user_id — "
+            "защита от двойного начисления/покупки отключена для этого вызова."
+        )
 
 PET_INCOME_INTERVAL = 12 * 3600
 PAGE_SIZE = 5
@@ -272,14 +324,39 @@ _NOTIFICATIONS = {
 }
 
 
-def get_owned_pets(data):
-    return data.get("owned_pets", [])
+def get_owned_pets(data) -> List[str]:
+    owned = data.get("owned_pets", [])
+    # Защита от повреждённых данных (например, если в БД owned_pets
+    # случайно сохранился не списком, а строкой/None/чем-то ещё) —
+    # лучше вернуть пустой список, чем уронить весь бот на KeyError/
+    # TypeError в коде, который дальше делает `for pk in owned`.
+    if not isinstance(owned, list):
+        return []
+    return owned
 
 def has_pet(data, pet_key):
     return pet_key in get_owned_pets(data)
 
-def buy_pet(data, pet_key, lang: str = "ru"):
+async def buy_pet(data, pet_key, lang: str = "ru", user_id: int = None):
+    """
+    Покупка питомца.
+
+    ВАЖНО: теперь это async-функция — вызывающий код должен делать
+    `await buy_pet(...)`. Если передан user_id, покупка выполняется
+    под блокировкой на пользователя, что исключает дюп при двойном
+    клике/повторном callback-запросе (две параллельные покупки одного
+    и того же питомца на один и тот же баланс).
+    """
     from lang import t
+
+    if user_id is None:
+        _warn_no_lock()
+        return _buy_pet_unlocked(data, pet_key, lang, t)
+
+    async with _get_user_lock(user_id):
+        return _buy_pet_unlocked(data, pet_key, lang, t)
+
+def _buy_pet_unlocked(data, pet_key, lang, t):
     if pet_key not in PETS_BY_KEY:
         return False, t(lang, "pet_not_found")
     if has_pet(data, pet_key):
@@ -298,7 +375,25 @@ def buy_pet(data, pet_key, lang: str = "ru"):
         f'{_tg(_E["timer"], "⏱")} <b>{t(lang, "pet_bought_timer")}</b>'
     )
 
-def get_pending_income(data):
+async def get_pending_income(data, user_id: int = None):
+    """
+    Возвращает список (pet_key, amount) для начислений, готовых к выдаче.
+
+    ВАЖНО: теперь async-функция (`await get_pending_income(...)`).
+    С переданным user_id операция атомарна относительно buy_pet() и
+    повторных вызовов самой себя — исключает повторное начисление
+    дохода от одного питомца за один и тот же 12-часовой интервал
+    при параллельных вызовах (например, два конкурентных update'а
+    от Telegram).
+    """
+    if user_id is None:
+        _warn_no_lock()
+        return _get_pending_income_unlocked(data)
+
+    async with _get_user_lock(user_id):
+        return _get_pending_income_unlocked(data)
+
+def _get_pending_income_unlocked(data):
     owned   = get_owned_pets(data)
     incomes = data.setdefault("pet_last_income", {})
     now     = _now_ts()
@@ -314,7 +409,7 @@ def get_pending_income(data):
         status_mult = _status_pets_mult(data)
     except Exception:
         status_mult = 1.0
-    result  = []
+    result: List[Tuple[str, int]] = []
     for pk in owned:
         last = incomes.get(pk, now)
         if now - last >= PET_INCOME_INTERVAL:
@@ -341,10 +436,14 @@ def get_pending_notifications(data):
 
 def pet_income_text(pet_key, amount, notification, lang: str = "ru"):
     from lang import t
+    pet     = PETS_BY_KEY.get(pet_key)
+    pet_eid = _PET_EMOJI.get(pet_key, "") if pet else ""
+    pet_icon = _tg(pet_eid, pet["emoji"]) if pet and pet_eid else (pet["emoji"] if pet else "")
+    icon_prefix = f'{pet_icon} ' if pet_icon else ""
     return (
-        f'<blockquote>{notification}</blockquote>\n\n'
+        f'<blockquote>{icon_prefix}{notification}</blockquote>\n\n'
         f'<blockquote>'
-        f'{_tg("5427168083074628963", "➡️")} <b>{t(lang, "pet_income_msg").format(amount=_fmt(amount))} {_tg(_E["coin"], "💰")}</b>'
+        f'{_tg(_E["arrow"], "➡️")} <b>{t(lang, "pet_income_msg").format(amount=_fmt(amount))} {_tg(_E["coin"], "💰")}</b>'
         f'</blockquote>'
     )
 
@@ -388,7 +487,7 @@ def pets_main_text(data, lang: str = "ru"):
     random_quote = random.choice(_PETS_MENU_TEXTS if lang == "ru" else _PETS_MENU_TEXTS_EN)
     footer = (
         f'<blockquote>'
-        f'<tg-emoji emoji-id="5443038326535759644">🎟</tg-emoji> <b>{random_quote}</b>\n\n'
+        f'{_tg(_E["ticket"], "🎟")} <b>{random_quote}</b>\n\n'
         f'{_tg(_E["alert"], "💡")} <b>{t(lang, "pets_notify_hint")}</b>'
         f'</blockquote>'
     )
@@ -433,12 +532,12 @@ def pets_main_keyboard(data, page=0, lang: str = "ru") -> InlineKeyboardMarkup:
     if page > 0:
         nav_btns.append(InlineKeyboardButton(
             text="1", callback_data=f"pets_page_{page-1}",
-            icon_custom_emoji_id="5255703720078879038"
+            icon_custom_emoji_id=_E["page1"]
         ))
     if start + PAGE_SIZE < len(PETS):
         nav_btns.append(InlineKeyboardButton(
             text="2", callback_data=f"pets_page_{page+1}",
-            icon_custom_emoji_id="5253767677670862169"
+            icon_custom_emoji_id=_E["page2"]
         ))
     if nav_btns:
         builder.row(*nav_btns)
