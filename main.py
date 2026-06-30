@@ -2445,7 +2445,7 @@ async def handle_captcha_answer(message: Message):
 
     # ── Текстовые алиасы раздела города (без слеша): тор/торговля/город/рынок ──
     _city_word = (message.text or "").strip().split()[0].lower() if (message.text or "").strip() else ""
-    if _city_word in ("тор", "торговля", "город"):
+    if _city_word in ("торг", "торговля", "город"):
         await cmd_city_profile(message)
         return
     if _city_word == "рынок":
