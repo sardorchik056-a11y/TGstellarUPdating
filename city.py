@@ -563,7 +563,7 @@ def _profile_text(u: dict, inv: dict) -> str:
         status_line = f"🚶 <b>В пути</b> <i>— прибытие через {m} мин {s} сек</i>"
 
     return (
-        "🧙‍♂️ <b>ГИЛЬДИЯ ТОРГОВЦЕВ</b>\n"
+        f"{_tge('customs', '🧙‍♂️')} <b>ГИЛЬДИЯ ТОРГОВЦЕВ</b>\n"
         "<i>Личный кабинет искателя прибыли</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{_tge('balance', CURRENCY_EMOJI)} Баланс: <b>{_fmt(u['balance'])}</b> <i>{CURRENCY_NAME}</i>\n"
@@ -693,7 +693,7 @@ def _help_text() -> str:
         "<b>💹 Динамика цен</b>\n"
         "  • <i>Цены обновляются каждый час (±20% случайно)</i>\n"
         "  • <i>Массовая скупка повышает цену, массовая продажа — снижает</i>\n\n"
-        "<i>Удачной торговли, искатель прибыли!</i> 💎"
+        f"<i>Удачной торговли, искатель прибыли!</i> {_tge('currency', CURRENCY_EMOJI)}"
     )
 
 
@@ -867,10 +867,10 @@ async def _do_travel(user_id: int, username: str, dest: str):
 
     cancel_min = TRAVEL_CANCEL_WINDOW // 60
     text = (
-        "🧭 <b>В ПУТЬ!</b>\n"
+        f"{_tge('travel', '🧭')} <b>В ПУТЬ!</b>\n"
         "<i>Караван покидает город</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"Направление: {CITY_EMOJI.get(dest, '🏙')} <b>{dest}</b>\n"
+        f"Направление: {_city_emoji_tag(dest)} <b>{dest}</b>\n"
         f"⏳ Прибытие через <b>{TRAVEL_MINUTES}</b> <i>минут</i>\n"
         f"{_tge('currency', CURRENCY_EMOJI)} Дорога стоила: <b>{TRAVEL_COST}</b> <i>{CURRENCY_NAME}</i>\n\n"
         f"<i>Передумали? В первые {cancel_min} минуты поездку можно отменить "
@@ -904,10 +904,10 @@ async def _do_cancel_travel(user_id: int, username: str):
         city=origin,
     )
     text = (
-        "❌ <b>ПОЕЗДКА ОТМЕНЕНА</b>\n"
+        f"{_tge('cancel_travel', '❌')} <b>ПОЕЗДКА ОТМЕНЕНА</b>\n"
         "<i>Вы вернулись назад</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"{CITY_EMOJI.get(origin, '🏙')} Вы снова в городе <b>{origin}</b>\n"
+        f"{_city_emoji_tag(origin)} Вы снова в городе <b>{origin}</b>\n"
         f"<i>Плата за дорогу не возвращается.</i>"
     )
     return True, text
@@ -920,7 +920,7 @@ def _traveling_status_text(u: dict) -> str:
         "🚶 <b>ВЫ В ПУТИ</b>\n"
         f"<i>Прибытие через {m} мин {s} сек</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"Направление: {CITY_EMOJI.get(u['city'], '🏙')} <b>{u['city']}</b>"
+        f"Направление: {_city_emoji_tag(u['city'])} <b>{u['city']}</b>"
     )
     if _can_cancel_travel(u):
         left_cancel = TRAVEL_CANCEL_WINDOW - _travel_elapsed(u)
@@ -1145,7 +1145,7 @@ async def city_travel_loop(bot):
                 try:
                     await bot.send_message(
                         r["user_id"],
-                        "🧙 <b>ВЫ ПРИБЫЛИ!</b>\n"
+                        f"{_tge('travel', '🧙')} <b>ВЫ ПРИБЫЛИ!</b>\n"
                         f"<i>Добро пожаловать в {r['city']}</i> ✨\n\n"
                         "Торговля снова доступна.",
                         parse_mode="HTML",
