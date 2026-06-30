@@ -64,9 +64,10 @@ BTN_EMOJI = {
     "city_capital": "5424887227807188349",      # 🏛 Столица
     "balance": "5224257782013769471",           # баланс
     "currency": "5427168083074628963",          # кристаллы
-    "customs": "5848400681416793625",           # таможня / гильдия магов
-    "buy": "5859243644183124239",               # покупка
-    "sell": "5312361253610475399",              # продажа
+    "customs": "5859243644183124239",           # таможня / гильдия магов
+    "buy": "5312361253610475399",               # покупка
+    "sell": "5429518319243775957",              # продажа
+    "status": "5400362079783770689",            # статус
 }
 
 TRAVEL_COST = 50
@@ -567,7 +568,7 @@ def _profile_text(u: dict, inv: dict) -> str:
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{_tge('balance', CURRENCY_EMOJI)} Баланс: <b>{_fmt(u['balance'])}</b> <i>{CURRENCY_NAME}</i>\n"
         f"{_city_emoji_tag(u['city'])} Город: <b>{u['city']}</b>\n"
-        f"📡 Статус: {status_line}\n\n"
+        f"{_tge('status', '📡')} Статус: {status_line}\n\n"
         "📦 <b>Склад</b>\n"
         f"  {ITEMS['potions']['emoji']} Зелья — <b>{inv['potions']}</b> <i>шт.</i>\n"
         f"  {ITEMS['scrolls']['emoji']} Свитки — <b>{inv['scrolls']}</b> <i>шт.</i>\n"
