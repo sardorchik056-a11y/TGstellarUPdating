@@ -9,6 +9,7 @@ import sqlite3
 import time
 import random
 import math
+import threading
 import unicodedata
 from datetime import datetime, timezone, timedelta
 
@@ -158,6 +159,28 @@ def _conn():
     c.row_factory = sqlite3.Row
     return c
 
+# ───────────────── защита от гонок (anti-dupe locks) ──────────
+#
+# get_user/save_user (database.py) живут вне SQLite-транзакции refs.py,
+# поэтому одного database-уровня атомарности недостаточно: между
+# "прочитали rewarded=0" и "записали баланс" возможна гонка при
+# параллельных вызовах (повторный апдейт от Telegram, спам командой
+# и т.п.). Чтобы исключить дюп монет/наград, любая операция, которая
+# читает и затем изменяет состояние одного и того же uid, должна
+# выполняться под этим локом.
+
+_locks_guard = threading.Lock()
+_uid_locks: dict[int, threading.Lock] = {}
+
+
+def _lock_for(uid: int) -> threading.Lock:
+    with _locks_guard:
+        lock = _uid_locks.get(uid)
+        if lock is None:
+            lock = threading.Lock()
+            _uid_locks[uid] = lock
+        return lock
+
 # ─────────────────────────── капча ───────────────────────────
 
 def _gen_question() -> tuple[str, int]:
@@ -212,6 +235,11 @@ def get_captcha_msg(uid: int) -> tuple[int, int] | None:
 
 
 def check_captcha(uid: int, user_answer: int) -> dict:
+    with _lock_for(uid):
+        return _check_captcha_locked(uid, user_answer)
+
+
+def _check_captcha_locked(uid: int, user_answer: int) -> dict:
     state = get_captcha_state(uid)
     now   = int(time.time())
     if not state:
@@ -265,6 +293,10 @@ def is_captcha_blocked(uid: int) -> tuple[bool, int]:
 # ────────────────────────── рефералы ─────────────────────────
 
 def register_referral(uid: int, inviter_uid: int | None):
+    # Защита от само-реферала: пользователь не может пригласить сам себя
+    # (например, передав свой же uid в start=ref_<uid>).
+    if inviter_uid is not None and inviter_uid == uid:
+        inviter_uid = None
     ts = int(time.time())
     with _conn() as c:
         c.execute("""
@@ -281,38 +313,67 @@ def is_new_user(uid: int) -> bool:
 
 
 def reward_inviter(uid: int, is_premium: bool) -> tuple[bool, int]:
-    with _conn() as c:
-        ref_row = c.execute(
-            "SELECT inviter_uid, rewarded FROM refs WHERE uid=?", (uid,)
-        ).fetchone()
-    if not ref_row or ref_row["rewarded"] or not ref_row["inviter_uid"]:
-        return False, 0
-    inviter = ref_row["inviter_uid"]
-    coins   = REF_REWARD_PREMIUM if is_premium else REF_REWARD_NORMAL
-    from database import get_user, save_user
-    d = get_user(inviter)
-    if not d:
-        return False, 0
-    d["balance"] = d.get("balance", 0) + coins
-    save_user(inviter, d)
-    with _conn() as c:
-        c.execute("UPDATE refs SET rewarded=1 WHERE uid=?", (uid,))
-        if is_premium:
-            c.execute("""
-                INSERT INTO ref_stats (uid, total_refs, premium_refs, earned_coins)
-                VALUES (?, 1, 1, ?)
-                ON CONFLICT(uid) DO UPDATE SET
-                    total_refs=total_refs+1, premium_refs=premium_refs+1, earned_coins=earned_coins+?
-            """, (inviter, coins, coins))
-        else:
-            c.execute("""
-                INSERT INTO ref_stats (uid, total_refs, premium_refs, earned_coins)
-                VALUES (?, 1, 0, ?)
-                ON CONFLICT(uid) DO UPDATE SET
-                    total_refs=total_refs+1, earned_coins=earned_coins+?
-            """, (inviter, coins, coins))
-        c.commit()
-    return True, coins
+    """
+    Начисляет награду пригласившему за реферала `uid`.
+    Защита от дюпа: флаг rewarded "захватывается" одной атомарной
+    UPDATE ... WHERE rewarded=0, поэтому даже при параллельном вызове
+    (повторный апдейт от Telegram, гонка хендлеров) награду сможет
+    забрать только один вызов — остальные сразу увидят rowcount=0
+    и завершатся без начисления. Дополнительно операция сериализуется
+    локом по uid, чтобы исключить гонки и на уровне save_user().
+    """
+    with _lock_for(uid):
+        with _conn() as c:
+            # Атомарный "захват" права на начисление: строка обновится
+            # ТОЛЬКО если rewarded ещё не был выставлен. Это устраняет
+            # классический TOCTOU (read rewarded -> ... -> write rewarded),
+            # из-за которого было возможно двойное начисление монет.
+            cur = c.execute(
+                "UPDATE refs SET rewarded=1 WHERE uid=? AND rewarded=0 AND inviter_uid IS NOT NULL",
+                (uid,),
+            )
+            c.commit()
+            if cur.rowcount == 0:
+                # Либо записи нет, либо уже была вознаграждена, либо нет inviter_uid.
+                return False, 0
+            ref_row = c.execute(
+                "SELECT inviter_uid FROM refs WHERE uid=?", (uid,)
+            ).fetchone()
+
+        inviter = ref_row["inviter_uid"]
+        coins   = REF_REWARD_PREMIUM if is_premium else REF_REWARD_NORMAL
+
+        from database import get_user, save_user
+        d = get_user(inviter)
+        if not d:
+            # Получателя награды не существует — откатываем захваченный
+            # флаг, чтобы награда не "сгорела" безвозвратно и не возникло
+            # рассинхрона между rewarded=1 и реально начисленными монетами.
+            with _conn() as c:
+                c.execute("UPDATE refs SET rewarded=0 WHERE uid=?", (uid,))
+                c.commit()
+            return False, 0
+
+        d["balance"] = d.get("balance", 0) + coins
+        save_user(inviter, d)
+
+        with _conn() as c:
+            if is_premium:
+                c.execute("""
+                    INSERT INTO ref_stats (uid, total_refs, premium_refs, earned_coins)
+                    VALUES (?, 1, 1, ?)
+                    ON CONFLICT(uid) DO UPDATE SET
+                        total_refs=total_refs+1, premium_refs=premium_refs+1, earned_coins=earned_coins+?
+                """, (inviter, coins, coins))
+            else:
+                c.execute("""
+                    INSERT INTO ref_stats (uid, total_refs, premium_refs, earned_coins)
+                    VALUES (?, 1, 0, ?)
+                    ON CONFLICT(uid) DO UPDATE SET
+                        total_refs=total_refs+1, earned_coins=earned_coins+?
+                """, (inviter, coins, coins))
+            c.commit()
+        return True, coins
 
 
 def get_ref_stats(uid: int) -> dict:
