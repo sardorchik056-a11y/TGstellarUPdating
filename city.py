@@ -433,16 +433,16 @@ def city_main_menu_keyboard() -> InlineKeyboardMarkup:
     """Главное меню — показывается на экране профиля."""
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🏪 Рынок", callback_data="city_nav_market", icon_custom_emoji_id=BTN_EMOJI["market"]),
-        InlineKeyboardButton(text="🎒 Сумка", callback_data="city_nav_bag", icon_custom_emoji_id=BTN_EMOJI["bag"]),
+        InlineKeyboardButton(text=" Рынок", callback_data="city_nav_market", icon_custom_emoji_id=BTN_EMOJI["market"]),
+        InlineKeyboardButton(text=" Сумка", callback_data="city_nav_bag", icon_custom_emoji_id=BTN_EMOJI["bag"]),
     )
     builder.row(
-        InlineKeyboardButton(text="🧭 Путешествие", callback_data="city_nav_travel", icon_custom_emoji_id=BTN_EMOJI["travel"]),
-        InlineKeyboardButton(text="🗺 Маршрут", callback_data="city_nav_route", icon_custom_emoji_id=BTN_EMOJI["route"]),
+        InlineKeyboardButton(text=" Путешествие", callback_data="city_nav_travel", icon_custom_emoji_id=BTN_EMOJI["travel"]),
+        InlineKeyboardButton(text=" Маршрут", callback_data="city_nav_route", icon_custom_emoji_id=BTN_EMOJI["route"]),
     )
     builder.row(
-        InlineKeyboardButton(text="🗞 Новости", callback_data="city_nav_news", icon_custom_emoji_id=BTN_EMOJI["news"]),
-        InlineKeyboardButton(text="❓ Помощь", callback_data="city_nav_help", icon_custom_emoji_id=BTN_EMOJI["help"]),
+        InlineKeyboardButton(text=" Новости", callback_data="city_nav_news", icon_custom_emoji_id=BTN_EMOJI["news"]),
+        InlineKeyboardButton(text=" Помощь", callback_data="city_nav_help", icon_custom_emoji_id=BTN_EMOJI["help"]),
     )
     return builder.as_markup()
 
@@ -451,49 +451,49 @@ def city_back_keyboard() -> InlineKeyboardMarkup:
     """Простой возврат в главное меню — используется на «итоговых» экранах
     (результат покупки/продажи/путешествия)."""
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
+    builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
     return builder.as_markup()
 
 
 def city_market_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🎒 Сумка", callback_data="city_nav_bag", icon_custom_emoji_id=BTN_EMOJI["bag"]),
-        InlineKeyboardButton(text="🗺 Маршрут", callback_data="city_nav_route", icon_custom_emoji_id=BTN_EMOJI["route"]),
+        InlineKeyboardButton(text=" Сумка", callback_data="city_nav_bag", icon_custom_emoji_id=BTN_EMOJI["bag"]),
+        InlineKeyboardButton(text=" Маршрут", callback_data="city_nav_route", icon_custom_emoji_id=BTN_EMOJI["route"]),
     )
-    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
+    builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
     return builder.as_markup()
 
 
 def city_bag_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🏪 На рынок", callback_data="city_nav_market", icon_custom_emoji_id=BTN_EMOJI["market"]),
-        InlineKeyboardButton(text="🧭 В путь", callback_data="city_nav_travel", icon_custom_emoji_id=BTN_EMOJI["travel"]),
+        InlineKeyboardButton(text=" На рынок", callback_data="city_nav_market", icon_custom_emoji_id=BTN_EMOJI["market"]),
+        InlineKeyboardButton(text=" В путь", callback_data="city_nav_travel", icon_custom_emoji_id=BTN_EMOJI["travel"]),
     )
-    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
+    builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
     return builder.as_markup()
 
 
 def city_news_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
+    builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
     return builder.as_markup()
 
 
 def city_route_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🏪 Рынок", callback_data="city_nav_market", icon_custom_emoji_id=BTN_EMOJI["market"]),
-        InlineKeyboardButton(text="🧭 В путь", callback_data="city_nav_travel", icon_custom_emoji_id=BTN_EMOJI["travel"]),
+        InlineKeyboardButton(text=" Рынок", callback_data="city_nav_market", icon_custom_emoji_id=BTN_EMOJI["market"]),
+        InlineKeyboardButton(text=" В путь", callback_data="city_nav_travel", icon_custom_emoji_id=BTN_EMOJI["travel"]),
     )
-    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
+    builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
     return builder.as_markup()
 
 
 def city_help_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
+    builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
     return builder.as_markup()
 
 
@@ -512,7 +512,7 @@ def city_travel_keyboard() -> InlineKeyboardMarkup:
             callback_data=f"city_go_{city}",
             icon_custom_emoji_id=BTN_EMOJI[CITY_BTN_EMOJI_KEY[city]],
         ))
-    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
+    builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
     return builder.as_markup()
 
 
@@ -521,8 +521,8 @@ def city_travel_active_keyboard(can_cancel: bool) -> InlineKeyboardMarkup:
     предлагает кнопку отмены."""
     builder = InlineKeyboardBuilder()
     if can_cancel:
-        builder.row(InlineKeyboardButton(text="❌ Отменить поездку", callback_data="city_cancel_travel", icon_custom_emoji_id=BTN_EMOJI["cancel_travel"]))
-    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
+        builder.row(InlineKeyboardButton(text=" Отменить поездку", callback_data="city_cancel_travel", icon_custom_emoji_id=BTN_EMOJI["cancel_travel"]))
+    builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
     return builder.as_markup()
 
 
