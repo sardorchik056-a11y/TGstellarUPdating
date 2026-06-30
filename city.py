@@ -387,26 +387,83 @@ def best_trade_route() -> dict | None:
 
 # ──────────────────────────────────────────────────────────────────────────
 # ИНЛАЙН-КЛАВИАТУРЫ
+# Каждый раздел — отдельный экран со своими кнопками действий и кнопкой
+# «Назад», которая возвращает в главное меню (профиль).
 # ──────────────────────────────────────────────────────────────────────────
 
-def city_nav_keyboard(active: str = "") -> InlineKeyboardMarkup:
-    """Единая панель навигации, которая идёт под каждым экраном модуля."""
+def city_main_menu_keyboard() -> InlineKeyboardMarkup:
+    """Главное меню — показывается на экране профиля."""
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="👤 Профиль", callback_data="city_nav_profile"),
         InlineKeyboardButton(text="🏪 Рынок", callback_data="city_nav_market"),
+        InlineKeyboardButton(text="🎒 Сумка", callback_data="city_nav_bag"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🧭 Путешествие", callback_data="city_nav_travel"),
+        InlineKeyboardButton(text="🗺 Маршрут", callback_data="city_nav_route"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🗞 Новости", callback_data="city_nav_news"),
+        InlineKeyboardButton(text="❓ Помощь", callback_data="city_nav_help"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔄 Обновить", callback_data="city_nav_profile"),
+    )
+    return builder.as_markup()
+
+
+def city_back_keyboard() -> InlineKeyboardMarkup:
+    """Простой возврат в главное меню — используется на «итоговых» экранах
+    (результат покупки/продажи/путешествия)."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile"))
+    return builder.as_markup()
+
+
+def city_market_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🔄 Обновить цены", callback_data="city_nav_market"),
     )
     builder.row(
         InlineKeyboardButton(text="🎒 Сумка", callback_data="city_nav_bag"),
         InlineKeyboardButton(text="🗺 Маршрут", callback_data="city_nav_route"),
     )
+    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile"))
+    return builder.as_markup()
+
+
+def city_bag_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🧭 Путешествие", callback_data="city_nav_travel"),
-        InlineKeyboardButton(text="🗞 Новости", callback_data="city_nav_news"),
+        InlineKeyboardButton(text="🏪 На рынок", callback_data="city_nav_market"),
+        InlineKeyboardButton(text="🧭 В путь", callback_data="city_nav_travel"),
     )
+    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile"))
+    return builder.as_markup()
+
+
+def city_news_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔄 Обновить", callback_data="city_nav_news"))
+    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile"))
+    return builder.as_markup()
+
+
+def city_route_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔄 Пересчитать", callback_data="city_nav_route"))
     builder.row(
-        InlineKeyboardButton(text="❓ Помощь", callback_data="city_nav_help"),
+        InlineKeyboardButton(text="🏪 Рынок", callback_data="city_nav_market"),
+        InlineKeyboardButton(text="🧭 В путь", callback_data="city_nav_travel"),
     )
+    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile"))
+    return builder.as_markup()
+
+
+def city_help_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile"))
     return builder.as_markup()
 
 
@@ -417,13 +474,7 @@ def city_travel_keyboard() -> InlineKeyboardMarkup:
             text=f"{CITY_EMOJI[city]} {city}",
             callback_data=f"city_go_{city}",
         ))
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="city_nav_profile"))
-    return builder.as_markup()
-
-
-def city_back_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="city_nav_profile"))
+    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile"))
     return builder.as_markup()
 
 
@@ -432,23 +483,24 @@ def city_back_keyboard() -> InlineKeyboardMarkup:
 # ──────────────────────────────────────────────────────────────────────────
 
 def _profile_text(u: dict, inv: dict) -> str:
-    status_line = "🟢 <b>Свободен</b> — можно торговать"
+    status_line = "🟢 <b>Свободен</b> <i>— можно торговать прямо сейчас</i>"
     if _is_traveling(u):
         left = u["travel_end_time"] - int(time.time())
         m, s = max(0, left // 60), max(0, left % 60)
-        status_line = f"🚶 <b>В пути</b> — прибытие через {m} мин {s} сек"
+        status_line = f"🚶 <b>В пути</b> <i>— прибытие через {m} мин {s} сек</i>"
 
     return (
         "🧙‍♂️ <b>ГИЛЬДИЯ ТОРГОВЦЕВ</b>\n"
-        "✨ <i>Личный кабинет торговца</i>\n"
+        "<i>Личный кабинет искателя прибыли</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"{CURRENCY_EMOJI} Баланс: <b>{_fmt(u['balance'])}</b> {CURRENCY_NAME}\n"
+        f"{CURRENCY_EMOJI} Баланс: <b>{_fmt(u['balance'])}</b> <i>{CURRENCY_NAME}</i>\n"
         f"{CITY_EMOJI.get(u['city'], '🏙')} Город: <b>{u['city']}</b>\n"
         f"📡 Статус: {status_line}\n\n"
         "📦 <b>Склад</b>\n"
-        f"  {ITEMS['potions']['emoji']} Зелья — <b>{inv['potions']}</b> шт.\n"
-        f"  {ITEMS['scrolls']['emoji']} Свитки — <b>{inv['scrolls']}</b> шт.\n"
-        f"  {ITEMS['food']['emoji']} Еда — <b>{inv['food']}</b> шт.\n\n"
+        f"  {ITEMS['potions']['emoji']} Зелья — <b>{inv['potions']}</b> <i>шт.</i>\n"
+        f"  {ITEMS['scrolls']['emoji']} Свитки — <b>{inv['scrolls']}</b> <i>шт.</i>\n"
+        f"  {ITEMS['food']['emoji']} Еда — <b>{inv['food']}</b> <i>шт.</i>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
         "<i>Выберите раздел ниже 👇</i>"
     )
 
@@ -457,17 +509,18 @@ def _market_text() -> str:
     prices = get_all_prices()
     lines = [
         "🏪 <b>ТОРГОВЫЕ РЯДЫ</b>",
-        "✨ <i>Актуальные цены по всем городам</i>",
+        "<i>Актуальные цены по всем городам</i> ✨",
         "━━━━━━━━━━━━━━━━━━━━\n",
     ]
     for city in CITIES:
         lines.append(f"{CITY_EMOJI[city]} <b>{city}</b>")
         for item, info in ITEMS.items():
             p = prices[city][item]
-            lines.append(f"   {info['emoji']} {info['name']}: <b>{p}</b> {CURRENCY_EMOJI}")
+            lines.append(f"   {info['emoji']} <i>{info['name']}</i> — <b>{p}</b> {CURRENCY_EMOJI}")
         lines.append("")
-    lines.append("<i>Купить — /citybuy товар количество</i>")
-    lines.append("<i>Продать — /citysell товар количество</i>")
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append(f"🛒 <i>Купить —</i> <code>/citybuy товар количество</code>")
+    lines.append(f"💰 <i>Продать —</i> <code>/citysell товар количество</code>")
     return "\n".join(lines)
 
 
@@ -475,11 +528,13 @@ def _bag_text(inv: dict) -> str:
     total_items = sum(inv.values())
     return (
         "🎒 <b>ИНВЕНТАРЬ ТОРГОВЦА</b>\n"
+        "<i>Что лежит у вас на складе</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"{ITEMS['potions']['emoji']} Зелья: <b>{inv['potions']}</b> шт.\n"
-        f"{ITEMS['scrolls']['emoji']} Свитки: <b>{inv['scrolls']}</b> шт.\n"
-        f"{ITEMS['food']['emoji']} Еда: <b>{inv['food']}</b> шт.\n\n"
+        f"{ITEMS['potions']['emoji']} Зелья: <b>{inv['potions']}</b> <i>шт.</i>\n"
+        f"{ITEMS['scrolls']['emoji']} Свитки: <b>{inv['scrolls']}</b> <i>шт.</i>\n"
+        f"{ITEMS['food']['emoji']} Еда: <b>{inv['food']}</b> <i>шт.</i>\n\n"
         f"📦 Всего товаров: <b>{total_items}</b>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
         f"⚠️ <i>Провоз свыше {CUSTOMS_LIMIT} ед. одного товара рискует конфискацией на таможне.</i>"
     )
 
@@ -489,62 +544,78 @@ def _news_text() -> str:
     if not news:
         return (
             "🗞 <b>ТОРГОВЫЕ СЛУХИ</b>\n"
+            "<i>Прогнозы рынка на ближайшие часы</i> ✨\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            "Пока тихо... странники ещё не принесли новостей.\n"
-            "Загляните чуть позже."
+            "<i>Пока тихо... странники ещё не принесли новостей.\n"
+            "Загляните чуть позже.</i>"
         )
-    lines = ["🗞 <b>ТОРГОВЫЕ СЛУХИ</b>", "━━━━━━━━━━━━━━━━━━━━\n"]
+    lines = [
+        "🗞 <b>ТОРГОВЫЕ СЛУХИ</b>",
+        "<i>Прогнозы рынка на ближайшие часы</i> ✨",
+        "━━━━━━━━━━━━━━━━━━━━\n",
+    ]
     for n in news:
-        lines.append(f"🔮 {n['news_text']}")
+        lines.append(f"🔮 <i>{n['news_text']}</i>")
     return "\n\n".join(lines)
 
 
 def _route_text() -> str:
     best = best_trade_route()
     if not best:
-        return "📈 Сейчас нет выгодных маршрутов — цены во всех городах примерно равны."
+        return (
+            "📈 <b>ЛУЧШИЙ ТОРГОВЫЙ МАРШРУТ</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "<i>Сейчас нет выгодных маршрутов — цены во всех городах примерно равны.</i>"
+        )
     info = ITEMS[best["item"]]
     margin_pct = round(best["profit"] / max(1, best["buy_price"]) * 100)
     return (
         "📈 <b>ЛУЧШИЙ ТОРГОВЫЙ МАРШРУТ</b>\n"
+        "<i>Подсказка гильдии — где заработать прямо сейчас</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{info['emoji']} Товар: <b>{info['name']}</b>\n\n"
-        f"🛒 Купить в {CITY_EMOJI[best['buy_city']]} <b>{best['buy_city']}</b> — {best['buy_price']} {CURRENCY_EMOJI}\n"
-        f"💰 Продать в {CITY_EMOJI[best['sell_city']]} <b>{best['sell_city']}</b> — {best['sell_price']} {CURRENCY_EMOJI}\n\n"
-        f"📊 Прибыль с единицы: <b>+{best['profit']}</b> {CURRENCY_EMOJI} (≈{margin_pct}%)"
+        f"🛒 Купить в {CITY_EMOJI[best['buy_city']]} <b>{best['buy_city']}</b> — <b>{best['buy_price']}</b> {CURRENCY_EMOJI}\n"
+        f"💰 Продать в {CITY_EMOJI[best['sell_city']]} <b>{best['sell_city']}</b> — <b>{best['sell_price']}</b> {CURRENCY_EMOJI}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 Прибыль с единицы: <b>+{best['profit']}</b> {CURRENCY_EMOJI} <i>(≈{margin_pct}%)</i>"
     )
 
 
 def _help_text() -> str:
     return (
         "❓ <b>СПРАВКА ПО ТРЕЙДИНГУ</b>\n"
-        "✨ <i>Арбитражная торговля между городами</i>\n"
+        "<i>Арбитражная торговля между городами</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "👤 <code>/city</code> — профиль торговца: баланс, город, статус, склад\n"
-        "🏪 <code>/citymarket</code> — цены на товары во всех городах\n"
-        "🛒 <code>/citybuy товар количество</code> — купить товар в текущем городе\n"
-        "💰 <code>/citysell товар количество</code> — продать товар в текущем городе\n"
-        "🧭 <code>/citytravel город</code> — отправиться в другой город\n"
-        "🎒 <code>/citybag</code> — инвентарь (что лежит на складе)\n"
-        "🗞 <code>/citynews</code> — слухи и прогнозы цен на 2 часа вперёд\n"
-        "🗺 <code>/cityroute</code> — самый выгодный маршрут прямо сейчас\n"
-        "❓ <code>/help</code> — эта справка\n\n"
-        "<b>📦 Товары:</b>\n"
-        f"  {ITEMS['potions']['emoji']} Зелья — дёшевы на Севере, дороги на Юге\n"
-        f"  {ITEMS['scrolls']['emoji']} Свитки — дёшевы на Юге, дороги на Севере\n"
-        f"  {ITEMS['food']['emoji']} Еда — дешевле на Юге, дороже на Севере\n"
-        f"  🏛 Столица — всё дорого, но цены стабильнее\n\n"
-        "<b>🧭 Путешествия:</b>\n"
-        f"  • Стоимость дороги: {TRAVEL_COST} {CURRENCY_EMOJI}\n"
-        f"  • Время в пути: {TRAVEL_MINUTES} минут\n"
-        "  • Во время пути торговля недоступна\n\n"
-        "<b>🧙‍♂️ Таможня (Гильдия магов):</b>\n"
-        f"  • Провоз свыше {CUSTOMS_LIMIT} ед. одного товара рискует конфискацией\n"
-        f"  • Шанс конфискации: {int(CUSTOMS_CHANCE * 100)}%, штраф {CUSTOMS_FINE} {CURRENCY_EMOJI}\n\n"
-        "<b>💹 Динамика цен:</b>\n"
-        "  • Цены обновляются каждый час (±20% случайно)\n"
-        "  • Массовая скупка повышает цену, массовая продажа — снижает\n\n"
-        "<i>Удачной торговли, искатель прибыли! 💎</i>"
+        "<b>📋 Команды</b>\n"
+        "👤 <code>/city</code> — <i>профиль торговца: баланс, город, статус, склад</i>\n"
+        "🏪 <code>/citymarket</code> — <i>цены на товары во всех городах</i>\n"
+        "🛒 <code>/citybuy товар количество</code> — <i>купить товар</i>\n"
+        "💰 <code>/citysell товар количество</code> — <i>продать товар</i>\n"
+        "🧭 <code>/citytravel город</code> — <i>отправиться в другой город</i>\n"
+        "🎒 <code>/citybag</code> — <i>инвентарь</i>\n"
+        "🗞 <code>/citynews</code> — <i>слухи и прогнозы цен на 2 часа вперёд</i>\n"
+        "🗺 <code>/cityroute</code> — <i>самый выгодный маршрут прямо сейчас</i>\n"
+        "❓ <code>/help</code> — <i>эта справка</i>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "<b>📦 Товары</b>\n"
+        f"  {ITEMS['potions']['emoji']} Зелья — <i>дёшевы на Севере, дороги на Юге</i>\n"
+        f"  {ITEMS['scrolls']['emoji']} Свитки — <i>дёшевы на Юге, дороги на Севере</i>\n"
+        f"  {ITEMS['food']['emoji']} Еда — <i>дешевле на Юге, дороже на Севере</i>\n"
+        "  🏛 Столица — <i>всё дорого, но цены стабильнее</i>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "<b>🧭 Путешествия</b>\n"
+        f"  • Стоимость дороги: <b>{TRAVEL_COST}</b> {CURRENCY_EMOJI}\n"
+        f"  • Время в пути: <b>{TRAVEL_MINUTES}</b> минут\n"
+        "  • <i>Во время пути торговля недоступна</i>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "<b>🧙‍♂️ Таможня (Гильдия магов)</b>\n"
+        f"  • <i>Провоз свыше</i> <b>{CUSTOMS_LIMIT}</b> <i>ед. одного товара рискует конфискацией</i>\n"
+        f"  • Шанс конфискации: <b>{int(CUSTOMS_CHANCE * 100)}%</b>, штраф <b>{CUSTOMS_FINE}</b> {CURRENCY_EMOJI}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "<b>💹 Динамика цен</b>\n"
+        "  • <i>Цены обновляются каждый час (±20% случайно)</i>\n"
+        "  • <i>Массовая скупка повышает цену, массовая продажа — снижает</i>\n\n"
+        "<i>Удачной торговли, искатель прибыли!</i> 💎"
     )
 
 
@@ -561,7 +632,7 @@ async def cmd_city_profile(message: Message):
     await message.answer(
         _profile_text(u, inv),
         parse_mode="HTML",
-        reply_markup=city_nav_keyboard("profile"),
+        reply_markup=city_main_menu_keyboard(),
     )
 
 
@@ -570,7 +641,7 @@ async def cmd_city_shop(message: Message):
     await message.answer(
         _market_text(),
         parse_mode="HTML",
-        reply_markup=city_nav_keyboard("market"),
+        reply_markup=city_market_keyboard(),
     )
 
 
@@ -618,11 +689,13 @@ async def cmd_city_buy(message: Message):
     register_trade(u["city"], item, "buy")
 
     await message.answer(
-        f"✅ <b>Сделка совершена</b>\n\n"
+        "✅ <b>СДЕЛКА СОВЕРШЕНА</b>\n"
+        "<i>Покупка прошла успешно</i> ✨\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{ITEMS[item]['emoji']} Куплено: <b>{qty} × {ITEMS[item]['name']}</b>\n"
-        f"💵 Цена за шт.: {price} {CURRENCY_EMOJI}\n"
-        f"{CURRENCY_EMOJI} Списано: <b>{_fmt(total)}</b> {CURRENCY_NAME}\n"
-        f"📍 Город: {u['city']}",
+        f"💵 Цена за шт.: <b>{price}</b> {CURRENCY_EMOJI}\n"
+        f"{CURRENCY_EMOJI} Списано: <b>{_fmt(total)}</b> <i>{CURRENCY_NAME}</i>\n"
+        f"📍 Город: <b>{u['city']}</b>",
         parse_mode="HTML",
         reply_markup=city_back_keyboard(),
     )
@@ -670,11 +743,13 @@ async def cmd_city_sell(message: Message):
     register_trade(u["city"], item, "sell")
 
     await message.answer(
-        f"✅ <b>Сделка совершена</b>\n\n"
+        "✅ <b>СДЕЛКА СОВЕРШЕНА</b>\n"
+        "<i>Продажа прошла успешно</i> ✨\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{ITEMS[item]['emoji']} Продано: <b>{qty} × {ITEMS[item]['name']}</b>\n"
-        f"💵 Цена за шт.: {price} {CURRENCY_EMOJI}\n"
-        f"{CURRENCY_EMOJI} Получено: <b>{_fmt(total)}</b> {CURRENCY_NAME}\n"
-        f"📍 Город: {u['city']}",
+        f"💵 Цена за шт.: <b>{price}</b> {CURRENCY_EMOJI}\n"
+        f"{CURRENCY_EMOJI} Получено: <b>{_fmt(total)}</b> <i>{CURRENCY_NAME}</i>\n"
+        f"📍 Город: <b>{u['city']}</b>",
         parse_mode="HTML",
         reply_markup=city_back_keyboard(),
     )
@@ -710,16 +785,19 @@ async def _do_travel(user_id: int, username: str, dest: str):
     )
 
     text = (
-        f"🧭 <b>В ПУТЬ!</b>\n\n"
-        f"Караван отправляется в {CITY_EMOJI.get(dest, '🏙')} <b>{dest}</b>\n"
-        f"⏳ Прибытие через <b>{TRAVEL_MINUTES}</b> минут\n"
-        f"{CURRENCY_EMOJI} Дорога стоила: {TRAVEL_COST} {CURRENCY_NAME}"
+        "🧭 <b>В ПУТЬ!</b>\n"
+        "<i>Караван покидает город</i> ✨\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Направление: {CITY_EMOJI.get(dest, '🏙')} <b>{dest}</b>\n"
+        f"⏳ Прибытие через <b>{TRAVEL_MINUTES}</b> <i>минут</i>\n"
+        f"{CURRENCY_EMOJI} Дорога стоила: <b>{TRAVEL_COST}</b> <i>{CURRENCY_NAME}</i>"
     )
     if confiscated:
         text += (
-            f"\n\n🧙‍♂️ <b>Гильдия магов конфисковала ваш товар</b> "
-            f"({', '.join(confiscated)})!\n"
-            f"Вы заплатили штраф {fine_total} {CURRENCY_EMOJI} {CURRENCY_NAME}."
+            "\n\n━━━━━━━━━━━━━━━━━━━━\n"
+            f"🧙‍♂️ <b>Гильдия магов конфисковала ваш товар!</b>\n"
+            f"<i>Изъято: {', '.join(confiscated)}</i>\n"
+            f"💸 Штраф: <b>{fine_total}</b> {CURRENCY_EMOJI} <i>{CURRENCY_NAME}</i>"
         )
     return True, text
 
@@ -729,7 +807,7 @@ async def cmd_city_travel(message: Message):
     args = (message.text or "").split()[1:]
     if len(args) != 1:
         await message.answer(
-            "🧭 <b>Куда отправляемся?</b>\n\nВыберите город:",
+            "🧭 <b>КУДА ОТПРАВЛЯЕМСЯ?</b>\n<i>Выберите пункт назначения</i> ✨\n━━━━━━━━━━━━━━━━━━━━",
             parse_mode="HTML",
             reply_markup=city_travel_keyboard(),
         )
@@ -751,7 +829,7 @@ async def cmd_city_inventory(message: Message):
     await message.answer(
         _bag_text(inv),
         parse_mode="HTML",
-        reply_markup=city_nav_keyboard("bag"),
+        reply_markup=city_bag_keyboard(),
     )
 
 
@@ -760,7 +838,7 @@ async def cmd_city_news(message: Message):
     await message.answer(
         _news_text(),
         parse_mode="HTML",
-        reply_markup=city_nav_keyboard("news"),
+        reply_markup=city_news_keyboard(),
     )
 
 
@@ -769,7 +847,7 @@ async def cmd_city_trade_route(message: Message):
     await message.answer(
         _route_text(),
         parse_mode="HTML",
-        reply_markup=city_nav_keyboard("route"),
+        reply_markup=city_route_keyboard(),
     )
 
 
@@ -778,7 +856,7 @@ async def cmd_city_help(message: Message):
     await message.answer(
         _help_text(),
         parse_mode="HTML",
-        reply_markup=city_nav_keyboard("help"),
+        reply_markup=city_help_keyboard(),
     )
 
 
@@ -794,7 +872,7 @@ async def cb_city_profile(call: CallbackQuery):
     u = get_city_user(call.from_user.id, call.from_user.username or "")
     inv = get_inventory(u["user_id"])
     await call.message.edit_text(
-        _profile_text(u, inv), parse_mode="HTML", reply_markup=city_nav_keyboard("profile")
+        _profile_text(u, inv), parse_mode="HTML", reply_markup=city_main_menu_keyboard()
     )
     await call.answer()
 
@@ -802,7 +880,7 @@ async def cb_city_profile(call: CallbackQuery):
 @router.callback_query(F.data == "city_nav_market")
 async def cb_city_market(call: CallbackQuery):
     await call.message.edit_text(
-        _market_text(), parse_mode="HTML", reply_markup=city_nav_keyboard("market")
+        _market_text(), parse_mode="HTML", reply_markup=city_market_keyboard()
     )
     await call.answer()
 
@@ -811,7 +889,7 @@ async def cb_city_market(call: CallbackQuery):
 async def cb_city_bag(call: CallbackQuery):
     inv = get_inventory(call.from_user.id)
     await call.message.edit_text(
-        _bag_text(inv), parse_mode="HTML", reply_markup=city_nav_keyboard("bag")
+        _bag_text(inv), parse_mode="HTML", reply_markup=city_bag_keyboard()
     )
     await call.answer()
 
@@ -819,7 +897,7 @@ async def cb_city_bag(call: CallbackQuery):
 @router.callback_query(F.data == "city_nav_news")
 async def cb_city_news(call: CallbackQuery):
     await call.message.edit_text(
-        _news_text(), parse_mode="HTML", reply_markup=city_nav_keyboard("news")
+        _news_text(), parse_mode="HTML", reply_markup=city_news_keyboard()
     )
     await call.answer()
 
@@ -827,7 +905,7 @@ async def cb_city_news(call: CallbackQuery):
 @router.callback_query(F.data == "city_nav_route")
 async def cb_city_route(call: CallbackQuery):
     await call.message.edit_text(
-        _route_text(), parse_mode="HTML", reply_markup=city_nav_keyboard("route")
+        _route_text(), parse_mode="HTML", reply_markup=city_route_keyboard()
     )
     await call.answer()
 
@@ -835,7 +913,7 @@ async def cb_city_route(call: CallbackQuery):
 @router.callback_query(F.data == "city_nav_help")
 async def cb_city_help(call: CallbackQuery):
     await call.message.edit_text(
-        _help_text(), parse_mode="HTML", reply_markup=city_nav_keyboard("help")
+        _help_text(), parse_mode="HTML", reply_markup=city_help_keyboard()
     )
     await call.answer()
 
@@ -843,7 +921,7 @@ async def cb_city_help(call: CallbackQuery):
 @router.callback_query(F.data == "city_nav_travel")
 async def cb_city_travel_menu(call: CallbackQuery):
     await call.message.edit_text(
-        "🧭 <b>Куда отправляемся?</b>\n\nВыберите город:",
+        "🧭 <b>КУДА ОТПРАВЛЯЕМСЯ?</b>\n<i>Выберите пункт назначения</i> ✨\n━━━━━━━━━━━━━━━━━━━━",
         parse_mode="HTML",
         reply_markup=city_travel_keyboard(),
     )
@@ -905,7 +983,9 @@ async def city_travel_loop(bot):
                 try:
                     await bot.send_message(
                         r["user_id"],
-                        f"🧙 <b>Вы прибыли в {r['city']}!</b> Торговля снова доступна.",
+                        "🧙 <b>ВЫ ПРИБЫЛИ!</b>\n"
+                        f"<i>Добро пожаловать в {r['city']}</i> ✨\n\n"
+                        "Торговля снова доступна.",
                         parse_mode="HTML",
                     )
                 except Exception:
