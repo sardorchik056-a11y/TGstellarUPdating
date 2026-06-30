@@ -10,8 +10,9 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from database import DB_PATH  # используем тот же файл БД, что и весь бот
 
@@ -21,7 +22,16 @@ router = Router(name="city")
 # КОНСТАНТЫ
 # ──────────────────────────────────────────────────────────────────────────
 
+CURRENCY_NAME = "кристаллы"
+CURRENCY_EMOJI = "💎"
+
 CITIES = ["Северный", "Южный", "Столица"]
+
+CITY_EMOJI = {
+    "Северный": "🧊",
+    "Южный": "🌴",
+    "Столица": "🏛",
+}
 
 ITEMS = {
     "potions": {"name": "Зелья", "emoji": "🧪", "base": 10},
@@ -332,6 +342,10 @@ def _fmt(n: int) -> str:
     return f"{n:,}".replace(",", " ")
 
 
+def _crystals(n: int) -> str:
+    return f"{_fmt(n)} {CURRENCY_EMOJI} {CURRENCY_NAME}"
+
+
 def _is_traveling(u: dict) -> bool:
     if u["status"] != "traveling":
         return False
@@ -372,6 +386,169 @@ def best_trade_route() -> dict | None:
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# ИНЛАЙН-КЛАВИАТУРЫ
+# ──────────────────────────────────────────────────────────────────────────
+
+def city_nav_keyboard(active: str = "") -> InlineKeyboardMarkup:
+    """Единая панель навигации, которая идёт под каждым экраном модуля."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="👤 Профиль", callback_data="city_nav_profile"),
+        InlineKeyboardButton(text="🏪 Рынок", callback_data="city_nav_market"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🎒 Сумка", callback_data="city_nav_bag"),
+        InlineKeyboardButton(text="🗺 Маршрут", callback_data="city_nav_route"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🧭 Путешествие", callback_data="city_nav_travel"),
+        InlineKeyboardButton(text="🗞 Новости", callback_data="city_nav_news"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="❓ Помощь", callback_data="city_nav_help"),
+    )
+    return builder.as_markup()
+
+
+def city_travel_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for city in CITIES:
+        builder.row(InlineKeyboardButton(
+            text=f"{CITY_EMOJI[city]} {city}",
+            callback_data=f"city_go_{city}",
+        ))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="city_nav_profile"))
+    return builder.as_markup()
+
+
+def city_back_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="city_nav_profile"))
+    return builder.as_markup()
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# ТЕКСТЫ ЭКРАНОВ
+# ──────────────────────────────────────────────────────────────────────────
+
+def _profile_text(u: dict, inv: dict) -> str:
+    status_line = "🟢 <b>Свободен</b> — можно торговать"
+    if _is_traveling(u):
+        left = u["travel_end_time"] - int(time.time())
+        m, s = max(0, left // 60), max(0, left % 60)
+        status_line = f"🚶 <b>В пути</b> — прибытие через {m} мин {s} сек"
+
+    return (
+        "🧙‍♂️ <b>ГИЛЬДИЯ ТОРГОВЦЕВ</b>\n"
+        "✨ <i>Личный кабинет торговца</i>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{CURRENCY_EMOJI} Баланс: <b>{_fmt(u['balance'])}</b> {CURRENCY_NAME}\n"
+        f"{CITY_EMOJI.get(u['city'], '🏙')} Город: <b>{u['city']}</b>\n"
+        f"📡 Статус: {status_line}\n\n"
+        "📦 <b>Склад</b>\n"
+        f"  {ITEMS['potions']['emoji']} Зелья — <b>{inv['potions']}</b> шт.\n"
+        f"  {ITEMS['scrolls']['emoji']} Свитки — <b>{inv['scrolls']}</b> шт.\n"
+        f"  {ITEMS['food']['emoji']} Еда — <b>{inv['food']}</b> шт.\n\n"
+        "<i>Выберите раздел ниже 👇</i>"
+    )
+
+
+def _market_text() -> str:
+    prices = get_all_prices()
+    lines = [
+        "🏪 <b>ТОРГОВЫЕ РЯДЫ</b>",
+        "✨ <i>Актуальные цены по всем городам</i>",
+        "━━━━━━━━━━━━━━━━━━━━\n",
+    ]
+    for city in CITIES:
+        lines.append(f"{CITY_EMOJI[city]} <b>{city}</b>")
+        for item, info in ITEMS.items():
+            p = prices[city][item]
+            lines.append(f"   {info['emoji']} {info['name']}: <b>{p}</b> {CURRENCY_EMOJI}")
+        lines.append("")
+    lines.append("<i>Купить — /citybuy товар количество</i>")
+    lines.append("<i>Продать — /citysell товар количество</i>")
+    return "\n".join(lines)
+
+
+def _bag_text(inv: dict) -> str:
+    total_items = sum(inv.values())
+    return (
+        "🎒 <b>ИНВЕНТАРЬ ТОРГОВЦА</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{ITEMS['potions']['emoji']} Зелья: <b>{inv['potions']}</b> шт.\n"
+        f"{ITEMS['scrolls']['emoji']} Свитки: <b>{inv['scrolls']}</b> шт.\n"
+        f"{ITEMS['food']['emoji']} Еда: <b>{inv['food']}</b> шт.\n\n"
+        f"📦 Всего товаров: <b>{total_items}</b>\n\n"
+        f"⚠️ <i>Провоз свыше {CUSTOMS_LIMIT} ед. одного товара рискует конфискацией на таможне.</i>"
+    )
+
+
+def _news_text() -> str:
+    news = get_active_news()
+    if not news:
+        return (
+            "🗞 <b>ТОРГОВЫЕ СЛУХИ</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "Пока тихо... странники ещё не принесли новостей.\n"
+            "Загляните чуть позже."
+        )
+    lines = ["🗞 <b>ТОРГОВЫЕ СЛУХИ</b>", "━━━━━━━━━━━━━━━━━━━━\n"]
+    for n in news:
+        lines.append(f"🔮 {n['news_text']}")
+    return "\n\n".join(lines)
+
+
+def _route_text() -> str:
+    best = best_trade_route()
+    if not best:
+        return "📈 Сейчас нет выгодных маршрутов — цены во всех городах примерно равны."
+    info = ITEMS[best["item"]]
+    margin_pct = round(best["profit"] / max(1, best["buy_price"]) * 100)
+    return (
+        "📈 <b>ЛУЧШИЙ ТОРГОВЫЙ МАРШРУТ</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{info['emoji']} Товар: <b>{info['name']}</b>\n\n"
+        f"🛒 Купить в {CITY_EMOJI[best['buy_city']]} <b>{best['buy_city']}</b> — {best['buy_price']} {CURRENCY_EMOJI}\n"
+        f"💰 Продать в {CITY_EMOJI[best['sell_city']]} <b>{best['sell_city']}</b> — {best['sell_price']} {CURRENCY_EMOJI}\n\n"
+        f"📊 Прибыль с единицы: <b>+{best['profit']}</b> {CURRENCY_EMOJI} (≈{margin_pct}%)"
+    )
+
+
+def _help_text() -> str:
+    return (
+        "❓ <b>СПРАВКА ПО ТРЕЙДИНГУ</b>\n"
+        "✨ <i>Арбитражная торговля между городами</i>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "👤 <code>/city</code> — профиль торговца: баланс, город, статус, склад\n"
+        "🏪 <code>/citymarket</code> — цены на товары во всех городах\n"
+        "🛒 <code>/citybuy товар количество</code> — купить товар в текущем городе\n"
+        "💰 <code>/citysell товар количество</code> — продать товар в текущем городе\n"
+        "🧭 <code>/citytravel город</code> — отправиться в другой город\n"
+        "🎒 <code>/citybag</code> — инвентарь (что лежит на складе)\n"
+        "🗞 <code>/citynews</code> — слухи и прогнозы цен на 2 часа вперёд\n"
+        "🗺 <code>/cityroute</code> — самый выгодный маршрут прямо сейчас\n"
+        "❓ <code>/help</code> — эта справка\n\n"
+        "<b>📦 Товары:</b>\n"
+        f"  {ITEMS['potions']['emoji']} Зелья — дёшевы на Севере, дороги на Юге\n"
+        f"  {ITEMS['scrolls']['emoji']} Свитки — дёшевы на Юге, дороги на Севере\n"
+        f"  {ITEMS['food']['emoji']} Еда — дешевле на Юге, дороже на Севере\n"
+        f"  🏛 Столица — всё дорого, но цены стабильнее\n\n"
+        "<b>🧭 Путешествия:</b>\n"
+        f"  • Стоимость дороги: {TRAVEL_COST} {CURRENCY_EMOJI}\n"
+        f"  • Время в пути: {TRAVEL_MINUTES} минут\n"
+        "  • Во время пути торговля недоступна\n\n"
+        "<b>🧙‍♂️ Таможня (Гильдия магов):</b>\n"
+        f"  • Провоз свыше {CUSTOMS_LIMIT} ед. одного товара рискует конфискацией\n"
+        f"  • Шанс конфискации: {int(CUSTOMS_CHANCE * 100)}%, штраф {CUSTOMS_FINE} {CURRENCY_EMOJI}\n\n"
+        "<b>💹 Динамика цен:</b>\n"
+        "  • Цены обновляются каждый час (±20% случайно)\n"
+        "  • Массовая скупка повышает цену, массовая продажа — снижает\n\n"
+        "<i>Удачной торговли, искатель прибыли! 💎</i>"
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # ХЕНДЛЕРЫ КОМАНД
 # (намеренно с другими именами, чтобы не конфликтовать с /profile, /shop,
 #  /inventory, /sell и т.д. из main.py)
@@ -381,68 +558,58 @@ def best_trade_route() -> dict | None:
 async def cmd_city_profile(message: Message):
     u = get_city_user(message.from_user.id, message.from_user.username or "")
     inv = get_inventory(u["user_id"])
-
-    status_line = "🟢 Свободен"
-    if _is_traveling(u):
-        left = u["travel_end_time"] - int(time.time())
-        status_line = f"🚶 В пути ещё {max(0, left // 60)} мин {max(0, left % 60)} сек"
-
-    text = (
-        "🧙‍♂️ <b>Профиль торговца</b>\n\n"
-        f"💰 Баланс: <b>{_fmt(u['balance'])}</b> монет\n"
-        f"🏙 Город: <b>{u['city']}</b>\n"
-        f"📦 Статус: {status_line}\n\n"
-        "<b>Инвентарь:</b>\n"
-        f"{ITEMS['potions']['emoji']} Зелья: {inv['potions']}\n"
-        f"{ITEMS['scrolls']['emoji']} Свитки: {inv['scrolls']}\n"
-        f"{ITEMS['food']['emoji']} Еда: {inv['food']}\n"
+    await message.answer(
+        _profile_text(u, inv),
+        parse_mode="HTML",
+        reply_markup=city_nav_keyboard("profile"),
     )
-    await message.answer(text, parse_mode="HTML")
 
 
 @router.message(Command("citymarket", "рынок", "market"))
 async def cmd_city_shop(message: Message):
-    prices = get_all_prices()
-    lines = ["🏪 <b>Цены по городам</b>\n"]
-    for city in CITIES:
-        lines.append(f"<b>{city}</b>")
-        for item, info in ITEMS.items():
-            p = prices[city][item]
-            lines.append(f"  {info['emoji']} {info['name']}: {p} монет")
-        lines.append("")
-    await message.answer("\n".join(lines), parse_mode="HTML")
+    await message.answer(
+        _market_text(),
+        parse_mode="HTML",
+        reply_markup=city_nav_keyboard("market"),
+    )
 
 
 @router.message(Command("citybuy", "купить"))
 async def cmd_city_buy(message: Message):
     args = (message.text or "").split()[1:]
     if len(args) != 2:
-        await message.answer("Использование: <code>/citybuy [товар] [количество]</code>", parse_mode="HTML")
+        await message.answer(
+            "📝 Использование: <code>/citybuy [товар] [количество]</code>\n"
+            "<i>Например: /citybuy зелья 10</i>",
+            parse_mode="HTML",
+        )
         return
 
     u = get_city_user(message.from_user.id, message.from_user.username or "")
     if _is_traveling(u):
-        await message.answer("🚶 Вы в пути — торговля недоступна.")
+        await message.answer("🚶 Вы в пути — торговля недоступна до прибытия.")
         return
 
     item = _parse_item(args[0])
     if not item:
-        await message.answer("Неизвестный товар. Доступно: зелья, свитки, еда.")
+        await message.answer("❌ Неизвестный товар. Доступно: зелья, свитки, еда.")
         return
 
     try:
         qty = int(args[1])
     except ValueError:
-        await message.answer("Количество должно быть числом.")
+        await message.answer("❌ Количество должно быть числом.")
         return
     if qty <= 0:
-        await message.answer("Количество должно быть положительным.")
+        await message.answer("❌ Количество должно быть положительным.")
         return
 
     price = get_price(u["city"], item)
     total = price * qty
     if total > u["balance"]:
-        await message.answer(f"💸 Недостаточно монет. Нужно {_fmt(total)}, у вас {_fmt(u['balance'])}.")
+        await message.answer(
+            f"💸 Недостаточно {CURRENCY_NAME}. Нужно {_crystals(total)}, у вас {_crystals(u['balance'])}."
+        )
         return
 
     inv = get_inventory(u["user_id"])
@@ -451,8 +618,13 @@ async def cmd_city_buy(message: Message):
     register_trade(u["city"], item, "buy")
 
     await message.answer(
-        f"✅ Куплено {qty} × {ITEMS[item]['name']} за {_fmt(total)} монет "
-        f"({price} за шт.) в городе {u['city']}."
+        f"✅ <b>Сделка совершена</b>\n\n"
+        f"{ITEMS[item]['emoji']} Куплено: <b>{qty} × {ITEMS[item]['name']}</b>\n"
+        f"💵 Цена за шт.: {price} {CURRENCY_EMOJI}\n"
+        f"{CURRENCY_EMOJI} Списано: <b>{_fmt(total)}</b> {CURRENCY_NAME}\n"
+        f"📍 Город: {u['city']}",
+        parse_mode="HTML",
+        reply_markup=city_back_keyboard(),
     )
 
 
@@ -460,31 +632,35 @@ async def cmd_city_buy(message: Message):
 async def cmd_city_sell(message: Message):
     args = (message.text or "").split()[1:]
     if len(args) != 2:
-        await message.answer("Использование: <code>/citysell [товар] [количество]</code>", parse_mode="HTML")
+        await message.answer(
+            "📝 Использование: <code>/citysell [товар] [количество]</code>\n"
+            "<i>Например: /citysell свитки 5</i>",
+            parse_mode="HTML",
+        )
         return
 
     u = get_city_user(message.from_user.id, message.from_user.username or "")
     if _is_traveling(u):
-        await message.answer("🚶 Вы в пути — торговля недоступна.")
+        await message.answer("🚶 Вы в пути — торговля недоступна до прибытия.")
         return
 
     item = _parse_item(args[0])
     if not item:
-        await message.answer("Неизвестный товар. Доступно: зелья, свитки, еда.")
+        await message.answer("❌ Неизвестный товар. Доступно: зелья, свитки, еда.")
         return
 
     try:
         qty = int(args[1])
     except ValueError:
-        await message.answer("Количество должно быть числом.")
+        await message.answer("❌ Количество должно быть числом.")
         return
     if qty <= 0:
-        await message.answer("Количество должно быть положительным.")
+        await message.answer("❌ Количество должно быть положительным.")
         return
 
     inv = get_inventory(u["user_id"])
     if qty > inv[item]:
-        await message.answer(f"📦 У вас только {inv[item]} единиц этого товара.")
+        await message.answer(f"📦 У вас только <b>{inv[item]}</b> единиц этого товара.", parse_mode="HTML")
         return
 
     price = get_price(u["city"], item)
@@ -494,35 +670,26 @@ async def cmd_city_sell(message: Message):
     register_trade(u["city"], item, "sell")
 
     await message.answer(
-        f"✅ Продано {qty} × {ITEMS[item]['name']} за {_fmt(total)} монет "
-        f"({price} за шт.) в городе {u['city']}."
+        f"✅ <b>Сделка совершена</b>\n\n"
+        f"{ITEMS[item]['emoji']} Продано: <b>{qty} × {ITEMS[item]['name']}</b>\n"
+        f"💵 Цена за шт.: {price} {CURRENCY_EMOJI}\n"
+        f"{CURRENCY_EMOJI} Получено: <b>{_fmt(total)}</b> {CURRENCY_NAME}\n"
+        f"📍 Город: {u['city']}",
+        parse_mode="HTML",
+        reply_markup=city_back_keyboard(),
     )
 
 
-@router.message(Command("citytravel", "путешествие", "ехать"))
-async def cmd_city_travel(message: Message):
-    args = (message.text or "").split()[1:]
-    if len(args) != 1:
-        await message.answer("Использование: <code>/citytravel [город]</code>\nГорода: Северный, Южный, Столица", parse_mode="HTML")
-        return
-
-    u = get_city_user(message.from_user.id, message.from_user.username or "")
+async def _do_travel(user_id: int, username: str, dest: str):
+    """Общая логика путешествия. Возвращает (ok, text)."""
+    u = get_city_user(user_id, username)
     if _is_traveling(u):
-        await message.answer("🚶 Вы уже в пути.")
-        return
-
-    dest = _parse_city(args[0])
-    if not dest:
-        await message.answer("Неизвестный город. Доступно: Северный, Южный, Столица.")
-        return
+        return False, "🚶 Вы уже в пути."
     if dest == u["city"]:
-        await message.answer("Вы уже в этом городе.")
-        return
+        return False, "📍 Вы уже находитесь в этом городе."
     if u["balance"] < TRAVEL_COST:
-        await message.answer(f"💸 Недостаточно монет на дорогу. Нужно {TRAVEL_COST}.")
-        return
+        return False, f"💸 Недостаточно {CURRENCY_NAME} на дорогу. Нужно {_crystals(TRAVEL_COST)}."
 
-    # Таможня: проверка провоза товара > лимита
     inv = get_inventory(u["user_id"])
     confiscated = []
     fine_total = 0
@@ -532,65 +699,168 @@ async def cmd_city_travel(message: Message):
             confiscated.append(ITEMS[item]["name"])
             fine_total += CUSTOMS_FINE
 
-    new_balance = u["balance"] - TRAVEL_COST - fine_total
-    if new_balance < 0:
-        new_balance = 0  # штраф не должен увести в минус с учётом дороги
-
+    new_balance = max(0, u["balance"] - TRAVEL_COST - fine_total)
     end_time = int(time.time()) + TRAVEL_MINUTES * 60
     update_city_user(
         u["user_id"],
         balance=new_balance,
         status="traveling",
         travel_end_time=end_time,
-        city=dest,  # город фиксируем сразу — назначение применится после прибытия по статусу
+        city=dest,
     )
 
-    text = f"🚶 Вы отправились в город <b>{dest}</b>. Прибытие через {TRAVEL_MINUTES} минут."
+    text = (
+        f"🧭 <b>В ПУТЬ!</b>\n\n"
+        f"Караван отправляется в {CITY_EMOJI.get(dest, '🏙')} <b>{dest}</b>\n"
+        f"⏳ Прибытие через <b>{TRAVEL_MINUTES}</b> минут\n"
+        f"{CURRENCY_EMOJI} Дорога стоила: {TRAVEL_COST} {CURRENCY_NAME}"
+    )
     if confiscated:
         text += (
-            "\n\n🧙‍♂️ Гильдия магов конфисковала ваш товар "
-            f"({', '.join(confiscated)})! Вы заплатили штраф {fine_total} монет."
+            f"\n\n🧙‍♂️ <b>Гильдия магов конфисковала ваш товар</b> "
+            f"({', '.join(confiscated)})!\n"
+            f"Вы заплатили штраф {fine_total} {CURRENCY_EMOJI} {CURRENCY_NAME}."
         )
-    await message.answer(text, parse_mode="HTML")
+    return True, text
+
+
+@router.message(Command("citytravel", "путешествие", "ехать"))
+async def cmd_city_travel(message: Message):
+    args = (message.text or "").split()[1:]
+    if len(args) != 1:
+        await message.answer(
+            "🧭 <b>Куда отправляемся?</b>\n\nВыберите город:",
+            parse_mode="HTML",
+            reply_markup=city_travel_keyboard(),
+        )
+        return
+
+    dest = _parse_city(args[0])
+    if not dest:
+        await message.answer("❌ Неизвестный город. Доступно: Северный, Южный, Столица.")
+        return
+
+    ok, text = await _do_travel(message.from_user.id, message.from_user.username or "", dest)
+    await message.answer(text, parse_mode="HTML", reply_markup=city_back_keyboard() if ok else None)
 
 
 @router.message(Command("citybag", "сумка", "bag"))
 async def cmd_city_inventory(message: Message):
     u = get_city_user(message.from_user.id, message.from_user.username or "")
     inv = get_inventory(u["user_id"])
-    lines = ["🎒 <b>Ваш инвентарь</b>\n"]
-    for item, info in ITEMS.items():
-        lines.append(f"{info['emoji']} {info['name']}: {inv[item]}")
-    await message.answer("\n".join(lines), parse_mode="HTML")
+    await message.answer(
+        _bag_text(inv),
+        parse_mode="HTML",
+        reply_markup=city_nav_keyboard("bag"),
+    )
 
 
 @router.message(Command("citynews", "новости"))
 async def cmd_city_news(message: Message):
-    news = get_active_news()
-    if not news:
-        await message.answer("🗞 Пока новостей нет. Загляните позже.")
-        return
-    lines = ["🗞 <b>Слухи с торговых путей</b>\n"]
-    for n in news:
-        lines.append(f"• {n['news_text']}")
-    await message.answer("\n".join(lines), parse_mode="HTML")
+    await message.answer(
+        _news_text(),
+        parse_mode="HTML",
+        reply_markup=city_nav_keyboard("news"),
+    )
 
 
 @router.message(Command("cityroute", "маршрут", "route"))
 async def cmd_city_trade_route(message: Message):
-    best = best_trade_route()
-    if not best:
-        await message.answer("Сейчас нет выгодных маршрутов.")
-        return
-    info = ITEMS[best["item"]]
-    text = (
-        "📈 <b>Самый выгодный маршрут</b>\n\n"
-        f"{info['emoji']} Товар: <b>{info['name']}</b>\n"
-        f"🛒 Купить в: <b>{best['buy_city']}</b> по {best['buy_price']} монет\n"
-        f"💰 Продать в: <b>{best['sell_city']}</b> по {best['sell_price']} монет\n"
-        f"📊 Прибыль с единицы: <b>{best['profit']}</b> монет"
+    await message.answer(
+        _route_text(),
+        parse_mode="HTML",
+        reply_markup=city_nav_keyboard("route"),
     )
-    await message.answer(text, parse_mode="HTML")
+
+
+@router.message(Command("help", "помощь", "cityhelp"))
+async def cmd_city_help(message: Message):
+    await message.answer(
+        _help_text(),
+        parse_mode="HTML",
+        reply_markup=city_nav_keyboard("help"),
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# ОБРАБОТКА КНОПОК НАВИГАЦИИ (callback_query)
+# ──────────────────────────────────────────────────────────────────────────
+
+from aiogram.types import CallbackQuery  # noqa: E402
+
+
+@router.callback_query(F.data == "city_nav_profile")
+async def cb_city_profile(call: CallbackQuery):
+    u = get_city_user(call.from_user.id, call.from_user.username or "")
+    inv = get_inventory(u["user_id"])
+    await call.message.edit_text(
+        _profile_text(u, inv), parse_mode="HTML", reply_markup=city_nav_keyboard("profile")
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "city_nav_market")
+async def cb_city_market(call: CallbackQuery):
+    await call.message.edit_text(
+        _market_text(), parse_mode="HTML", reply_markup=city_nav_keyboard("market")
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "city_nav_bag")
+async def cb_city_bag(call: CallbackQuery):
+    inv = get_inventory(call.from_user.id)
+    await call.message.edit_text(
+        _bag_text(inv), parse_mode="HTML", reply_markup=city_nav_keyboard("bag")
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "city_nav_news")
+async def cb_city_news(call: CallbackQuery):
+    await call.message.edit_text(
+        _news_text(), parse_mode="HTML", reply_markup=city_nav_keyboard("news")
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "city_nav_route")
+async def cb_city_route(call: CallbackQuery):
+    await call.message.edit_text(
+        _route_text(), parse_mode="HTML", reply_markup=city_nav_keyboard("route")
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "city_nav_help")
+async def cb_city_help(call: CallbackQuery):
+    await call.message.edit_text(
+        _help_text(), parse_mode="HTML", reply_markup=city_nav_keyboard("help")
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "city_nav_travel")
+async def cb_city_travel_menu(call: CallbackQuery):
+    await call.message.edit_text(
+        "🧭 <b>Куда отправляемся?</b>\n\nВыберите город:",
+        parse_mode="HTML",
+        reply_markup=city_travel_keyboard(),
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("city_go_"))
+async def cb_city_go(call: CallbackQuery):
+    dest = call.data.replace("city_go_", "", 1)
+    if dest not in CITIES:
+        await call.answer("Неизвестный город", show_alert=True)
+        return
+    ok, text = await _do_travel(call.from_user.id, call.from_user.username or "", dest)
+    await call.message.edit_text(
+        text, parse_mode="HTML", reply_markup=city_back_keyboard() if ok else city_travel_keyboard()
+    )
+    await call.answer()
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -635,7 +905,8 @@ async def city_travel_loop(bot):
                 try:
                     await bot.send_message(
                         r["user_id"],
-                        f"🧙 Вы прибыли в {r['city']}! Торговля доступна.",
+                        f"🧙 <b>Вы прибыли в {r['city']}!</b> Торговля снова доступна.",
+                        parse_mode="HTML",
                     )
                 except Exception:
                     pass
