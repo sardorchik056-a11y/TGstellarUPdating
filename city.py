@@ -508,7 +508,7 @@ def city_travel_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for city in CITIES:
         builder.row(InlineKeyboardButton(
-            text=f"{CITY_EMOJI[city]} {city}",
+            text=f"{city}",
             callback_data=f"city_go_{city}",
             icon_custom_emoji_id=BTN_EMOJI[CITY_BTN_EMOJI_KEY[city]],
         ))
