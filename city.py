@@ -7,7 +7,7 @@
 import sqlite3
 import random
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -15,6 +15,7 @@ from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from database import DB_PATH  # используем тот же файл БД, что и весь бот
+from database import get_user as _db_get_user, update_user as _db_update_user
 
 router = Router(name="city")
 
@@ -23,6 +24,7 @@ router = Router(name="city")
 # ──────────────────────────────────────────────────────────────────────────
 
 CURRENCY_NAME = "кристаллы"
+CURRENCY_NAME_SINGULAR = "кристалл"
 CURRENCY_EMOJI = "💎"
 
 CITIES = ["Северный", "Южный", "Столица"]
@@ -68,6 +70,7 @@ BTN_EMOJI = {
     "buy": "5312361253610475399",               # покупка
     "sell": "5429518319243775957",              # продажа
     "status": "5400362079783770689",            # статус
+    "exchange": None,                            # 🔁 Обмен — вставь свой icon_custom_emoji_id
 }
 
 TRAVEL_COST = 50
@@ -80,8 +83,21 @@ CUSTOMS_FINE = 50
 NEWS_TRUE_CHANCE = 0.60      # вероятность, что подсказка сбудется
 NEWS_LIFETIME_HOURS = 2
 
-START_BALANCE = 1000
+START_BALANCE = 50           # стартовый баланс кристаллов
 START_CITY = "Столица"
+
+DAILY_CRYSTALS = 50          # сколько кристаллов выдаётся раз в день
+
+# ── ОБМЕН: кристаллы → монеты (только в одну сторону, обратно купить нельзя) ──
+EXCHANGE_MIN_RATE = 100        # минимальный курс (монет за 1 кристалл)
+EXCHANGE_MAX_RATE = 500        # максимальный курс (монет за 1 кристалл)
+EXCHANGE_WINDOW_SECONDS = 600  # окно анализа активности рынка (10 минут)
+EXCHANGE_VOLUME_TARGET = 100   # объём покупок в окне, после которого курс максимален
+EXCHANGE_JITTER = 15           # случайное колебание курса (±)
+EXCHANGE_RECALC_SECONDS = 60   # как часто пересчитывается курс фоновой задачей
+
+COIN_EMOJI_ID = "5199552030615558774"
+COIN_TAG = f'<tg-emoji emoji-id="{COIN_EMOJI_ID}">🪙</tg-emoji>'
 
 ALIAS_TO_ITEM = {
     "зелья": "potions", "зелье": "potions", "potions": "potions", "potion": "potions",
@@ -130,7 +146,7 @@ def init_city_db():
             CREATE TABLE IF NOT EXISTS city_users (
                 user_id        INTEGER PRIMARY KEY,
                 username       TEXT,
-                balance        INTEGER NOT NULL DEFAULT 1000,
+                balance        INTEGER NOT NULL DEFAULT 50,
                 city           TEXT NOT NULL DEFAULT 'Столица',
                 status         TEXT NOT NULL DEFAULT 'free',
                 travel_end_time INTEGER,
@@ -142,6 +158,8 @@ def init_city_db():
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(city_users)").fetchall()]
         if "travel_from" not in cols:
             conn.execute("ALTER TABLE city_users ADD COLUMN travel_from TEXT")
+        if "last_daily" not in cols:
+            conn.execute("ALTER TABLE city_users ADD COLUMN last_daily TEXT")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_inventory (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -175,6 +193,20 @@ def init_city_db():
                 expires_at        INTEGER NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS city_trade_log (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts        INTEGER NOT NULL,
+                action    TEXT NOT NULL,
+                qty       INTEGER NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS city_meta (
+                key   TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
         conn.commit()
 
     # первичная генерация цен, если их ещё нет
@@ -205,13 +237,14 @@ def _roll_price(city: str, item: str) -> int:
 # ---------- пользователи ----------
 
 def get_city_user(user_id: int, username: str = "") -> dict:
+    today = date.today().isoformat()
     with _conn() as conn:
         row = conn.execute("SELECT * FROM city_users WHERE user_id=?", (user_id,)).fetchone()
         if row is None:
             conn.execute(
-                "INSERT INTO city_users (user_id, username, balance, city, status, travel_end_time) "
-                "VALUES (?,?,?,?,?,NULL)",
-                (user_id, username or "", START_BALANCE, START_CITY, "free"),
+                "INSERT INTO city_users (user_id, username, balance, city, status, travel_end_time, last_daily) "
+                "VALUES (?,?,?,?,?,NULL,?)",
+                (user_id, username or "", START_BALANCE, START_CITY, "free", today),
             )
             for item in ITEMS:
                 conn.execute(
@@ -220,7 +253,16 @@ def get_city_user(user_id: int, username: str = "") -> dict:
                 )
             conn.commit()
             row = conn.execute("SELECT * FROM city_users WHERE user_id=?", (user_id,)).fetchone()
-    return dict(row)
+            return dict(row)
+
+    u = dict(row)
+    # ── Ежедневный бонус кристаллов (идемпотентно — раз в день) ──
+    if u.get("last_daily") != today:
+        new_balance = u["balance"] + DAILY_CRYSTALS
+        update_city_user(user_id, balance=new_balance, last_daily=today)
+        u["balance"] = new_balance
+        u["last_daily"] = today
+    return u
 
 
 def update_city_user(user_id: int, **fields):
@@ -306,6 +348,94 @@ def update_all_prices():
                 (new_price, now, city, item),
             )
         conn.commit()
+
+
+# ---------- обмен (кристаллы → монеты) ----------
+
+def log_trade_qty(qty: int, action: str):
+    """Пишет реальный объём сделки (в штуках товара) для расчёта курса обмена.
+    Учитываются именно покупки на рынке гильдии — чем активнее скупают товар,
+    тем выгоднее становится курс обмена кристаллов на монеты."""
+    with _conn() as conn:
+        conn.execute(
+            "INSERT INTO city_trade_log (ts, action, qty) VALUES (?,?,?)",
+            (int(time.time()), action, qty),
+        )
+        conn.commit()
+
+
+def get_recent_buy_volume(window: int = EXCHANGE_WINDOW_SECONDS) -> int:
+    """Сколько единиц товара куплено во всех городах за последние `window` секунд."""
+    since = int(time.time()) - window
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(qty), 0) AS total FROM city_trade_log "
+            "WHERE action='buy' AND ts>=?",
+            (since,),
+        ).fetchone()
+    return row["total"] or 0
+
+
+def _compute_exchange_rate() -> int:
+    """Курс зависит от активности скупки на рынке: чем больше товаров куплено
+    за последние 10 минут, тем выше курс (ближе к максимуму). Плюс лёгкое
+    случайное колебание, чтобы курс «играл» даже при ровном спросе."""
+    volume = get_recent_buy_volume()
+    ratio = min(1.0, volume / EXCHANGE_VOLUME_TARGET)
+    base = EXCHANGE_MIN_RATE + (EXCHANGE_MAX_RATE - EXCHANGE_MIN_RATE) * ratio
+    jitter = random.randint(-EXCHANGE_JITTER, EXCHANGE_JITTER)
+    rate = int(base + jitter)
+    return max(EXCHANGE_MIN_RATE, min(EXCHANGE_MAX_RATE, rate))
+
+
+def _set_exchange_rate(rate: int):
+    now = int(time.time())
+    with _conn() as conn:
+        conn.execute(
+            "INSERT INTO city_meta (key, value) VALUES ('exchange_rate', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (str(rate),),
+        )
+        conn.execute(
+            "INSERT INTO city_meta (key, value) VALUES ('exchange_rate_ts', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (str(now),),
+        )
+        conn.commit()
+
+
+def get_exchange_rate() -> int:
+    """Текущий курс обмена (монет за 1 кристалл). Пересчитывается фоновой
+    задачей раз в минуту; если значения ещё нет — считает на лету."""
+    with _conn() as conn:
+        row = conn.execute("SELECT value FROM city_meta WHERE key='exchange_rate'").fetchone()
+    if row is None:
+        rate = _compute_exchange_rate()
+        _set_exchange_rate(rate)
+        return rate
+    return int(row["value"])
+
+
+def refresh_exchange_rate() -> int:
+    """Принудительно пересчитывает и сохраняет курс (вызывается фоновой задачей)."""
+    rate = _compute_exchange_rate()
+    _set_exchange_rate(rate)
+    return rate
+
+
+def exchange_crystals_for_coins(uid: int, qty: int) -> tuple[bool, str, int, int]:
+    """Обменивает `qty` кристаллов гильдии на монеты основного бота.
+    Возвращает (успех, текст_ошибки_или_пусто, начисленные_монеты, курс).
+    Купить кристаллы за монеты нельзя — обмен работает только в эту сторону."""
+    main_user = _db_get_user(uid)
+    if main_user is None:
+        return False, "❌ Сначала запусти основного бота командой /start.", 0, 0
+
+    rate = get_exchange_rate()
+    coins = qty * rate
+    new_main_balance = main_user.get("balance", 0) + coins
+    _db_update_user(uid, {"balance": new_main_balance})
+    return True, "", coins, rate
 
 
 # ---------- новости ----------
@@ -466,7 +596,10 @@ def city_main_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=" Маршрут", callback_data="city_nav_route", icon_custom_emoji_id=BTN_EMOJI["route"]),
     )
     builder.row(
+        InlineKeyboardButton(text=" Обмен", callback_data="city_nav_exchange", icon_custom_emoji_id=BTN_EMOJI["exchange"]),
         InlineKeyboardButton(text=" Новости", callback_data="city_nav_news", icon_custom_emoji_id=BTN_EMOJI["news"]),
+    )
+    builder.row(
         InlineKeyboardButton(text=" Помощь", callback_data="city_nav_help", icon_custom_emoji_id=BTN_EMOJI["help"]),
     )
     return builder.as_markup()
@@ -522,6 +655,16 @@ def city_help_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def city_exchange_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text=" Рынок", callback_data="city_nav_market", icon_custom_emoji_id=BTN_EMOJI["market"]),
+        InlineKeyboardButton(text=" Сумка", callback_data="city_nav_bag", icon_custom_emoji_id=BTN_EMOJI["bag"]),
+    )
+    builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
+    return builder.as_markup()
+
+
 CITY_BTN_EMOJI_KEY = {
     "Северный": "city_north",
     "Южный": "city_south",
@@ -573,6 +716,8 @@ def _profile_text(u: dict, inv: dict) -> str:
         f"  {ITEMS['potions']['emoji']} Зелья — <b>{inv['potions']}</b> <i>шт.</i>\n"
         f"  {ITEMS['scrolls']['emoji']} Свитки — <b>{inv['scrolls']}</b> <i>шт.</i>\n"
         f"  {ITEMS['food']['emoji']} Еда — <b>{inv['food']}</b> <i>шт.</i>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎁 <i>Ежедневный бонус +{DAILY_CRYSTALS} {CURRENCY_NAME} получен сегодня ✅ — заходи завтра за новым</i>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "<i>Выберите раздел ниже 👇</i>"
     )
@@ -658,6 +803,37 @@ def _route_text() -> str:
     )
 
 
+def _exchange_text(u: dict) -> str:
+    rate = get_exchange_rate()
+    balance = u["balance"]
+    potential = balance * rate
+    volume = get_recent_buy_volume()
+    activity_pct = min(100, round(volume / EXCHANGE_VOLUME_TARGET * 100))
+
+    if rate >= EXCHANGE_MAX_RATE - EXCHANGE_JITTER:
+        mood = "🔥 <i>Ажиотаж на рынке — курс почти на максимуме!</i>"
+    elif rate <= EXCHANGE_MIN_RATE + EXCHANGE_JITTER:
+        mood = "😴 <i>Рынок спокоен — курс у нижней границы.</i>"
+    else:
+        mood = "📈 <i>Рынок понемногу разогревается.</i>"
+
+    return (
+        f"{_tge('exchange', '🔁')} <b>ОБМЕННЫЙ ПУНКТ ГИЛЬДИИ</b>\n"
+        "<i>Кристаллы можно обменять на монеты основного бота</i> ✨\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{_tge('currency', CURRENCY_EMOJI)} Текущий курс: <b>1 {CURRENCY_NAME_SINGULAR}</b> = <b>{rate}</b> {COIN_TAG}\n"
+        f"📊 Активность рынка: <b>{activity_pct}%</b> <i>(закупки за 10 мин)</i>\n"
+        f"{mood}\n\n"
+        f"{_tge('balance', CURRENCY_EMOJI)} Твой баланс: <b>{_fmt(balance)}</b> {CURRENCY_NAME}\n"
+        f"💵 Можно получить: <b>≈{_fmt(potential)}</b> {COIN_TAG} <i>(если обменять всё)</i>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📝 <i>Команда:</i> <code>/cityexchange количество</code>\n"
+        f"<i>Например:</i> <code>/cityexchange 20</code> <i>или</i> <code>/cityexchange все</code>\n\n"
+        f"⚠️ <i>Курс колеблется от</i> <b>{EXCHANGE_MIN_RATE}</b> <i>до</i> <b>{EXCHANGE_MAX_RATE}</b> {COIN_TAG} "
+        f"<i>и зависит от объёма закупок на рынке гильдии. Купить кристаллы за монеты нельзя — обмен работает только в одну сторону.</i>"
+    )
+
+
 def _help_text() -> str:
     return (
         f"{_tge('help', '❓')} <b>СПРАВКА ПО ТРЕЙДИНГУ</b>\n"
@@ -673,6 +849,7 @@ def _help_text() -> str:
         f"{_tge('bag', '🎒')} <code>/citybag</code> — <i>инвентарь</i>\n"
         f"{_tge('news', '🗞')} <code>/citynews</code> — <i>слухи и прогнозы цен на 2 часа вперёд</i>\n"
         f"{_tge('route', '🗺')} <code>/cityroute</code> — <i>самый выгодный маршрут прямо сейчас</i>\n"
+        f"{_tge('exchange', '🔁')} <code>/cityexchange количество</code> — <i>обменять кристаллы на монеты</i>\n"
         f"{_tge('help', '❓')} <code>/help</code> — <i>эта справка</i>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "<b>📦 Товары</b>\n"
@@ -693,6 +870,14 @@ def _help_text() -> str:
         '<b><tg-emoji emoji-id="5231200819986047254">🌟</tg-emoji> Динамика цен</b>\n'
         "  • <i>Цены обновляются каждый час (±20% случайно)</i>\n"
         "  • <i>Массовая скупка повышает цену, массовая продажа — снижает</i>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"<b>{_tge('exchange', '🔁')} Обменный пункт</b>\n"
+        f"  • Курс: <b>{EXCHANGE_MIN_RATE}–{EXCHANGE_MAX_RATE}</b> {COIN_TAG} <i>за 1 {CURRENCY_NAME_SINGULAR}</i>\n"
+        "  • <i>Курс растёт, если на рынке гильдии активно скупают товары</i>\n"
+        "  • <i>Обмен работает только в одну сторону — купить кристаллы за монеты нельзя</i>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"<b>🎁 Ежедневный бонус</b>\n"
+        f"  • <i>Каждый день — бесплатно</i> <b>+{DAILY_CRYSTALS}</b> {_tge('currency', CURRENCY_EMOJI)}\n\n"
         f"<i>Удачной торговли, искатель прибыли!</i> {_tge('currency', CURRENCY_EMOJI)}"
     )
 
@@ -765,6 +950,7 @@ async def cmd_city_buy(message: Message):
     set_inventory_qty(u["user_id"], item, inv[item] + qty)
     update_city_user(u["user_id"], balance=u["balance"] - total)
     register_trade(u["city"], item, "buy")
+    log_trade_qty(qty, "buy")
 
     await message.answer(
         "✅ <b>СДЕЛКА СОВЕРШЕНА</b>\n"
@@ -819,6 +1005,7 @@ async def cmd_city_sell(message: Message):
     set_inventory_qty(u["user_id"], item, inv[item] - qty)
     update_city_user(u["user_id"], balance=u["balance"] + total)
     register_trade(u["city"], item, "sell")
+    log_trade_qty(qty, "sell")
 
     await message.answer(
         "✅ <b>СДЕЛКА СОВЕРШЕНА</b>\n"
@@ -1004,6 +1191,62 @@ async def cmd_city_help(message: Message):
     )
 
 
+@router.message(Command("cityexchange", "обмен", "exchange"))
+async def cmd_city_exchange(message: Message):
+    u = get_city_user(message.from_user.id, message.from_user.username or "")
+    args = (message.text or "").split()[1:]
+
+    if not args:
+        await message.answer(
+            _exchange_text(u),
+            parse_mode="HTML",
+            reply_markup=city_exchange_keyboard(),
+        )
+        return
+
+    raw = args[0].strip().lower()
+    if raw in ("все", "всё", "all"):
+        qty = u["balance"]
+    else:
+        try:
+            qty = int(raw)
+        except ValueError:
+            await message.answer(
+                f"📝 Использование: <code>/cityexchange [количество]</code>\n"
+                f"<i>Например: /cityexchange 20 или /cityexchange все</i>",
+                parse_mode="HTML",
+            )
+            return
+
+    if qty <= 0:
+        await message.answer("❌ Количество должно быть положительным.")
+        return
+    if qty > u["balance"]:
+        await message.answer(
+            f"{_tge('currency', CURRENCY_EMOJI)} У тебя только <b>{_fmt(u['balance'])}</b> {CURRENCY_NAME}.",
+            parse_mode="HTML",
+        )
+        return
+
+    ok, err, coins, rate = exchange_crystals_for_coins(message.from_user.id, qty)
+    if not ok:
+        await message.answer(err, parse_mode="HTML")
+        return
+
+    update_city_user(u["user_id"], balance=u["balance"] - qty)
+
+    await message.answer(
+        f"{_tge('exchange', '🔁')} <b>ОБМЕН СОВЕРШЁН</b>\n"
+        "<i>Кристаллы зачислены в монеты основного бота</i> ✨\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{_tge('currency', CURRENCY_EMOJI)} Обменяно: <b>{_fmt(qty)}</b> {CURRENCY_NAME}\n"
+        f"📈 Курс: <b>{rate}</b> {COIN_TAG} <i>за 1 {CURRENCY_NAME_SINGULAR}</i>\n"
+        f"{COIN_TAG} Получено: <b>{_fmt(coins)}</b> монет",
+        parse_mode="HTML",
+        reply_markup=city_back_keyboard(),
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # ОБРАБОТКА КНОПОК НАВИГАЦИИ (callback_query)
 # ──────────────────────────────────────────────────────────────────────────
@@ -1042,6 +1285,15 @@ async def cb_city_bag(call: CallbackQuery):
 async def cb_city_news(call: CallbackQuery):
     await call.message.edit_text(
         _news_text(), parse_mode="HTML", reply_markup=city_news_keyboard()
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "city_nav_exchange")
+async def cb_city_exchange(call: CallbackQuery):
+    u = get_city_user(call.from_user.id, call.from_user.username or "")
+    await call.message.edit_text(
+        _exchange_text(u), parse_mode="HTML", reply_markup=city_exchange_keyboard()
     )
     await call.answer()
 
@@ -1170,3 +1422,15 @@ async def city_news_loop():
                 last_news_time = now
         except Exception as e:
             print(f"[city_news_loop] {e}")
+
+
+async def city_exchange_loop():
+    """Раз в минуту пересчитывает курс обмена кристаллов на монеты —
+    курс растёт вместе с активностью закупок на рынке гильдии."""
+    import asyncio
+    while True:
+        try:
+            refresh_exchange_rate()
+        except Exception as e:
+            print(f"[city_exchange_loop] {e}")
+        await asyncio.sleep(EXCHANGE_RECALC_SECONDS)
