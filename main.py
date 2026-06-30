@@ -194,6 +194,13 @@ from donate import (
     apply_donate,
 )
 
+from city import (
+    router as city_router,
+    init_city_db,
+    city_prices_loop, city_travel_loop, city_news_loop,
+    cmd_city_profile,
+)
+
 from rass import (
     is_in_rass,
     rass_start,
@@ -278,6 +285,7 @@ def _text_in(*variants: str):
 
 
 dp  = Dispatcher()
+dp.include_router(city_router)
 
 # ---------- БЛОКИРОВКИ ПО ПОЛЬЗОВАТЕЛЯМ (защита от race condition / дюпов) ----------
 import asyncio as _asyncio
@@ -411,6 +419,7 @@ def main_reply_keyboard(lang: str = "ru") -> ReplyKeyboardMarkup:
     builder.row(
         KeyboardButton(text="🎮 Меню" if lang == "ru" else "🎮 Menu", style="primary"),
         KeyboardButton(text="⚔️ Клан" if lang == "ru" else "⚔️ Clan", style="primary"),
+        KeyboardButton(text="🏙 Город" if lang == "ru" else "🏙 City", style="primary"),
     )
     return builder.as_markup(resize_keyboard=True)
 
@@ -1137,6 +1146,18 @@ async def reply_btn_clan(message: Message):
         parse_mode="HTML",
         reply_markup=klan_main_keyboard(uid, lang),
     )
+
+
+@dp.message(_text_in("🏙 Город", "🏙 City"), F.chat.type == "private")
+async def reply_btn_city(message: Message):
+    from database import get_or_create_user as _gou
+    uid  = message.from_user.id
+    u    = _gou(message.from_user)
+    track_user(uid)
+
+    if await _check_onboarded(message, u): return
+
+    await cmd_city_profile(message)
 
 
 # ---------- КОМАНДЫ-АЛИАСЫ ДЛЯ РАЗДЕЛОВ ----------
@@ -5717,6 +5738,7 @@ async def main():
     init_klan_db()     # создаёт таблицы кланов
     init_checks_db()   # создаёт таблицы чеков и промокодов
     init_cdl_db()      # создаёт таблицу вкладов
+    init_city_db()     # создаёт таблицы города (арбитражный трейдинг)
 
     # ── Миграция: добавляем поля питомцев для старых пользователей ──
     from database import get_all_users, save_user as _save_mig
@@ -5764,6 +5786,11 @@ async def main():
 
     # ── Запускаем фоновую задачу регенерации HP вне боя ──
     asyncio.create_task(_hp_regen_notify_loop())
+
+    # ── Запускаем фоновые задачи города (цены / путешествия / новости) ──
+    asyncio.create_task(city_prices_loop())
+    asyncio.create_task(city_travel_loop(bot))
+    asyncio.create_task(city_news_loop())
 
     print("🤖 Бот запущен! БД: tgstellar.db")
     await dp.start_polling(bot)
