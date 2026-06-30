@@ -2116,60 +2116,62 @@ async def _handle_duel_cmd(message: Message):
 
     if is_duel_invite_cmd(text):
         # /вз — бросить вызов
-        if uid in _active_battles:
-            await message.reply(cmd_already_in_battle_text(), parse_mode="HTML")
-            return
-        if not is_player_ready(uid, u):
-            hp_now = get_player_hp(uid, u)
-            secs   = player_hp_regen_seconds(uid, u)
-            await message.reply(cmd_no_hp_text(hp_now, secs), parse_mode="HTML")
-            return
+        lock = await _get_user_lock(uid)
+        async with lock:
+            if uid in _active_battles:
+                await message.reply(cmd_already_in_battle_text(), parse_mode="HTML")
+                return
+            if not is_player_ready(uid, u):
+                hp_now = get_player_hp(uid, u)
+                secs   = player_hp_regen_seconds(uid, u)
+                await message.reply(cmd_no_hp_text(hp_now, secs), parse_mode="HTML")
+                return
 
-        # Определяем цель: reply или аргумент
-        target_raw = None
-        if message.reply_to_message and message.reply_to_message.from_user:
-            target_raw = str(message.reply_to_message.from_user.id)
-        else:
-            parts = text.lstrip("/").split(maxsplit=1)
-            if len(parts) > 1:
-                target_raw = parts[1].strip().lstrip("@")
+            # Определяем цель: reply или аргумент
+            target_raw = None
+            if message.reply_to_message and message.reply_to_message.from_user:
+                target_raw = str(message.reply_to_message.from_user.id)
+            else:
+                parts = text.lstrip("/").split(maxsplit=1)
+                if len(parts) > 1:
+                    target_raw = parts[1].strip().lstrip("@")
 
-        if not target_raw:
-            await message.reply(cmd_invite_usage_text(), parse_mode="HTML")
-            return
+            if not target_raw:
+                await message.reply(cmd_invite_usage_text(), parse_mode="HTML")
+                return
 
-        from database import get_user_by_id_or_username as _find_duel_target
-        target = _find_duel_target(target_raw)
+            from database import get_user_by_id_or_username as _find_duel_target
+            target = _find_duel_target(target_raw)
 
-        if not target:
-            await message.reply(cmd_invite_not_found_text(), parse_mode="HTML")
-            return
-        if target["id"] == uid:
-            await message.reply(cmd_invite_self_text(), parse_mode="HTML")
-            return
-        if target["id"] in _active_battles:
-            await message.reply(cmd_invite_in_battle_text(), parse_mode="HTML")
-            return
+            if not target:
+                await message.reply(cmd_invite_not_found_text(), parse_mode="HTML")
+                return
+            if target["id"] == uid:
+                await message.reply(cmd_invite_self_text(), parse_mode="HTML")
+                return
+            if target["id"] in _active_battles:
+                await message.reply(cmd_invite_in_battle_text(), parse_mode="HTML")
+                return
 
-        target_name = _esc(target.get("first_name") or target.get("username") or str(target["id"]))
-        create_challenge(uid, target["id"], target_name)
-        try:
-            await bot.send_message(
-                target["id"],
-                challenge_invite_text(u),
+            target_name = _esc(target.get("first_name") or target.get("username") or str(target["id"]))
+            create_challenge(uid, target["id"], target_name)
+            try:
+                await bot.send_message(
+                    target["id"],
+                    challenge_invite_text(u),
+                    parse_mode="HTML",
+                    reply_markup=challenge_invite_keyboard(uid),
+                )
+            except Exception:
+                await message.reply(cmd_invite_blocked_text(target_name), parse_mode="HTML")
+                cancel_challenge(uid)
+                return
+            await message.reply(
+                duel_challenge_sent_text(target_name),
                 parse_mode="HTML",
-                reply_markup=challenge_invite_keyboard(uid),
+                reply_markup=duel_challenge_sent_keyboard(),
             )
-        except Exception:
-            await message.reply(cmd_invite_blocked_text(target_name), parse_mode="HTML")
-            cancel_challenge(uid)
             return
-        await message.reply(
-            duel_challenge_sent_text(target_name),
-            parse_mode="HTML",
-            reply_markup=duel_challenge_sent_keyboard(),
-        )
-        return
 
 
 @dp.message(F.text.regexp(
@@ -5009,6 +5011,13 @@ async def handle_callback(call: CallbackQuery):
                 )
                 return
             await call.answer()
+            # Вызывающий мог за это время уйти в другой бой (поиск/другая дуэль) —
+            # принятие в этом случае перетёрло бы его текущий активный battle-state.
+            if challenger_uid in _active_battles:
+                cancel_challenge(challenger_uid)
+                await call.answer("❌ Вызывающий уже в другом бою. Вызов отменён.", show_alert=True)
+                await edit(duel_main_text(data), duel_main_keyboard())
+                return
             from database import get_user as _gu_ch
             challenger_data = _gu_ch(challenger_uid)
             if not challenger_data:
@@ -5018,6 +5027,12 @@ async def handle_callback(call: CallbackQuery):
             result = accept_challenge(user.id)
             if not result:
                 await call.answer("❌ Вызов истёк или уже не действителен.", show_alert=True)
+                await edit(duel_main_text(data), duel_main_keyboard())
+                return
+            # Двойная проверка под защитой лока: между предыдущей проверкой и
+            # accept_challenge() вызывающий теоретически мог успеть войти в бой.
+            if challenger_uid in _active_battles:
+                await call.answer("❌ Вызывающий уже в другом бою.", show_alert=True)
                 await edit(duel_main_text(data), duel_main_keyboard())
                 return
             battle = start_challenge_battle(challenger_uid, challenger_data, user.id, data)
