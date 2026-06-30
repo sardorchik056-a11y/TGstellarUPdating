@@ -888,31 +888,49 @@ def _help_text() -> str:
 #  /inventory, /sell и т.д. из main.py)
 # ──────────────────────────────────────────────────────────────────────────
 
-@router.message(Command("city", "трейдер", "trader"))
+@router.message(Command("city", "трейдер", "trader", "тор", "торговля", "город"))
 async def cmd_city_profile(message: Message):
     u = get_city_user(message.from_user.id, message.from_user.username or "")
     inv = get_inventory(u["user_id"])
-    await message.answer(
+    await message.reply(
         _profile_text(u, inv),
         parse_mode="HTML",
         reply_markup=city_main_menu_keyboard(),
     )
 
 
+@router.message(F.text.regexp(
+    r"^(?:тор|торговля|город)(?:\s|$)",
+    flags=__import__("re").IGNORECASE
+))
+async def cmd_city_profile_noslash(message: Message):
+    """Текстовые алиасы раздела города без слеша."""
+    await cmd_city_profile(message)
+
+
 @router.message(Command("citymarket", "рынок", "market"))
 async def cmd_city_shop(message: Message):
-    await message.answer(
+    await message.reply(
         _market_text(),
         parse_mode="HTML",
         reply_markup=city_market_keyboard(),
     )
 
 
+@router.message(F.text.regexp(
+    r"^рынок(?:\s|$)",
+    flags=__import__("re").IGNORECASE
+))
+async def cmd_city_shop_noslash(message: Message):
+    """Текстовый алиас рынка без слеша."""
+    await cmd_city_shop(message)
+
+
 @router.message(Command("citybuy", "купить"))
 async def cmd_city_buy(message: Message):
     args = (message.text or "").split()[1:]
     if len(args) != 2:
-        await message.answer(
+        await message.reply(
             "📝 Использование: <code>/citybuy [товар] [количество]</code>\n"
             "<i>Например: /citybuy зелья 10</i>",
             parse_mode="HTML",
@@ -921,27 +939,27 @@ async def cmd_city_buy(message: Message):
 
     u = get_city_user(message.from_user.id, message.from_user.username or "")
     if _is_traveling(u):
-        await message.answer("🚶 Вы в пути — торговля недоступна до прибытия.")
+        await message.reply("🚶 Вы в пути — торговля недоступна до прибытия.")
         return
 
     item = _parse_item(args[0])
     if not item:
-        await message.answer("❌ Неизвестный товар. Доступно: зелья, свитки, еда.")
+        await message.reply("❌ Неизвестный товар. Доступно: зелья, свитки, еда.")
         return
 
     try:
         qty = int(args[1])
     except ValueError:
-        await message.answer("❌ Количество должно быть числом.")
+        await message.reply("❌ Количество должно быть числом.")
         return
     if qty <= 0:
-        await message.answer("❌ Количество должно быть положительным.")
+        await message.reply("❌ Количество должно быть положительным.")
         return
 
     price = get_price(u["city"], item)
     total = price * qty
     if total > u["balance"]:
-        await message.answer(
+        await message.reply(
             f"💸 Недостаточно {CURRENCY_NAME}. Нужно {_crystals(total)}, у вас {_crystals(u['balance'])}."
         )
         return
@@ -952,7 +970,7 @@ async def cmd_city_buy(message: Message):
     register_trade(u["city"], item, "buy")
     log_trade_qty(qty, "buy")
 
-    await message.answer(
+    await message.reply(
         "✅ <b>СДЕЛКА СОВЕРШЕНА</b>\n"
         "<i>Покупка прошла успешно</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -969,7 +987,7 @@ async def cmd_city_buy(message: Message):
 async def cmd_city_sell(message: Message):
     args = (message.text or "").split()[1:]
     if len(args) != 2:
-        await message.answer(
+        await message.reply(
             "📝 Использование: <code>/citysell [товар] [количество]</code>\n"
             "<i>Например: /citysell свитки 5</i>",
             parse_mode="HTML",
@@ -978,26 +996,26 @@ async def cmd_city_sell(message: Message):
 
     u = get_city_user(message.from_user.id, message.from_user.username or "")
     if _is_traveling(u):
-        await message.answer("🚶 Вы в пути — торговля недоступна до прибытия.")
+        await message.reply("🚶 Вы в пути — торговля недоступна до прибытия.")
         return
 
     item = _parse_item(args[0])
     if not item:
-        await message.answer("❌ Неизвестный товар. Доступно: зелья, свитки, еда.")
+        await message.reply("❌ Неизвестный товар. Доступно: зелья, свитки, еда.")
         return
 
     try:
         qty = int(args[1])
     except ValueError:
-        await message.answer("❌ Количество должно быть числом.")
+        await message.reply("❌ Количество должно быть числом.")
         return
     if qty <= 0:
-        await message.answer("❌ Количество должно быть положительным.")
+        await message.reply("❌ Количество должно быть положительным.")
         return
 
     inv = get_inventory(u["user_id"])
     if qty > inv[item]:
-        await message.answer(f"📦 У вас только <b>{inv[item]}</b> единиц этого товара.", parse_mode="HTML")
+        await message.reply(f"📦 У вас только <b>{inv[item]}</b> единиц этого товара.", parse_mode="HTML")
         return
 
     price = get_price(u["city"], item)
@@ -1007,7 +1025,7 @@ async def cmd_city_sell(message: Message):
     register_trade(u["city"], item, "sell")
     log_trade_qty(qty, "sell")
 
-    await message.answer(
+    await message.reply(
         "✅ <b>СДЕЛКА СОВЕРШЕНА</b>\n"
         "<i>Продажа прошла успешно</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -1119,7 +1137,7 @@ def _traveling_status_text(u: dict) -> str:
 async def cmd_city_travel(message: Message):
     u = get_city_user(message.from_user.id, message.from_user.username or "")
     if _is_traveling(u):
-        await message.answer(
+        await message.reply(
             _traveling_status_text(u),
             parse_mode="HTML",
             reply_markup=city_travel_active_keyboard(_can_cancel_travel(u)),
@@ -1128,7 +1146,7 @@ async def cmd_city_travel(message: Message):
 
     args = (message.text or "").split()[1:]
     if len(args) != 1:
-        await message.answer(
+        await message.reply(
             f"{_tge('travel', '🧭')} <b>КУДА ОТПРАВЛЯЕМСЯ?</b>\n<i>Выберите пункт назначения</i> ✨\n━━━━━━━━━━━━━━━━━━━━",
             parse_mode="HTML",
             reply_markup=city_travel_keyboard(),
@@ -1137,11 +1155,11 @@ async def cmd_city_travel(message: Message):
 
     dest = _parse_city(args[0])
     if not dest:
-        await message.answer("❌ Неизвестный город. Доступно: Северный, Южный, Столица.")
+        await message.reply("❌ Неизвестный город. Доступно: Северный, Южный, Столица.")
         return
 
     ok, text = await _do_travel(message.from_user.id, message.from_user.username or "", dest)
-    await message.answer(
+    await message.reply(
         text, parse_mode="HTML",
         reply_markup=city_travel_active_keyboard(True) if ok else None,
     )
@@ -1150,14 +1168,14 @@ async def cmd_city_travel(message: Message):
 @router.message(Command("citycancel", "отмена", "cancel"))
 async def cmd_city_cancel_travel(message: Message):
     ok, text = await _do_cancel_travel(message.from_user.id, message.from_user.username or "")
-    await message.answer(text, parse_mode="HTML", reply_markup=city_back_keyboard())
+    await message.reply(text, parse_mode="HTML", reply_markup=city_back_keyboard())
 
 
 @router.message(Command("citybag", "сумка", "bag"))
 async def cmd_city_inventory(message: Message):
     u = get_city_user(message.from_user.id, message.from_user.username or "")
     inv = get_inventory(u["user_id"])
-    await message.answer(
+    await message.reply(
         _bag_text(inv),
         parse_mode="HTML",
         reply_markup=city_bag_keyboard(),
@@ -1166,7 +1184,7 @@ async def cmd_city_inventory(message: Message):
 
 @router.message(Command("citynews", "новости"))
 async def cmd_city_news(message: Message):
-    await message.answer(
+    await message.reply(
         _news_text(),
         parse_mode="HTML",
         reply_markup=city_news_keyboard(),
@@ -1175,7 +1193,7 @@ async def cmd_city_news(message: Message):
 
 @router.message(Command("cityroute", "маршрут", "route"))
 async def cmd_city_trade_route(message: Message):
-    await message.answer(
+    await message.reply(
         _route_text(),
         parse_mode="HTML",
         reply_markup=city_route_keyboard(),
@@ -1184,7 +1202,7 @@ async def cmd_city_trade_route(message: Message):
 
 @router.message(Command("help", "помощь", "cityhelp"))
 async def cmd_city_help(message: Message):
-    await message.answer(
+    await message.reply(
         _help_text(),
         parse_mode="HTML",
         reply_markup=city_help_keyboard(),
@@ -1197,7 +1215,7 @@ async def cmd_city_exchange(message: Message):
     args = (message.text or "").split()[1:]
 
     if not args:
-        await message.answer(
+        await message.reply(
             _exchange_text(u),
             parse_mode="HTML",
             reply_markup=city_exchange_keyboard(),
@@ -1211,7 +1229,7 @@ async def cmd_city_exchange(message: Message):
         try:
             qty = int(raw)
         except ValueError:
-            await message.answer(
+            await message.reply(
                 f"📝 Использование: <code>/cityexchange [количество]</code>\n"
                 f"<i>Например: /cityexchange 20 или /cityexchange все</i>",
                 parse_mode="HTML",
@@ -1219,10 +1237,10 @@ async def cmd_city_exchange(message: Message):
             return
 
     if qty <= 0:
-        await message.answer("❌ Количество должно быть положительным.")
+        await message.reply("❌ Количество должно быть положительным.")
         return
     if qty > u["balance"]:
-        await message.answer(
+        await message.reply(
             f"{_tge('currency', CURRENCY_EMOJI)} У тебя только <b>{_fmt(u['balance'])}</b> {CURRENCY_NAME}.",
             parse_mode="HTML",
         )
@@ -1230,12 +1248,12 @@ async def cmd_city_exchange(message: Message):
 
     ok, err, coins, rate = exchange_crystals_for_coins(message.from_user.id, qty)
     if not ok:
-        await message.answer(err, parse_mode="HTML")
+        await message.reply(err, parse_mode="HTML")
         return
 
     update_city_user(u["user_id"], balance=u["balance"] - qty)
 
-    await message.answer(
+    await message.reply(
         f"{_tge('exchange', '🔁')} <b>ОБМЕН СОВЕРШЁН</b>\n"
         "<i>Кристаллы зачислены в монеты основного бота</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -1254,8 +1272,26 @@ async def cmd_city_exchange(message: Message):
 from aiogram.types import CallbackQuery  # noqa: E402
 
 
+def _city_check_owner(call: CallbackQuery) -> bool:
+    """Проверяет, что кнопку нажимает тот же пользователь, который вызвал
+    команду города (сообщение бота было отправлено через .reply()).
+    Возвращает True, если можно продолжать обработку."""
+    owner_msg = call.message.reply_to_message
+    if owner_msg and owner_msg.from_user:
+        if call.from_user.id != owner_msg.from_user.id:
+            return False
+    return True
+
+
+async def _city_deny(call: CallbackQuery):
+    await call.answer("❌ Это не ваша кнопка!", show_alert=True)
+
+
 @router.callback_query(F.data == "city_nav_profile")
 async def cb_city_profile(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
     u = get_city_user(call.from_user.id, call.from_user.username or "")
     inv = get_inventory(u["user_id"])
     await call.message.edit_text(
@@ -1266,6 +1302,9 @@ async def cb_city_profile(call: CallbackQuery):
 
 @router.callback_query(F.data == "city_nav_market")
 async def cb_city_market(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
     await call.message.edit_text(
         _market_text(), parse_mode="HTML", reply_markup=city_market_keyboard()
     )
@@ -1274,6 +1313,9 @@ async def cb_city_market(call: CallbackQuery):
 
 @router.callback_query(F.data == "city_nav_bag")
 async def cb_city_bag(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
     inv = get_inventory(call.from_user.id)
     await call.message.edit_text(
         _bag_text(inv), parse_mode="HTML", reply_markup=city_bag_keyboard()
@@ -1283,6 +1325,9 @@ async def cb_city_bag(call: CallbackQuery):
 
 @router.callback_query(F.data == "city_nav_news")
 async def cb_city_news(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
     await call.message.edit_text(
         _news_text(), parse_mode="HTML", reply_markup=city_news_keyboard()
     )
@@ -1291,6 +1336,9 @@ async def cb_city_news(call: CallbackQuery):
 
 @router.callback_query(F.data == "city_nav_exchange")
 async def cb_city_exchange(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
     u = get_city_user(call.from_user.id, call.from_user.username or "")
     await call.message.edit_text(
         _exchange_text(u), parse_mode="HTML", reply_markup=city_exchange_keyboard()
@@ -1300,6 +1348,9 @@ async def cb_city_exchange(call: CallbackQuery):
 
 @router.callback_query(F.data == "city_nav_route")
 async def cb_city_route(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
     await call.message.edit_text(
         _route_text(), parse_mode="HTML", reply_markup=city_route_keyboard()
     )
@@ -1308,6 +1359,9 @@ async def cb_city_route(call: CallbackQuery):
 
 @router.callback_query(F.data == "city_nav_help")
 async def cb_city_help(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
     await call.message.edit_text(
         _help_text(), parse_mode="HTML", reply_markup=city_help_keyboard()
     )
@@ -1316,6 +1370,9 @@ async def cb_city_help(call: CallbackQuery):
 
 @router.callback_query(F.data == "city_nav_travel")
 async def cb_city_travel_menu(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
     u = get_city_user(call.from_user.id, call.from_user.username or "")
     if _is_traveling(u):
         await call.message.edit_text(
@@ -1336,6 +1393,9 @@ async def cb_city_travel_menu(call: CallbackQuery):
 
 @router.callback_query(F.data.startswith("city_go_"))
 async def cb_city_go(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
     dest = call.data.replace("city_go_", "", 1)
     if dest not in CITIES:
         await call.answer("Неизвестный город", show_alert=True)
@@ -1350,6 +1410,9 @@ async def cb_city_go(call: CallbackQuery):
 
 @router.callback_query(F.data == "city_cancel_travel")
 async def cb_city_cancel_travel(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
     ok, text = await _do_cancel_travel(call.from_user.id, call.from_user.username or "")
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=city_back_keyboard())
     await call.answer()
