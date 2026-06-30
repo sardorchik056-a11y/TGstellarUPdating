@@ -1967,7 +1967,6 @@ def _create_battle(uid1: int, data1: dict, uid2: int, data2: dict) -> dict:
         "p2_frozen": False,
         "p1_cooldowns": {},
         "p2_cooldowns": {},
-        "turn": uid1,
         "started_at": now,
         "last_action": now,
         "log": [],
@@ -2849,18 +2848,6 @@ def duel_hp_status_text(uid: int, user_data: dict) -> str:
         f'</blockquote>'
     )
 
-
-
-    labels = {
-        "search": "Поиск противника",
-        "invite": "Пригласить на поединок",
-        "skills": "Навыки",
-    }
-    name = labels.get(section, section)
-    return (
-        f'<tg-emoji emoji-id="{EMOJI_DUEL_MAIN}">⚔️</tg-emoji> <b>{name}</b>\n\n'
-        '<blockquote>🚧 Раздел в разработке.\nСкоро будет доступен!</blockquote>'
-    )
 
 def duel_soon_text(section: str) -> str:
     labels = {
