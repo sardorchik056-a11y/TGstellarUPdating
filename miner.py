@@ -329,11 +329,11 @@ def _fmt_num(n) -> str:
 # с заданным шансом (в процентах).
 THRESHOLD_ORES = {
     # key        : (tick_threshold, chance_pct)
-    "amethyst"   : (300, 70.0),
-    "jade"       : (300, 40.0),
-    "emerald"    : (300, 20.0),
-    "obsidian"   : (300, 10.0),
-    "sapphire"   : (300,  5.0),
+    "amethyst"   : (300, 65.0),
+    "jade"       : (300, 25.0),
+    "emerald"    : (300, 12.0),
+    "obsidian"   : (300, 5.0),
+    "sapphire"   : (300,  2.0),
 }
 
 # Множество ключей, исключённых из обычного weight-броска
