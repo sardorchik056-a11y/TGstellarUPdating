@@ -88,6 +88,25 @@ ALIAS_TO_CITY = {
     "столица": "Столица", "capital": "Столица",
 }
 
+
+def _tge(key: str, fallback: str) -> str:
+    """Возвращает <tg-emoji> тег с кастомным id, либо обычный эмодзи если id не задан."""
+    eid = BTN_EMOJI.get(key)
+    if not eid:
+        return fallback
+    return f'<tg-emoji emoji-id="{eid}">{fallback}</tg-emoji>'
+
+
+CITY_TGE_KEY = {
+    "Северный": "city_north",
+    "Южный": "city_south",
+    "Столица": "city_capital",
+}
+
+
+def _city_emoji_tag(city: str) -> str:
+    return _tge(CITY_TGE_KEY.get(city, ""), CITY_EMOJI.get(city, "🏙"))
+
 # ──────────────────────────────────────────────────────────────────────────
 # БД
 # ──────────────────────────────────────────────────────────────────────────
@@ -542,7 +561,7 @@ def _profile_text(u: dict, inv: dict) -> str:
         "<i>Личный кабинет искателя прибыли</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{CURRENCY_EMOJI} Баланс: <b>{_fmt(u['balance'])}</b> <i>{CURRENCY_NAME}</i>\n"
-        f"{CITY_EMOJI.get(u['city'], '🏙')} Город: <b>{u['city']}</b>\n"
+        f"{_city_emoji_tag(u['city'])} Город: <b>{u['city']}</b>\n"
         f"📡 Статус: {status_line}\n\n"
         "📦 <b>Склад</b>\n"
         f"  {ITEMS['potions']['emoji']} Зелья — <b>{inv['potions']}</b> <i>шт.</i>\n"
@@ -556,12 +575,12 @@ def _profile_text(u: dict, inv: dict) -> str:
 def _market_text() -> str:
     prices = get_all_prices()
     lines = [
-        "🏪 <b>ТОРГОВЫЕ РЯДЫ</b>",
+        f"{_tge('market', '🏪')} <b>ТОРГОВЫЕ РЯДЫ</b>",
         "<i>Актуальные цены по всем городам</i> ✨",
         "━━━━━━━━━━━━━━━━━━━━\n",
     ]
     for city in CITIES:
-        lines.append(f"{CITY_EMOJI[city]} <b>{city}</b>")
+        lines.append(f"{_city_emoji_tag(city)} <b>{city}</b>")
         for item, info in ITEMS.items():
             p = prices[city][item]
             lines.append(f"   {info['emoji']} <i>{info['name']}</i> — <b>{p}</b> {CURRENCY_EMOJI}")
@@ -575,7 +594,7 @@ def _market_text() -> str:
 def _bag_text(inv: dict) -> str:
     total_items = sum(inv.values())
     return (
-        "🎒 <b>ИНВЕНТАРЬ ТОРГОВЦА</b>\n"
+        f"{_tge('bag', '🎒')} <b>ИНВЕНТАРЬ ТОРГОВЦА</b>\n"
         "<i>Что лежит у вас на складе</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{ITEMS['potions']['emoji']} Зелья: <b>{inv['potions']}</b> <i>шт.</i>\n"
@@ -591,14 +610,14 @@ def _news_text() -> str:
     news = get_active_news()
     if not news:
         return (
-            "🗞 <b>ТОРГОВЫЕ СЛУХИ</b>\n"
+            f"{_tge('news', '🗞')} <b>ТОРГОВЫЕ СЛУХИ</b>\n"
             "<i>Прогнозы рынка на ближайшие часы</i> ✨\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
             "<i>Пока тихо... странники ещё не принесли новостей.\n"
             "Загляните чуть позже.</i>"
         )
     lines = [
-        "🗞 <b>ТОРГОВЫЕ СЛУХИ</b>",
+        f"{_tge('news', '🗞')} <b>ТОРГОВЫЕ СЛУХИ</b>",
         "<i>Прогнозы рынка на ближайшие часы</i> ✨",
         "━━━━━━━━━━━━━━━━━━━━\n",
     ]
@@ -622,12 +641,12 @@ def _route_text() -> str:
     info = ITEMS[best["item"]]
     margin_pct = round(best["profit"] / max(1, best["buy_price"]) * 100)
     return (
-        "📈 <b>ЛУЧШИЙ ТОРГОВЫЙ МАРШРУТ</b>\n"
+        f"📈 <b>ЛУЧШИЙ ТОРГОВЫЙ МАРШРУТ</b>\n"
         "<i>Подсказка гильдии — где заработать прямо сейчас</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{info['emoji']} Товар: <b>{info['name']}</b>\n\n"
-        f"🛒 Купить в {CITY_EMOJI[best['buy_city']]} <b>{best['buy_city']}</b> — <b>{best['buy_price']}</b> {CURRENCY_EMOJI}\n"
-        f"💰 Продать в {CITY_EMOJI[best['sell_city']]} <b>{best['sell_city']}</b> — <b>{best['sell_price']}</b> {CURRENCY_EMOJI}\n\n"
+        f"🛒 Купить в {_city_emoji_tag(best['buy_city'])} <b>{best['buy_city']}</b> — <b>{best['buy_price']}</b> {CURRENCY_EMOJI}\n"
+        f"💰 Продать в {_city_emoji_tag(best['sell_city'])} <b>{best['sell_city']}</b> — <b>{best['sell_price']}</b> {CURRENCY_EMOJI}\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"📊 Прибыль с единицы: <b>+{best['profit']}</b> {CURRENCY_EMOJI} <i>(≈{margin_pct}%)</i>"
     )
@@ -635,28 +654,28 @@ def _route_text() -> str:
 
 def _help_text() -> str:
     return (
-        "❓ <b>СПРАВКА ПО ТРЕЙДИНГУ</b>\n"
+        f"{_tge('help', '❓')} <b>СПРАВКА ПО ТРЕЙДИНГУ</b>\n"
         "<i>Арбитражная торговля между городами</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         "<b>📋 Команды</b>\n"
         "👤 <code>/city</code> — <i>профиль торговца: баланс, город, статус, склад</i>\n"
-        "🏪 <code>/citymarket</code> — <i>цены на товары во всех городах</i>\n"
+        f"{_tge('market', '🏪')} <code>/citymarket</code> — <i>цены на товары во всех городах</i>\n"
         "🛒 <code>/citybuy товар количество</code> — <i>купить товар</i>\n"
         "💰 <code>/citysell товар количество</code> — <i>продать товар</i>\n"
-        "🧭 <code>/citytravel город</code> — <i>отправиться в другой город</i>\n"
-        "❌ <code>/citycancel</code> — <i>отменить поездку (только в первые 2 минуты)</i>\n"
-        "🎒 <code>/citybag</code> — <i>инвентарь</i>\n"
-        "🗞 <code>/citynews</code> — <i>слухи и прогнозы цен на 2 часа вперёд</i>\n"
-        "🗺 <code>/cityroute</code> — <i>самый выгодный маршрут прямо сейчас</i>\n"
-        "❓ <code>/help</code> — <i>эта справка</i>\n\n"
+        f"{_tge('travel', '🧭')} <code>/citytravel город</code> — <i>отправиться в другой город</i>\n"
+        f"{_tge('cancel_travel', '❌')} <code>/citycancel</code> — <i>отменить поездку (только в первые 2 минуты)</i>\n"
+        f"{_tge('bag', '🎒')} <code>/citybag</code> — <i>инвентарь</i>\n"
+        f"{_tge('news', '🗞')} <code>/citynews</code> — <i>слухи и прогнозы цен на 2 часа вперёд</i>\n"
+        f"{_tge('route', '🗺')} <code>/cityroute</code> — <i>самый выгодный маршрут прямо сейчас</i>\n"
+        f"{_tge('help', '❓')} <code>/help</code> — <i>эта справка</i>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "<b>📦 Товары</b>\n"
         f"  {ITEMS['potions']['emoji']} Зелья — <i>дёшевы на Севере, дороги на Юге</i>\n"
         f"  {ITEMS['scrolls']['emoji']} Свитки — <i>дёшевы на Юге, дороги на Севере</i>\n"
         f"  {ITEMS['food']['emoji']} Еда — <i>дешевле на Юге, дороже на Севере</i>\n"
-        "  🏛 Столица — <i>всё дорого, но цены стабильнее</i>\n\n"
+        f"  {_tge('city_capital', '🏛')} Столица — <i>всё дорого, но цены стабильнее</i>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "<b>🧭 Путешествия</b>\n"
+        f"<b>{_tge('travel', '🧭')} Путешествия</b>\n"
         f"  • Стоимость дороги: <b>{TRAVEL_COST}</b> {CURRENCY_EMOJI}\n"
         f"  • Время в пути: <b>{TRAVEL_MINUTES}</b> минут\n"
         "  • <i>Во время пути торговля недоступна</i>\n\n"
@@ -917,7 +936,7 @@ async def cmd_city_travel(message: Message):
     args = (message.text or "").split()[1:]
     if len(args) != 1:
         await message.answer(
-            "🧭 <b>КУДА ОТПРАВЛЯЕМСЯ?</b>\n<i>Выберите пункт назначения</i> ✨\n━━━━━━━━━━━━━━━━━━━━",
+            f"{_tge('travel', '🧭')} <b>КУДА ОТПРАВЛЯЕМСЯ?</b>\n<i>Выберите пункт назначения</i> ✨\n━━━━━━━━━━━━━━━━━━━━",
             parse_mode="HTML",
             reply_markup=city_travel_keyboard(),
         )
@@ -1050,7 +1069,7 @@ async def cb_city_travel_menu(call: CallbackQuery):
         return
 
     await call.message.edit_text(
-        "🧭 <b>КУДА ОТПРАВЛЯЕМСЯ?</b>\n<i>Выберите пункт назначения</i> ✨\n━━━━━━━━━━━━━━━━━━━━",
+        f"{_tge('travel', '🧭')} <b>КУДА ОТПРАВЛЯЕМСЯ?</b>\n<i>Выберите пункт назначения</i> ✨\n━━━━━━━━━━━━━━━━━━━━",
         parse_mode="HTML",
         reply_markup=city_travel_keyboard(),
     )
