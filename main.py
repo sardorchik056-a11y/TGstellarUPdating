@@ -728,6 +728,36 @@ async def cmd_updamage(message: Message):
 
 
 
+@dp.message(Command("addalldiamond"))
+async def cmd_addalldiamond(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return  # тихо игнорируем
+
+    parts = message.text.strip().split(maxsplit=1)
+    if len(parts) != 2:
+        await message.reply(
+            "❌ Неверный формат.\nИспользование: <code>/addalldiamond сумма</code>\n"
+            "<i>Например: /addalldiamond 500 или /addalldiamond 1к</i>",
+            parse_mode="HTML"
+        )
+        return
+
+    amount = _parse_amount(parts[1])
+    if amount is None or amount == 0:
+        await message.reply("❌ Не удалось распознать сумму.", parse_mode="HTML")
+        return
+
+    from city import add_crystals_to_all
+    count = add_crystals_to_all(amount)
+
+    sign = "+" if amount > 0 else ""
+    await message.reply(
+        f"💎 <b>Кристаллы начислены!</b>\n"
+        f"Всем игрокам города ({count}) выдано <b>{sign}{amount}</b> кристаллов.",
+        parse_mode="HTML"
+    )
+
+
 @dp.message(Command("getstatus"))
 async def cmd_getstatus(message: Message):
     if message.from_user.id not in ADMIN_IDS:
