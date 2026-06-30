@@ -95,6 +95,10 @@ EXCHANGE_WINDOW_SECONDS = 600  # окно анализа активности р
 EXCHANGE_VOLUME_TARGET = 100   # объём покупок в окне, после которого курс максимален
 EXCHANGE_JITTER = 15           # случайное колебание курса (±)
 EXCHANGE_RECALC_SECONDS = 60   # как часто пересчитывается курс фоновой задачей
+EXCHANGE_PER_USER_CAP = 4       # макс. объём ОДНОГО игрока, который учитывается в расчёте курса
+                                 # (защита от накрутки курса одним игроком). При EXCHANGE_VOLUME_TARGET=100
+                                 # курс достигает максимума только если активно покупают 25+ разных игроков
+                                 # (100 / 4 = 25), даже если каждый из них купит сколько угодно товара.
 
 COIN_EMOJI_ID = "5199552030615558774"
 COIN_TAG = f'<tg-emoji emoji-id="{COIN_EMOJI_ID}">🪙</tg-emoji>'
@@ -198,9 +202,15 @@ def init_city_db():
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
                 ts        INTEGER NOT NULL,
                 action    TEXT NOT NULL,
-                qty       INTEGER NOT NULL
+                qty       INTEGER NOT NULL,
+                user_id   INTEGER
             )
         """)
+        # Миграция: добавляем user_id, если таблица создана старой версией кода —
+        # без него нельзя отличить покупки одного игрока от покупок многих игроков.
+        log_cols = [r["name"] for r in conn.execute("PRAGMA table_info(city_trade_log)").fetchall()]
+        if "user_id" not in log_cols:
+            conn.execute("ALTER TABLE city_trade_log ADD COLUMN user_id INTEGER")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_meta (
                 key   TEXT PRIMARY KEY,
@@ -453,28 +463,36 @@ def update_all_prices():
 
 # ---------- обмен (кристаллы → монеты) ----------
 
-def log_trade_qty(qty: int, action: str):
+def log_trade_qty(uid: int, qty: int, action: str):
     """Пишет реальный объём сделки (в штуках товара) для расчёта курса обмена.
     Учитываются именно покупки на рынке гильдии — чем активнее скупают товар,
-    тем выгоднее становится курс обмена кристаллов на монеты."""
+    тем выгоднее становится курс обмена кристаллов на монеты. user_id нужен,
+    чтобы при расчёте курса нельзя было накрутить его в одиночку (см.
+    get_recent_buy_volume)."""
     with _conn() as conn:
         conn.execute(
-            "INSERT INTO city_trade_log (ts, action, qty) VALUES (?,?,?)",
-            (int(time.time()), action, qty),
+            "INSERT INTO city_trade_log (ts, action, qty, user_id) VALUES (?,?,?,?)",
+            (int(time.time()), action, qty, uid),
         )
         conn.commit()
 
 
 def get_recent_buy_volume(window: int = EXCHANGE_WINDOW_SECONDS) -> int:
-    """Сколько единиц товара куплено во всех городах за последние `window` секунд."""
+    """Сколько единиц товара куплено за последние `window` секунд — но с защитой
+    от накрутки одним игроком: вклад каждого отдельного user_id ограничен
+    EXCHANGE_PER_USER_CAP, после чего вклады суммируются. Так курс действительно
+    растёт за счёт совокупной активности МНОГИХ игроков, а не закупок одного."""
     since = int(time.time()) - window
     with _conn() as conn:
-        row = conn.execute(
-            "SELECT COALESCE(SUM(qty), 0) AS total FROM city_trade_log "
-            "WHERE action='buy' AND ts>=?",
+        rows = conn.execute(
+            "SELECT user_id, COALESCE(SUM(qty), 0) AS total FROM city_trade_log "
+            "WHERE action='buy' AND ts>=? GROUP BY user_id",
             (since,),
-        ).fetchone()
-    return row["total"] or 0
+        ).fetchall()
+    total = 0
+    for r in rows:
+        total += min(r["total"] or 0, EXCHANGE_PER_USER_CAP)
+    return total
 
 
 def _compute_exchange_rate() -> int:
@@ -1088,7 +1106,7 @@ async def cmd_city_buy(message: Message):
         return
     try_adjust_inventory(u["user_id"], item, qty)  # для покупки всегда успешна (нет верхнего лимита)
     register_trade(u["city"], item, "buy")
-    log_trade_qty(qty, "buy")
+    log_trade_qty(u["user_id"], qty, "buy")
 
     await message.reply(
         "✅ <b>СДЕЛКА СОВЕРШЕНА</b>\n"
@@ -1146,7 +1164,7 @@ async def cmd_city_sell(message: Message):
     total = price * qty
     add_balance(u["user_id"], total)
     register_trade(u["city"], item, "sell")
-    log_trade_qty(qty, "sell")
+    log_trade_qty(u["user_id"], qty, "sell")
 
     await message.reply(
         "✅ <b>СДЕЛКА СОВЕРШЕНА</b>\n"
