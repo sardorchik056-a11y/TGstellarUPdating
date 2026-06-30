@@ -48,6 +48,7 @@ CITY_MODIFIERS = {
 
 TRAVEL_COST = 50
 TRAVEL_MINUTES = 15
+TRAVEL_CANCEL_WINDOW = 120  # сек. — в течение скольких секунд после старта можно отменить поездку
 CUSTOMS_LIMIT = 200          # лимит единиц товара, выше которого возможна конфискация
 CUSTOMS_CHANCE = 0.30        # шанс конфискации
 CUSTOMS_FINE = 50
@@ -89,9 +90,15 @@ def init_city_db():
                 balance        INTEGER NOT NULL DEFAULT 1000,
                 city           TEXT NOT NULL DEFAULT 'Столица',
                 status         TEXT NOT NULL DEFAULT 'free',
-                travel_end_time INTEGER
+                travel_end_time INTEGER,
+                travel_from    TEXT
             )
         """)
+        # Миграция для уже существующих баз — добавляем колонку travel_from,
+        # если её ещё нет (нужна, чтобы знать, куда вернуть игрока при отмене поездки).
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(city_users)").fetchall()]
+        if "travel_from" not in cols:
+            conn.execute("ALTER TABLE city_users ADD COLUMN travel_from TEXT")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_inventory (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -355,6 +362,19 @@ def _is_traveling(u: dict) -> bool:
     return int(time.time()) < end
 
 
+def _travel_elapsed(u: dict) -> int:
+    """Сколько секунд прошло с момента начала текущей поездки."""
+    end = u["travel_end_time"]
+    if end is None:
+        return 0
+    start = end - TRAVEL_MINUTES * 60
+    return max(0, int(time.time()) - start)
+
+
+def _can_cancel_travel(u: dict) -> bool:
+    return _is_traveling(u) and _travel_elapsed(u) < TRAVEL_CANCEL_WINDOW
+
+
 def _parse_item(raw: str):
     return ALIAS_TO_ITEM.get(raw.strip().lower())
 
@@ -406,9 +426,6 @@ def city_main_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🗞 Новости", callback_data="city_nav_news"),
         InlineKeyboardButton(text="❓ Помощь", callback_data="city_nav_help"),
     )
-    builder.row(
-        InlineKeyboardButton(text="🔄 Обновить", callback_data="city_nav_profile"),
-    )
     return builder.as_markup()
 
 
@@ -422,9 +439,6 @@ def city_back_keyboard() -> InlineKeyboardMarkup:
 
 def city_market_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="🔄 Обновить цены", callback_data="city_nav_market"),
-    )
     builder.row(
         InlineKeyboardButton(text="🎒 Сумка", callback_data="city_nav_bag"),
         InlineKeyboardButton(text="🗺 Маршрут", callback_data="city_nav_route"),
@@ -445,14 +459,12 @@ def city_bag_keyboard() -> InlineKeyboardMarkup:
 
 def city_news_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🔄 Обновить", callback_data="city_nav_news"))
     builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile"))
     return builder.as_markup()
 
 
 def city_route_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🔄 Пересчитать", callback_data="city_nav_route"))
     builder.row(
         InlineKeyboardButton(text="🏪 Рынок", callback_data="city_nav_market"),
         InlineKeyboardButton(text="🧭 В путь", callback_data="city_nav_travel"),
@@ -474,6 +486,16 @@ def city_travel_keyboard() -> InlineKeyboardMarkup:
             text=f"{CITY_EMOJI[city]} {city}",
             callback_data=f"city_go_{city}",
         ))
+    builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile"))
+    return builder.as_markup()
+
+
+def city_travel_active_keyboard(can_cancel: bool) -> InlineKeyboardMarkup:
+    """Показывается сразу после старта поездки. Пока не истекло окно отмены —
+    предлагает кнопку отмены."""
+    builder = InlineKeyboardBuilder()
+    if can_cancel:
+        builder.row(InlineKeyboardButton(text="❌ Отменить поездку", callback_data="city_cancel_travel"))
     builder.row(InlineKeyboardButton(text="🏠 В главное меню", callback_data="city_nav_profile"))
     return builder.as_markup()
 
@@ -555,7 +577,11 @@ def _news_text() -> str:
         "━━━━━━━━━━━━━━━━━━━━\n",
     ]
     for n in news:
-        lines.append(f"🔮 <i>{n['news_text']}</i>")
+        published = datetime.fromtimestamp(n["created_at"]).strftime("%H:%M")
+        lines.append(
+            f"🔮 <i>{n['news_text']}</i>\n"
+            f"🕒 <i>опубликовано в {published}</i>"
+        )
     return "\n\n".join(lines)
 
 
@@ -592,6 +618,7 @@ def _help_text() -> str:
         "🛒 <code>/citybuy товар количество</code> — <i>купить товар</i>\n"
         "💰 <code>/citysell товар количество</code> — <i>продать товар</i>\n"
         "🧭 <code>/citytravel город</code> — <i>отправиться в другой город</i>\n"
+        "❌ <code>/citycancel</code> — <i>отменить поездку (только в первые 2 минуты)</i>\n"
         "🎒 <code>/citybag</code> — <i>инвентарь</i>\n"
         "🗞 <code>/citynews</code> — <i>слухи и прогнозы цен на 2 часа вперёд</i>\n"
         "🗺 <code>/cityroute</code> — <i>самый выгодный маршрут прямо сейчас</i>\n"
@@ -765,6 +792,8 @@ async def _do_travel(user_id: int, username: str, dest: str):
     if u["balance"] < TRAVEL_COST:
         return False, f"💸 Недостаточно {CURRENCY_NAME} на дорогу. Нужно {_crystals(TRAVEL_COST)}."
 
+    origin_city = u["city"]
+
     inv = get_inventory(u["user_id"])
     confiscated = []
     fine_total = 0
@@ -782,15 +811,19 @@ async def _do_travel(user_id: int, username: str, dest: str):
         status="traveling",
         travel_end_time=end_time,
         city=dest,
+        travel_from=origin_city,
     )
 
+    cancel_min = TRAVEL_CANCEL_WINDOW // 60
     text = (
         "🧭 <b>В ПУТЬ!</b>\n"
         "<i>Караван покидает город</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"Направление: {CITY_EMOJI.get(dest, '🏙')} <b>{dest}</b>\n"
         f"⏳ Прибытие через <b>{TRAVEL_MINUTES}</b> <i>минут</i>\n"
-        f"{CURRENCY_EMOJI} Дорога стоила: <b>{TRAVEL_COST}</b> <i>{CURRENCY_NAME}</i>"
+        f"{CURRENCY_EMOJI} Дорога стоила: <b>{TRAVEL_COST}</b> <i>{CURRENCY_NAME}</i>\n\n"
+        f"<i>Передумали? В первые {cancel_min} минуты поездку можно отменить "
+        f"(плата за дорогу не возвращается).</i>"
     )
     if confiscated:
         text += (
@@ -802,8 +835,59 @@ async def _do_travel(user_id: int, username: str, dest: str):
     return True, text
 
 
+async def _do_cancel_travel(user_id: int, username: str):
+    """Отменяет текущую поездку, если прошло меньше TRAVEL_CANCEL_WINDOW секунд.
+    Деньги за дорогу НЕ возвращаются."""
+    u = get_city_user(user_id, username)
+    if not _is_traveling(u):
+        return False, "📍 Вы сейчас никуда не едете."
+    if not _can_cancel_travel(u):
+        return False, "⏳ Время на отмену уже истекло — поездку можно только завершить."
+
+    origin = u["travel_from"] or u["city"]
+    update_city_user(
+        u["user_id"],
+        status="free",
+        travel_end_time=None,
+        travel_from=None,
+        city=origin,
+    )
+    text = (
+        "❌ <b>ПОЕЗДКА ОТМЕНЕНА</b>\n"
+        "<i>Вы вернулись назад</i> ✨\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{CITY_EMOJI.get(origin, '🏙')} Вы снова в городе <b>{origin}</b>\n"
+        f"<i>Плата за дорогу не возвращается.</i>"
+    )
+    return True, text
+
+
+def _traveling_status_text(u: dict) -> str:
+    left = u["travel_end_time"] - int(time.time())
+    m, s = max(0, left // 60), max(0, left % 60)
+    text = (
+        "🚶 <b>ВЫ В ПУТИ</b>\n"
+        f"<i>Прибытие через {m} мин {s} сек</i> ✨\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Направление: {CITY_EMOJI.get(u['city'], '🏙')} <b>{u['city']}</b>"
+    )
+    if _can_cancel_travel(u):
+        left_cancel = TRAVEL_CANCEL_WINDOW - _travel_elapsed(u)
+        text += f"\n\n<i>Поездку ещё можно отменить — осталось {left_cancel} сек.</i>"
+    return text
+
+
 @router.message(Command("citytravel", "путешествие", "ехать"))
 async def cmd_city_travel(message: Message):
+    u = get_city_user(message.from_user.id, message.from_user.username or "")
+    if _is_traveling(u):
+        await message.answer(
+            _traveling_status_text(u),
+            parse_mode="HTML",
+            reply_markup=city_travel_active_keyboard(_can_cancel_travel(u)),
+        )
+        return
+
     args = (message.text or "").split()[1:]
     if len(args) != 1:
         await message.answer(
@@ -819,7 +903,16 @@ async def cmd_city_travel(message: Message):
         return
 
     ok, text = await _do_travel(message.from_user.id, message.from_user.username or "", dest)
-    await message.answer(text, parse_mode="HTML", reply_markup=city_back_keyboard() if ok else None)
+    await message.answer(
+        text, parse_mode="HTML",
+        reply_markup=city_travel_active_keyboard(True) if ok else None,
+    )
+
+
+@router.message(Command("citycancel", "отмена", "cancel"))
+async def cmd_city_cancel_travel(message: Message):
+    ok, text = await _do_cancel_travel(message.from_user.id, message.from_user.username or "")
+    await message.answer(text, parse_mode="HTML", reply_markup=city_back_keyboard())
 
 
 @router.message(Command("citybag", "сумка", "bag"))
@@ -920,6 +1013,16 @@ async def cb_city_help(call: CallbackQuery):
 
 @router.callback_query(F.data == "city_nav_travel")
 async def cb_city_travel_menu(call: CallbackQuery):
+    u = get_city_user(call.from_user.id, call.from_user.username or "")
+    if _is_traveling(u):
+        await call.message.edit_text(
+            _traveling_status_text(u),
+            parse_mode="HTML",
+            reply_markup=city_travel_active_keyboard(_can_cancel_travel(u)),
+        )
+        await call.answer()
+        return
+
     await call.message.edit_text(
         "🧭 <b>КУДА ОТПРАВЛЯЕМСЯ?</b>\n<i>Выберите пункт назначения</i> ✨\n━━━━━━━━━━━━━━━━━━━━",
         parse_mode="HTML",
@@ -936,8 +1039,16 @@ async def cb_city_go(call: CallbackQuery):
         return
     ok, text = await _do_travel(call.from_user.id, call.from_user.username or "", dest)
     await call.message.edit_text(
-        text, parse_mode="HTML", reply_markup=city_back_keyboard() if ok else city_travel_keyboard()
+        text, parse_mode="HTML",
+        reply_markup=city_travel_active_keyboard(True) if ok else city_travel_keyboard(),
     )
+    await call.answer()
+
+
+@router.callback_query(F.data == "city_cancel_travel")
+async def cb_city_cancel_travel(call: CallbackQuery):
+    ok, text = await _do_cancel_travel(call.from_user.id, call.from_user.username or "")
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=city_back_keyboard())
     await call.answer()
 
 
@@ -974,7 +1085,7 @@ async def city_travel_loop(bot):
                 ).fetchall()
                 for r in rows:
                     conn.execute(
-                        "UPDATE city_users SET status='free', travel_end_time=NULL WHERE user_id=?",
+                        "UPDATE city_users SET status='free', travel_end_time=NULL, travel_from=NULL WHERE user_id=?",
                         (r["user_id"],),
                     )
                 conn.commit()
