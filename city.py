@@ -83,10 +83,10 @@ CUSTOMS_FINE = 50
 NEWS_TRUE_CHANCE = 0.60      # вероятность, что подсказка сбудется
 NEWS_LIFETIME_HOURS = 2
 
-START_BALANCE = 50           # стартовый баланс кристаллов
+START_BALANCE = 500          # стартовый баланс кристаллов
 START_CITY = "Столица"
 
-DAILY_CRYSTALS = 50          # сколько кристаллов выдаётся раз в день
+DAILY_CRYSTALS = 100         # сколько кристаллов выдаётся раз в день
 
 # ── ОБМЕН: кристаллы → монеты (только в одну сторону, обратно купить нельзя) ──
 EXCHANGE_MIN_RATE = 100        # минимальный курс (монет за 1 кристалл)
@@ -273,6 +273,15 @@ def update_city_user(user_id: int, **fields):
     with _conn() as conn:
         conn.execute(f"UPDATE city_users SET {sets} WHERE user_id=?", vals)
         conn.commit()
+
+
+def add_crystals_to_all(amount: int) -> int:
+    """Начисляет всем существующим пользователям города указанное количество
+    кристаллов. Возвращает количество затронутых пользователей."""
+    with _conn() as conn:
+        cur = conn.execute("UPDATE city_users SET balance = balance + ?", (amount,))
+        conn.commit()
+        return cur.rowcount
 
 
 def get_inventory(user_id: int) -> dict:
@@ -960,7 +969,8 @@ async def cmd_city_buy(message: Message):
     total = price * qty
     if total > u["balance"]:
         await message.reply(
-            f"💸 Недостаточно {CURRENCY_NAME}. Нужно {_crystals(total)}, у вас {_crystals(u['balance'])}."
+            f"💸 Недостаточно {CURRENCY_NAME}. Нужно {_crystals(total)}, у вас {_crystals(u['balance'])}.",
+            parse_mode="HTML",
         )
         return
 
