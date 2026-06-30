@@ -197,7 +197,7 @@ from donate import (
 from city import (
     router as city_router,
     init_city_db,
-    city_prices_loop, city_travel_loop, city_news_loop,
+    city_prices_loop, city_travel_loop, city_news_loop, city_exchange_loop,
     cmd_city_profile,
 )
 
@@ -5791,6 +5791,7 @@ async def main():
     asyncio.create_task(city_prices_loop())
     asyncio.create_task(city_travel_loop(bot))
     asyncio.create_task(city_news_loop())
+    asyncio.create_task(city_exchange_loop())
 
     print("🤖 Бот запущен! БД: tgstellar.db")
     await dp.start_polling(bot)
