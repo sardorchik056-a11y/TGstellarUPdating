@@ -256,12 +256,20 @@ def get_city_user(user_id: int, username: str = "") -> dict:
             return dict(row)
 
     u = dict(row)
-    # ── Ежедневный бонус кристаллов (идемпотентно — раз в день) ──
+    # ── Ежедневный бонус кристаллов (атомарно и идемпотентно — раз в день) ──
+    # Условие на last_daily проверяется прямо в WHERE, поэтому даже если два
+    # запроса от одного игрока придут одновременно, бонус начислится один раз.
     if u.get("last_daily") != today:
-        new_balance = u["balance"] + DAILY_CRYSTALS
-        update_city_user(user_id, balance=new_balance, last_daily=today)
-        u["balance"] = new_balance
-        u["last_daily"] = today
+        with _conn() as conn:
+            cur = conn.execute(
+                "UPDATE city_users SET balance = balance + ?, last_daily=? "
+                "WHERE user_id=? AND (last_daily IS NULL OR last_daily<>?)",
+                (DAILY_CRYSTALS, today, user_id, today),
+            )
+            conn.commit()
+            if cur.rowcount:
+                row = conn.execute("SELECT * FROM city_users WHERE user_id=?", (user_id,)).fetchone()
+                u = dict(row)
     return u
 
 
@@ -296,6 +304,8 @@ def get_inventory(user_id: int) -> dict:
 
 
 def set_inventory_qty(user_id: int, item_type: str, qty: int):
+    """Жёстко выставляет количество товара. ВНИМАНИЕ: не атомарна относительно
+    параллельных изменений — для покупки/продажи использовать try_adjust_inventory."""
     with _conn() as conn:
         conn.execute(
             "INSERT INTO city_inventory (user_id, item_type, quantity) VALUES (?,?,?) "
@@ -303,6 +313,88 @@ def set_inventory_qty(user_id: int, item_type: str, qty: int):
             (user_id, item_type, max(0, qty)),
         )
         conn.commit()
+
+
+# ---------- атомарные операции с балансом и инвентарём ----------
+# Все изменения баланса/количества товара идут через эти функции:
+# проверка и запись делаются ОДНИМ SQL-запросом с условием в WHERE,
+# поэтому два параллельных запроса (двойной тап, повтор доставки апдейта
+# от Telegram, рестарт во время обработки и т.п.) не могут списать/начислить
+# дважды или увести значение в минус.
+
+def try_spend_balance(user_id: int, amount: int) -> bool:
+    """Атомарно списывает `amount` кристаллов, если их хватает. True — списано."""
+    if amount <= 0:
+        return True
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE city_users SET balance = balance - ? WHERE user_id=? AND balance>=?",
+            (amount, user_id, amount),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def add_balance(user_id: int, amount: int):
+    """Атомарно прибавляет (или, если amount<0, списывает без проверки) кристаллы.
+    Используется для зачислений и для отката ранее списанной суммы."""
+    if amount == 0:
+        return
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE city_users SET balance = balance + ? WHERE user_id=?",
+            (amount, user_id),
+        )
+        conn.commit()
+
+
+def spend_up_to(user_id: int, amount: int):
+    """Атомарно списывает `amount`, но не уводит баланс в минус — если средств
+    не хватает, баланс просто зануляется. Используется для штрафов таможни."""
+    if amount <= 0:
+        return
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE city_users SET balance = CASE WHEN balance>=? THEN balance-? ELSE 0 END "
+            "WHERE user_id=?",
+            (amount, amount, user_id),
+        )
+        conn.commit()
+
+
+def try_adjust_inventory(user_id: int, item_type: str, delta: int) -> bool:
+    """Атомарно меняет количество товара на delta (может быть отрицательным).
+    Не даёт уйти в минус. True — изменение применено."""
+    if delta == 0:
+        return True
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE city_inventory SET quantity = quantity + ? "
+            "WHERE user_id=? AND item_type=? AND quantity + ? >= 0",
+            (delta, user_id, item_type, delta),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def force_confiscate_inventory(user_id: int, item_type: str) -> int:
+    """Атомарно обнуляет товар (конфискация на таможне).
+    Возвращает количество, которое реально было изъято (0, если и так пусто)."""
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT quantity FROM city_inventory WHERE user_id=? AND item_type=?",
+            (user_id, item_type),
+        ).fetchone()
+        qty = row["quantity"] if row else 0
+        if qty > 0:
+            cur = conn.execute(
+                "UPDATE city_inventory SET quantity=0 "
+                "WHERE user_id=? AND item_type=? AND quantity=?",
+                (user_id, item_type, qty),
+            )
+            conn.commit()
+            return qty if cur.rowcount else 0
+        return 0
 
 
 # ---------- цены ----------
@@ -435,15 +527,29 @@ def refresh_exchange_rate() -> int:
 def exchange_crystals_for_coins(uid: int, qty: int) -> tuple[bool, str, int, int]:
     """Обменивает `qty` кристаллов гильдии на монеты основного бота.
     Возвращает (успех, текст_ошибки_или_пусто, начисленные_монеты, курс).
-    Купить кристаллы за монеты нельзя — обмен работает только в эту сторону."""
+    Купить кристаллы за монеты нельзя — обмен работает только в эту сторону.
+
+    Списание кристаллов выполняется ОДНИМ атомарным UPDATE с проверкой баланса
+    в WHERE — это закрывает гонку, при которой два почти одновременных вызова
+    (двойной тап, повторная доставка апдейта от Telegram) могли увидеть один и
+    тот же баланс и оба пройти проверку, получив монеты дважды за одни и те же
+    кристаллы. Монеты начисляются только ПОСЛЕ успешного списания; если
+    начисление в основном боте не удалось — кристаллы возвращаются обратно."""
     main_user = _db_get_user(uid)
     if main_user is None:
         return False, "❌ Сначала запусти основного бота командой /start.", 0, 0
 
+    if not try_spend_balance(uid, qty):
+        return False, f"💸 Недостаточно {CURRENCY_NAME} для обмена.", 0, 0
+
     rate = get_exchange_rate()
     coins = qty * rate
-    new_main_balance = main_user.get("balance", 0) + coins
-    _db_update_user(uid, {"balance": new_main_balance})
+    try:
+        new_main_balance = main_user.get("balance", 0) + coins
+        _db_update_user(uid, {"balance": new_main_balance})
+    except Exception:
+        add_balance(uid, qty)  # откатываем списание кристаллов
+        return False, "❌ Не удалось начислить монеты, попробуйте ещё раз.", 0, 0
     return True, "", coins, rate
 
 
@@ -859,7 +965,7 @@ def _help_text() -> str:
         f"{_tge('news', '🗞')} <code>/citynews</code> — <i>слухи и прогнозы цен на 2 часа вперёд</i>\n"
         f"{_tge('route', '🗺')} <code>/cityroute</code> — <i>самый выгодный маршрут прямо сейчас</i>\n"
         f"{_tge('exchange', '🔁')} <code>/cityexchange количество</code> — <i>обменять кристаллы на монеты</i>\n"
-        f"{_tge('help', '❓')} <code>/help</code> — <i>эта справка</i>\n\n"
+        f"{_tge('help', '❓')} <code>/cityhelp</code> — <i>эта справка</i>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "<b>📦 Товары</b>\n"
         f"  {ITEMS['potions']['emoji']} Зелья — <i>дёшевы на Севере, дороги на Юге</i>\n"
@@ -974,9 +1080,13 @@ async def cmd_city_buy(message: Message):
         )
         return
 
-    inv = get_inventory(u["user_id"])
-    set_inventory_qty(u["user_id"], item, inv[item] + qty)
-    update_city_user(u["user_id"], balance=u["balance"] - total)
+    if not try_spend_balance(u["user_id"], total):
+        await message.reply(
+            f"💸 Недостаточно {CURRENCY_NAME} для этой покупки.",
+            parse_mode="HTML",
+        )
+        return
+    try_adjust_inventory(u["user_id"], item, qty)  # для покупки всегда успешна (нет верхнего лимита)
     register_trade(u["city"], item, "buy")
     log_trade_qty(qty, "buy")
 
@@ -1028,10 +1138,13 @@ async def cmd_city_sell(message: Message):
         await message.reply(f"📦 У вас только <b>{inv[item]}</b> единиц этого товара.", parse_mode="HTML")
         return
 
+    if not try_adjust_inventory(u["user_id"], item, -qty):
+        await message.reply(f"📦 У вас недостаточно этого товара.", parse_mode="HTML")
+        return
+
     price = get_price(u["city"], item)
     total = price * qty
-    set_inventory_qty(u["user_id"], item, inv[item] - qty)
-    update_city_user(u["user_id"], balance=u["balance"] + total)
+    add_balance(u["user_id"], total)
     register_trade(u["city"], item, "sell")
     log_trade_qty(qty, "sell")
 
@@ -1055,7 +1168,8 @@ async def _do_travel(user_id: int, username: str, dest: str):
         return False, "🚶 Вы уже в пути."
     if dest == u["city"]:
         return False, "📍 Вы уже находитесь в этом городе."
-    if u["balance"] < TRAVEL_COST:
+
+    if not try_spend_balance(u["user_id"], TRAVEL_COST):
         return False, f"💸 Недостаточно {CURRENCY_NAME} на дорогу. Нужно {_crystals(TRAVEL_COST)}."
 
     origin_city = u["city"]
@@ -1065,15 +1179,17 @@ async def _do_travel(user_id: int, username: str, dest: str):
     fine_total = 0
     for item, qty in inv.items():
         if qty > CUSTOMS_LIMIT and random.random() < CUSTOMS_CHANCE:
-            set_inventory_qty(u["user_id"], item, 0)
-            confiscated.append(ITEMS[item]["name"])
-            fine_total += CUSTOMS_FINE
+            taken = force_confiscate_inventory(u["user_id"], item)
+            if taken > 0:
+                confiscated.append(ITEMS[item]["name"])
+                fine_total += CUSTOMS_FINE
 
-    new_balance = max(0, u["balance"] - TRAVEL_COST - fine_total)
+    if fine_total:
+        spend_up_to(u["user_id"], fine_total)  # не уводит баланс в минус
+
     end_time = int(time.time()) + TRAVEL_MINUTES * 60
     update_city_user(
         u["user_id"],
-        balance=new_balance,
         status="traveling",
         travel_end_time=end_time,
         city=dest,
@@ -1210,7 +1326,7 @@ async def cmd_city_trade_route(message: Message):
     )
 
 
-@router.message(Command("help", "помощь", "cityhelp"))
+@router.message(Command("помощь", "cityhelp"))
 async def cmd_city_help(message: Message):
     await message.reply(
         _help_text(),
@@ -1249,19 +1365,11 @@ async def cmd_city_exchange(message: Message):
     if qty <= 0:
         await message.reply("❌ Количество должно быть положительным.")
         return
-    if qty > u["balance"]:
-        await message.reply(
-            f"{_tge('currency', CURRENCY_EMOJI)} У тебя только <b>{_fmt(u['balance'])}</b> {CURRENCY_NAME}.",
-            parse_mode="HTML",
-        )
-        return
 
     ok, err, coins, rate = exchange_crystals_for_coins(message.from_user.id, qty)
     if not ok:
         await message.reply(err, parse_mode="HTML")
         return
-
-    update_city_user(u["user_id"], balance=u["balance"] - qty)
 
     await message.reply(
         f"{_tge('exchange', '🔁')} <b>ОБМЕН СОВЕРШЁН</b>\n"
