@@ -198,7 +198,7 @@ from city import (
     router as city_router,
     init_city_db,
     city_prices_loop, city_travel_loop, city_news_loop, city_exchange_loop,
-    cmd_city_profile,
+    cmd_city_profile, cmd_city_shop,
 )
 
 from rass import (
@@ -2442,6 +2442,15 @@ async def handle_captcha_answer(message: Message):
     uid = message.from_user.id
     u   = get_or_create_user(message.from_user)
     lang = get_lang(u)
+
+    # ── Текстовые алиасы раздела города (без слеша): тор/торговля/город/рынок ──
+    _city_word = (message.text or "").strip().split()[0].lower() if (message.text or "").strip() else ""
+    if _city_word in ("тор", "торговля", "город"):
+        await cmd_city_profile(message)
+        return
+    if _city_word == "рынок":
+        await cmd_city_shop(message)
+        return
 
     # ── Рассылка: FSM-ввод от админа ──
     if uid in ADMIN_IDS and is_in_rass(uid):
