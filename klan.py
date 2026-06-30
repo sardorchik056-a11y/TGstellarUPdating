@@ -8,8 +8,101 @@
 import sqlite3
 import time
 import html as _html
+import threading
+from contextlib import contextmanager
 
 DB_PATH = "tgstellar.db"
+
+# ── Защита от гонок (дюпов) ──────────────────────────────────
+# 1) Любая операция, которая читает баланс/казну, а потом отдельным
+#    запросом списывает/начисляет — уязвима к гонке (двойной тап по
+#    кнопке, параллельные апдейты от aiogram). Поэтому:
+#      a) все изменения treasury/quest-флагов в этом модуле сделаны
+#         атомарными: UPDATE ... WHERE <условие> с проверкой rowcount,
+#         внутри транзакции BEGIN IMMEDIATE (блокирует файл БД на
+#         запись на время операции — работает и между процессами);
+#      b) операции, которые трогают баланс игрока (он хранится в
+#         другой БД через database.get_user/save_user), дополнительно
+#         сериализуются через per-uid / per-clan лок в рамках процесса.
+#         Это закрывает наиболее частый сценарий дюпа (двойной тап в
+#         одном процессе бота). Если бот работает в несколько
+#         процессов/воркеров одновременно, баланс в database.py тоже
+#         должен обновляться атомарным SQL UPDATE balance=balance-?
+#         WHERE uid=? AND balance>=? с проверкой rowcount — см. TODO
+#         у функций create_clan/deposit_treasury/approve_withdrawal.
+
+_locks_guard = threading.Lock()
+_uid_locks:  dict[int, threading.Lock] = {}
+_clan_locks: dict[int, threading.Lock] = {}
+
+
+def _get_uid_lock(uid: int) -> threading.Lock:
+    with _locks_guard:
+        lk = _uid_locks.get(uid)
+        if lk is None:
+            lk = threading.Lock()
+            _uid_locks[uid] = lk
+        return lk
+
+
+def _get_clan_lock(clan_id: int) -> threading.Lock:
+    with _locks_guard:
+        lk = _clan_locks.get(clan_id)
+        if lk is None:
+            lk = threading.Lock()
+            _clan_locks[clan_id] = lk
+        return lk
+
+
+@contextmanager
+def _uid_lock(uid: int):
+    lk = _get_uid_lock(uid)
+    lk.acquire()
+    try:
+        yield
+    finally:
+        lk.release()
+
+
+@contextmanager
+def _clan_lock(clan_id: int):
+    lk = _get_clan_lock(clan_id)
+    lk.acquire()
+    try:
+        yield
+    finally:
+        lk.release()
+
+
+@contextmanager
+def _immediate_tx():
+    """
+    Соединение с явной BEGIN IMMEDIATE-транзакцией: блокирует БД на
+    запись сразу, а не лениво на первом UPDATE. Это убирает окно между
+    SELECT-проверкой и UPDATE даже при нескольких процессах/воркерах,
+    использующих один и тот же файл sqlite.
+    """
+    c = sqlite3.connect(DB_PATH, timeout=30, isolation_level=None)
+    c.row_factory = sqlite3.Row
+    try:
+        c.execute("BEGIN IMMEDIATE")
+        yield c
+        c.execute("COMMIT")
+    except Exception:
+        try:
+            c.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        c.close()
+
+
+# Разумные верхние границы на единичный вклад в дневные задания —
+# защита от накрутки клановых наград аномально большими значениями,
+# даже если вызывающий код (бой/шахта) этого не проверил.
+MAX_SINGLE_BOSS_DAMAGE = 50_000_000
+MAX_SINGLE_MINE_AMOUNT = 50_000_000
 
 # ── Проверенные Emoji IDs (из рабочего кода проекта) ────────
 # Из database.py / main.py — эти ID гарантированно работают
@@ -322,41 +415,70 @@ def get_member_count(clan_id: int) -> int:
 
 def create_clan(uid: int, name: str) -> dict:
     from database import get_user, save_user
-    d = get_user(uid)
-    if not d:
-        return {"ok": False, "error": "user_not_found"}
-    if get_member(uid):
-        return {"ok": False, "error": "already_in_clan"}
     name = name.strip()
     if len(name) < MIN_CLAN_NAME or len(name) > MAX_CLAN_NAME:
         return {"ok": False, "error": "bad_name_length"}
-    if d.get("balance", 0) < CREATE_COST:
-        return {"ok": False, "error": "no_coins"}
-    # Проверяем занятость имени до INSERT (case-insensitive)
-    if get_clan_by_name(name):
-        return {"ok": False, "error": "name_taken"}
-    with _conn() as c:
-        try:
-            cur = c.execute("""
-                INSERT INTO clans (name, description, creator_uid, treasury, created_ts)
-                VALUES (?, '', ?, 0, ?)
-            """, (name, uid, int(time.time())))
-            clan_id = cur.lastrowid
-        except sqlite3.IntegrityError:
-            return {"ok": False, "error": "name_taken"}
-        try:
-            c.execute("""
-                INSERT INTO clan_members (uid, clan_id, role, joined_ts, contributed)
-                VALUES (?, ?, 'creator', ?, 0)
-            """, (uid, clan_id, int(time.time())))
-            c.commit()
-        except sqlite3.IntegrityError:
-            c.execute("DELETE FROM clans WHERE id=?", (clan_id,))
-            c.commit()
+
+    # Лочим юзера на всю операцию: исключает дюп при двойном тапе
+    # "Создать клан" (две параллельные попытки списать одни и те же
+    # монеты / создать два клана разом).
+    with _uid_lock(uid):
+        if get_member(uid):
             return {"ok": False, "error": "already_in_clan"}
-    d["balance"] -= CREATE_COST
-    save_user(uid, d)
+        # Проверяем занятость имени до INSERT (case-insensitive)
+        if get_clan_by_name(name):
+            return {"ok": False, "error": "name_taken"}
+
+        d = get_user(uid)
+        if not d:
+            return {"ok": False, "error": "user_not_found"}
+        if d.get("balance", 0) < CREATE_COST:
+            return {"ok": False, "error": "no_coins"}
+
+        # Списываем баланс ДО создания клана и сразу сохраняем —
+        # минимизирует окно гонки с другими операциями над балансом
+        # этого же uid (они тоже идут через _uid_lock).
+        d["balance"] -= CREATE_COST
+        save_user(uid, d)
+
+        try:
+            with _immediate_tx() as c:
+                if c.execute(
+                    "SELECT 1 FROM clan_members WHERE uid=?", (uid,)
+                ).fetchone():
+                    raise _AlreadyInClan()
+                if c.execute(
+                    "SELECT 1 FROM clans WHERE LOWER(name)=LOWER(?)", (name,)
+                ).fetchone():
+                    raise _NameTaken()
+                cur = c.execute("""
+                    INSERT INTO clans (name, description, creator_uid, treasury, created_ts)
+                    VALUES (?, '', ?, 0, ?)
+                """, (name, uid, int(time.time())))
+                clan_id = cur.lastrowid
+                c.execute("""
+                    INSERT INTO clan_members (uid, clan_id, role, joined_ts, contributed)
+                    VALUES (?, ?, 'creator', ?, 0)
+                """, (uid, clan_id, int(time.time())))
+        except (sqlite3.IntegrityError, _AlreadyInClan, _NameTaken) as e:
+            # Откатываем списание, т.к. клан не создан
+            d2 = get_user(uid)
+            if d2:
+                d2["balance"] = d2.get("balance", 0) + CREATE_COST
+                save_user(uid, d2)
+            if isinstance(e, _AlreadyInClan):
+                return {"ok": False, "error": "already_in_clan"}
+            return {"ok": False, "error": "name_taken"}
+
     return {"ok": True, "clan_id": clan_id}
+
+
+class _AlreadyInClan(Exception):
+    pass
+
+
+class _NameTaken(Exception):
+    pass
 
 
 def disband_clan(uid: int) -> dict:
@@ -364,19 +486,25 @@ def disband_clan(uid: int) -> dict:
     if not m or m["role"] != "creator":
         return {"ok": False, "error": "not_creator"}
     clan_id = m["clan_id"]
-    clan    = get_clan(clan_id)
-    if clan and clan["treasury"] > 0:
-        from database import get_user, save_user
-        d = get_user(uid)
-        if d:
-            d["balance"] = d.get("balance", 0) + clan["treasury"]
-            save_user(uid, d)
-    with _conn() as c:
-        c.execute("DELETE FROM clan_members WHERE clan_id=?",           (clan_id,))
-        c.execute("DELETE FROM clan_applications WHERE clan_id=?",      (clan_id,))
-        c.execute("DELETE FROM clan_treasury_requests WHERE clan_id=?", (clan_id,))
-        c.execute("DELETE FROM clans WHERE id=?",                       (clan_id,))
-        c.commit()
+    with _clan_lock(clan_id), _uid_lock(uid):
+        # Перечитываем актуальную казну под локом — на случай, если
+        # параллельно прошёл approve_withdrawal/квестовая награда.
+        with _immediate_tx() as c:
+            row = c.execute("SELECT treasury FROM clans WHERE id=?", (clan_id,)).fetchone()
+            if not row:
+                return {"ok": False, "error": "not_found"}
+            payout = row["treasury"]
+            c.execute("DELETE FROM clan_members WHERE clan_id=?",           (clan_id,))
+            c.execute("DELETE FROM clan_applications WHERE clan_id=?",      (clan_id,))
+            c.execute("DELETE FROM clan_treasury_requests WHERE clan_id=?", (clan_id,))
+            c.execute("DELETE FROM clan_daily_quests WHERE clan_id=?",      (clan_id,))
+            c.execute("DELETE FROM clans WHERE id=?",                       (clan_id,))
+        if payout > 0:
+            from database import get_user, save_user
+            d = get_user(uid)
+            if d:
+                d["balance"] = d.get("balance", 0) + payout
+                save_user(uid, d)
     return {"ok": True}
 
 
@@ -409,26 +537,29 @@ def kick_member(creator_uid: int, target_uid: int) -> dict:
 # ─────────────────────── ЗАЯВКИ ──────────────────────────────
 
 def apply_to_clan(uid: int, clan_id: int, message: str = "") -> dict:
-    if get_member(uid):
-        return {"ok": False, "error": "already_in_clan"}
-    if get_member_count(clan_id) >= MAX_CLAN_MEMBERS:
-        return {"ok": False, "error": "clan_full"}
-    with _conn() as c:
-        app_count = c.execute(
-            "SELECT COUNT(*) FROM clan_applications WHERE clan_id=?", (clan_id,)
-        ).fetchone()[0]
-        if app_count >= MAX_CLAN_APPS:
-            return {"ok": False, "error": "apps_full"}
-        existing = c.execute(
-            "SELECT id FROM clan_applications WHERE clan_id=? AND uid=?", (clan_id, uid)
-        ).fetchone()
-        if existing:
-            return {"ok": False, "error": "already_applied"}
-        c.execute("""
-            INSERT INTO clan_applications (clan_id, uid, message, applied_ts)
-            VALUES (?, ?, ?, ?)
-        """, (clan_id, uid, message[:200], int(time.time())))
-        c.commit()
+    with _uid_lock(uid), _clan_lock(clan_id):
+        if get_member(uid):
+            return {"ok": False, "error": "already_in_clan"}
+        with _immediate_tx() as c:
+            member_count = c.execute(
+                "SELECT COUNT(*) FROM clan_members WHERE clan_id=?", (clan_id,)
+            ).fetchone()[0]
+            if member_count >= MAX_CLAN_MEMBERS:
+                return {"ok": False, "error": "clan_full"}
+            app_count = c.execute(
+                "SELECT COUNT(*) FROM clan_applications WHERE clan_id=?", (clan_id,)
+            ).fetchone()[0]
+            if app_count >= MAX_CLAN_APPS:
+                return {"ok": False, "error": "apps_full"}
+            existing = c.execute(
+                "SELECT id FROM clan_applications WHERE clan_id=? AND uid=?", (clan_id, uid)
+            ).fetchone()
+            if existing:
+                return {"ok": False, "error": "already_applied"}
+            c.execute("""
+                INSERT INTO clan_applications (clan_id, uid, message, applied_ts)
+                VALUES (?, ?, ?, ?)
+            """, (clan_id, uid, message[:200], int(time.time())))
     return {"ok": True}
 
 
@@ -538,45 +669,55 @@ def reject_all_applications(creator_uid: int) -> dict:
 # ─────────────────────── КАЗНА ───────────────────────────────
 
 def deposit_treasury(uid: int, amount: int) -> dict:
-    m = get_member(uid)
-    if not m:
-        return {"ok": False, "error": "not_in_clan"}
     if amount <= 0:
         return {"ok": False, "error": "bad_amount"}
-    from database import get_user, save_user
-    d = get_user(uid)
-    if not d or d.get("balance", 0) < amount:
-        return {"ok": False, "error": "no_coins"}
-    d["balance"] -= amount
-    save_user(uid, d)
-    with _conn() as c:
-        c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",              (amount, m["clan_id"]))
-        c.execute("UPDATE clan_members SET contributed=contributed+? WHERE uid=?", (amount, uid))
-        c.commit()
+    with _uid_lock(uid):
+        m = get_member(uid)
+        if not m:
+            return {"ok": False, "error": "not_in_clan"}
+        from database import get_user, save_user
+        d = get_user(uid)
+        if not d or d.get("balance", 0) < amount:
+            return {"ok": False, "error": "no_coins"}
+        d["balance"] -= amount
+        save_user(uid, d)
+        with _immediate_tx() as c:
+            c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",              (amount, m["clan_id"]))
+            c.execute("UPDATE clan_members SET contributed=contributed+? WHERE uid=?", (amount, uid))
     return {"ok": True}
 
 
 def request_withdrawal(uid: int, amount: int, reason: str) -> dict:
+    if amount <= 0:
+        return {"ok": False, "error": "bad_amount"}
     m = get_member(uid)
     if not m:
         return {"ok": False, "error": "not_in_clan"}
-    if amount <= 0:
-        return {"ok": False, "error": "bad_amount"}
-    clan = get_clan(m["clan_id"])
-    if not clan or clan["treasury"] < amount:
-        return {"ok": False, "error": "not_enough_treasury"}
-    with _conn() as c:
-        existing = c.execute("""
-            SELECT id FROM clan_treasury_requests
-            WHERE clan_id=? AND uid=? AND status='pending'
-        """, (m["clan_id"], uid)).fetchone()
-        if existing:
-            return {"ok": False, "error": "already_pending"}
-        c.execute("""
-            INSERT INTO clan_treasury_requests (clan_id, uid, amount, reason, status, created_ts)
-            VALUES (?, ?, ?, ?, 'pending', ?)
-        """, (m["clan_id"], uid, amount, reason[:300], int(time.time())))
-        c.commit()
+    clan_id = m["clan_id"]
+    with _clan_lock(clan_id):
+        with _immediate_tx() as c:
+            clan = c.execute("SELECT treasury FROM clans WHERE id=?", (clan_id,)).fetchone()
+            if not clan:
+                return {"ok": False, "error": "not_in_clan"}
+            # Учитываем уже ожидающие выводы этого клана, чтобы нельзя
+            # было запросить выводов суммарно больше, чем реально есть
+            # в казне (даже если по отдельности каждый запрос валиден).
+            pending_sum = c.execute("""
+                SELECT COALESCE(SUM(amount), 0) FROM clan_treasury_requests
+                WHERE clan_id=? AND status='pending'
+            """, (clan_id,)).fetchone()[0]
+            if clan["treasury"] - pending_sum < amount:
+                return {"ok": False, "error": "not_enough_treasury"}
+            existing = c.execute("""
+                SELECT id FROM clan_treasury_requests
+                WHERE clan_id=? AND uid=? AND status='pending'
+            """, (clan_id, uid)).fetchone()
+            if existing:
+                return {"ok": False, "error": "already_pending"}
+            c.execute("""
+                INSERT INTO clan_treasury_requests (clan_id, uid, amount, reason, status, created_ts)
+                VALUES (?, ?, ?, ?, 'pending', ?)
+            """, (clan_id, uid, amount, reason[:300], int(time.time())))
     return {"ok": True}
 
 
@@ -598,27 +739,43 @@ def approve_withdrawal(creator_uid: int, req_id: int) -> dict:
     m = get_member(creator_uid)
     if not m or m["role"] != "creator":
         return {"ok": False, "error": "not_creator"}
-    with _conn() as c:
-        req = c.execute(
-            "SELECT * FROM clan_treasury_requests WHERE id=? AND status='pending'", (req_id,)
-        ).fetchone()
-        if not req:
-            return {"ok": False, "error": "req_not_found"}
-        if req["clan_id"] != m["clan_id"]:
-            return {"ok": False, "error": "wrong_clan"}
-        clan = c.execute("SELECT treasury FROM clans WHERE id=?", (m["clan_id"],)).fetchone()
-        if not clan or clan["treasury"] < req["amount"]:
-            c.execute("UPDATE clan_treasury_requests SET status='rejected' WHERE id=?", (req_id,))
-            c.commit()
-            return {"ok": False, "error": "not_enough_treasury"}
-        c.execute("UPDATE clans SET treasury=treasury-? WHERE id=?", (req["amount"], m["clan_id"]))
-        c.execute("UPDATE clan_treasury_requests SET status='approved' WHERE id=?", (req_id,))
-        c.commit()
+    clan_id = m["clan_id"]
+    with _clan_lock(clan_id):
+        with _immediate_tx() as c:
+            req = c.execute(
+                "SELECT * FROM clan_treasury_requests WHERE id=? AND status='pending'", (req_id,)
+            ).fetchone()
+            if not req:
+                # Уже обработана (в т.ч. параллельно) или не существует
+                return {"ok": False, "error": "req_not_found"}
+            if req["clan_id"] != clan_id:
+                return {"ok": False, "error": "wrong_clan"}
+
+            # Атомарно: переводим заявку pending -> approved только
+            # если она всё ещё pending (rowcount=0 => кто-то её уже
+            # обработал между SELECT и этим UPDATE).
+            cur = c.execute("""
+                UPDATE clan_treasury_requests SET status='approved'
+                WHERE id=? AND status='pending'
+            """, (req_id,))
+            if cur.rowcount == 0:
+                return {"ok": False, "error": "req_not_found"}
+
+            # Атомарно списываем из казны только если хватает средств.
+            cur = c.execute("""
+                UPDATE clans SET treasury=treasury-?
+                WHERE id=? AND treasury>=?
+            """, (req["amount"], clan_id, req["amount"]))
+            if cur.rowcount == 0:
+                c.execute("UPDATE clan_treasury_requests SET status='rejected' WHERE id=?", (req_id,))
+                return {"ok": False, "error": "not_enough_treasury"}
+
     from database import get_user, save_user
-    d = get_user(req["uid"])
-    if d:
-        d["balance"] = d.get("balance", 0) + req["amount"]
-        save_user(req["uid"], d)
+    with _uid_lock(req["uid"]):
+        d = get_user(req["uid"])
+        if d:
+            d["balance"] = d.get("balance", 0) + req["amount"]
+            save_user(req["uid"], d)
     return {"ok": True, "uid": req["uid"], "amount": req["amount"]}
 
 
@@ -626,14 +783,19 @@ def reject_withdrawal(creator_uid: int, req_id: int) -> dict:
     m = get_member(creator_uid)
     if not m or m["role"] != "creator":
         return {"ok": False, "error": "not_creator"}
-    with _conn() as c:
-        req = c.execute(
-            "SELECT * FROM clan_treasury_requests WHERE id=? AND status='pending'", (req_id,)
-        ).fetchone()
-        if not req or req["clan_id"] != m["clan_id"]:
-            return {"ok": False, "error": "req_not_found"}
-        c.execute("UPDATE clan_treasury_requests SET status='rejected' WHERE id=?", (req_id,))
-        c.commit()
+    with _clan_lock(m["clan_id"]):
+        with _immediate_tx() as c:
+            req = c.execute(
+                "SELECT * FROM clan_treasury_requests WHERE id=? AND status='pending'", (req_id,)
+            ).fetchone()
+            if not req or req["clan_id"] != m["clan_id"]:
+                return {"ok": False, "error": "req_not_found"}
+            cur = c.execute("""
+                UPDATE clan_treasury_requests SET status='rejected'
+                WHERE id=? AND status='pending'
+            """, (req_id,))
+            if cur.rowcount == 0:
+                return {"ok": False, "error": "req_not_found"}
     return {"ok": True, "uid": req["uid"]}
 
 # ─────────────────────── ЕЖЕДНЕВНЫЕ ЗАДАНИЯ ──────────────────
@@ -687,6 +849,11 @@ def add_clan_boss_damage(uid: int, damage: int) -> dict:
     """
     if damage <= 0:
         return {"ok": False, "error": "bad_damage"}
+    if damage > MAX_SINGLE_BOSS_DAMAGE:
+        # Подозрительно большое значение за один вызов — не доверяем,
+        # обрезаем, чтобы нельзя было одним вызовом закрыть все
+        # дневные задания клана.
+        damage = MAX_SINGLE_BOSS_DAMAGE
     m = get_member(uid)
     if not m:
         return {"ok": False, "error": "not_in_clan"}
@@ -694,33 +861,35 @@ def add_clan_boss_damage(uid: int, damage: int) -> dict:
     date      = _today_str()
     rewarded  = False
     rewarded2 = False
-    with _conn() as c:
-        _ensure_daily_quest_row(c, clan_id, date)
-        c.execute("""
-            UPDATE clan_daily_quests SET boss_damage = boss_damage + ?
-            WHERE clan_id=? AND quest_date=?
-        """, (damage, clan_id, date))
-        row = c.execute("""
-            SELECT boss_damage, dmg_reward_claimed, dmg2_reward_claimed FROM clan_daily_quests
-            WHERE clan_id=? AND quest_date=?
-        """, (clan_id, date)).fetchone()
-        if row["boss_damage"] >= DAILY_QUEST_DMG_TARGET and not row["dmg_reward_claimed"]:
+    with _clan_lock(clan_id):
+        with _immediate_tx() as c:
+            _ensure_daily_quest_row(c, clan_id, date)
             c.execute("""
-                UPDATE clan_daily_quests SET dmg_reward_claimed=1
+                UPDATE clan_daily_quests SET boss_damage = boss_damage + ?
                 WHERE clan_id=? AND quest_date=?
-            """, (clan_id, date))
-            c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",
-                      (DAILY_QUEST_DMG_REWARD, clan_id))
-            rewarded = True
-        if row["boss_damage"] >= DAILY_QUEST_DMG2_TARGET and not row["dmg2_reward_claimed"]:
-            c.execute("""
-                UPDATE clan_daily_quests SET dmg2_reward_claimed=1
+            """, (damage, clan_id, date))
+            row = c.execute("""
+                SELECT boss_damage, dmg_reward_claimed, dmg2_reward_claimed FROM clan_daily_quests
                 WHERE clan_id=? AND quest_date=?
-            """, (clan_id, date))
-            c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",
-                      (DAILY_QUEST_DMG2_REWARD, clan_id))
-            rewarded2 = True
-        c.commit()
+            """, (clan_id, date)).fetchone()
+            if row["boss_damage"] >= DAILY_QUEST_DMG_TARGET and not row["dmg_reward_claimed"]:
+                cur = c.execute("""
+                    UPDATE clan_daily_quests SET dmg_reward_claimed=1
+                    WHERE clan_id=? AND quest_date=? AND dmg_reward_claimed=0
+                """, (clan_id, date))
+                if cur.rowcount:
+                    c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",
+                              (DAILY_QUEST_DMG_REWARD, clan_id))
+                    rewarded = True
+            if row["boss_damage"] >= DAILY_QUEST_DMG2_TARGET and not row["dmg2_reward_claimed"]:
+                cur = c.execute("""
+                    UPDATE clan_daily_quests SET dmg2_reward_claimed=1
+                    WHERE clan_id=? AND quest_date=? AND dmg2_reward_claimed=0
+                """, (clan_id, date))
+                if cur.rowcount:
+                    c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",
+                              (DAILY_QUEST_DMG2_REWARD, clan_id))
+                    rewarded2 = True
     return {
         "ok": True, "clan_id": clan_id,
         "rewarded": rewarded, "reward": DAILY_QUEST_DMG_REWARD,
@@ -740,6 +909,8 @@ def add_clan_mine_earnings(uid: int, amount: int) -> dict:
     """
     if amount <= 0:
         return {"ok": False, "error": "bad_amount"}
+    if amount > MAX_SINGLE_MINE_AMOUNT:
+        amount = MAX_SINGLE_MINE_AMOUNT
     m = get_member(uid)
     if not m:
         return {"ok": False, "error": "not_in_clan"}
@@ -747,32 +918,33 @@ def add_clan_mine_earnings(uid: int, amount: int) -> dict:
     date    = _today_str()
     total_reward = 0
     rewarded_tiers = []
-    with _conn() as c:
-        _ensure_daily_quest_row(c, clan_id, date)
-        c.execute("""
-            UPDATE clan_daily_quests SET mine_earned = mine_earned + ?
-            WHERE clan_id=? AND quest_date=?
-        """, (amount, clan_id, date))
-        row = c.execute("""
-            SELECT mine_earned, mine1_reward_claimed, mine2_reward_claimed, mine3_reward_claimed
-            FROM clan_daily_quests WHERE clan_id=? AND quest_date=?
-        """, (clan_id, date)).fetchone()
-        earned = row["mine_earned"]
-        tiers = [
-            (DAILY_QUEST_MINE1_TARGET, DAILY_QUEST_MINE1_REWARD, "mine1_reward_claimed", row["mine1_reward_claimed"]),
-            (DAILY_QUEST_MINE2_TARGET, DAILY_QUEST_MINE2_REWARD, "mine2_reward_claimed", row["mine2_reward_claimed"]),
-            (DAILY_QUEST_MINE3_TARGET, DAILY_QUEST_MINE3_REWARD, "mine3_reward_claimed", row["mine3_reward_claimed"]),
-        ]
-        for target, reward, col, claimed in tiers:
-            if earned >= target and not claimed:
-                c.execute(f"""
-                    UPDATE clan_daily_quests SET {col}=1
-                    WHERE clan_id=? AND quest_date=?
-                """, (clan_id, date))
-                c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?", (reward, clan_id))
-                total_reward += reward
-                rewarded_tiers.append(target)
-        c.commit()
+    with _clan_lock(clan_id):
+        with _immediate_tx() as c:
+            _ensure_daily_quest_row(c, clan_id, date)
+            c.execute("""
+                UPDATE clan_daily_quests SET mine_earned = mine_earned + ?
+                WHERE clan_id=? AND quest_date=?
+            """, (amount, clan_id, date))
+            row = c.execute("""
+                SELECT mine_earned, mine1_reward_claimed, mine2_reward_claimed, mine3_reward_claimed
+                FROM clan_daily_quests WHERE clan_id=? AND quest_date=?
+            """, (clan_id, date)).fetchone()
+            earned = row["mine_earned"]
+            tiers = [
+                (DAILY_QUEST_MINE1_TARGET, DAILY_QUEST_MINE1_REWARD, "mine1_reward_claimed", row["mine1_reward_claimed"]),
+                (DAILY_QUEST_MINE2_TARGET, DAILY_QUEST_MINE2_REWARD, "mine2_reward_claimed", row["mine2_reward_claimed"]),
+                (DAILY_QUEST_MINE3_TARGET, DAILY_QUEST_MINE3_REWARD, "mine3_reward_claimed", row["mine3_reward_claimed"]),
+            ]
+            for target, reward, col, claimed in tiers:
+                if earned >= target and not claimed:
+                    cur = c.execute(f"""
+                        UPDATE clan_daily_quests SET {col}=1
+                        WHERE clan_id=? AND quest_date=? AND {col}=0
+                    """, (clan_id, date))
+                    if cur.rowcount:
+                        c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?", (reward, clan_id))
+                        total_reward += reward
+                        rewarded_tiers.append(target)
     return {"ok": True, "clan_id": clan_id, "rewarded_tiers": rewarded_tiers, "total_reward": total_reward}
 
 
@@ -788,21 +960,17 @@ def register_clan_boss_kill(uid: int) -> dict:
     clan_id  = m["clan_id"]
     date     = _today_str()
     rewarded = False
-    with _conn() as c:
-        _ensure_daily_quest_row(c, clan_id, date)
-        row = c.execute("""
-            SELECT kill_reward_claimed FROM clan_daily_quests
-            WHERE clan_id=? AND quest_date=?
-        """, (clan_id, date)).fetchone()
-        if not row["kill_reward_claimed"]:
-            c.execute("""
+    with _clan_lock(clan_id):
+        with _immediate_tx() as c:
+            _ensure_daily_quest_row(c, clan_id, date)
+            cur = c.execute("""
                 UPDATE clan_daily_quests SET kill_reward_claimed=1
-                WHERE clan_id=? AND quest_date=?
+                WHERE clan_id=? AND quest_date=? AND kill_reward_claimed=0
             """, (clan_id, date))
-            c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",
-                      (DAILY_QUEST_KILL_REWARD, clan_id))
-            rewarded = True
-        c.commit()
+            if cur.rowcount:
+                c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",
+                          (DAILY_QUEST_KILL_REWARD, clan_id))
+                rewarded = True
     return {"ok": True, "clan_id": clan_id, "rewarded": rewarded, "reward": DAILY_QUEST_KILL_REWARD}
 
 
