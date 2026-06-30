@@ -2042,7 +2042,7 @@ async def _handle_duel_cmd(message: Message):
 
     if is_duel_main_cmd(text):
         # /дуэли — главный раздел дуэлей
-        await message.answer(
+        await message.reply(
             duel_main_text(u),
             parse_mode="HTML",
             reply_markup=duel_main_keyboard(),
@@ -2051,7 +2051,7 @@ async def _handle_duel_cmd(message: Message):
 
     if is_duel_equip_cmd(text):
         # /снар — открыть снаряжение
-        await message.answer(
+        await message.reply(
             duel_equip_text(u),
             parse_mode="HTML",
             reply_markup=duel_equip_keyboard(u),
@@ -2060,7 +2060,7 @@ async def _handle_duel_cmd(message: Message):
 
     if is_duel_skills_cmd(text):
         # /навыки — открыть навыки
-        await message.answer(
+        await message.reply(
             duel_skills_text(u),
             parse_mode="HTML",
             reply_markup=duel_skills_keyboard(),
@@ -2069,7 +2069,7 @@ async def _handle_duel_cmd(message: Message):
 
     if is_duel_stats_cmd(text):
         # /хар — характеристики
-        await message.answer(
+        await message.reply(
             duel_charstats_text(u, uid=uid),
             parse_mode="HTML",
             reply_markup=duel_charstats_keyboard(),
