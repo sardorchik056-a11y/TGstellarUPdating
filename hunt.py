@@ -9,6 +9,7 @@
 import random
 import sqlite3
 import json
+import threading
 from datetime import datetime, timezone
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -122,7 +123,11 @@ def _now_ts():
 
 def _fmt_digits(n: int) -> str:
     """Форматирует число эмодзи-цифрами."""
-    s = f"{int(n):,}".replace(",", " ")
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        n = 0
+    s = f"{n:,}".replace(",", " ")
     parts = []
     for ch in s:
         if ch.isdigit():
@@ -432,6 +437,20 @@ _HUNT_QUOTES = [
 BOSS_MAX_HP       = 10_000_000
 BOSS_RESPAWN_SEC  = 30 * 60    # 30 минут после смерти — следующий босс в слоте
 ACTIVE_BOSS_SLOTS = 5          # одновременно активных боссов
+
+# Блокировки на слот (защита от гонок при параллельных ударах/спавнах
+# в рамках одного процесса; на уровне БД та же атаку дополнительно
+# защищает транзакция BEGIN IMMEDIATE в _atomic_slot_update).
+_SLOT_LOCKS_GUARD = threading.Lock()
+_SLOT_LOCKS: dict[int, threading.Lock] = {}
+
+def _get_slot_lock(slot: int) -> threading.Lock:
+    with _SLOT_LOCKS_GUARD:
+        lock = _SLOT_LOCKS.get(slot)
+        if lock is None:
+            lock = threading.Lock()
+            _SLOT_LOCKS[slot] = lock
+        return lock
 
 # HP следующего босса в зависимости от скорости убийства предыдущего
 BOSS_HP_FAST   = 150_000_000  # убит за <= 5 минут
@@ -923,6 +942,48 @@ def _save_slot(slot: int, state: dict):
         conn.commit()
 
 
+def _atomic_slot_update(slot: int, mutator):
+    """
+    Атомарно читает слот, передаёт его в mutator(state) -> (new_state, ret),
+    сохраняет new_state и возвращает ret.
+
+    Защита от гонок на двух уровнях:
+      1) threading.Lock на слот — сериализует параллельные запросы
+         внутри одного процесса бота.
+      2) SQLite-транзакция BEGIN IMMEDIATE — берёт блокировку записи
+         на уровне БД, защищая от гонок между процессами/воркерами.
+
+    Без этого два одновременных удара по одному боссу могли читать
+    одинаковый boss_hp "до" удара и затирать результат друг друга
+    (потеря урона) либо оба фиксировать "boss_killed" и задвоить награду.
+    """
+    lock = _get_slot_lock(slot)
+    with lock:
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT data_json FROM boss_slots WHERE slot=?", (slot,)
+            ).fetchone()
+            state = json.loads(row["data_json"]) if row else {}
+
+            new_state, ret = mutator(state)
+
+            conn.execute(
+                "INSERT INTO boss_slots (slot, data_json) VALUES (?,?) "
+                "ON CONFLICT(slot) DO UPDATE SET data_json=excluded.data_json",
+                (slot, json.dumps(new_state, ensure_ascii=False))
+            )
+            conn.commit()
+            return ret
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
 def _pick_random_boss(exclude_keys: list[str] = None) -> dict:
     """Выбирает случайного босса, не из исключённых (активные в других слотах)."""
     pool = [b for b in BOSSES if not exclude_keys or b["key"] not in exclude_keys]
@@ -1058,19 +1119,12 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
         result["error"] = "no_sword"
         return result
 
-    state = _load_slot(slot)
-
-    if not state or not state.get("boss_alive", False):
-        result["error"] = "boss_dead"
-        return result
-
-    if state.get("boss_key") not in BOSSES_BY_KEY:
-        result["error"] = "boss_dead"
-        return result
-
+    # Фиксируем кулдаун сразу после валидации, до тяжёлых вычислений —
+    # сужает окно гонки для параллельных запросов от одного игрока.
     data["last_boss_hit"] = now
 
-    # Множители урона
+    # Множители урона (не зависят от состояния босса — считаем их
+    # до входа в блокировку слота, чтобы не держать lock дольше нужного)
     from datetime import datetime, timezone as _tz
     _now_check = datetime.now(_tz.utc).timestamp()
     _enh = data.get("active_enh_booster")
@@ -1083,70 +1137,91 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
     status_dmg_mult = _status_dmg_mult(data)
     status_crit_add = _status_crit_bonus(data) / 100.0
 
-    if data.get("infinite_dmg"):
-        dmg  = state["boss_hp"]
-        crit = False
-    else:
-        dmg = random.randint(sword["dmg_min"], sword["dmg_max"])
-        crit = False
-        if random.random() < sword["crit_chance"] + status_crit_add:
-            dmg  = int(sword["dmg_max"] * sword["crit_mult"])
-            crit = True
-        dmg = int(dmg * enh_mult * art_dmg_mult * status_dmg_mult)
+    dmg = random.randint(sword["dmg_min"], sword["dmg_max"])
+    crit = False
+    if random.random() < sword["crit_chance"] + status_crit_add:
+        dmg  = int(sword["dmg_max"] * sword["crit_mult"])
+        crit = True
+    dmg = max(0, int(dmg * enh_mult * art_dmg_mult * status_dmg_mult))
 
-    hp_before = state["boss_hp"]
-    hp_after  = max(0, hp_before - dmg)
-    state["boss_hp"] = hp_after
-
-    # Записываем урон в лог
+    is_infinite = bool(data.get("infinite_dmg"))
     uid_str = str(data.get("id", 0))
-    damage_log = state.setdefault("damage_log", {})
-    damage_log[uid_str] = damage_log.get(uid_str, 0) + dmg
 
-    result["hit"]            = True
-    result["crit"]           = crit
-    result["dmg"]            = dmg
-    result["boss_hp_before"] = hp_before
-    result["boss_hp_after"]  = hp_after
+    def _mutator(state: dict):
+        # Состояние перепроверяется уже ВНУТРИ блокировки/транзакции —
+        # это защищает от гонок, когда между проверкой выше и этим
+        # моментом другой запрос успел убить босса или респавнить слот.
+        if not state or not state.get("boss_alive", False) or state.get("boss_key") not in BOSSES_BY_KEY:
+            return state, {"error": "boss_dead"}
 
-    if hp_after == 0:
-        died_at = _now_ts()
-        spawned_at = state.get("boss_spawned", died_at)
-        kill_duration = died_at - spawned_at
+        # Админ-режим "infinite_dmg": урон = текущий HP босса (мгновенный килл).
+        # Считаем именно тут, под блокировкой, чтобы взять актуальный HP —
+        # а не значение, прочитанное до захвата лока.
+        hit_dmg  = state["boss_hp"] if is_infinite else dmg
+        hit_crit = False if is_infinite else crit
 
-        state["boss_alive"]          = False
-        state["boss_died_at"]        = died_at
-        state["boss_kill_duration"]  = kill_duration
-        result["boss_killed"]        = True
+        hp_before = state["boss_hp"]
+        hp_after  = max(0, hp_before - hit_dmg)
+        state["boss_hp"] = hp_after
 
-        # ── Пропорциональное распределение награды ──
-        total_pool = _reward_for_hp(state.get("boss_max_hp", BOSS_MAX_HP))
-        total_dmg  = sum(damage_log.values()) or 1
-        killer_uid = uid_str
+        damage_log = state.setdefault("damage_log", {})
+        damage_log[uid_str] = damage_log.get(uid_str, 0) + hit_dmg
 
-        damage_rewards = {}  # uid_str -> (coins, xp)
-        for u_str, u_dmg in damage_log.items():
-            share      = u_dmg / total_dmg
-            coins      = int(total_pool * share)
-            is_killer  = (u_str == killer_uid)
-            if is_killer:
-                xp = BOSS_XP_KILLER
-            else:
-                xp = max(
-                    BOSS_XP_PARTICIPANT_MIN,
-                    int(BOSS_XP_PARTICIPANT_MAX * share)
-                )
-            damage_rewards[u_str] = (coins, xp)
+        out = {
+            "hit": True, "crit": hit_crit, "dmg": hit_dmg,
+            "boss_hp_before": hp_before, "boss_hp_after": hp_after,
+            "boss_killed": False, "reward": 0, "xp": 0,
+            "damage_rewards": {}, "error": None,
+        }
 
-        result["damage_rewards"] = damage_rewards
-        result["reward"]         = damage_rewards.get(uid_str, (0, 0))[0]
-        result["xp"]             = damage_rewards.get(uid_str, (0, 0))[1]
+        if hp_after == 0:
+            died_at = _now_ts()
+            spawned_at = state.get("boss_spawned", died_at)
+            kill_duration = died_at - spawned_at
 
+            state["boss_alive"]         = False
+            state["boss_died_at"]       = died_at
+            state["boss_kill_duration"] = kill_duration
+            out["boss_killed"]          = True
+
+            # ── Пропорциональное распределение награды ──
+            total_pool = _reward_for_hp(state.get("boss_max_hp", BOSS_MAX_HP))
+            total_dmg  = sum(damage_log.values()) or 1
+            killer_uid = uid_str
+
+            damage_rewards = {}  # uid_str -> (coins, xp)
+            for u_str, u_dmg in damage_log.items():
+                share     = u_dmg / total_dmg
+                coins     = int(total_pool * share)
+                is_killer = (u_str == killer_uid)
+                if is_killer:
+                    xp = BOSS_XP_KILLER
+                else:
+                    xp = max(
+                        BOSS_XP_PARTICIPANT_MIN,
+                        int(BOSS_XP_PARTICIPANT_MAX * share)
+                    )
+                damage_rewards[u_str] = (coins, xp)
+
+            out["damage_rewards"] = damage_rewards
+            out["reward"]         = damage_rewards.get(uid_str, (0, 0))[0]
+            out["xp"]             = damage_rewards.get(uid_str, (0, 0))[1]
+
+        return state, out
+
+    mutated = _atomic_slot_update(slot, _mutator)
+
+    if mutated.get("error"):
+        result["error"] = mutated["error"]
+        return result
+
+    result.update({k: v for k, v in mutated.items() if k != "error"})
+
+    if result["boss_killed"]:
         # Начисляем убийце сразу (остальным — в main.py через damage_rewards)
         data["balance"] = data.get("balance", 0) + result["reward"]
         data["xp"]      = data.get("xp", 0) + result["xp"]
 
-    _save_slot(slot, state)
     return result
 
 
@@ -2173,6 +2248,11 @@ def arsenal_gift_sword(sender_data: dict, recipient_data: dict,
     sw = SWORDS_BY_KEY.get(sword_key)
     if not sw:
         return False, "❌ Меч не найден."
+    if sender_data is recipient_data or (
+        sender_data.get("uid") is not None
+        and sender_data.get("uid") == recipient_data.get("uid")
+    ):
+        return False, "❌ Нельзя подарить меч самому себе."
     if not has_sword(sender_data, sword_key):
         return False, "❌ У тебя нет этого меча."
     if sword_is_rented_out(sender_data, sword_key):
@@ -2222,6 +2302,11 @@ def arsenal_rent_sword(owner_data: dict, renter_data: dict,
     sw = SWORDS_BY_KEY.get(sword_key)
     if not sw:
         return False, "❌ Меч не найден."
+    if owner_data is renter_data or (
+        owner_data.get("uid") is not None
+        and owner_data.get("uid") == renter_data.get("uid")
+    ):
+        return False, "❌ Нельзя сдать меч в аренду самому себе."
     if not has_sword(owner_data, sword_key):
         return False, "❌ У тебя нет этого меча."
     if sword_is_rented_out(owner_data, sword_key):
