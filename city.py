@@ -62,6 +62,11 @@ BTN_EMOJI = {
     "city_north": "5422721344519299183",        # 🧊 Северный
     "city_south": "5208964438559835776",        # 🌴 Южный
     "city_capital": "5424887227807188349",      # 🏛 Столица
+    "balance": "5224257782013769471",           # баланс
+    "currency": "5427168083074628963",          # кристаллы
+    "customs": "5848400681416793625",           # таможня / гильдия магов
+    "buy": "5859243644183124239",               # покупка
+    "sell": "5312361253610475399",              # продажа
 }
 
 TRAVEL_COST = 50
@@ -387,7 +392,7 @@ def _fmt(n: int) -> str:
 
 
 def _crystals(n: int) -> str:
-    return f"{_fmt(n)} {CURRENCY_EMOJI} {CURRENCY_NAME}"
+    return f"{_fmt(n)} {_tge('currency', CURRENCY_EMOJI)} {CURRENCY_NAME}"
 
 
 def _is_traveling(u: dict) -> bool:
@@ -560,7 +565,7 @@ def _profile_text(u: dict, inv: dict) -> str:
         "🧙‍♂️ <b>ГИЛЬДИЯ ТОРГОВЦЕВ</b>\n"
         "<i>Личный кабинет искателя прибыли</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"{CURRENCY_EMOJI} Баланс: <b>{_fmt(u['balance'])}</b> <i>{CURRENCY_NAME}</i>\n"
+        f"{_tge('balance', CURRENCY_EMOJI)} Баланс: <b>{_fmt(u['balance'])}</b> <i>{CURRENCY_NAME}</i>\n"
         f"{_city_emoji_tag(u['city'])} Город: <b>{u['city']}</b>\n"
         f"📡 Статус: {status_line}\n\n"
         "📦 <b>Склад</b>\n"
@@ -583,11 +588,11 @@ def _market_text() -> str:
         lines.append(f"{_city_emoji_tag(city)} <b>{city}</b>")
         for item, info in ITEMS.items():
             p = prices[city][item]
-            lines.append(f"   {info['emoji']} <i>{info['name']}</i> — <b>{p}</b> {CURRENCY_EMOJI}")
+            lines.append(f"   {info['emoji']} <i>{info['name']}</i> — <b>{p}</b> {_tge('currency', CURRENCY_EMOJI)}")
         lines.append("")
     lines.append("━━━━━━━━━━━━━━━━━━━━")
-    lines.append(f"🛒 <i>Купить —</i> <code>/citybuy товар количество</code>")
-    lines.append(f"💰 <i>Продать —</i> <code>/citysell товар количество</code>")
+    lines.append(f"{0} <i>Купить —</i> <code>/citybuy товар количество</code>".format(_tge("buy", "🛒")))
+    lines.append(f"{0} <i>Продать —</i> <code>/citysell товар количество</code>".format(_tge("sell", "💰")))
     return "\n".join(lines)
 
 
@@ -645,10 +650,10 @@ def _route_text() -> str:
         "<i>Подсказка гильдии — где заработать прямо сейчас</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{info['emoji']} Товар: <b>{info['name']}</b>\n\n"
-        f"🛒 Купить в {_city_emoji_tag(best['buy_city'])} <b>{best['buy_city']}</b> — <b>{best['buy_price']}</b> {CURRENCY_EMOJI}\n"
-        f"💰 Продать в {_city_emoji_tag(best['sell_city'])} <b>{best['sell_city']}</b> — <b>{best['sell_price']}</b> {CURRENCY_EMOJI}\n\n"
+        f"{_tge('buy', '🛒')} Купить в {_city_emoji_tag(best['buy_city'])} <b>{best['buy_city']}</b> — <b>{best['buy_price']}</b> {_tge('currency', CURRENCY_EMOJI)}\n"
+        f"{_tge('sell', '💰')} Продать в {_city_emoji_tag(best['sell_city'])} <b>{best['sell_city']}</b> — <b>{best['sell_price']}</b> {_tge('currency', CURRENCY_EMOJI)}\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        f"📊 Прибыль с единицы: <b>+{best['profit']}</b> {CURRENCY_EMOJI} <i>(≈{margin_pct}%)</i>"
+        f"📊 Прибыль с единицы: <b>+{best['profit']}</b> {_tge('currency', CURRENCY_EMOJI)} <i>(≈{margin_pct}%)</i>"
     )
 
 
@@ -660,8 +665,8 @@ def _help_text() -> str:
         "<b>📋 Команды</b>\n"
         "👤 <code>/city</code> — <i>профиль торговца: баланс, город, статус, склад</i>\n"
         f"{_tge('market', '🏪')} <code>/citymarket</code> — <i>цены на товары во всех городах</i>\n"
-        "🛒 <code>/citybuy товар количество</code> — <i>купить товар</i>\n"
-        "💰 <code>/citysell товар количество</code> — <i>продать товар</i>\n"
+        f"{_tge('buy', '🛒')} <code>/citybuy товар количество</code> — <i>купить товар</i>\n"
+        f"{_tge('sell', '💰')} <code>/citysell товар количество</code> — <i>продать товар</i>\n"
         f"{_tge('travel', '🧭')} <code>/citytravel город</code> — <i>отправиться в другой город</i>\n"
         f"{_tge('cancel_travel', '❌')} <code>/citycancel</code> — <i>отменить поездку (только в первые 2 минуты)</i>\n"
         f"{_tge('bag', '🎒')} <code>/citybag</code> — <i>инвентарь</i>\n"
@@ -676,13 +681,13 @@ def _help_text() -> str:
         f"  {_tge('city_capital', '🏛')} Столица — <i>всё дорого, но цены стабильнее</i>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"<b>{_tge('travel', '🧭')} Путешествия</b>\n"
-        f"  • Стоимость дороги: <b>{TRAVEL_COST}</b> {CURRENCY_EMOJI}\n"
+        f"  • Стоимость дороги: <b>{TRAVEL_COST}</b> {_tge('currency', CURRENCY_EMOJI)}\n"
         f"  • Время в пути: <b>{TRAVEL_MINUTES}</b> минут\n"
         "  • <i>Во время пути торговля недоступна</i>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "<b>🧙‍♂️ Таможня (Гильдия магов)</b>\n"
+        f"<b>{_tge('customs', '🧙‍♂️')} Таможня (Гильдия магов)</b>\n"
         f"  • <i>Провоз свыше</i> <b>{CUSTOMS_LIMIT}</b> <i>ед. одного товара рискует конфискацией</i>\n"
-        f"  • Шанс конфискации: <b>{int(CUSTOMS_CHANCE * 100)}%</b>, штраф <b>{CUSTOMS_FINE}</b> {CURRENCY_EMOJI}\n\n"
+        f"  • Шанс конфискации: <b>{int(CUSTOMS_CHANCE * 100)}%</b>, штраф <b>{CUSTOMS_FINE}</b> {_tge('currency', CURRENCY_EMOJI)}\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "<b>💹 Динамика цен</b>\n"
         "  • <i>Цены обновляются каждый час (±20% случайно)</i>\n"
@@ -765,8 +770,8 @@ async def cmd_city_buy(message: Message):
         "<i>Покупка прошла успешно</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{ITEMS[item]['emoji']} Куплено: <b>{qty} × {ITEMS[item]['name']}</b>\n"
-        f"💵 Цена за шт.: <b>{price}</b> {CURRENCY_EMOJI}\n"
-        f"{CURRENCY_EMOJI} Списано: <b>{_fmt(total)}</b> <i>{CURRENCY_NAME}</i>\n"
+        f"💵 Цена за шт.: <b>{price}</b> {_tge('currency', CURRENCY_EMOJI)}\n"
+        f"{_tge('currency', CURRENCY_EMOJI)} Списано: <b>{_fmt(total)}</b> <i>{CURRENCY_NAME}</i>\n"
         f"📍 Город: <b>{u['city']}</b>",
         parse_mode="HTML",
         reply_markup=city_back_keyboard(),
@@ -819,8 +824,8 @@ async def cmd_city_sell(message: Message):
         "<i>Продажа прошла успешно</i> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{ITEMS[item]['emoji']} Продано: <b>{qty} × {ITEMS[item]['name']}</b>\n"
-        f"💵 Цена за шт.: <b>{price}</b> {CURRENCY_EMOJI}\n"
-        f"{CURRENCY_EMOJI} Получено: <b>{_fmt(total)}</b> <i>{CURRENCY_NAME}</i>\n"
+        f"💵 Цена за шт.: <b>{price}</b> {_tge('currency', CURRENCY_EMOJI)}\n"
+        f"{_tge('currency', CURRENCY_EMOJI)} Получено: <b>{_fmt(total)}</b> <i>{CURRENCY_NAME}</i>\n"
         f"📍 Город: <b>{u['city']}</b>",
         parse_mode="HTML",
         reply_markup=city_back_keyboard(),
@@ -866,16 +871,16 @@ async def _do_travel(user_id: int, username: str, dest: str):
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"Направление: {CITY_EMOJI.get(dest, '🏙')} <b>{dest}</b>\n"
         f"⏳ Прибытие через <b>{TRAVEL_MINUTES}</b> <i>минут</i>\n"
-        f"{CURRENCY_EMOJI} Дорога стоила: <b>{TRAVEL_COST}</b> <i>{CURRENCY_NAME}</i>\n\n"
+        f"{_tge('currency', CURRENCY_EMOJI)} Дорога стоила: <b>{TRAVEL_COST}</b> <i>{CURRENCY_NAME}</i>\n\n"
         f"<i>Передумали? В первые {cancel_min} минуты поездку можно отменить "
         f"(плата за дорогу не возвращается).</i>"
     )
     if confiscated:
         text += (
             "\n\n━━━━━━━━━━━━━━━━━━━━\n"
-            f"🧙‍♂️ <b>Гильдия магов конфисковала ваш товар!</b>\n"
+            f"{_tge('customs', '🧙‍♂️')} <b>Гильдия магов конфисковала ваш товар!</b>\n"
             f"<i>Изъято: {', '.join(confiscated)}</i>\n"
-            f"💸 Штраф: <b>{fine_total}</b> {CURRENCY_EMOJI} <i>{CURRENCY_NAME}</i>"
+            f"💸 Штраф: <b>{fine_total}</b> {_tge('currency', CURRENCY_EMOJI)} <i>{CURRENCY_NAME}</i>"
         )
     return True, text
 
