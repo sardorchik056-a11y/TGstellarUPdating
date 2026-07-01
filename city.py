@@ -58,8 +58,8 @@ async def _city_level_gate(handler, event, data):
     return await handler(event, data)
 
 
-router.message.outer_middleware(_city_level_gate)
-router.callback_query.outer_middleware(_city_level_gate)
+router.message.middleware(_city_level_gate)
+router.callback_query.middleware(_city_level_gate)
 
 # ──────────────────────────────────────────────────────────────────────────
 # КОНСТАНТЫ
@@ -431,10 +431,17 @@ def spend_up_to(user_id: int, amount: int):
 
 def try_adjust_inventory(user_id: int, item_type: str, delta: int) -> bool:
     """Атомарно меняет количество товара на delta (может быть отрицательным).
-    Не даёт уйти в минус. True — изменение применено."""
+    Не даёт уйти в минус. Если строки инвентаря ещё нет (например, у старого
+    аккаунта, зарегистрированного до появления этого товара) — создаёт её
+    перед изменением, иначе UPDATE молча не найдёт строку и ничего не
+    изменит, даже если деньги уже списаны. True — изменение применено."""
     if delta == 0:
         return True
     with _conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO city_inventory (user_id, item_type, quantity) VALUES (?,?,0)",
+            (user_id, item_type),
+        )
         cur = conn.execute(
             "UPDATE city_inventory SET quantity = quantity + ? "
             "WHERE user_id=? AND item_type=? AND quantity + ? >= 0",
@@ -1258,7 +1265,13 @@ async def cmd_city_buy(message: Message):
             parse_mode="HTML",
         )
         return
-    try_adjust_inventory(u["user_id"], item, qty)  # для покупки всегда успешна (нет верхнего лимита)
+    if not try_adjust_inventory(u["user_id"], item, qty):
+        add_balance(u["user_id"], total)  # откатываем списание, если товар не начислился
+        await message.reply(
+            "❌ Не удалось начислить товар. Средства возвращены на баланс.",
+            parse_mode="HTML",
+        )
+        return
     register_trade(u["city"], item, "buy")
     log_trade_qty(u["user_id"], qty, "buy")
 
