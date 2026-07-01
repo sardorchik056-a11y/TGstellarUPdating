@@ -1482,21 +1482,20 @@ def sword_shop_keyboard(data: dict, page: int = 0, lang: str = "ru") -> InlineKe
 
     for sword in page_swords:
         owned = has_sword(data, sword["key"])
+        equipped = get_equipped_sword(data) == sword["key"]
         sword_name = sword.get("name_en", sword["name"]) if lang == "en" else sword["name"]
         if owned:
             builder.row(InlineKeyboardButton(
                 text=sword_name,
                 callback_data=f'sword_info_{sword["key"]}',
                 icon_custom_emoji_id=sword["emoji_id"],
-                style="success"
+                style="primary" if equipped else "success"
             ))
         else:
-            can_afford = data.get("balance", 0) >= sword["price"]
             builder.row(InlineKeyboardButton(
                 text=f'{sword_name} — {_fmt(sword["price"])}',
                 callback_data=f'sword_info_{sword["key"]}',
-                icon_custom_emoji_id=sword["emoji_id"],
-                style="success" if can_afford else "danger"
+                icon_custom_emoji_id=sword["emoji_id"]
             ))
 
     nav = []
