@@ -351,13 +351,14 @@ def _fmt_cost(pick_key: str, lang: str = "ru") -> str:
 
 def _fmt_num(n) -> str:
     """
-    Сокращённый формат чисел (короткая шкала, англ. стиль):
+    Сокращённый формат чисел (стандартная короткая шкала):
     1500 -> "1.5K", 100000 -> "100K", 2300000 -> "2.3M",
     1500000000 -> "1.5B", 1_000_000_000_000 -> "1T",
-    1_000_000_000_000_000 -> "1Q" (quadrillion),
-    1_000_000_000_000_000_000 -> "1S" (sextillion-scale).
-    Если число ещё больше — суффикс продолжает расти (S2, S3, ...),
-    чтобы формат не ломался даже на экстремально больших цифрах.
+    1e15 -> "1Qa" (quadrillion), 1e18 -> "1Qi" (quintillion),
+    1e21 -> "1Sx" (sextillion), 1e24 -> "1Sp" (septillion),
+    1e27 -> "1Oc" (octillion), 1e30 -> "1No" (nonillion),
+    1e33 -> "1Dc" (decillion).
+    Если число ещё больше — формат не ломается: продолжаем Dc2, Dc3, ...
     """
     try:
         n = float(n)
@@ -372,7 +373,7 @@ def _fmt_num(n) -> str:
             return f"{sign}{int(n)}"
         return f"{sign}{n:.1f}"
 
-    suffixes = ["", "K", "M", "B", "T", "Q", "S"]
+    suffixes = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"]
     idx = 0
     val = n
     while val >= 1000:
@@ -384,8 +385,8 @@ def _fmt_num(n) -> str:
     if idx < len(suffixes):
         suffix = suffixes[idx]
     else:
-        # За пределами "S" (10^18) продолжаем нумеровать: S2, S3, ...
-        suffix = f"S{idx - len(suffixes) + 2}"
+        # За пределами "Dc" (10^33) продолжаем нумеровать: Dc2, Dc3, ...
+        suffix = f"Dc{idx - len(suffixes) + 2}"
 
     if val == int(val):
         return f"{sign}{int(val)}{suffix}"
@@ -399,11 +400,11 @@ def _fmt_num(n) -> str:
 # min_tier — минимальный тир кирки, начиная с которого руда вообще может выпасть.
 THRESHOLD_ORES = {
     # key        : (tick_threshold, chance_pct, min_tier)
-    "amethyst"   : (300, 65.0, "gold"),
-    "jade"       : (300, 25.0, "gold"),
-    "emerald"    : (300, 12.0, "uranium"),
-    "obsidian"   : (300,  5.0, "uranium"),
-    "sapphire"   : (300,  2.0, "uranium"),
+    "amethyst"   : (300, 65.0, "coal"),
+    "jade"       : (300, 25.0, "coal"),
+    "emerald"    : (300, 12.0, "copper"),
+    "obsidian"   : (300,  5.0, "copper"),
+    "sapphire"   : (300,  2.0, "copper"),
 }
 
 # Порядок тиров кирок (используется для сравнения min_tier)
