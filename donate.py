@@ -13,7 +13,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 DONATE_PACKAGES = [
     {
         "key":    "donate_1",
-        "coins":  100_000,
+        "coins":  1_000_000,
         "stars":  49,
         "emoji":  "🪙",
         "label":  "Стартовый",
@@ -22,7 +22,7 @@ DONATE_PACKAGES = [
     },
     {
         "key":    "donate_2",
-        "coins":  350_000,
+        "coins":  3_500_000,
         "stars":  89,
         "emoji":  "💰",
         "label":  "Базовый",
@@ -31,7 +31,7 @@ DONATE_PACKAGES = [
     },
     {
         "key":    "donate_3",
-        "coins":  1_000_000,
+        "coins":  10_000_000,
         "stars":  149,
         "emoji":  "💎",
         "label":  "Стандарт",
@@ -40,7 +40,7 @@ DONATE_PACKAGES = [
     },
     {
         "key":    "donate_4",
-        "coins":  5_000_000,
+        "coins":  50_000_000,
         "stars":  299,
         "emoji":  "💎",
         "label":  "Расширенный",
@@ -49,7 +49,7 @@ DONATE_PACKAGES = [
     },
     {
         "key":    "donate_5",
-        "coins":  15_000_000,
+        "coins":  150_000_000,
         "stars":  599,
         "emoji":  "🔷",
         "label":  "Премиум",
@@ -58,7 +58,7 @@ DONATE_PACKAGES = [
     },
     {
         "key":    "donate_6",
-        "coins":  50_000_000,
+        "coins":  500_000_000,
         "stars":  1_299,
         "emoji":  "🔷",
         "label":  "Элитный",
@@ -67,7 +67,7 @@ DONATE_PACKAGES = [
     },
     {
         "key":    "donate_7",
-        "coins":  250_000_000,
+        "coins":  1_700_000_000,
         "stars":  2_499,
         "emoji":  "🏆",
         "label":  "Легенда",
@@ -76,8 +76,8 @@ DONATE_PACKAGES = [
     },
     {
         "key":    "donate_8",
-        "coins":  1_000_000_000,
-        "stars":  5_000,
+        "coins":  4_000_000_000,
+        "stars":  4_999,
         "emoji":  "👑",
         "label":  "Король",
         "label_en": "King",
@@ -85,7 +85,7 @@ DONATE_PACKAGES = [
     },
     {
         "key":    "donate_9",
-        "coins":  5_000_000_000,
+        "coins":  15_000_000_000,
         "stars":  9_999,
         "emoji":  "👑",
         "label":  "Император",
@@ -94,8 +94,8 @@ DONATE_PACKAGES = [
     },
     {
         "key":    "donate_10",
-        "coins":  25_000_000_000,
-        "stars":  24_999,
+        "coins":  75_000_000_000,
+        "stars":  14_999,
         "emoji":  "🌌",
         "label":  "Абсолют",
         "label_en": "Absolute",
