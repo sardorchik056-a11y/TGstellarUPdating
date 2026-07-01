@@ -573,15 +573,15 @@ def duration_detail_text(data: dict, dur_key: str, lang: str = "ru") -> str:
     elif dur_key in owned_durs:
         status = t(lang, "mine_dur_status_owned")
     else:
-        status = t(lang, "mine_dur_status_none")
+        status = f'<tg-emoji emoji-id="5296369303661067030">🔒</tg-emoji> {t(lang, "mine_dur_status_none")}'
     price_str = _fmt_num(d["cost"]) if d["cost"] else t(lang, "mine_dur_free")
     return (
         f'<tg-emoji emoji-id="5440621591387980068">🎟</tg-emoji> <i><b>{t(lang, "mine_dur_card_title")} {dur_lbl}</b></i>\n'
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f'<tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <i><b>{t(lang, "mine_sell_balance")}: {_fmt_num(data["balance"])}{COIN}</b></i>\n\n'
         f'<tg-emoji emoji-id="5382194935057372936">🎟</tg-emoji> <i><b>{t(lang, "mine_dur_session")}: {dur_lbl}</b></i>\n'
-        f'<tg-emoji emoji-id="5330320040883411678">🎟</tg-emoji> <i><b>{t(lang, "mine_dur_price")}: {price_str}{COIN}</b></i>\n'
-        f'<tg-emoji emoji-id="5438496463044752972">🎟</tg-emoji> <i><b>{t(lang, "mine_dur_status")}: {status}</b></i>'
+        f'<tg-emoji emoji-id="5287231198098117669">🎟</tg-emoji> <i><b>{t(lang, "mine_dur_price")}: {price_str}{COIN}</b></i>\n'
+        f'<tg-emoji emoji-id="5222444124698853913">🎟</tg-emoji> <i><b>{t(lang, "mine_dur_status")}: {status}</b></i>'
     )
 
 
