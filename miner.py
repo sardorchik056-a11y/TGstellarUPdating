@@ -17,7 +17,6 @@ EMOJI_SELECTED    = "5206607081334906820"
 EMOJI_BACK        = "6039539366177541657"
 
 EMOJI_COIN        = "5199552030615558774"
-EMOJI_STAR        = "5267500801240092311"
 
 EMOJI_BTN_START        = "5906891238270834298"
 EMOJI_BTN_COLLECT      = "5310278924616356636"
@@ -31,11 +30,9 @@ EMOJI_BTN_DURATION     = "5440621591387980068"
 EMOJI_BTN_STOP         = "5907027122446145395"
 
 EMOJI_BTN_BUY_COINS  = "5199552030615558774"
-EMOJI_BTN_BUY_STARS  = "5267500801240092311"
 EMOJI_BTN_FREE       = "5199552030615558774"
 EMOJI_BTN_SELECT     = "5397916757333654639"
 EMOJI_BTN_ACTIVE     = "5206607081334906820"
-EMOJI_BTN_NO_COINS   = "5240241223632954241"
 
 EMOJI_BTN_DUR_BUY    = "5199552030615558774"
 EMOJI_BTN_SELL_ALL   = "5429518319243775957"
@@ -49,7 +46,6 @@ def _emoji_btn(emoji_id: str, fallback: str) -> str:
 
 
 COIN = f'<tg-emoji emoji-id="{EMOJI_COIN}">🪙</tg-emoji>'
-STAR = f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji>'
 
 MAX_LEVEL = 150
 
@@ -85,56 +81,56 @@ ORES_BY_KEY = {o["key"]: o for o in ORES}
 # ============================================================
 
 PICKAXES = {
-    "wood_1": {"name": "Wood-1lvl", "dig_min": 1, "dig_max": 2, "cost": 0, "currency": "coins", "required_level": 1, "tier": "wood", "cost_stars": 0},
-    "wood_2": {"name": "Wood-2lvl", "dig_min": 2, "dig_max": 4, "cost": 1_500, "currency": "coins", "required_level": 1, "tier": "wood", "cost_stars": 10},
-    "wood_3": {"name": "Wood-3lvl", "dig_min": 2, "dig_max": 5, "cost": 2_500, "currency": "coins", "required_level": 1, "tier": "wood", "cost_stars": 15},
-    "wood_4": {"name": "Wood-4lvl", "dig_min": 3, "dig_max": 5, "cost": 4_000, "currency": "coins", "required_level": 1, "tier": "wood", "cost_stars": 20},
-    "wood_5": {"name": "Wood-5lvl", "dig_min": 3, "dig_max": 6, "cost": 6_000, "currency": "coins", "required_level": 1, "tier": "wood", "cost_stars": 25},
-    "rock_1": {"name": "Rock-1lvl", "dig_min": 3, "dig_max": 7, "cost": 10_000, "currency": "coins", "required_level": 1, "tier": "rock", "cost_stars": 35},
-    "rock_2": {"name": "Rock-2lvl", "dig_min": 4, "dig_max": 8, "cost": 16_000, "currency": "coins", "required_level": 1, "tier": "rock", "cost_stars": 45},
-    "rock_3": {"name": "Rock-3lvl", "dig_min": 5, "dig_max": 9, "cost": 25_000, "currency": "coins", "required_level": 1, "tier": "rock", "cost_stars": 60},
-    "rock_4": {"name": "Rock-4lvl", "dig_min": 5, "dig_max": 11, "cost": 40_000, "currency": "coins", "required_level": 1, "tier": "rock", "cost_stars": 80},
-    "rock_5": {"name": "Rock-5lvl", "dig_min": 6, "dig_max": 12, "cost": 64_000, "currency": "coins", "required_level": 1, "tier": "rock", "cost_stars": 100},
-    "iron_1": {"name": "Iron-1lvl", "dig_min": 7, "dig_max": 14, "cost": 100_000, "currency": "coins", "required_level": 1, "tier": "iron", "cost_stars": 150},
-    "iron_2": {"name": "Iron-2lvl", "dig_min": 8, "dig_max": 16, "cost": 160_000, "currency": "coins", "required_level": 1, "tier": "iron", "cost_stars": 200},
-    "iron_3": {"name": "Iron-3lvl", "dig_min": 9, "dig_max": 19, "cost": 260_000, "currency": "coins", "required_level": 1, "tier": "iron", "cost_stars": 250},
-    "iron_4": {"name": "Iron-4lvl", "dig_min": 11, "dig_max": 21, "cost": 420_000, "currency": "coins", "required_level": 1, "tier": "iron", "cost_stars": 300},
-    "iron_5": {"name": "Iron-5lvl", "dig_min": 12, "dig_max": 25, "cost": 680_000, "currency": "coins", "required_level": 1, "tier": "iron", "cost_stars": 350},
-    "gold_1": {"name": "Gold-1lvl", "dig_min": 14, "dig_max": 28, "cost": 1_100_000, "currency": "coins", "required_level": 1, "tier": "gold", "cost_stars": 400},
-    "gold_2": {"name": "Gold-2lvl", "dig_min": 16, "dig_max": 33, "cost": 1_700_000, "currency": "coins", "required_level": 1, "tier": "gold", "cost_stars": 450},
-    "gold_3": {"name": "Gold-3lvl", "dig_min": 19, "dig_max": 37, "cost": 2_800_000, "currency": "coins", "required_level": 1, "tier": "gold", "cost_stars": 500},
-    "gold_4": {"name": "Gold-4lvl", "dig_min": 22, "dig_max": 43, "cost": 4_400_000, "currency": "coins", "required_level": 1, "tier": "gold", "cost_stars": 550},
-    "gold_5": {"name": "Gold-5lvl", "dig_min": 25, "dig_max": 50, "cost": 7_100_000, "currency": "coins", "required_level": 1, "tier": "gold", "cost_stars": 600},
-    "diamond_1": {"name": "Diamond-1lvl", "dig_min": 28, "dig_max": 57, "cost": 11_000_000, "currency": "coins", "required_level": 1, "tier": "diamond", "cost_stars": 650},
-    "diamond_2": {"name": "Diamond-2lvl", "dig_min": 33, "dig_max": 65, "cost": 18_000_000, "currency": "coins", "required_level": 1, "tier": "diamond", "cost_stars": 700},
-    "diamond_3": {"name": "Diamond-3lvl", "dig_min": 38, "dig_max": 75, "cost": 29_000_000, "currency": "coins", "required_level": 1, "tier": "diamond", "cost_stars": 800},
-    "diamond_4": {"name": "Diamond-4lvl", "dig_min": 43, "dig_max": 87, "cost": 46_000_000, "currency": "coins", "required_level": 1, "tier": "diamond", "cost_stars": 900},
-    "diamond_5": {"name": "Diamond-5lvl", "dig_min": 50, "dig_max": 100, "cost": 74_000_000, "currency": "coins", "required_level": 1, "tier": "diamond", "cost_stars": 1100},
-    "uranium_1": {"name": "Uranium-1lvl", "dig_min": 57, "dig_max": 115, "cost": 120_000_000, "currency": "coins", "required_level": 1, "tier": "uranium", "cost_stars": 1200},
-    "uranium_2": {"name": "Uranium-2lvl", "dig_min": 66, "dig_max": 132, "cost": 190_000_000, "currency": "coins", "required_level": 1, "tier": "uranium", "cost_stars": 1400},
-    "uranium_3": {"name": "Uranium-3lvl", "dig_min": 76, "dig_max": 151, "cost": 300_000_000, "currency": "coins", "required_level": 1, "tier": "uranium", "cost_stars": 1600},
-    "uranium_4": {"name": "Uranium-4lvl", "dig_min": 87, "dig_max": 174, "cost": 490_000_000, "currency": "coins", "required_level": 1, "tier": "uranium", "cost_stars": 1800},
-    "uranium_5": {"name": "Uranium-5lvl", "dig_min": 100, "dig_max": 200, "cost": 780_000_000, "currency": "coins", "required_level": 1, "tier": "uranium", "cost_stars": 2100},
-    "amethyst_1": {"name": "Amethyst-1lvl", "dig_min": 115, "dig_max": 230, "cost": 1_200_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst", "cost_stars": 2400},
-    "amethyst_2": {"name": "Amethyst-2lvl", "dig_min": 132, "dig_max": 265, "cost": 2_000_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst", "cost_stars": 2800},
-    "amethyst_3": {"name": "Amethyst-3lvl", "dig_min": 152, "dig_max": 305, "cost": 3_200_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst", "cost_stars": 3200},
-    "amethyst_4": {"name": "Amethyst-4lvl", "dig_min": 175, "dig_max": 350, "cost": 5_100_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst", "cost_stars": 3700},
-    "amethyst_5": {"name": "Amethyst-5lvl", "dig_min": 201, "dig_max": 403, "cost": 8_200_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst", "cost_stars": 4300},
-    "vip_1": {"name": "VIP-1lvl", "dig_min": 232, "dig_max": 463, "cost": 13_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip", "cost_stars": 4900},
-    "vip_2": {"name": "VIP-2lvl", "dig_min": 266, "dig_max": 533, "cost": 21_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip", "cost_stars": 5600},
-    "vip_3": {"name": "VIP-3lvl", "dig_min": 306, "dig_max": 613, "cost": 33_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip", "cost_stars": 6500},
-    "vip_4": {"name": "VIP-4lvl", "dig_min": 352, "dig_max": 704, "cost": 54_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip", "cost_stars": 7500},
-    "vip_5": {"name": "VIP-5lvl", "dig_min": 405, "dig_max": 810, "cost": 86_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip", "cost_stars": 8600},
-    "vip_plus_1": {"name": "VIP+-1lvl", "dig_min": 466, "dig_max": 932, "cost": 140_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus", "cost_stars": 9900},
-    "vip_plus_2": {"name": "VIP+-2lvl", "dig_min": 536, "dig_max": 1_071, "cost": 220_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus", "cost_stars": 11000},
-    "vip_plus_3": {"name": "VIP+-3lvl", "dig_min": 616, "dig_max": 1_232, "cost": 350_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus", "cost_stars": 13000},
-    "vip_plus_4": {"name": "VIP+-4lvl", "dig_min": 708, "dig_max": 1_417, "cost": 560_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus", "cost_stars": 15000},
-    "vip_plus_5": {"name": "VIP+-5lvl", "dig_min": 815, "dig_max": 1_630, "cost": 900_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus", "cost_stars": 17000},
-    "premium_1": {"name": "Premium-1lvl", "dig_min": 937, "dig_max": 1_874, "cost": 0, "currency": "stars", "cost_stars": 20000, "required_level": 1, "tier": "premium"},
-    "premium_2": {"name": "Premium-2lvl", "dig_min": 1_078, "dig_max": 2_155, "cost": 0, "currency": "stars", "cost_stars": 23000, "required_level": 1, "tier": "premium"},
-    "premium_3": {"name": "Premium-3lvl", "dig_min": 1_239, "dig_max": 2_478, "cost": 0, "currency": "stars", "cost_stars": 26000, "required_level": 1, "tier": "premium"},
-    "premium_4": {"name": "Premium-4lvl", "dig_min": 1_425, "dig_max": 2_850, "cost": 0, "currency": "stars", "cost_stars": 30000, "required_level": 1, "tier": "premium"},
-    "premium_5": {"name": "Premium-5lvl", "dig_min": 1_639, "dig_max": 3_278, "cost": 0, "currency": "stars", "cost_stars": 35000, "required_level": 1, "tier": "premium"},
+    "wood_1": {"name": "Wood-1lvl", "dig_min": 1, "dig_max": 2, "cost": 0, "currency": "coins", "required_level": 1, "tier": "wood"},
+    "wood_2": {"name": "Wood-2lvl", "dig_min": 2, "dig_max": 4, "cost": 1_500, "currency": "coins", "required_level": 1, "tier": "wood"},
+    "wood_3": {"name": "Wood-3lvl", "dig_min": 2, "dig_max": 5, "cost": 2_500, "currency": "coins", "required_level": 1, "tier": "wood"},
+    "wood_4": {"name": "Wood-4lvl", "dig_min": 3, "dig_max": 5, "cost": 4_000, "currency": "coins", "required_level": 1, "tier": "wood"},
+    "wood_5": {"name": "Wood-5lvl", "dig_min": 3, "dig_max": 6, "cost": 6_000, "currency": "coins", "required_level": 1, "tier": "wood"},
+    "rock_1": {"name": "Rock-1lvl", "dig_min": 3, "dig_max": 7, "cost": 10_000, "currency": "coins", "required_level": 1, "tier": "rock"},
+    "rock_2": {"name": "Rock-2lvl", "dig_min": 4, "dig_max": 8, "cost": 16_000, "currency": "coins", "required_level": 1, "tier": "rock"},
+    "rock_3": {"name": "Rock-3lvl", "dig_min": 5, "dig_max": 9, "cost": 25_000, "currency": "coins", "required_level": 1, "tier": "rock"},
+    "rock_4": {"name": "Rock-4lvl", "dig_min": 5, "dig_max": 11, "cost": 40_000, "currency": "coins", "required_level": 1, "tier": "rock"},
+    "rock_5": {"name": "Rock-5lvl", "dig_min": 6, "dig_max": 12, "cost": 64_000, "currency": "coins", "required_level": 1, "tier": "rock"},
+    "iron_1": {"name": "Iron-1lvl", "dig_min": 7, "dig_max": 14, "cost": 100_000, "currency": "coins", "required_level": 1, "tier": "iron"},
+    "iron_2": {"name": "Iron-2lvl", "dig_min": 8, "dig_max": 16, "cost": 160_000, "currency": "coins", "required_level": 1, "tier": "iron"},
+    "iron_3": {"name": "Iron-3lvl", "dig_min": 9, "dig_max": 19, "cost": 260_000, "currency": "coins", "required_level": 1, "tier": "iron"},
+    "iron_4": {"name": "Iron-4lvl", "dig_min": 11, "dig_max": 21, "cost": 420_000, "currency": "coins", "required_level": 1, "tier": "iron"},
+    "iron_5": {"name": "Iron-5lvl", "dig_min": 12, "dig_max": 25, "cost": 680_000, "currency": "coins", "required_level": 1, "tier": "iron"},
+    "gold_1": {"name": "Gold-1lvl", "dig_min": 14, "dig_max": 28, "cost": 1_100_000, "currency": "coins", "required_level": 1, "tier": "gold"},
+    "gold_2": {"name": "Gold-2lvl", "dig_min": 16, "dig_max": 33, "cost": 1_700_000, "currency": "coins", "required_level": 1, "tier": "gold"},
+    "gold_3": {"name": "Gold-3lvl", "dig_min": 19, "dig_max": 37, "cost": 2_800_000, "currency": "coins", "required_level": 1, "tier": "gold"},
+    "gold_4": {"name": "Gold-4lvl", "dig_min": 22, "dig_max": 43, "cost": 4_400_000, "currency": "coins", "required_level": 1, "tier": "gold"},
+    "gold_5": {"name": "Gold-5lvl", "dig_min": 25, "dig_max": 50, "cost": 7_100_000, "currency": "coins", "required_level": 1, "tier": "gold"},
+    "diamond_1": {"name": "Diamond-1lvl", "dig_min": 28, "dig_max": 57, "cost": 11_000_000, "currency": "coins", "required_level": 1, "tier": "diamond"},
+    "diamond_2": {"name": "Diamond-2lvl", "dig_min": 33, "dig_max": 65, "cost": 18_000_000, "currency": "coins", "required_level": 1, "tier": "diamond"},
+    "diamond_3": {"name": "Diamond-3lvl", "dig_min": 38, "dig_max": 75, "cost": 29_000_000, "currency": "coins", "required_level": 1, "tier": "diamond"},
+    "diamond_4": {"name": "Diamond-4lvl", "dig_min": 43, "dig_max": 87, "cost": 46_000_000, "currency": "coins", "required_level": 1, "tier": "diamond"},
+    "diamond_5": {"name": "Diamond-5lvl", "dig_min": 50, "dig_max": 100, "cost": 74_000_000, "currency": "coins", "required_level": 1, "tier": "diamond"},
+    "uranium_1": {"name": "Uranium-1lvl", "dig_min": 57, "dig_max": 115, "cost": 120_000_000, "currency": "coins", "required_level": 1, "tier": "uranium"},
+    "uranium_2": {"name": "Uranium-2lvl", "dig_min": 66, "dig_max": 132, "cost": 190_000_000, "currency": "coins", "required_level": 1, "tier": "uranium"},
+    "uranium_3": {"name": "Uranium-3lvl", "dig_min": 76, "dig_max": 151, "cost": 300_000_000, "currency": "coins", "required_level": 1, "tier": "uranium"},
+    "uranium_4": {"name": "Uranium-4lvl", "dig_min": 87, "dig_max": 174, "cost": 490_000_000, "currency": "coins", "required_level": 1, "tier": "uranium"},
+    "uranium_5": {"name": "Uranium-5lvl", "dig_min": 100, "dig_max": 200, "cost": 780_000_000, "currency": "coins", "required_level": 1, "tier": "uranium"},
+    "amethyst_1": {"name": "Amethyst-1lvl", "dig_min": 115, "dig_max": 230, "cost": 1_200_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
+    "amethyst_2": {"name": "Amethyst-2lvl", "dig_min": 132, "dig_max": 265, "cost": 2_000_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
+    "amethyst_3": {"name": "Amethyst-3lvl", "dig_min": 152, "dig_max": 305, "cost": 3_200_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
+    "amethyst_4": {"name": "Amethyst-4lvl", "dig_min": 175, "dig_max": 350, "cost": 5_100_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
+    "amethyst_5": {"name": "Amethyst-5lvl", "dig_min": 201, "dig_max": 403, "cost": 8_200_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
+    "vip_1": {"name": "VIP-1lvl", "dig_min": 232, "dig_max": 463, "cost": 13_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip"},
+    "vip_2": {"name": "VIP-2lvl", "dig_min": 266, "dig_max": 533, "cost": 21_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip"},
+    "vip_3": {"name": "VIP-3lvl", "dig_min": 306, "dig_max": 613, "cost": 33_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip"},
+    "vip_4": {"name": "VIP-4lvl", "dig_min": 352, "dig_max": 704, "cost": 54_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip"},
+    "vip_5": {"name": "VIP-5lvl", "dig_min": 405, "dig_max": 810, "cost": 86_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip"},
+    "vip_plus_1": {"name": "VIP+-1lvl", "dig_min": 466, "dig_max": 932, "cost": 140_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
+    "vip_plus_2": {"name": "VIP+-2lvl", "dig_min": 536, "dig_max": 1_071, "cost": 220_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
+    "vip_plus_3": {"name": "VIP+-3lvl", "dig_min": 616, "dig_max": 1_232, "cost": 350_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
+    "vip_plus_4": {"name": "VIP+-4lvl", "dig_min": 708, "dig_max": 1_417, "cost": 560_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
+    "vip_plus_5": {"name": "VIP+-5lvl", "dig_min": 815, "dig_max": 1_630, "cost": 900_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
+    "premium_1": {"name": "Premium-1lvl", "dig_min": 937, "dig_max": 1_874, "cost": 1_400_000_000_000, "currency": "coins", "required_level": 1, "tier": "premium"},
+    "premium_2": {"name": "Premium-2lvl", "dig_min": 1_078, "dig_max": 2_155, "cost": 2_200_000_000_000, "currency": "coins", "required_level": 1, "tier": "premium"},
+    "premium_3": {"name": "Premium-3lvl", "dig_min": 1_239, "dig_max": 2_478, "cost": 3_500_000_000_000, "currency": "coins", "required_level": 1, "tier": "premium"},
+    "premium_4": {"name": "Premium-4lvl", "dig_min": 1_425, "dig_max": 2_850, "cost": 5_600_000_000_000, "currency": "coins", "required_level": 1, "tier": "premium"},
+    "premium_5": {"name": "Premium-5lvl", "dig_min": 1_639, "dig_max": 3_278, "cost": 9_000_000_000_000, "currency": "coins", "required_level": 1, "tier": "premium"},
 }
 
 PICKAXES_ORDER = [
@@ -281,8 +277,6 @@ def add_xp(data: dict, amount: int):
 
 def _fmt_cost(pick_key: str, lang: str = "ru") -> str:
     p = PICKAXES[pick_key]
-    if p["currency"] == "stars":
-        return f"{p['cost_stars']} {STAR} " + ("stars" if lang == "en" else "звёзд")
     if p["cost"] == 0:
         return "Free" if lang == "en" else "Бесплатно"
     return f"{_fmt_num(p['cost'])} {COIN}"
@@ -512,26 +506,17 @@ def pickaxe_detail_text(data: dict, pick_key: str, lang: str = "ru") -> str:
     p     = PICKAXES[pick_key]
     owned = data.get("owned_pickaxes", ["wood_1"])
     tier  = TIER_LABELS.get(p.get("tier", ""), "")
-    stars_unit = t(lang, "mine_pick_stars_unit")
     if pick_key == data.get("pickaxe", "wood_1"):
         status = t(lang, "mine_pick_selected")
     elif pick_key in owned:
         status = t(lang, "mine_pick_not_active")
-    elif p["currency"] == "stars":
-        status = f'{t(lang, "mine_pick_for_stars_st")} — {p["cost_stars"]} {STAR}'
     else:
         status = t(lang, "mine_pick_not_bought")
-    if p["currency"] == "stars":
-        coins_line = f'  {COIN} {t(lang, "mine_pick_for_coins")}: <b>{t(lang, "mine_pick_unavail")}</b>\n'
-        stars_line = f'  {STAR} {t(lang, "mine_pick_for_stars")}: <b>{_fmt_num(p["cost_stars"])} {stars_unit}</b>\n'
-    elif p["cost"] == 0:
+    if p["cost"] == 0:
         free = t(lang, "mine_pick_free")
         coins_line = f'  {COIN} {t(lang, "mine_pick_for_coins")}: <b>{free}</b>\n'
-        stars_line = f'  {STAR} {t(lang, "mine_pick_for_stars")}: <b>{free}</b>\n'
     else:
-        cost_stars = p.get("cost_stars", 0)
         coins_line = f'  {COIN} {t(lang, "mine_pick_for_coins")}: <b>{_fmt_num(p["cost"])}</b>\n'
-        stars_line = f'  {STAR} {t(lang, "mine_pick_for_stars")}: <b>{_fmt_num(cost_stars)} {stars_unit}</b>\n'
     return (
         f"<b>{p['name']}</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -540,8 +525,7 @@ def pickaxe_detail_text(data: dict, pick_key: str, lang: str = "ru") -> str:
         f'<b>{t(lang, "mine_pick_tier")}: {tier}</b>\n'
         f'<b>{t(lang, "mine_pick_per5")}: {_fmt_num(p["dig_min"])}–{_fmt_num(p["dig_max"])}</b></blockquote>\n\n'
         f'<blockquote><tg-emoji emoji-id="5287231198098117669">🎟</tg-emoji> <b>{t(lang, "mine_pick_prices")}:</b>\n'
-        f"{coins_line}"
-        f"{stars_line}\n</blockquote>"
+        f"{coins_line}\n</blockquote>"
         f'<b>{t(lang, "mine_pick_status")}: {status}</b>'
     )
 
@@ -716,13 +700,11 @@ def pickaxe_detail_keyboard(data: dict, pick_key: str, page: int = -1, lang: str
     if lang == "en":
         _already_active = "Already active"
         _select         = "Select"
-        _coins_unavail  = "Coins unavailable"
         _free           = "Free"
         _back_lbl       = "Back"
     else:
         _already_active = "Уже активна"
         _select         = "Выбрать"
-        _coins_unavail  = "Монеты недоступны"
         _free           = "Бесплатно"
         _back_lbl       = "Назад"
     balance = data.get("balance", 0)
@@ -730,20 +712,14 @@ def pickaxe_detail_keyboard(data: dict, pick_key: str, page: int = -1, lang: str
         builder.row(_prem_btn(EMOJI_BTN_ACTIVE, _already_active, "noop"))
     elif pick_key in owned:
         builder.row(InlineKeyboardButton(text=_select, callback_data=f"pick_select_{pick_key}", icon_custom_emoji_id=EMOJI_BTN_SELECT, style="success"))
-    elif p["currency"] == "stars":
-        builder.row(_prem_btn(EMOJI_BTN_NO_COINS, _coins_unavail, "noop"))
-        builder.row(InlineKeyboardButton(text=f"{_fmt_num(p['cost_stars'])} ", callback_data=f"pick_buy_stars_{pick_key}", icon_custom_emoji_id=EMOJI_BTN_BUY_STARS, style="success"))
     elif p["cost"] == 0:
         builder.row(InlineKeyboardButton(text=_free, callback_data=f"pick_buy_{pick_key}", icon_custom_emoji_id=EMOJI_BTN_FREE, style="success"))
-        builder.row(InlineKeyboardButton(text=_free, callback_data=f"pick_buy_stars_{pick_key}", icon_custom_emoji_id=EMOJI_BTN_FREE, style="success"))
     else:
-        cost_stars = p.get("cost_stars", 0)
         can_afford = balance >= p["cost"]
         if can_afford:
             builder.row(InlineKeyboardButton(text=f"{_fmt_num(p['cost'])} ", callback_data=f"pick_buy_{pick_key}", icon_custom_emoji_id=EMOJI_BTN_BUY_COINS, style="success"))
         else:
             builder.row(InlineKeyboardButton(text=f"{_fmt_num(p['cost'])} ", callback_data=f"pick_buy_{pick_key}", icon_custom_emoji_id=EMOJI_BTN_BUY_COINS, style="danger"))
-        builder.row(InlineKeyboardButton(text=f"{_fmt_num(cost_stars)} ", callback_data=f"pick_buy_stars_{pick_key}", icon_custom_emoji_id=EMOJI_BTN_BUY_STARS, style="success"))
     builder.row(_back_btn(f"mine_workshop_{page}", f" {_back_lbl}"))
     return builder.as_markup()
 
@@ -820,8 +796,6 @@ def buy_pickaxe(data: dict, pick_key: str, lang: str = "ru") -> tuple:
     if pick_key not in PICKAXES:
         return False, t(lang, "pick_unknown")
     p = PICKAXES[pick_key]
-    if p["currency"] == "stars":
-        return False, t(lang, "pick_stars_only")
     owned = data.setdefault("owned_pickaxes", ["wood_1"])
     if pick_key in owned:
         return False, t(lang, "pick_already_owned")
@@ -833,24 +807,6 @@ def buy_pickaxe(data: dict, pick_key: str, lang: str = "ru") -> tuple:
     data["balance"] -= p["cost"]
     owned.append(pick_key)
     return True, t(lang, "pick_bought").format(name=p["name"], cost=f"{_fmt_num(p['cost'])} {COIN}")
-
-
-def grant_premium_pickaxe(data: dict, pick_key: str, lang: str = "ru") -> tuple:
-    from lang import t
-    if pick_key not in PICKAXES:
-        return False, t(lang, "pick_unknown")
-    p     = PICKAXES[pick_key]
-    owned = data.setdefault("owned_pickaxes", ["wood_1"])
-    if pick_key in owned:
-        return False, t(lang, "pick_already_owned")
-    owned.append(pick_key)
-    stars = p.get("cost_stars", 0)
-    msg = (
-        f"{t(lang, 'pick_premium_thanks')}\n"
-        f"{t(lang, 'pick_premium_got').format(name=p['name'], stars=f'{_fmt_num(stars)}')}\n"
-        f"({_fmt_num(p['dig_min'])}–{_fmt_num(p['dig_max'])} {t(lang, 'pick_premium_hits')})!"
-    )
-    return True, msg
 
 
 def select_pickaxe(data: dict, pick_key: str, lang: str = "ru") -> tuple:
