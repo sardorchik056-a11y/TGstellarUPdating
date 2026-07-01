@@ -1491,10 +1491,12 @@ def sword_shop_keyboard(data: dict, page: int = 0, lang: str = "ru") -> InlineKe
                 style="success"
             ))
         else:
+            can_afford = data.get("balance", 0) >= sword["price"]
             builder.row(InlineKeyboardButton(
                 text=f'{sword_name} — {_fmt(sword["price"])}',
                 callback_data=f'sword_info_{sword["key"]}',
-                icon_custom_emoji_id=sword["emoji_id"]
+                icon_custom_emoji_id=sword["emoji_id"],
+                style="success" if can_afford else "danger"
             ))
 
     nav = []
@@ -1557,7 +1559,8 @@ def potions_shop_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         builder.row(InlineKeyboardButton(
             text=f'{name} — {p["price_stars"]} ⭐',
             callback_data=f'buy_potion_{p["key"]}',
-            icon_custom_emoji_id=p["emoji_id"]
+            icon_custom_emoji_id="5262643974912355126",
+            style="success"
         ))
     builder.row(InlineKeyboardButton(
         text="Hunt menu" if lang == "en" else "В меню охоты",
@@ -1699,10 +1702,12 @@ def sword_detail_keyboard(data: dict, sword_key: str, lang: str = "ru") -> Inlin
         equipped = get_equipped_sword(data) == sword_key
 
         if not owned:
+            can_afford = data.get("balance", 0) >= sword["price"]
             builder.row(InlineKeyboardButton(
                 text=f'{_fmt(sword["price"])}',
                 callback_data=f'sword_buy_{sword_key}',
-                icon_custom_emoji_id=_E["coin"]
+                icon_custom_emoji_id=_E["coin"],
+                style="success" if can_afford else "danger"
             ))
         elif not equipped and not sword_is_rented_out(data, sword_key):
             sword_name = sword.get("name_en", sword["name"]) if lang == "en" else sword["name"]
