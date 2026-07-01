@@ -532,7 +532,7 @@ def pickaxe_detail_text(data: dict, pick_key: str, lang: str = "ru") -> str:
     elif pick_key in owned:
         status = f'<tg-emoji emoji-id="5391032818111363540">📦</tg-emoji> {st_owned}'
     else:
-        status = f'<tg-emoji emoji-id="5197288647275071607">🔒</tg-emoji> {st_locked}'
+        status = f'<tg-emoji emoji-id="5296369303661067030">🔒</tg-emoji> {st_locked}'
 
     price_value = val_free if p["cost"] == 0 else f'{_fmt_num(p["cost"])} {COIN}'
 
@@ -568,12 +568,20 @@ def duration_detail_text(data: dict, dur_key: str, lang: str = "ru") -> str:
     d          = DURATIONS[dur_key]
     dur_lbl    = _dur_label(d, lang)
     owned_durs = data.get("owned_durations", ["5min"])
-    if dur_key == data.get("mine_duration_key", "5min"):
-        status = t(lang, "mine_dur_status_active")
-    elif dur_key in owned_durs:
-        status = t(lang, "mine_dur_status_owned")
+    if lang == "en":
+        st_active = "Active — currently selected"
+        st_owned  = "Owned — not selected"
+        st_none   = "Not purchased yet"
     else:
-        status = f'<tg-emoji emoji-id="5296369303661067030">🔒</tg-emoji> {t(lang, "mine_dur_status_none")}'
+        st_active = "Активна — сейчас выбрана"
+        st_owned  = "Куплена — не выбрана"
+        st_none   = "Ещё не куплена"
+    if dur_key == data.get("mine_duration_key", "5min"):
+        status = st_active
+    elif dur_key in owned_durs:
+        status = st_owned
+    else:
+        status = f'<tg-emoji emoji-id="5296369303661067030">🔒</tg-emoji> {st_none}'
     price_str = _fmt_num(d["cost"]) if d["cost"] else t(lang, "mine_dur_free")
     return (
         f'<tg-emoji emoji-id="5440621591387980068">🎟</tg-emoji> <i><b>{t(lang, "mine_dur_card_title")} {dur_lbl}</b></i>\n'
