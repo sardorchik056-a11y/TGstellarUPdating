@@ -82,68 +82,128 @@ ORES_BY_KEY = {o["key"]: o for o in ORES}
 
 PICKAXES = {
     "wood_1": {"name": "Wood-1lvl", "dig_min": 1, "dig_max": 2, "cost": 0, "currency": "coins", "required_level": 1, "tier": "wood"},
-    "wood_2": {"name": "Wood-2lvl", "dig_min": 2, "dig_max": 4, "cost": 1_500, "currency": "coins", "required_level": 1, "tier": "wood"},
-    "wood_3": {"name": "Wood-3lvl", "dig_min": 2, "dig_max": 5, "cost": 2_500, "currency": "coins", "required_level": 1, "tier": "wood"},
-    "wood_4": {"name": "Wood-4lvl", "dig_min": 3, "dig_max": 5, "cost": 4_000, "currency": "coins", "required_level": 1, "tier": "wood"},
-    "wood_5": {"name": "Wood-5lvl", "dig_min": 3, "dig_max": 6, "cost": 6_000, "currency": "coins", "required_level": 1, "tier": "wood"},
-    "rock_1": {"name": "Rock-1lvl", "dig_min": 3, "dig_max": 7, "cost": 10_000, "currency": "coins", "required_level": 1, "tier": "rock"},
-    "rock_2": {"name": "Rock-2lvl", "dig_min": 4, "dig_max": 8, "cost": 16_000, "currency": "coins", "required_level": 1, "tier": "rock"},
-    "rock_3": {"name": "Rock-3lvl", "dig_min": 5, "dig_max": 9, "cost": 25_000, "currency": "coins", "required_level": 1, "tier": "rock"},
-    "rock_4": {"name": "Rock-4lvl", "dig_min": 5, "dig_max": 11, "cost": 40_000, "currency": "coins", "required_level": 1, "tier": "rock"},
-    "rock_5": {"name": "Rock-5lvl", "dig_min": 6, "dig_max": 12, "cost": 64_000, "currency": "coins", "required_level": 1, "tier": "rock"},
-    "iron_1": {"name": "Iron-1lvl", "dig_min": 7, "dig_max": 14, "cost": 100_000, "currency": "coins", "required_level": 1, "tier": "iron"},
-    "iron_2": {"name": "Iron-2lvl", "dig_min": 8, "dig_max": 16, "cost": 160_000, "currency": "coins", "required_level": 1, "tier": "iron"},
-    "iron_3": {"name": "Iron-3lvl", "dig_min": 9, "dig_max": 19, "cost": 260_000, "currency": "coins", "required_level": 1, "tier": "iron"},
-    "iron_4": {"name": "Iron-4lvl", "dig_min": 11, "dig_max": 21, "cost": 420_000, "currency": "coins", "required_level": 1, "tier": "iron"},
-    "iron_5": {"name": "Iron-5lvl", "dig_min": 12, "dig_max": 25, "cost": 680_000, "currency": "coins", "required_level": 1, "tier": "iron"},
-    "gold_1": {"name": "Gold-1lvl", "dig_min": 14, "dig_max": 28, "cost": 1_100_000, "currency": "coins", "required_level": 1, "tier": "gold"},
-    "gold_2": {"name": "Gold-2lvl", "dig_min": 16, "dig_max": 33, "cost": 1_700_000, "currency": "coins", "required_level": 1, "tier": "gold"},
-    "gold_3": {"name": "Gold-3lvl", "dig_min": 19, "dig_max": 37, "cost": 2_800_000, "currency": "coins", "required_level": 1, "tier": "gold"},
-    "gold_4": {"name": "Gold-4lvl", "dig_min": 22, "dig_max": 43, "cost": 4_400_000, "currency": "coins", "required_level": 1, "tier": "gold"},
-    "gold_5": {"name": "Gold-5lvl", "dig_min": 25, "dig_max": 50, "cost": 7_100_000, "currency": "coins", "required_level": 1, "tier": "gold"},
-    "diamond_1": {"name": "Diamond-1lvl", "dig_min": 28, "dig_max": 57, "cost": 11_000_000, "currency": "coins", "required_level": 1, "tier": "diamond"},
-    "diamond_2": {"name": "Diamond-2lvl", "dig_min": 33, "dig_max": 65, "cost": 18_000_000, "currency": "coins", "required_level": 1, "tier": "diamond"},
-    "diamond_3": {"name": "Diamond-3lvl", "dig_min": 38, "dig_max": 75, "cost": 29_000_000, "currency": "coins", "required_level": 1, "tier": "diamond"},
-    "diamond_4": {"name": "Diamond-4lvl", "dig_min": 43, "dig_max": 87, "cost": 46_000_000, "currency": "coins", "required_level": 1, "tier": "diamond"},
-    "diamond_5": {"name": "Diamond-5lvl", "dig_min": 50, "dig_max": 100, "cost": 74_000_000, "currency": "coins", "required_level": 1, "tier": "diamond"},
-    "uranium_1": {"name": "Uranium-1lvl", "dig_min": 57, "dig_max": 115, "cost": 120_000_000, "currency": "coins", "required_level": 1, "tier": "uranium"},
-    "uranium_2": {"name": "Uranium-2lvl", "dig_min": 66, "dig_max": 132, "cost": 190_000_000, "currency": "coins", "required_level": 1, "tier": "uranium"},
-    "uranium_3": {"name": "Uranium-3lvl", "dig_min": 76, "dig_max": 151, "cost": 300_000_000, "currency": "coins", "required_level": 1, "tier": "uranium"},
-    "uranium_4": {"name": "Uranium-4lvl", "dig_min": 87, "dig_max": 174, "cost": 490_000_000, "currency": "coins", "required_level": 1, "tier": "uranium"},
-    "uranium_5": {"name": "Uranium-5lvl", "dig_min": 100, "dig_max": 200, "cost": 780_000_000, "currency": "coins", "required_level": 1, "tier": "uranium"},
-    "amethyst_1": {"name": "Amethyst-1lvl", "dig_min": 115, "dig_max": 230, "cost": 1_200_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
-    "amethyst_2": {"name": "Amethyst-2lvl", "dig_min": 132, "dig_max": 265, "cost": 2_000_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
-    "amethyst_3": {"name": "Amethyst-3lvl", "dig_min": 152, "dig_max": 305, "cost": 3_200_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
-    "amethyst_4": {"name": "Amethyst-4lvl", "dig_min": 175, "dig_max": 350, "cost": 5_100_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
-    "amethyst_5": {"name": "Amethyst-5lvl", "dig_min": 201, "dig_max": 403, "cost": 8_200_000_000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
-    "vip_1": {"name": "VIP-1lvl", "dig_min": 232, "dig_max": 463, "cost": 13_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip"},
-    "vip_2": {"name": "VIP-2lvl", "dig_min": 266, "dig_max": 533, "cost": 21_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip"},
-    "vip_3": {"name": "VIP-3lvl", "dig_min": 306, "dig_max": 613, "cost": 33_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip"},
-    "vip_4": {"name": "VIP-4lvl", "dig_min": 352, "dig_max": 704, "cost": 54_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip"},
-    "vip_5": {"name": "VIP-5lvl", "dig_min": 405, "dig_max": 810, "cost": 86_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip"},
-    "vip_plus_1": {"name": "VIP+-1lvl", "dig_min": 466, "dig_max": 932, "cost": 140_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
-    "vip_plus_2": {"name": "VIP+-2lvl", "dig_min": 536, "dig_max": 1_071, "cost": 220_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
-    "vip_plus_3": {"name": "VIP+-3lvl", "dig_min": 616, "dig_max": 1_232, "cost": 350_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
-    "vip_plus_4": {"name": "VIP+-4lvl", "dig_min": 708, "dig_max": 1_417, "cost": 560_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
-    "vip_plus_5": {"name": "VIP+-5lvl", "dig_min": 815, "dig_max": 1_630, "cost": 900_000_000_000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
-    "premium_1": {"name": "Premium-1lvl", "dig_min": 937, "dig_max": 1_874, "cost": 1_400_000_000_000, "currency": "coins", "required_level": 1, "tier": "premium"},
-    "premium_2": {"name": "Premium-2lvl", "dig_min": 1_078, "dig_max": 2_155, "cost": 2_200_000_000_000, "currency": "coins", "required_level": 1, "tier": "premium"},
-    "premium_3": {"name": "Premium-3lvl", "dig_min": 1_239, "dig_max": 2_478, "cost": 3_500_000_000_000, "currency": "coins", "required_level": 1, "tier": "premium"},
-    "premium_4": {"name": "Premium-4lvl", "dig_min": 1_425, "dig_max": 2_850, "cost": 5_600_000_000_000, "currency": "coins", "required_level": 1, "tier": "premium"},
-    "premium_5": {"name": "Premium-5lvl", "dig_min": 1_639, "dig_max": 3_278, "cost": 9_000_000_000_000, "currency": "coins", "required_level": 1, "tier": "premium"},
+    "wood_2": {"name": "Wood-2lvl", "dig_min": 2, "dig_max": 4, "cost": 1500, "currency": "coins", "required_level": 1, "tier": "wood"},
+    "wood_3": {"name": "Wood-3lvl", "dig_min": 2, "dig_max": 5, "cost": 2400, "currency": "coins", "required_level": 1, "tier": "wood"},
+    "wood_4": {"name": "Wood-4lvl", "dig_min": 3, "dig_max": 5, "cost": 3800, "currency": "coins", "required_level": 1, "tier": "wood"},
+    "wood_5": {"name": "Wood-5lvl", "dig_min": 3, "dig_max": 6, "cost": 6100, "currency": "coins", "required_level": 1, "tier": "wood"},
+    "rock_1": {"name": "Rock-1lvl", "dig_min": 3, "dig_max": 7, "cost": 9800, "currency": "coins", "required_level": 1, "tier": "rock"},
+    "rock_2": {"name": "Rock-2lvl", "dig_min": 4, "dig_max": 8, "cost": 16000, "currency": "coins", "required_level": 1, "tier": "rock"},
+    "rock_3": {"name": "Rock-3lvl", "dig_min": 5, "dig_max": 9, "cost": 26000, "currency": "coins", "required_level": 1, "tier": "rock"},
+    "rock_4": {"name": "Rock-4lvl", "dig_min": 5, "dig_max": 11, "cost": 42000, "currency": "coins", "required_level": 1, "tier": "rock"},
+    "rock_5": {"name": "Rock-5lvl", "dig_min": 6, "dig_max": 12, "cost": 67000, "currency": "coins", "required_level": 1, "tier": "rock"},
+    "stone_1": {"name": "Stone-1lvl", "dig_min": 7, "dig_max": 14, "cost": 110000, "currency": "coins", "required_level": 1, "tier": "stone"},
+    "stone_2": {"name": "Stone-2lvl", "dig_min": 8, "dig_max": 16, "cost": 180000, "currency": "coins", "required_level": 1, "tier": "stone"},
+    "stone_3": {"name": "Stone-3lvl", "dig_min": 9, "dig_max": 19, "cost": 290000, "currency": "coins", "required_level": 1, "tier": "stone"},
+    "stone_4": {"name": "Stone-4lvl", "dig_min": 11, "dig_max": 21, "cost": 460000, "currency": "coins", "required_level": 1, "tier": "stone"},
+    "stone_5": {"name": "Stone-5lvl", "dig_min": 12, "dig_max": 25, "cost": 740000, "currency": "coins", "required_level": 1, "tier": "stone"},
+    "coal_1": {"name": "Coal-1lvl", "dig_min": 14, "dig_max": 28, "cost": 1200000, "currency": "coins", "required_level": 1, "tier": "coal"},
+    "coal_2": {"name": "Coal-2lvl", "dig_min": 16, "dig_max": 33, "cost": 1900000, "currency": "coins", "required_level": 1, "tier": "coal"},
+    "coal_3": {"name": "Coal-3lvl", "dig_min": 19, "dig_max": 37, "cost": 3000000, "currency": "coins", "required_level": 1, "tier": "coal"},
+    "coal_4": {"name": "Coal-4lvl", "dig_min": 22, "dig_max": 43, "cost": 4800000, "currency": "coins", "required_level": 1, "tier": "coal"},
+    "coal_5": {"name": "Coal-5lvl", "dig_min": 25, "dig_max": 50, "cost": 7700000, "currency": "coins", "required_level": 1, "tier": "coal"},
+    "flint_1": {"name": "Flint-1lvl", "dig_min": 28, "dig_max": 57, "cost": 12000000, "currency": "coins", "required_level": 1, "tier": "flint"},
+    "flint_2": {"name": "Flint-2lvl", "dig_min": 33, "dig_max": 65, "cost": 19000000, "currency": "coins", "required_level": 1, "tier": "flint"},
+    "flint_3": {"name": "Flint-3lvl", "dig_min": 38, "dig_max": 75, "cost": 30000000, "currency": "coins", "required_level": 1, "tier": "flint"},
+    "flint_4": {"name": "Flint-4lvl", "dig_min": 43, "dig_max": 87, "cost": 48000000, "currency": "coins", "required_level": 1, "tier": "flint"},
+    "flint_5": {"name": "Flint-5lvl", "dig_min": 50, "dig_max": 100, "cost": 77000000, "currency": "coins", "required_level": 1, "tier": "flint"},
+    "copper_1": {"name": "Copper-1lvl", "dig_min": 57, "dig_max": 115, "cost": 120000000, "currency": "coins", "required_level": 1, "tier": "copper"},
+    "copper_2": {"name": "Copper-2lvl", "dig_min": 66, "dig_max": 132, "cost": 190000000, "currency": "coins", "required_level": 1, "tier": "copper"},
+    "copper_3": {"name": "Copper-3lvl", "dig_min": 76, "dig_max": 151, "cost": 300000000, "currency": "coins", "required_level": 1, "tier": "copper"},
+    "copper_4": {"name": "Copper-4lvl", "dig_min": 87, "dig_max": 174, "cost": 480000000, "currency": "coins", "required_level": 1, "tier": "copper"},
+    "copper_5": {"name": "Copper-5lvl", "dig_min": 100, "dig_max": 200, "cost": 770000000, "currency": "coins", "required_level": 1, "tier": "copper"},
+    "iron_1": {"name": "Iron-1lvl", "dig_min": 115, "dig_max": 230, "cost": 1200000000, "currency": "coins", "required_level": 1, "tier": "iron"},
+    "iron_2": {"name": "Iron-2lvl", "dig_min": 132, "dig_max": 265, "cost": 1900000000, "currency": "coins", "required_level": 1, "tier": "iron"},
+    "iron_3": {"name": "Iron-3lvl", "dig_min": 152, "dig_max": 305, "cost": 3000000000, "currency": "coins", "required_level": 1, "tier": "iron"},
+    "iron_4": {"name": "Iron-4lvl", "dig_min": 175, "dig_max": 350, "cost": 4800000000, "currency": "coins", "required_level": 1, "tier": "iron"},
+    "iron_5": {"name": "Iron-5lvl", "dig_min": 201, "dig_max": 403, "cost": 7700000000, "currency": "coins", "required_level": 1, "tier": "iron"},
+    "silver_1": {"name": "Silver-1lvl", "dig_min": 232, "dig_max": 463, "cost": 12000000000, "currency": "coins", "required_level": 1, "tier": "silver"},
+    "silver_2": {"name": "Silver-2lvl", "dig_min": 266, "dig_max": 533, "cost": 19000000000, "currency": "coins", "required_level": 1, "tier": "silver"},
+    "silver_3": {"name": "Silver-3lvl", "dig_min": 306, "dig_max": 613, "cost": 30000000000, "currency": "coins", "required_level": 1, "tier": "silver"},
+    "silver_4": {"name": "Silver-4lvl", "dig_min": 352, "dig_max": 704, "cost": 48000000000, "currency": "coins", "required_level": 1, "tier": "silver"},
+    "silver_5": {"name": "Silver-5lvl", "dig_min": 405, "dig_max": 810, "cost": 77000000000, "currency": "coins", "required_level": 1, "tier": "silver"},
+    "lazurite_1": {"name": "Lazurite-1lvl", "dig_min": 466, "dig_max": 932, "cost": 120000000000, "currency": "coins", "required_level": 1, "tier": "lazurite"},
+    "lazurite_2": {"name": "Lazurite-2lvl", "dig_min": 536, "dig_max": 1071, "cost": 190000000000, "currency": "coins", "required_level": 1, "tier": "lazurite"},
+    "lazurite_3": {"name": "Lazurite-3lvl", "dig_min": 616, "dig_max": 1232, "cost": 300000000000, "currency": "coins", "required_level": 1, "tier": "lazurite"},
+    "lazurite_4": {"name": "Lazurite-4lvl", "dig_min": 708, "dig_max": 1417, "cost": 480000000000, "currency": "coins", "required_level": 1, "tier": "lazurite"},
+    "lazurite_5": {"name": "Lazurite-5lvl", "dig_min": 815, "dig_max": 1630, "cost": 770000000000, "currency": "coins", "required_level": 1, "tier": "lazurite"},
+    "gold_1": {"name": "Gold-1lvl", "dig_min": 937, "dig_max": 1874, "cost": 1200000000000, "currency": "coins", "required_level": 1, "tier": "gold"},
+    "gold_2": {"name": "Gold-2lvl", "dig_min": 1078, "dig_max": 2155, "cost": 1900000000000, "currency": "coins", "required_level": 1, "tier": "gold"},
+    "gold_3": {"name": "Gold-3lvl", "dig_min": 1239, "dig_max": 2478, "cost": 3000000000000, "currency": "coins", "required_level": 1, "tier": "gold"},
+    "gold_4": {"name": "Gold-4lvl", "dig_min": 1425, "dig_max": 2850, "cost": 4800000000000, "currency": "coins", "required_level": 1, "tier": "gold"},
+    "gold_5": {"name": "Gold-5lvl", "dig_min": 1639, "dig_max": 3278, "cost": 7700000000000, "currency": "coins", "required_level": 1, "tier": "gold"},
+    "granite_1": {"name": "Granite-1lvl", "dig_min": 1885, "dig_max": 3769, "cost": 12000000000000, "currency": "coins", "required_level": 1, "tier": "granite"},
+    "granite_2": {"name": "Granite-2lvl", "dig_min": 2167, "dig_max": 4335, "cost": 19000000000000, "currency": "coins", "required_level": 1, "tier": "granite"},
+    "granite_3": {"name": "Granite-3lvl", "dig_min": 2492, "dig_max": 4985, "cost": 30000000000000, "currency": "coins", "required_level": 1, "tier": "granite"},
+    "granite_4": {"name": "Granite-4lvl", "dig_min": 2866, "dig_max": 5733, "cost": 48000000000000, "currency": "coins", "required_level": 1, "tier": "granite"},
+    "granite_5": {"name": "Granite-5lvl", "dig_min": 3296, "dig_max": 6592, "cost": 77000000000000, "currency": "coins", "required_level": 1, "tier": "granite"},
+    "diamond_1": {"name": "Diamond-1lvl", "dig_min": 3791, "dig_max": 7581, "cost": 120000000000000, "currency": "coins", "required_level": 1, "tier": "diamond"},
+    "diamond_2": {"name": "Diamond-2lvl", "dig_min": 4359, "dig_max": 8718, "cost": 190000000000000, "currency": "coins", "required_level": 1, "tier": "diamond"},
+    "diamond_3": {"name": "Diamond-3lvl", "dig_min": 5013, "dig_max": 10026, "cost": 300000000000000, "currency": "coins", "required_level": 1, "tier": "diamond"},
+    "diamond_4": {"name": "Diamond-4lvl", "dig_min": 5765, "dig_max": 11530, "cost": 480000000000000, "currency": "coins", "required_level": 1, "tier": "diamond"},
+    "diamond_5": {"name": "Diamond-5lvl", "dig_min": 6630, "dig_max": 13260, "cost": 770000000000000, "currency": "coins", "required_level": 1, "tier": "diamond"},
+    "mithril_1": {"name": "Mithril-1lvl", "dig_min": 7624, "dig_max": 15249, "cost": 1200000000000000, "currency": "coins", "required_level": 1, "tier": "mithril"},
+    "mithril_2": {"name": "Mithril-2lvl", "dig_min": 8768, "dig_max": 17536, "cost": 1900000000000000, "currency": "coins", "required_level": 1, "tier": "mithril"},
+    "mithril_3": {"name": "Mithril-3lvl", "dig_min": 10083, "dig_max": 20166, "cost": 3000000000000000, "currency": "coins", "required_level": 1, "tier": "mithril"},
+    "mithril_4": {"name": "Mithril-4lvl", "dig_min": 11596, "dig_max": 23191, "cost": 4800000000000000, "currency": "coins", "required_level": 1, "tier": "mithril"},
+    "mithril_5": {"name": "Mithril-5lvl", "dig_min": 13335, "dig_max": 26670, "cost": 7700000000000000, "currency": "coins", "required_level": 1, "tier": "mithril"},
+    "uranium_1": {"name": "Uranium-1lvl", "dig_min": 15335, "dig_max": 30671, "cost": 12000000000000000, "currency": "coins", "required_level": 1, "tier": "uranium"},
+    "uranium_2": {"name": "Uranium-2lvl", "dig_min": 17636, "dig_max": 35271, "cost": 19000000000000000, "currency": "coins", "required_level": 1, "tier": "uranium"},
+    "uranium_3": {"name": "Uranium-3lvl", "dig_min": 20281, "dig_max": 40562, "cost": 30000000000000000, "currency": "coins", "required_level": 1, "tier": "uranium"},
+    "uranium_4": {"name": "Uranium-4lvl", "dig_min": 23323, "dig_max": 46646, "cost": 48000000000000000, "currency": "coins", "required_level": 1, "tier": "uranium"},
+    "uranium_5": {"name": "Uranium-5lvl", "dig_min": 26822, "dig_max": 53643, "cost": 77000000000000000, "currency": "coins", "required_level": 1, "tier": "uranium"},
+    "amethyst_1": {"name": "Amethyst-1lvl", "dig_min": 30845, "dig_max": 61689, "cost": 120000000000000000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
+    "amethyst_2": {"name": "Amethyst-2lvl", "dig_min": 35471, "dig_max": 70943, "cost": 190000000000000000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
+    "amethyst_3": {"name": "Amethyst-3lvl", "dig_min": 40792, "dig_max": 81584, "cost": 300000000000000000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
+    "amethyst_4": {"name": "Amethyst-4lvl", "dig_min": 46911, "dig_max": 93822, "cost": 480000000000000000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
+    "amethyst_5": {"name": "Amethyst-5lvl", "dig_min": 53948, "dig_max": 107895, "cost": 770000000000000000, "currency": "coins", "required_level": 1, "tier": "amethyst"},
+    "jade_1": {"name": "Jade-1lvl", "dig_min": 62040, "dig_max": 124080, "cost": 1200000000000000000, "currency": "coins", "required_level": 1, "tier": "jade"},
+    "jade_2": {"name": "Jade-2lvl", "dig_min": 71346, "dig_max": 142691, "cost": 1900000000000000000, "currency": "coins", "required_level": 1, "tier": "jade"},
+    "jade_3": {"name": "Jade-3lvl", "dig_min": 82048, "dig_max": 164095, "cost": 3000000000000000000, "currency": "coins", "required_level": 1, "tier": "jade"},
+    "jade_4": {"name": "Jade-4lvl", "dig_min": 94355, "dig_max": 188709, "cost": 4800000000000000000, "currency": "coins", "required_level": 1, "tier": "jade"},
+    "jade_5": {"name": "Jade-5lvl", "dig_min": 108508, "dig_max": 217016, "cost": 7700000000000000000, "currency": "coins", "required_level": 1, "tier": "jade"},
+    "vip_1": {"name": "VIP-1lvl", "dig_min": 124784, "dig_max": 249568, "cost": 12000000000000000000, "currency": "coins", "required_level": 1, "tier": "vip"},
+    "vip_2": {"name": "VIP-2lvl", "dig_min": 143502, "dig_max": 287004, "cost": 19000000000000000000, "currency": "coins", "required_level": 1, "tier": "vip"},
+    "vip_3": {"name": "VIP-3lvl", "dig_min": 165027, "dig_max": 330054, "cost": 30000000000000000000, "currency": "coins", "required_level": 1, "tier": "vip"},
+    "vip_4": {"name": "VIP-4lvl", "dig_min": 189781, "dig_max": 379562, "cost": 48000000000000000000, "currency": "coins", "required_level": 1, "tier": "vip"},
+    "vip_5": {"name": "VIP-5lvl", "dig_min": 218248, "dig_max": 436496, "cost": 77000000000000000000, "currency": "coins", "required_level": 1, "tier": "vip"},
+    "vip_plus_1": {"name": "VIP+-1lvl", "dig_min": 250985, "dig_max": 501971, "cost": 120000000000000000000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
+    "vip_plus_2": {"name": "VIP+-2lvl", "dig_min": 288633, "dig_max": 577267, "cost": 190000000000000000000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
+    "vip_plus_3": {"name": "VIP+-3lvl", "dig_min": 331928, "dig_max": 663857, "cost": 300000000000000000000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
+    "vip_plus_4": {"name": "VIP+-4lvl", "dig_min": 381718, "dig_max": 763435, "cost": 480000000000000000000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
+    "vip_plus_5": {"name": "VIP+-5lvl", "dig_min": 438975, "dig_max": 877950, "cost": 770000000000000000000, "currency": "coins", "required_level": 1, "tier": "vip_plus"},
+    "premium_1": {"name": "Premium-1lvl", "dig_min": 504821, "dig_max": 1009643, "cost": 1200000000000000000000, "currency": "coins", "required_level": 1, "tier": "premium"},
+    "premium_2": {"name": "Premium-2lvl", "dig_min": 580545, "dig_max": 1161089, "cost": 1900000000000000000000, "currency": "coins", "required_level": 1, "tier": "premium"},
+    "premium_3": {"name": "Premium-3lvl", "dig_min": 667626, "dig_max": 1335253, "cost": 3000000000000000000000, "currency": "coins", "required_level": 1, "tier": "premium"},
+    "premium_4": {"name": "Premium-4lvl", "dig_min": 767770, "dig_max": 1535541, "cost": 4800000000000000000000, "currency": "coins", "required_level": 1, "tier": "premium"},
+    "premium_5": {"name": "Premium-5lvl", "dig_min": 882936, "dig_max": 1765872, "cost": 7700000000000000000000, "currency": "coins", "required_level": 1, "tier": "premium"},
+    "netherite_1": {"name": "Netherite-1lvl", "dig_min": 1015376, "dig_max": 2030753, "cost": 12000000000000000000000, "currency": "coins", "required_level": 1, "tier": "netherite"},
+    "netherite_2": {"name": "Netherite-2lvl", "dig_min": 1167683, "dig_max": 2335366, "cost": 19000000000000000000000, "currency": "coins", "required_level": 1, "tier": "netherite"},
+    "netherite_3": {"name": "Netherite-3lvl", "dig_min": 1342835, "dig_max": 2685671, "cost": 30000000000000000000000, "currency": "coins", "required_level": 1, "tier": "netherite"},
+    "netherite_4": {"name": "Netherite-4lvl", "dig_min": 1544261, "dig_max": 3088521, "cost": 48000000000000000000000, "currency": "coins", "required_level": 1, "tier": "netherite"},
+    "netherite_5": {"name": "Netherite-5lvl", "dig_min": 1775900, "dig_max": 3551799, "cost": 77000000000000000000000, "currency": "coins", "required_level": 1, "tier": "netherite"},
 }
 
 PICKAXES_ORDER = [
     "wood_1", "wood_2", "wood_3", "wood_4", "wood_5",
     "rock_1", "rock_2", "rock_3", "rock_4", "rock_5",
+    "stone_1", "stone_2", "stone_3", "stone_4", "stone_5",
+    "coal_1", "coal_2", "coal_3", "coal_4", "coal_5",
+    "flint_1", "flint_2", "flint_3", "flint_4", "flint_5",
+    "copper_1", "copper_2", "copper_3", "copper_4", "copper_5",
     "iron_1", "iron_2", "iron_3", "iron_4", "iron_5",
+    "silver_1", "silver_2", "silver_3", "silver_4", "silver_5",
+    "lazurite_1", "lazurite_2", "lazurite_3", "lazurite_4", "lazurite_5",
     "gold_1", "gold_2", "gold_3", "gold_4", "gold_5",
+    "granite_1", "granite_2", "granite_3", "granite_4", "granite_5",
     "diamond_1", "diamond_2", "diamond_3", "diamond_4", "diamond_5",
+    "mithril_1", "mithril_2", "mithril_3", "mithril_4", "mithril_5",
     "uranium_1", "uranium_2", "uranium_3", "uranium_4", "uranium_5",
     "amethyst_1", "amethyst_2", "amethyst_3", "amethyst_4", "amethyst_5",
+    "jade_1", "jade_2", "jade_3", "jade_4", "jade_5",
     "vip_1", "vip_2", "vip_3", "vip_4", "vip_5",
     "vip_plus_1", "vip_plus_2", "vip_plus_3", "vip_plus_4", "vip_plus_5",
     "premium_1", "premium_2", "premium_3", "premium_4", "premium_5",
+    "netherite_1", "netherite_2", "netherite_3", "netherite_4", "netherite_5",
 ]
 
 WORKSHOP_PAGE_SIZE   = 10
@@ -152,16 +212,23 @@ WORKSHOP_TOTAL_PAGES = len(WORKSHOP_PAGES)
 
 WORKSHOP_PAGE_LABELS = [
     "🪓 Wood / ⛏️ Rock",
-    "🔩 Iron / 🌕 Gold",
-    "💎 Diamond / ☢️ Uranium",
-    "💜 Amethyst / 👑 VIP",
-    "💠 VIP+ / 💫 Premium",
+    "🪨 Stone / 🖤 Coal",
+    "🪨 Flint / 🟤 Copper",
+    "⚙️ Iron / 🩶 Silver",
+    "🔵 Lazurite / 🌕 Gold",
+    "🧱 Granite / 💎 Diamond",
+    "🔮 Mithril / ☢️ Uranium",
+    "💜 Amethyst / 🟢 Jade",
+    "👑 VIP / 💠 VIP+",
+    "💫 Premium / ⬛ Netherite",
 ]
 
 TIER_LABELS = {
-    "wood": "Wood", "rock": "Rock", "iron": "Iron", "gold": "Gold",
-    "diamond": "Diamond", "uranium": "Uranium", "amethyst": "Amethyst",
-    "vip": "VIP", "vip_plus": "VIP+", "premium": "Premium",
+    "wood": "Wood", "rock": "Rock", "stone": "Stone", "coal": "Coal",
+    "flint": "Flint", "copper": "Copper", "iron": "Iron", "silver": "Silver",
+    "lazurite": "Lazurite", "gold": "Gold", "granite": "Granite", "diamond": "Diamond",
+    "mithril": "Mithril", "uranium": "Uranium", "amethyst": "Amethyst", "jade": "Jade",
+    "vip": "VIP", "vip_plus": "VIP+", "premium": "Premium", "netherite": "Netherite",
 }
 
 DURATIONS = {
@@ -284,9 +351,13 @@ def _fmt_cost(pick_key: str, lang: str = "ru") -> str:
 
 def _fmt_num(n) -> str:
     """
-    Сокращённый формат чисел: 1500 -> "1.5к", 100000 -> "100к",
-    2300000 -> "2.3м", 100000000 -> "100м", 1500000000 -> "1.5млрд".
-    Логика идентична database.format_amount (единый стиль во всём боте).
+    Сокращённый формат чисел (короткая шкала, англ. стиль):
+    1500 -> "1.5K", 100000 -> "100K", 2300000 -> "2.3M",
+    1500000000 -> "1.5B", 1_000_000_000_000 -> "1T",
+    1_000_000_000_000_000 -> "1Q" (quadrillion),
+    1_000_000_000_000_000_000 -> "1S" (sextillion-scale).
+    Если число ещё больше — суффикс продолжает расти (S2, S3, ...),
+    чтобы формат не ломался даже на экстремально больших цифрах.
     """
     try:
         n = float(n)
@@ -301,20 +372,24 @@ def _fmt_num(n) -> str:
             return f"{sign}{int(n)}"
         return f"{sign}{n:.1f}"
 
-    for div, suffix in [
-        (1_000_000_000_000, "трлн"),
-        (1_000_000_000,     "млрд"),
-        (1_000_000,         "м"),
-        (1_000,             "к"),
-    ]:
-        if n >= div:
-            val = n / div
-            val = int(val * 10) / 10
-            if val == int(val):
-                return f"{sign}{int(val)}{suffix}"
-            return f"{sign}{val:.1f}{suffix}"
+    suffixes = ["", "K", "M", "B", "T", "Q", "S"]
+    idx = 0
+    val = n
+    while val >= 1000:
+        val /= 1000
+        idx += 1
 
-    return f"{sign}{int(n)}"
+    val = int(val * 10) / 10
+
+    if idx < len(suffixes):
+        suffix = suffixes[idx]
+    else:
+        # За пределами "S" (10^18) продолжаем нумеровать: S2, S3, ...
+        suffix = f"S{idx - len(suffixes) + 2}"
+
+    if val == int(val):
+        return f"{sign}{int(val)}{suffix}"
+    return f"{sign}{val:.1f}{suffix}"
 
 
 
@@ -332,8 +407,10 @@ THRESHOLD_ORES = {
 }
 
 # Порядок тиров кирок (используется для сравнения min_tier)
-TIER_ORDER = ["wood", "rock", "iron", "gold", "diamond", "uranium",
-              "amethyst", "vip", "vip_plus", "premium"]
+TIER_ORDER = ["wood", "rock", "stone", "coal", "flint", "copper", "iron",
+              "silver", "lazurite", "gold", "granite", "diamond", "mithril",
+              "uranium", "amethyst", "jade", "vip", "vip_plus", "premium",
+              "netherite"]
 _TIER_INDEX = {tier: i for i, tier in enumerate(TIER_ORDER)}
 
 
