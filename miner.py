@@ -512,11 +512,11 @@ def pickaxe_detail_text(data: dict, pick_key: str, lang: str = "ru") -> str:
         status = t(lang, "mine_pick_not_active")
     else:
         status = t(lang, "mine_pick_not_bought")
+    price_lbl = "Price" if lang == "en" else "Цена"
     if p["cost"] == 0:
-        free = t(lang, "mine_pick_free")
-        coins_line = f'  {COIN} {t(lang, "mine_pick_for_coins")}: <b>{free}</b>\n'
+        price_value = t(lang, "mine_pick_free")
     else:
-        coins_line = f'  {COIN} {t(lang, "mine_pick_for_coins")}: <b>{_fmt_num(p["cost"])}</b>\n'
+        price_value = f'{_fmt_num(p["cost"])} {COIN}'
     return (
         f"<b>{p['name']}</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -524,9 +524,8 @@ def pickaxe_detail_text(data: dict, pick_key: str, lang: str = "ru") -> str:
         f'<b>{t(lang, "mine_pick_name")}: {p["name"]}</b>\n'
         f'<b>{t(lang, "mine_pick_tier")}: {tier}</b>\n'
         f'<b>{t(lang, "mine_pick_per5")}: {_fmt_num(p["dig_min"])}–{_fmt_num(p["dig_max"])}</b></blockquote>\n\n'
-        f'<blockquote><tg-emoji emoji-id="5287231198098117669">🎟</tg-emoji> <b>{t(lang, "mine_pick_prices")}:</b>\n'
-        f"{coins_line}\n</blockquote>"
-        f'<b>{t(lang, "mine_pick_status")}: {status}</b>'
+        f'<blockquote><tg-emoji emoji-id="5287231198098117669">🎟</tg-emoji> <i><b>{price_lbl}: {price_value}</b></i></blockquote>\n\n'
+        f'<i><b>{t(lang, "mine_pick_status")}: {status}</b></i>'
     )
 
 
@@ -990,7 +989,7 @@ def shop_pickaxes_text(lang: str = "ru") -> str:
         lines.append(
             f"<b>{p['name']}</b>\n"
             f"  ⛏ {hits}: <b>{_fmt_num(p['dig_min'])}–{_fmt_num(p['dig_max'])}</b> {per}\n"
-            f"  💵 {price}: <b>{cost}</b>\n"
+            f"  💵 <i><b>{price}: {cost}</b></i>\n"
         )
     return "\n".join(lines)
 
