@@ -513,9 +513,9 @@ def pickaxe_detail_text(data: dict, pick_key: str, lang: str = "ru") -> str:
         lbl_price   = "Price"
         lbl_status  = "Status"
         val_free    = "Free"
-        st_selected = "✅ Selected — currently equipped"
-        st_owned    = "📦 Owned — not equipped"
-        st_locked   = "🔒 Not purchased yet"
+        st_selected = "Selected — currently equipped"
+        st_owned    = "Owned — not equipped"
+        st_locked   = "Not purchased yet"
     else:
         lbl_balance = "Баланс"
         lbl_tier    = "Тир"
@@ -523,16 +523,16 @@ def pickaxe_detail_text(data: dict, pick_key: str, lang: str = "ru") -> str:
         lbl_price   = "Цена"
         lbl_status  = "Статус"
         val_free    = "Бесплатно"
-        st_selected = "✅ Выбрана — сейчас в работе"
-        st_owned    = "📦 Куплена — не выбрана"
-        st_locked   = "🔒 Ещё не куплена"
+        st_selected = "Выбрана — сейчас в работе"
+        st_owned    = "Куплена — не выбрана"
+        st_locked   = "Ещё не куплена"
 
     if pick_key == data.get("pickaxe", "wood_1"):
-        status = st_selected
+        status = f'<tg-emoji emoji-id="5206607081334906820">✅</tg-emoji> {st_selected}'
     elif pick_key in owned:
-        status = st_owned
+        status = f'<tg-emoji emoji-id="5391032818111363540">📦</tg-emoji> {st_owned}'
     else:
-        status = st_locked
+        status = f'<tg-emoji emoji-id="5197288647275071607">🔒</tg-emoji> {st_locked}'
 
     price_value = val_free if p["cost"] == 0 else f'{_fmt_num(p["cost"])} {COIN}'
 
@@ -540,10 +540,10 @@ def pickaxe_detail_text(data: dict, pick_key: str, lang: str = "ru") -> str:
         f"<i><b>{p['name']}</b></i>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f'<blockquote><tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <i><b>{lbl_balance}: {_fmt_num(data["balance"])} {COIN}</b></i>\n'
-        f'<i><b>{lbl_tier}: {tier}</b></i>\n'
-        f'<i><b>{lbl_hits}: {_fmt_num(p["dig_min"])}–{_fmt_num(p["dig_max"])}</b></i></blockquote>\n\n'
+        f'<tg-emoji emoji-id="5307747174539338142">🏷</tg-emoji> <i><b>{lbl_tier}: {tier}</b></i>\n'
+        f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <i><b>{lbl_hits}: {_fmt_num(p["dig_min"])}–{_fmt_num(p["dig_max"])}</b></i></blockquote>\n\n'
         f'<blockquote><tg-emoji emoji-id="5287231198098117669">🎟</tg-emoji> <i><b>{lbl_price}: {price_value}</b></i></blockquote>\n\n'
-        f'<i><b>{lbl_status}: {status}</b></i>'
+        f'<tg-emoji emoji-id="5222444124698853913">📊</tg-emoji> <i><b>{lbl_status}: {status}</b></i>'
     )
 
 
