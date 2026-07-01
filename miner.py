@@ -537,13 +537,13 @@ def pickaxe_detail_text(data: dict, pick_key: str, lang: str = "ru") -> str:
     price_value = val_free if p["cost"] == 0 else f'{_fmt_num(p["cost"])} {COIN}'
 
     return (
-        f"<b>{p['name']}</b>\n"
+        f"<i><b>{p['name']}</b></i>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f'<blockquote>💰 <i>{lbl_balance}:</i> <b>{_fmt_num(data["balance"])} {COIN}</b>\n'
-        f'🏷 <i>{lbl_tier}:</i> <b>{tier}</b>\n'
-        f'⛏ <i>{lbl_hits}:</i> <b>{_fmt_num(p["dig_min"])}–{_fmt_num(p["dig_max"])}</b></blockquote>\n\n'
-        f'<blockquote>💵 <i>{lbl_price}:</i> <b>{price_value}</b></blockquote>\n\n'
-        f'<i>{lbl_status}:</i> <b>{status}</b>'
+        f'<blockquote><tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <i><b>{lbl_balance}: {_fmt_num(data["balance"])} {COIN}</b></i>\n'
+        f'<i><b>{lbl_tier}: {tier}</b></i>\n'
+        f'<i><b>{lbl_hits}: {_fmt_num(p["dig_min"])}–{_fmt_num(p["dig_max"])}</b></i></blockquote>\n\n'
+        f'<blockquote><tg-emoji emoji-id="5287231198098117669">🎟</tg-emoji> <i><b>{lbl_price}: {price_value}</b></i></blockquote>\n\n'
+        f'<i><b>{lbl_status}: {status}</b></i>'
     )
 
 
@@ -1004,9 +1004,9 @@ def shop_pickaxes_text(lang: str = "ru") -> str:
         p    = PICKAXES[key]
         cost = _fmt_cost(key, lang)
         lines.append(
-            f"<b>{p['name']}</b>\n"
-            f"  ⛏ <i>{hits}:</i> <b>{_fmt_num(p['dig_min'])}–{_fmt_num(p['dig_max'])}</b>\n"
-            f"  💵 <i>{price}:</i> <b>{cost}</b>\n"
+            f"<i><b>{p['name']}</b></i>\n"
+            f"  ⛏ <i><b>{hits}: {_fmt_num(p['dig_min'])}–{_fmt_num(p['dig_max'])}</b></i>\n"
+            f"  💵 <i><b>{price}: {cost}</b></i>\n"
         )
     return "\n".join(lines)
 
