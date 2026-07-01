@@ -36,14 +36,13 @@ async def _city_level_gate(handler, event, data):
 
     if level < CITY_MIN_LEVEL:
         text = (
-            f"🔒 <b>Город откроется на {CITY_MIN_LEVEL} уровне.</b>\n"
-            f"Твой текущий уровень: <b>{level}</b>."
+            f'<tg-emoji emoji-id="5334544901428229844">🌟</tg-emoji> <b>Город откроется на {CITY_MIN_LEVEL} уровне!</b>\n'
         )
         if isinstance(event, Message):
             await event.reply(text, parse_mode="HTML")
         elif isinstance(event, CallbackQuery):
             await event.answer(
-                f"🔒 Город откроется на {CITY_MIN_LEVEL} уровне. Твой уровень: {level}.",
+                f'<tg-emoji emoji-id="5334544901428229844">🌟</tg-emoji> Город откроется на {CITY_MIN_LEVEL} уровне!',
                 show_alert=True,
             )
         return
@@ -1067,8 +1066,7 @@ async def _city_level_ok(message: Message) -> bool:
     level = (main_user or {}).get("level", 1)
     if level < CITY_MIN_LEVEL:
         await message.reply(
-            f"🔒 <b>Город откроется на {CITY_MIN_LEVEL} уровне.</b>\n"
-            f"Твой текущий уровень: <b>{level}</b>.",
+            f'<tg-emoji emoji-id="5334544901428229844">🌟</tg-emoji> <b>Город откроется на {CITY_MIN_LEVEL} уровне!</b>\n',
             parse_mode="HTML",
         )
         return False
