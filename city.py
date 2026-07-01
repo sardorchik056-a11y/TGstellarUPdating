@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timedelta, timezone, date
 
 from aiogram import Router, F
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -18,6 +18,41 @@ from database import DB_PATH  # используем тот же файл БД, 
 from database import get_user as _db_get_user, update_user as _db_update_user
 
 router = Router(name="city")
+
+# ──────────────────────────────────────────────────────────────────────────
+# ОГРАНИЧЕНИЕ ПО УРОВНЮ: город открывается только с CITY_MIN_LEVEL
+# ──────────────────────────────────────────────────────────────────────────
+CITY_MIN_LEVEL = 15
+
+
+async def _city_level_gate(handler, event, data):
+    """Закрывает весь раздел города игрокам ниже CITY_MIN_LEVEL уровня."""
+    user = event.from_user
+    if user is None:
+        return await handler(event, data)
+
+    main_user = _db_get_user(user.id)
+    level = (main_user or {}).get("level", 1)
+
+    if level < CITY_MIN_LEVEL:
+        text = (
+            f"🔒 <b>Город откроется на {CITY_MIN_LEVEL} уровне.</b>\n"
+            f"Твой текущий уровень: <b>{level}</b>."
+        )
+        if isinstance(event, Message):
+            await event.reply(text, parse_mode="HTML")
+        elif isinstance(event, CallbackQuery):
+            await event.answer(
+                f"🔒 Город откроется на {CITY_MIN_LEVEL} уровне. Твой уровень: {level}.",
+                show_alert=True,
+            )
+        return
+
+    return await handler(event, data)
+
+
+router.message.outer_middleware(_city_level_gate)
+router.callback_query.outer_middleware(_city_level_gate)
 
 # ──────────────────────────────────────────────────────────────────────────
 # КОНСТАНТЫ
