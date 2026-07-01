@@ -1516,11 +1516,18 @@ def get_owned_skills(user_data: dict) -> list:
 
 
 def get_equipped_skills(user_data: dict) -> list:
-    """Возвращает список навыков, экипированных в бой (макс. 5)."""
-    equipped = user_data.get("duel_equipped_skills", [])
-    # Фильтруем: только те, которыми владеем
+    """Возвращает список навыков, экипированных в бой (макс. 5).
+
+    Базовые (бесплатные) навыки экипированы по умолчанию у всех —
+    но их, как и остальные, можно снять/поменять.
+    """
     owned = get_owned_skills(user_data)
-    return [k for k in equipped if k in owned]
+    if "duel_equipped_skills" not in user_data:
+        # Первое обращение — по умолчанию надеты базовые навыки
+        base_keys = [k for k, v in SKILLS.items() if v["price"] == 0]
+        user_data["duel_equipped_skills"] = [k for k in base_keys if k in owned]
+    stored = user_data.get("duel_equipped_skills", [])
+    return [k for k in stored if k in owned]
 
 
 def equip_skill(skill_key: str, user_data: dict) -> tuple:
@@ -1528,26 +1535,23 @@ def equip_skill(skill_key: str, user_data: dict) -> tuple:
     owned = get_owned_skills(user_data)
     if skill_key not in owned:
         return False, "❌ Навык не куплен!"
-    equipped = user_data.setdefault("duel_equipped_skills", [])
-    # При первом обращении — добавляем базовые навыки если их ещё нет
-    base_keys = [k for k, v in SKILLS.items() if v["price"] == 0]
-    for bk in base_keys:
-        if bk not in equipped:
-            equipped.append(bk)
+    equipped = get_equipped_skills(user_data)  # инициализирует список базовыми при первом входе
     if skill_key in equipped:
         return False, "❌ Навык уже экипирован!"
     if len(equipped) >= MAX_EQUIPPED_SKILLS:
         return False, f"❌ Максимум {MAX_EQUIPPED_SKILLS} навыков в бою!"
-    equipped.append(skill_key)
+    stored = user_data.setdefault("duel_equipped_skills", [])
+    stored.append(skill_key)
     return True, "✅ Навык экипирован!"
 
 
 def unequip_skill(skill_key: str, user_data: dict) -> tuple:
     """Снять навык с экипировки. Возвращает (ok, msg)."""
-    equipped = user_data.setdefault("duel_equipped_skills", [])
-    if skill_key not in equipped:
+    get_equipped_skills(user_data)  # инициализирует список базовыми при первом входе
+    stored = user_data.setdefault("duel_equipped_skills", [])
+    if skill_key not in stored:
         return False, "❌ Навык не экипирован!"
-    equipped.remove(skill_key)
+    stored.remove(skill_key)
     return True, "✅ Навык снят!"
 
 
