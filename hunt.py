@@ -7,6 +7,7 @@
 # ============================================================
 
 import random
+import re
 import sqlite3
 import json
 import threading
@@ -45,6 +46,8 @@ _E = {
     "price":        "5397782960512444700",  # ценник
     "bag":          "5443038326535759644",  # инвентарь
     "boss":         "5438571934210082705",  # текущий босс
+    "potion":       "5461147663998489015",  # зелье возрождения — TODO: заменить на свой премиум-эмодзи
+    "star":         "5445284980978621387",  # звезда (валюта Telegram Stars) — TODO: заменить
 }
 
 # ─────────────────────────────────────────
@@ -144,8 +147,8 @@ SWORDS = [
         "key": "blade_of_despair",
         "name": "Клинок Отчаяния", "name_en": "Blade of Despair",
         "emoji_id": SWORD_EMOJIS["blade_of_despair"],
-        "desc": "<b>Выкован из слёз тех, кто не вернулся из глубин.</b>\n<b>Каждый удар — последний крик отчаявшейся души.</b>",
-        "desc_en": "<b>Forged from the tears of those who never returned from the depths.</b>\n<b>Every strike is the last cry of a despairing soul.</b>",
+        "desc": "<b><i>Выкован из слёз тех, кто не вернулся из глубин.</i></b>\n<b><i>Каждый удар — последний крик отчаявшейся души.</i></b>",
+        "desc_en": "<b><i>Forged from the tears of those who never returned from the depths.</i></b>\n<b><i>Every strike is the last cry of a despairing soul.</i></b>",
         "dmg_min": 50, "dmg_max": 150,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 125_000,
@@ -154,8 +157,8 @@ SWORDS = [
         "key": "kings_bane",
         "name": "Погибель Королей", "name_en": "King's Bane",
         "emoji_id": SWORD_EMOJIS["kings_bane"],
-        "desc": "<b>Им пали семь правителей подземных царств.</b>\n<b>Лезвие помнит каждую корону. И жаждет следующей.</b>",
-        "desc_en": "<b>Seven rulers of underground kingdoms fell to this blade.</b>\n<b>The edge remembers every crown. And craves the next.</b>",
+        "desc": "<b><i>Им пали семь правителей подземных царств.</i></b>\n<b><i>Лезвие помнит каждую корону. И жаждет следующей.</i></b>",
+        "desc_en": "<b><i>Seven rulers of underground kingdoms fell to this blade.</i></b>\n<b><i>The edge remembers every crown. And craves the next.</i></b>",
         "dmg_min": 80, "dmg_max": 250,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 250_000,
@@ -164,8 +167,8 @@ SWORDS = [
         "key": "frozen_doom",
         "name": "Ледяная Погибель", "name_en": "Frozen Doom",
         "emoji_id": SWORD_EMOJIS["frozen_doom"],
-        "desc": "<b>Закалён в вечном льду самого холодного яруса.</b>\n<b>Прикосновение к рукояти оставляет ожог холодом.</b>",
-        "desc_en": "<b>Tempered in the eternal ice of the coldest tier.</b>\n<b>Touching the hilt leaves a burn of cold.</b>",
+        "desc": "<b><i>Закалён в вечном льду самого холодного яруса.</i></b>\n<b><i>Прикосновение к рукояти оставляет ожог холодом.</i></b>",
+        "desc_en": "<b><i>Tempered in the eternal ice of the coldest tier.</i></b>\n<b><i>Touching the hilt leaves a burn of cold.</i></b>",
         "dmg_min": 200, "dmg_max": 500,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 400_000,
@@ -174,8 +177,8 @@ SWORDS = [
         "key": "void_herald",
         "name": "Вестник Бездны", "name_en": "Void Herald",
         "emoji_id": SWORD_EMOJIS["void_herald"],
-        "desc": "<b>Он появляется раньше, чем бездна открывается.</b>\n<b>Шёпот клинка слышат только обречённые.</b>",
-        "desc_en": "<b>It arrives before the void even opens.</b>\n<b>Only the doomed can hear the blade's whisper.</b>",
+        "desc": "<b><i>Он появляется раньше, чем бездна открывается.</i></b>\n<b><i>Шёпот клинка слышат только обречённые.</i></b>",
+        "desc_en": "<b><i>It arrives before the void even opens.</i></b>\n<b><i>Only the doomed can hear the blade's whisper.</i></b>",
         "dmg_min": 350, "dmg_max": 700,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 750_000,
@@ -184,8 +187,8 @@ SWORDS = [
         "key": "fate_cleaver",
         "name": "Рассекатель Судеб", "name_en": "Fate Cleaver",
         "emoji_id": SWORD_EMOJIS["fate_cleaver"],
-        "desc": "<b>Разрезает не только плоть — но и нити судьбы.</b>\n<b>Те, кого он касался, больше не принадлежат этому миру.</b>",
-        "desc_en": "<b>Cuts not just flesh — but the threads of fate itself.</b>\n<b>Those it has touched no longer belong to this world.</b>",
+        "desc": "<b><i>Разрезает не только плоть — но и нити судьбы.</i></b>\n<b><i>Те, кого он касался, больше не принадлежат этому миру.</i></b>",
+        "desc_en": "<b><i>Cuts not just flesh — but the threads of fate itself.</i></b>\n<b><i>Those it has touched no longer belong to this world.</i></b>",
         "dmg_min": 500, "dmg_max": 1_250,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 1_250_000,
@@ -194,8 +197,8 @@ SWORDS = [
         "key": "deaths_whisper",
         "name": "Шепот Смерти", "name_en": "Death's Whisper",
         "emoji_id": SWORD_EMOJIS["deaths_whisper"],
-        "desc": "<b>Не издаёт звука при ударе. Жертва слышит лишь тишину.</b>\n<b>Говорят, смерть сама подсказывает ему цель.</b>",
-        "desc_en": "<b>It makes no sound on impact. The victim hears only silence.</b>\n<b>They say death itself guides it to its mark.</b>",
+        "desc": "<b><i>Не издаёт звука при ударе. Жертва слышит лишь тишину.</i></b>\n<b><i>Говорят, смерть сама подсказывает ему цель.</i></b>",
+        "desc_en": "<b><i>It makes no sound on impact. The victim hears only silence.</i></b>\n<b><i>They say death itself guides it to its mark.</i></b>",
         "dmg_min": 700, "dmg_max": 1_800,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 3_500_000,
@@ -204,8 +207,8 @@ SWORDS = [
         "key": "ash_oath",
         "name": "Клятва Пепла", "name_en": "Ash Oath",
         "emoji_id": SWORD_EMOJIS["ash_oath"],
-        "desc": "<b>Выкован из пепла сгоревших шахт и павших воинов.</b>\n<b>Клятва вложена в каждый удар: не остановиться.</b>",
-        "desc_en": "<b>Forged from the ash of burned mines and fallen warriors.</b>\n<b>An oath sealed in every strike: never stop.</b>",
+        "desc": "<b><i>Выкован из пепла сгоревших шахт и павших воинов.</i></b>\n<b><i>Клятва вложена в каждый удар: не остановиться.</i></b>",
+        "desc_en": "<b><i>Forged from the ash of burned mines and fallen warriors.</i></b>\n<b><i>An oath sealed in every strike: never stop.</i></b>",
         "dmg_min": 900, "dmg_max": 2_400,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 7_000_000,
@@ -214,8 +217,8 @@ SWORDS = [
         "key": "desecrated_blade",
         "name": "Осквернённый Клинок", "name_en": "Desecrated Blade",
         "emoji_id": SWORD_EMOJIS["desecrated_blade"],
-        "desc": "<b>Освящённый клинок, погружённый в чёрную магию глубин.</b>\n<b>Святость обернулась проклятием — и стала страшнее.</b>",
-        "desc_en": "<b>A consecrated blade dipped into the dark magic of the depths.</b>\n<b>Holiness turned to a curse — and became far worse.</b>",
+        "desc": "<b><i>Освящённый клинок, погружённый в чёрную магию глубин.</i></b>\n<b><i>Святость обернулась проклятием — и стала страшнее.</i></b>",
+        "desc_en": "<b><i>A consecrated blade dipped into the dark magic of the depths.</i></b>\n<b><i>Holiness turned to a curse — and became far worse.</i></b>",
         "dmg_min": 1_200, "dmg_max": 3_200,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 15_000_000,
@@ -224,8 +227,8 @@ SWORDS = [
         "key": "last_verdict",
         "name": "Последний Приговор", "name_en": "Last Verdict",
         "emoji_id": SWORD_EMOJIS["last_verdict"],
-        "desc": "<b>Вынесен миром, который устал ждать.</b>\n<b>Приговор окончателен. Обжалование невозможно.</b>",
-        "desc_en": "<b>Passed by a world that grew tired of waiting.</b>\n<b>The verdict is final. No appeals.</b>",
+        "desc": "<b><i>Вынесен миром, который устал ждать.</i></b>\n<b><i>Приговор окончателен. Обжалование невозможно.</i></b>",
+        "desc_en": "<b><i>Passed by a world that grew tired of waiting.</i></b>\n<b><i>The verdict is final. No appeals.</i></b>",
         "dmg_min": 1_600, "dmg_max": 4_200,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 30_000_000,
@@ -234,8 +237,8 @@ SWORDS = [
         "key": "shadow_of_oblivion",
         "name": "Тень Забвения", "name_en": "Shadow of Oblivion",
         "emoji_id": SWORD_EMOJIS["shadow_of_oblivion"],
-        "desc": "<b>Из него вышли все тени. В него они и вернутся.</b>\n<b>Забвение — не конец. Это начало чего-то хуже.</b>",
-        "desc_en": "<b>All shadows came from it. To it they shall return.</b>\n<b>Oblivion is not the end. It is the beginning of something worse.</b>",
+        "desc": "<b><i>Из него вышли все тени. В него они и вернутся.</i></b>\n<b><i>Забвение — не конец. Это начало чего-то хуже.</i></b>",
+        "desc_en": "<b><i>All shadows came from it. To it they shall return.</i></b>\n<b><i>Oblivion is not the end. It is the beginning of something worse.</i></b>",
         "dmg_min": 2_000, "dmg_max": 5_500,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 60_000_000,
@@ -244,8 +247,8 @@ SWORDS = [
         "key": "soul_harvest",
         "name": "Жатва Душ", "name_en": "Soul Harvest",
         "emoji_id": SWORD_EMOJIS["soul_harvest"],
-        "desc": "<b>Каждая убитая им душа остаётся внутри клинка.</b>\n<b>Их вопли — его боевой клич.</b>",
-        "desc_en": "<b>Every soul it slays stays trapped within the blade.</b>\n<b>Their screams are its battle cry.</b>",
+        "desc": "<b><i>Каждая убитая им душа остаётся внутри клинка.</i></b>\n<b><i>Их вопли — его боевой клич.</i></b>",
+        "desc_en": "<b><i>Every soul it slays stays trapped within the blade.</i></b>\n<b><i>Their screams are its battle cry.</i></b>",
         "dmg_min": 2_600, "dmg_max": 7_000,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 120_000_000,
@@ -254,8 +257,8 @@ SWORDS = [
         "key": "blade_of_hopelessness",
         "name": "Клинок Безысходности", "name_en": "Blade of Hopelessness",
         "emoji_id": SWORD_EMOJIS["blade_of_hopelessness"],
-        "desc": "<b>Тем, кто его видит, кажется — выхода нет.</b>\n<b>Они правы. Выхода нет.</b>",
-        "desc_en": "<b>Those who see it feel there is no way out.</b>\n<b>They are right. There is none.</b>",
+        "desc": "<b><i>Тем, кто его видит, кажется — выхода нет.</i></b>\n<b><i>Они правы. Выхода нет.</i></b>",
+        "desc_en": "<b><i>Those who see it feel there is no way out.</i></b>\n<b><i>They are right. There is none.</i></b>",
         "dmg_min": 3_500, "dmg_max": 9_000,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 250_000_000,
@@ -264,8 +267,8 @@ SWORDS = [
         "key": "seal_of_doom",
         "name": "Печать Гибели", "name_en": "Seal of Doom",
         "emoji_id": SWORD_EMOJIS["seal_of_doom"],
-        "desc": "<b>Поставить печать — значит вынести приговор вечности.</b>\n<b>Никто не снял её ни разу. Никто и не снимет.</b>",
-        "desc_en": "<b>To set the seal is to pass judgment upon eternity.</b>\n<b>No one has ever removed it. No one ever will.</b>",
+        "desc": "<b><i>Поставить печать — значит вынести приговор вечности.</i></b>\n<b><i>Никто не снял её ни разу. Никто и не снимет.</i></b>",
+        "desc_en": "<b><i>To set the seal is to pass judgment upon eternity.</i></b>\n<b><i>No one has ever removed it. No one ever will.</i></b>",
         "dmg_min": 4_500, "dmg_max": 12_000,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 500_000_000,
@@ -274,8 +277,8 @@ SWORDS = [
         "key": "rift_of_eternity",
         "name": "Разлом Вечности", "name_en": "Rift of Eternity",
         "emoji_id": SWORD_EMOJIS["rift_of_eternity"],
-        "desc": "<b>Разрезает ткань времени. Каждый удар — в прошлое и будущее одновременно.</b>\n<b>Вечность не бесконечна. Он это доказал.</b>",
-        "desc_en": "<b>It tears the fabric of time. Every strike lands in the past and future at once.</b>\n<b>Eternity is not infinite. It proved that.</b>",
+        "desc": "<b><i>Разрезает ткань времени. Каждый удар — в прошлое и будущее одновременно.</i></b>\n<b><i>Вечность не бесконечна. Он это доказал.</i></b>",
+        "desc_en": "<b><i>It tears the fabric of time. Every strike lands in the past and future at once.</i></b>\n<b><i>Eternity is not infinite. It proved that.</i></b>",
         "dmg_min": 6_000, "dmg_max": 16_000,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 1_000_000_000,
@@ -284,8 +287,8 @@ SWORDS = [
         "key": "star_devourer",
         "name": "Пожиратель Звёзд", "name_en": "Star Devourer",
         "emoji_id": SWORD_EMOJIS["star_devourer"],
-        "desc": "<b>Им была погашена первая звезда. Им будет погашена последняя.</b>\n<b>Вселенная боится его. И правильно делает.</b>",
-        "desc_en": "<b>The first star was extinguished by it. So will the last.</b>\n<b>The universe fears it. And rightly so.</b>",
+        "desc": "<b><i>Им была погашена первая звезда. Им будет погашена последняя.</i></b>\n<b><i>Вселенная боится его. И правильно делает.</i></b>",
+        "desc_en": "<b><i>The first star was extinguished by it. So will the last.</i></b>\n<b><i>The universe fears it. And rightly so.</i></b>",
         "dmg_min": 8_000, "dmg_max": 22_000,
         "crit_chance": 0.05, "crit_mult": 2.0,
         "price": 5_000_000_000,
@@ -294,141 +297,159 @@ SWORDS = [
 
 SWORDS_BY_KEY = {s["key"]: s for s in SWORDS}
 
+# ─────────────────────────────────────────
+#  ЗЕЛЬЯ
+# ─────────────────────────────────────────
+POTIONS = [
+    {
+        "key": "revival",
+        "name": "Зелье Возрождения", "name_en": "Revival Potion",
+        "emoji_id": _E["potion"],
+        "desc": "<b><i>Сваренное из крови самого босса — оно возвращает его к жизни раньше срока.</i></b>",
+        "desc_en": "<b><i>Brewed from the boss's own blood — it brings him back to life ahead of time.</i></b>",
+        "effect": "<b><i>Мгновенно возрождает босса, минуя время отката после смерти.</i></b>",
+        "effect_en": "<b><i>Instantly revives the boss, skipping the respawn cooldown after death.</i></b>",
+        "price_stars": 19,
+    },
+]
+
+POTIONS_BY_KEY = {p["key"]: p for p in POTIONS}
+
 # Рандомные цитаты для каждого меча в магазине
 _SWORD_QUOTES_EN = {
-    "blade_of_despair":     "<b>They say the first strike with this blade haunts your sleep every night.</b>",
-    "kings_bane":           "<b>Seven crowns. Seven strikes. The eighth one is yours.</b>",
-    "frozen_doom":          "<b>Even the hilt burns with cold. Imagine what the blade feels like.</b>",
-    "void_herald":          "<b>The void stares back at you through it. Stare back.</b>",
-    "fate_cleaver":         "<b>Fate's threads are thin. This blade knows exactly where to find them.</b>",
-    "deaths_whisper":       "<b>The silence after the strike is more terrifying than any scream.</b>",
-    "ash_oath":             "<b>The oath is never broken. Never. Under any circumstances.</b>",
-    "desecrated_blade":     "<b>Consecration requires faith. Desecration requires only desire.</b>",
-    "last_verdict":         "<b>No appeals. The judge has already ruled.</b>",
-    "shadow_of_oblivion":   "<b>Oblivion is not death. It is worse. Much worse.</b>",
-    "soul_harvest":         "<b>Thousands of voices inside. Soon there will be more.</b>",
-    "blade_of_hopelessness":"<b>Those who see it stop looking for a way out. They are right.</b>",
-    "seal_of_doom":         "<b>The seal cannot be removed. You can only receive the next one.</b>",
-    "rift_of_eternity":     "<b>The past and the future are equally vulnerable to it.</b>",
-    "star_devourer":        "<b>The first star went dark at its blow. The last one will too.</b>",
+    "blade_of_despair":     "<b><i>They say the first strike with this blade haunts your sleep every night.</i></b>",
+    "kings_bane":           "<b><i>Seven crowns. Seven strikes. The eighth one is yours.</i></b>",
+    "frozen_doom":          "<b><i>Even the hilt burns with cold. Imagine what the blade feels like.</i></b>",
+    "void_herald":          "<b><i>The void stares back at you through it. Stare back.</i></b>",
+    "fate_cleaver":         "<b><i>Fate's threads are thin. This blade knows exactly where to find them.</i></b>",
+    "deaths_whisper":       "<b><i>The silence after the strike is more terrifying than any scream.</i></b>",
+    "ash_oath":             "<b><i>The oath is never broken. Never. Under any circumstances.</i></b>",
+    "desecrated_blade":     "<b><i>Consecration requires faith. Desecration requires only desire.</i></b>",
+    "last_verdict":         "<b><i>No appeals. The judge has already ruled.</i></b>",
+    "shadow_of_oblivion":   "<b><i>Oblivion is not death. It is worse. Much worse.</i></b>",
+    "soul_harvest":         "<b><i>Thousands of voices inside. Soon there will be more.</i></b>",
+    "blade_of_hopelessness":"<b><i>Those who see it stop looking for a way out. They are right.</i></b>",
+    "seal_of_doom":         "<b><i>The seal cannot be removed. You can only receive the next one.</i></b>",
+    "rift_of_eternity":     "<b><i>The past and the future are equally vulnerable to it.</i></b>",
+    "star_devourer":        "<b><i>The first star went dark at its blow. The last one will too.</i></b>",
 }
 
 _SWORD_QUOTES = {
-    "blade_of_despair":     "<b>Говорят, первый удар этим клинком снится тебе каждую ночь.</b>",
-    "kings_bane":           "<b>Семь корон. Семь ударов. Восьмая твоя.</b>",
-    "frozen_doom":          "<b>Даже рукоять обжигает холодом. Представь, каково лезвие.</b>",
-    "void_herald":          "<b>Бездна смотрит в тебя сквозь него. Смотри в ответ.</b>",
-    "fate_cleaver":         "<b>Нити судьбы тонкие. Этот клинок знает, как их найти.</b>",
-    "deaths_whisper":       "<b>Тишина после удара — страшнее любого крика.</b>",
-    "ash_oath":             "<b>Клятва не нарушается. Никогда. Ни при каких условиях.</b>",
-    "desecrated_blade":     "<b>Освящение требует веры. Осквернение — только желания.</b>",
-    "last_verdict":         "<b>Апелляций нет. Судья уже вынес решение.</b>",
-    "shadow_of_oblivion":   "<b>Забвение — это не смерть. Это хуже. Гораздо хуже.</b>",
-    "soul_harvest":         "<b>Внутри — тысячи голосов. Скоро станет больше.</b>",
-    "blade_of_hopelessness":"<b>Те, кто его видит, перестают искать выход. Они правы.</b>",
-    "seal_of_doom":         "<b>Печать нельзя снять. Можно только получить следующую.</b>",
-    "rift_of_eternity":     "<b>Прошлое и будущее — одинаково уязвимы для него.</b>",
-    "star_devourer":        "<b>Первая звезда погасла от его удара. Последняя — тоже его.</b>",
+    "blade_of_despair":     "<b><i>Говорят, первый удар этим клинком снится тебе каждую ночь.</i></b>",
+    "kings_bane":           "<b><i>Семь корон. Семь ударов. Восьмая твоя.</i></b>",
+    "frozen_doom":          "<b><i>Даже рукоять обжигает холодом. Представь, каково лезвие.</i></b>",
+    "void_herald":          "<b><i>Бездна смотрит в тебя сквозь него. Смотри в ответ.</i></b>",
+    "fate_cleaver":         "<b><i>Нити судьбы тонкие. Этот клинок знает, как их найти.</i></b>",
+    "deaths_whisper":       "<b><i>Тишина после удара — страшнее любого крика.</i></b>",
+    "ash_oath":             "<b><i>Клятва не нарушается. Никогда. Ни при каких условиях.</i></b>",
+    "desecrated_blade":     "<b><i>Освящение требует веры. Осквернение — только желания.</i></b>",
+    "last_verdict":         "<b><i>Апелляций нет. Судья уже вынес решение.</i></b>",
+    "shadow_of_oblivion":   "<b><i>Забвение — это не смерть. Это хуже. Гораздо хуже.</i></b>",
+    "soul_harvest":         "<b><i>Внутри — тысячи голосов. Скоро станет больше.</i></b>",
+    "blade_of_hopelessness":"<b><i>Те, кто его видит, перестают искать выход. Они правы.</i></b>",
+    "seal_of_doom":         "<b><i>Печать нельзя снять. Можно только получить следующую.</i></b>",
+    "rift_of_eternity":     "<b><i>Прошлое и будущее — одинаково уязвимы для него.</i></b>",
+    "star_devourer":        "<b><i>Первая звезда погасла от его удара. Последняя — тоже его.</i></b>",
 }
 
 # Рандомные цитаты для каждого босса на главном экране охоты
 _BOSS_HUNT_QUOTES_EN = {
-    "ash_lord":         "<b>Ash does not lie. It shows what was. Soon it will show what you will be.</b>",
-    "rift_lord":        "<b>The rift did not open by chance. It was waiting for you specifically.</b>",
-    "ruin_warden":      "<b>Ruins hold secrets. He holds the ruins. You should not be here.</b>",
-    "storm_king":       "<b>The storm in the tunnel is not a force of nature. It is his mood.</b>",
-    "wasteland_master": "<b>The wasteland was once a forest. Before him. Keep that in mind.</b>",
-    "volcano_lord":     "<b>The lava is not hot. That is just his blood, slightly cooled.</b>",
-    "ice_overlord":     "<b>Cold is not a temperature. It is the way he looks at you.</b>",
-    "abyss_titan":      "<b>The abyss stares into you. But he goes first.</b>",
-    "chasm_keeper":     "<b>The chasm has no bottom. He checked. Personally. Many times.</b>",
-    "storm_overlord":   "<b>Lightning strikes twice. If he missed the first time.</b>",
-    "stone_monarch":    "<b>The mountain is his throne. You just walked into the palace.</b>",
-    "ash_lands_lord":   "<b>The ashen lands remember those who came. For a long time. Very long.</b>",
-    "ice_sovereign":    "<b>Ice does not melt. It waits. More patiently than you think.</b>",
-    "dark_viceroy":     "<b>He already knows everything about you. Has for a while. He was just waiting.</b>",
-    "ruin_overlord":    "<b>Every civilization built. He destroyed. The score is not in civilization's favor.</b>",
-    "depths_master":    "<b>The depths are not silent. He is silent. For now.</b>",
-    "mountain_lord":    "<b>You thought you were going up the mountain. You are going to him.</b>",
-    "cursed_monarch":   "<b>The curse kills the weak. It only makes him angrier.</b>",
-    "void_king":        "<b>The void is not nothing. It is his kingdom. Welcome.</b>",
-    "last_keeper":      "<b>He outlived everyone. Every single one. He will outlive you too — unless you try.</b>",
+    "ash_lord":         "<b><i>Ash does not lie. It shows what was. Soon it will show what you will be.</i></b>",
+    "rift_lord":        "<b><i>The rift did not open by chance. It was waiting for you specifically.</i></b>",
+    "ruin_warden":      "<b><i>Ruins hold secrets. He holds the ruins. You should not be here.</i></b>",
+    "storm_king":       "<b><i>The storm in the tunnel is not a force of nature. It is his mood.</i></b>",
+    "wasteland_master": "<b><i>The wasteland was once a forest. Before him. Keep that in mind.</i></b>",
+    "volcano_lord":     "<b><i>The lava is not hot. That is just his blood, slightly cooled.</i></b>",
+    "ice_overlord":     "<b><i>Cold is not a temperature. It is the way he looks at you.</i></b>",
+    "abyss_titan":      "<b><i>The abyss stares into you. But he goes first.</i></b>",
+    "chasm_keeper":     "<b><i>The chasm has no bottom. He checked. Personally. Many times.</i></b>",
+    "storm_overlord":   "<b><i>Lightning strikes twice. If he missed the first time.</i></b>",
+    "stone_monarch":    "<b><i>The mountain is his throne. You just walked into the palace.</i></b>",
+    "ash_lands_lord":   "<b><i>The ashen lands remember those who came. For a long time. Very long.</i></b>",
+    "ice_sovereign":    "<b><i>Ice does not melt. It waits. More patiently than you think.</i></b>",
+    "dark_viceroy":     "<b><i>He already knows everything about you. Has for a while. He was just waiting.</i></b>",
+    "ruin_overlord":    "<b><i>Every civilization built. He destroyed. The score is not in civilization's favor.</i></b>",
+    "depths_master":    "<b><i>The depths are not silent. He is silent. For now.</i></b>",
+    "mountain_lord":    "<b><i>You thought you were going up the mountain. You are going to him.</i></b>",
+    "cursed_monarch":   "<b><i>The curse kills the weak. It only makes him angrier.</i></b>",
+    "void_king":        "<b><i>The void is not nothing. It is his kingdom. Welcome.</i></b>",
+    "last_keeper":      "<b><i>He outlived everyone. Every single one. He will outlive you too — unless you try.</i></b>",
 }
 
 _BOSS_HUNT_QUOTES = {
-    "ash_lord":         "<b>Пепел не лжёт. Он показывает, что было. Скоро покажет, что будешь ты.</b>",
-    "rift_lord":        "<b>Разлом открылся не случайно. Он ждал именно тебя.</b>",
-    "ruin_warden":      "<b>Руины хранят тайны. Он хранит руины. Тебе сюда не надо.</b>",
-    "storm_king":       "<b>Буря в тоннеле — это не стихия. Это его настроение.</b>",
-    "wasteland_master": "<b>Пустошь была лесом. До него. Учти это.</b>",
-    "volcano_lord":     "<b>Лава не горячая. Это просто его кровь остыла немного.</b>",
-    "ice_overlord":     "<b>Холод — это не температура. Это его взгляд на тебя.</b>",
-    "abyss_titan":      "<b>Бездна смотрит в тебя. Но сначала — он.</b>",
-    "chasm_keeper":     "<b>Пропасть бездонная. Он проверял. Лично. Много раз.</b>",
-    "storm_overlord":   "<b>Молния бьёт дважды. Если он промахнулся с первого раза.</b>",
-    "stone_monarch":    "<b>Гора — это его трон. Ты только что вошёл во дворец.</b>",
-    "ash_lands_lord":   "<b>Пепельные земли помнят тех, кто приходил. Долго. Очень долго.</b>",
-    "ice_sovereign":    "<b>Лёд не тает. Он ждёт. Терпеливее, чем ты думаешь.</b>",
-    "dark_viceroy":     "<b>Он уже знает о тебе всё. Ты о нём — почти ничего.</b>",
-    "ruin_overlord":    "<b>Каждая цивилизация строила. Он разрушал. Счёт не в пользу цивилизаций.</b>",
-    "depths_master":    "<b>Глубины не молчат. Это он молчит. Пока.</b>",
-    "mountain_lord":    "<b>Ты думал, что идёшь в гору. Ты идёшь к нему.</b>",
-    "cursed_monarch":   "<b>Проклятие убивает слабых. Его оно только злит.</b>",
-    "void_king":        "<b>Пустота — это не ничто. Это его королевство. Добро пожаловать.</b>",
-    "last_keeper":      "<b>Он пережил всех. Каждого. Он переживёт и тебя — если не постараешься.</b>",
+    "ash_lord":         "<b><i>Пепел не лжёт. Он показывает, что было. Скоро покажет, что будешь ты.</i></b>",
+    "rift_lord":        "<b><i>Разлом открылся не случайно. Он ждал именно тебя.</i></b>",
+    "ruin_warden":      "<b><i>Руины хранят тайны. Он хранит руины. Тебе сюда не надо.</i></b>",
+    "storm_king":       "<b><i>Буря в тоннеле — это не стихия. Это его настроение.</i></b>",
+    "wasteland_master": "<b><i>Пустошь была лесом. До него. Учти это.</i></b>",
+    "volcano_lord":     "<b><i>Лава не горячая. Это просто его кровь остыла немного.</i></b>",
+    "ice_overlord":     "<b><i>Холод — это не температура. Это его взгляд на тебя.</i></b>",
+    "abyss_titan":      "<b><i>Бездна смотрит в тебя. Но сначала — он.</i></b>",
+    "chasm_keeper":     "<b><i>Пропасть бездонная. Он проверял. Лично. Много раз.</i></b>",
+    "storm_overlord":   "<b><i>Молния бьёт дважды. Если он промахнулся с первого раза.</i></b>",
+    "stone_monarch":    "<b><i>Гора — это его трон. Ты только что вошёл во дворец.</i></b>",
+    "ash_lands_lord":   "<b><i>Пепельные земли помнят тех, кто приходил. Долго. Очень долго.</i></b>",
+    "ice_sovereign":    "<b><i>Лёд не тает. Он ждёт. Терпеливее, чем ты думаешь.</i></b>",
+    "dark_viceroy":     "<b><i>Он уже знает о тебе всё. Ты о нём — почти ничего.</i></b>",
+    "ruin_overlord":    "<b><i>Каждая цивилизация строила. Он разрушал. Счёт не в пользу цивилизаций.</i></b>",
+    "depths_master":    "<b><i>Глубины не молчат. Это он молчит. Пока.</i></b>",
+    "mountain_lord":    "<b><i>Ты думал, что идёшь в гору. Ты идёшь к нему.</i></b>",
+    "cursed_monarch":   "<b><i>Проклятие убивает слабых. Его оно только злит.</i></b>",
+    "void_king":        "<b><i>Пустота — это не ничто. Это его королевство. Добро пожаловать.</i></b>",
+    "last_keeper":      "<b><i>Он пережил всех. Каждого. Он переживёт и тебя — если не постараешься.</i></b>",
 }
 
 # Запасные цитаты если босс/меч не найден в словаре
 _SHOP_QUOTES_EN = [
-    "<b>Every blade here is a story. Not all of them ended well.</b>",
-    "<b>Weapons don't kill. Hands do. But a good weapon helps a great deal.</b>",
-    "<b>They say the best sword is the one not yet tested in battle. Liars.</b>",
-    "<b>Bosses don't fear you. Yet. Get the right blade — then we'll see.</b>",
-    "<b>Iron remembers strikes. The best blades remember victories.</b>",
-    "<b>The price of a sword is nothing compared to the price of defeat.</b>",
-    "<b>A miner without a sword is just a miner. A miner with a sword is a hunter.</b>",
-    "<b>Choose your weapon with your heart. But let your wallet think too.</b>",
-    "<b>Some bosses have seen a thousand blades. They will remember yours.</b>",
-    "<b>A good sword is not a purchase. It is an investment in someone else's end.</b>",
+    "<b><i>Every blade here is a story. Not all of them ended well.</i></b>",
+    "<b><i>Weapons don't kill. Hands do. But a good weapon helps a great deal.</i></b>",
+    "<b><i>They say the best sword is the one not yet tested in battle. Liars.</i></b>",
+    "<b><i>Bosses don't fear you. Yet. Get the right blade — then we'll see.</i></b>",
+    "<b><i>Iron remembers strikes. The best blades remember victories.</i></b>",
+    "<b><i>The price of a sword is nothing compared to the price of defeat.</i></b>",
+    "<b><i>A miner without a sword is just a miner. A miner with a sword is a hunter.</i></b>",
+    "<b><i>Choose your weapon with your heart. But let your wallet think too.</i></b>",
+    "<b><i>Some bosses have seen a thousand blades. They will remember yours.</i></b>",
+    "<b><i>A good sword is not a purchase. It is an investment in someone else's end.</i></b>",
 ]
 
 _HUNT_QUOTES_EN = [
-    "<b>Every boss is a wall. Every strike is a crack in it.</b>",
-    "<b>They don't die on their own. Someone has to help them. That someone is you.</b>",
-    "<b>The hunt is not cruelty. It is economics.</b>",
-    "<b>The boss is waiting. He is patient. But not eternal.</b>",
-    "<b>Five million coins for one death. Not a bad deal.</b>",
-    "<b>The depths are full of monsters. Good thing you have a sword.</b>",
-    "<b>They say bosses can sense a hunter's fear. Don't give them that pleasure.</b>",
-    "<b>Every strike brings you closer to the reward. Don't stop.</b>",
-    "<b>The mine is not just ore. Sometimes it is blood too.</b>",
-    "<b>Legendary hunters started with an iron blade. You have already begun.</b>",
+    "<b><i>Every boss is a wall. Every strike is a crack in it.</i></b>",
+    "<b><i>They don't die on their own. Someone has to help them. That someone is you.</i></b>",
+    "<b><i>The hunt is not cruelty. It is economics.</i></b>",
+    "<b><i>The boss is waiting. He is patient. But not eternal.</i></b>",
+    "<b><i>Five million coins for one death. Not a bad deal.</i></b>",
+    "<b><i>The depths are full of monsters. Good thing you have a sword.</i></b>",
+    "<b><i>They say bosses can sense a hunter's fear. Don't give them that pleasure.</i></b>",
+    "<b><i>Every strike brings you closer to the reward. Don't stop.</i></b>",
+    "<b><i>The mine is not just ore. Sometimes it is blood too.</i></b>",
+    "<b><i>Legendary hunters started with an iron blade. You have already begun.</i></b>",
 ]
 
 _SHOP_QUOTES = [
-    "<b>Каждый клинок здесь — это история. Не все из них хорошо закончились.</b>",
-    "<b>Оружие не убивает. Убивают руки. Но хорошее оружие очень помогает.</b>",
-    "<b>Говорят, лучший меч тот, который ещё не пробовали на деле. Лжецы.</b>",
-    "<b>Боссы не боятся тебя. Пока. Купи правильный клинок — и посмотрим.</b>",
-    "<b>Железо помнит удары. Лучшие клинки помнят победы.</b>",
-    "<b>Цена меча — ничто по сравнению с ценой поражения.</b>",
-    "<b>Шахтёр без меча — просто шахтёр. Шахтёр с мечом — охотник.</b>",
-    "<b>Выбирай оружие сердцем. Но кошельком тоже думай.</b>",
-    "<b>Некоторые боссы видели тысячи клинков. Твой они запомнят.</b>",
-    "<b>Хороший меч — это не покупка. Это инвестиция в чужую гибель.</b>",
+    "<b><i>Каждый клинок здесь — это история. Не все из них хорошо закончились.</i></b>",
+    "<b><i>Оружие не убивает. Убивают руки. Но хорошее оружие очень помогает.</i></b>",
+    "<b><i>Говорят, лучший меч тот, который ещё не пробовали на деле. Лжецы.</i></b>",
+    "<b><i>Боссы не боятся тебя. Пока. Купи правильный клинок — и посмотрим.</i></b>",
+    "<b><i>Железо помнит удары. Лучшие клинки помнят победы.</i></b>",
+    "<b><i>Цена меча — ничто по сравнению с ценой поражения.</i></b>",
+    "<b><i>Шахтёр без меча — просто шахтёр. Шахтёр с мечом — охотник.</i></b>",
+    "<b><i>Выбирай оружие сердцем. Но кошельком тоже думай.</i></b>",
+    "<b><i>Некоторые боссы видели тысячи клинков. Твой они запомнят.</i></b>",
+    "<b><i>Хороший меч — это не покупка. Это инвестиция в чужую гибель.</i></b>",
 ]
 
 _HUNT_QUOTES = [
-    "<b>Каждый босс — это стена. Каждый удар — трещина в ней.</b>",
-    "<b>Они не умирают сами. Кто-то должен им помочь. Этот кто-то — ты.</b>",
-    "<b>Охота — это не жестокость. Это экономика.</b>",
-    "<b>Босс ждёт. Он терпеливый. Но не вечный.</b>",
-    "<b>Пять миллионов монет за одну смерть. Неплохая ставка.</b>",
-    "<b>Глубины полны чудовищ. Хорошо, что у тебя есть меч.</b>",
-    "<b>Говорят, боссы чувствуют страх охотника. Не давай им эту радость.</b>",
-    "<b>Каждый удар приближает награду. Не останавливайся.</b>",
-    "<b>Шахта — это не только руда. Иногда это ещё и кровь.</b>",
-    "<b>Легендарные охотники начинали с железного клинка. Ты уже начал.</b>",
+    "<b><i>Каждый босс — это стена. Каждый удар — трещина в ней.</i></b>",
+    "<b><i>Они не умирают сами. Кто-то должен им помочь. Этот кто-то — ты.</i></b>",
+    "<b><i>Охота — это не жестокость. Это экономика.</i></b>",
+    "<b><i>Босс ждёт. Он терпеливый. Но не вечный.</i></b>",
+    "<b><i>Пять миллионов монет за одну смерть. Неплохая ставка.</i></b>",
+    "<b><i>Глубины полны чудовищ. Хорошо, что у тебя есть меч.</i></b>",
+    "<b><i>Говорят, боссы чувствуют страх охотника. Не давай им эту радость.</i></b>",
+    "<b><i>Каждый удар приближает награду. Не останавливайся.</i></b>",
+    "<b><i>Шахта — это не только руда. Иногда это ещё и кровь.</i></b>",
+    "<b><i>Легендарные охотники начинали с железного клинка. Ты уже начал.</i></b>",
 ]
 
 # ─────────────────────────────────────────
@@ -992,8 +1013,8 @@ def _pick_random_boss(exclude_keys: list[str] = None) -> dict:
     return random.choice(pool)
 
 
-def _spawn_slot(slot: int, kill_duration: int = None, active_keys: list[str] = None):
-    """Спавнит нового случайного босса в слот."""
+def _build_spawn_state(kill_duration: int = None, active_keys: list[str] = None) -> dict:
+    """Строит новое состояние случайного босса (без сохранения в БД)."""
     if kill_duration is None:
         next_hp = BOSS_MAX_HP
     elif kill_duration <= 5 * 60:
@@ -1004,7 +1025,7 @@ def _spawn_slot(slot: int, kill_duration: int = None, active_keys: list[str] = N
         next_hp = BOSS_HP_SLOW
 
     boss = _pick_random_boss(exclude_keys=active_keys or [])
-    state = {
+    return {
         "boss_key":          boss["key"],
         "boss_hp":           next_hp,
         "boss_max_hp":       next_hp,
@@ -1014,8 +1035,35 @@ def _spawn_slot(slot: int, kill_duration: int = None, active_keys: list[str] = N
         "boss_kill_duration": None,
         "damage_log":        {},
     }
+
+
+def _spawn_slot(slot: int, kill_duration: int = None, active_keys: list[str] = None):
+    """Спавнит нового случайного босса в слот."""
+    state = _build_spawn_state(kill_duration=kill_duration, active_keys=active_keys)
     _save_slot(slot, state)
     return state
+
+
+def revive_boss_with_potion(slot: int) -> tuple[bool, dict]:
+    """
+    Мгновенно возрождает босса в слоте, минуя таймер отката.
+    Используется после успешной покупки «Зелья Возрождения» за звёзды.
+    Возвращает (True, новое_состояние) если возрождение произошло,
+    (False, текущее_состояние) если босс уже был жив.
+    """
+    def _mutator(state):
+        if state.get("boss_alive"):
+            return state, (False, state)
+        active_keys = [
+            st.get("boss_key")
+            for s in range(ACTIVE_BOSS_SLOTS) if s != slot
+            for st in [_load_slot(s)]
+            if st.get("boss_alive")
+        ]
+        kill_dur = state.get("boss_kill_duration")
+        new_state = _build_spawn_state(kill_duration=kill_dur, active_keys=active_keys)
+        return new_state, (True, new_state)
+    return _atomic_slot_update(slot, _mutator)
 
 
 def _ensure_all_slots():
@@ -1244,26 +1292,26 @@ def get_equipped_sword(data: dict) -> str | None:
 def buy_sword(data: dict, sword_key: str, lang: str = "ru") -> tuple[bool, str]:
     sword = SWORDS_BY_KEY.get(sword_key)
     if not sword:
-        return False, ("❌ Sword not found." if lang == "en" else "❌ Меч не найден.")
+        return False, ("<b><i>❌ Sword not found.</i></b>" if lang == "en" else "<b><i>❌ Меч не найден.</i></b>")
     if has_sword(data, sword_key):
-        return False, ("❌ You already have this sword." if lang == "en" else "❌ Этот меч уже у тебя есть.")
+        return False, ("<b><i>❌ You already have this sword.</i></b>" if lang == "en" else "<b><i>❌ Этот меч уже у тебя есть.</i></b>")
     if data.get("balance", 0) < sword["price"]:
         need = sword["price"] - data.get("balance", 0)
-        return False, (f'❌ Not enough coins. Need {_fmt(need)} more {COIN}' if lang == "en" else f'❌ Недостаточно монет. Нужно ещё {_fmt(need)} {COIN}')
+        return False, (f'<b><i>❌ Not enough coins. Need {_fmt(need)} more {COIN}</i></b>' if lang == "en" else f'<b><i>❌ Недостаточно монет. Нужно ещё {_fmt(need)} {COIN}</i></b>')
     data["balance"] -= sword["price"]
     data.setdefault("owned_swords", []).append(sword_key)
     if not data.get("equipped_sword"):
         data["equipped_sword"] = sword_key
-    return True, ("✅ Sword purchased!" if lang == "en" else "✅ Меч куплен!")
+    return True, ("<b><i>✅ Sword purchased!</i></b>" if lang == "en" else "<b><i>✅ Меч куплен!</i></b>")
 
 
 def equip_sword(data: dict, sword_key: str, lang: str = "ru") -> tuple[bool, str]:
     if not has_sword(data, sword_key):
-        return False, ("❌ This sword is not purchased." if lang == "en" else "❌ Этот меч не куплен.")
+        return False, ("<b><i>❌ This sword is not purchased.</i></b>" if lang == "en" else "<b><i>❌ Этот меч не куплен.</i></b>")
     if sword_is_rented_out(data, sword_key):
-        return False, ("❌ This sword is rented out — wait for it to return." if lang == "en" else "❌ Этот меч сдан в аренду — дождись возврата.")
+        return False, ("<b><i>❌ This sword is rented out — wait for it to return.</i></b>" if lang == "en" else "<b><i>❌ Этот меч сдан в аренду — дождись возврата.</i></b>")
     data["equipped_sword"] = sword_key
-    return True, ("✅ Sword equipped!" if lang == "en" else "✅ Меч экипирован!")
+    return True, ("<b><i>✅ Sword equipped!</i></b>" if lang == "en" else "<b><i>✅ Меч экипирован!</i></b>")
 
 
 # ─────────────────────────────────────────
@@ -1288,23 +1336,23 @@ def hunt_main_text(data: dict, lang: str = "ru") -> str:
         _raw_quote = _BOSS_HUNT_QUOTES.get(_bkey) or random.choice(_HUNT_QUOTES)
     if _boss:
         _boss_display_name = _boss.get("name_en", _boss["name"]) if lang == "en" else _boss["name"]
-        _quote = f'<b>{_boss_display_name}:</b>\n{_raw_quote}'
+        _quote = f'<b><i>{_boss_display_name}:</i></b>\n{_raw_quote}'
     else:
         _quote = _raw_quote
 
     if lang == "en":
         header = (
             f'<blockquote>'
-            f'{_tg(_E["hunt"], "💀")} <b>BOSS HUNT</b>\n'
-            f'<b>Swords in arsenal: {count} / {len(SWORDS)}</b>\n\n'
+            f'{_tg(_E["hunt"], "💀")} <b><i>BOSS HUNT</i></b>\n'
+            f'<b><i>Swords in arsenal: {count} / {len(SWORDS)}</i></b>\n\n'
             f'{_quote}'
             f'</blockquote>\n\n'
         )
     else:
         header = (
             f'<blockquote>'
-            f'{_tg(_E["hunt"], "💀")} <b>ОХОТА НА БОССОВ</b>\n'
-            f'<b>Мечей в арсенале: {count} / {len(SWORDS)}</b>\n\n'
+            f'{_tg(_E["hunt"], "💀")} <b><i>ОХОТА НА БОССОВ</i></b>\n'
+            f'<b><i>Мечей в арсенале: {count} / {len(SWORDS)}</i></b>\n\n'
             f'{_quote}'
             f'</blockquote>\n\n'
         )
@@ -1318,32 +1366,32 @@ def hunt_main_text(data: dict, lang: str = "ru") -> str:
         if lang == "en":
             eq_block = (
                 f'<blockquote>'
-                f'{_tg(_E["sword"], "⚔️")} <b>Active sword:</b> {_tg(sword["emoji_id"], "🗡")} <b>{sword_name}</b>\n'
-                f'{_tg(_E["dmg"], "💥")} <b>Damage: {_fmt(sword["dmg_min"])} — {_fmt(sword["dmg_max"])}</b>\n'
-                f'{_tg(_E["crit"], "⭐")} <b>Crit: 5% chance × 2.0 of max damage</b>'
+                f'{_tg(_E["sword"], "⚔️")} <b><i>Active sword:</i></b> {_tg(sword["emoji_id"], "🗡")} <b><i>{sword_name}</i></b>\n'
+                f'{_tg(_E["dmg"], "💥")} <b><i>Damage: {_fmt(sword["dmg_min"])} — {_fmt(sword["dmg_max"])}</i></b>\n'
+                f'{_tg(_E["crit"], "⭐")} <b><i>Crit: 5% chance × 2.0 of max damage</i></b>'
                 f'</blockquote>\n\n'
             )
         else:
             eq_block = (
                 f'<blockquote>'
-                f'{_tg(_E["sword"], "⚔️")} <b>Активный меч:</b> {_tg(sword["emoji_id"], "🗡")} <b>{sword_name}</b>\n'
-                f'{_tg(_E["dmg"], "💥")} <b>Урон: {_fmt(sword["dmg_min"])} — {_fmt(sword["dmg_max"])}</b>\n'
-                f'{_tg(_E["crit"], "⭐")} <b>Крит: 5% шанс × 2.0 от макс. урона</b>'
+                f'{_tg(_E["sword"], "⚔️")} <b><i>Активный меч:</i></b> {_tg(sword["emoji_id"], "🗡")} <b><i>{sword_name}</i></b>\n'
+                f'{_tg(_E["dmg"], "💥")} <b><i>Урон: {_fmt(sword["dmg_min"])} — {_fmt(sword["dmg_max"])}</i></b>\n'
+                f'{_tg(_E["crit"], "⭐")} <b><i>Крит: 5% шанс × 2.0 от макс. урона</i></b>'
                 f'</blockquote>\n\n'
             )
     else:
         if lang == "en":
             eq_block = (
                 f'<blockquote>'
-                f'{_tg(_E["lock"], "🔒")} <b>No active sword.</b>\n'
-                f'<b>Buy a sword in the shop — and go into battle!</b>'
+                f'{_tg(_E["lock"], "🔒")} <b><i>No active sword.</i></b>\n'
+                f'<b><i>Buy a sword in the shop — and go into battle!</i></b>'
                 f'</blockquote>\n\n'
             )
         else:
             eq_block = (
                 f'<blockquote>'
-                f'{_tg(_E["lock"], "🔒")} <b>Нет активного меча.</b>\n'
-                f'<b>Купи меч в магазине — и иди в бой!</b>'
+                f'{_tg(_E["lock"], "🔒")} <b><i>Нет активного меча.</i></b>\n'
+                f'<b><i>Купи меч в магазине — и иди в бой!</i></b>'
                 f'</blockquote>\n\n'
             )
 
@@ -1370,6 +1418,11 @@ def hunt_main_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
             icon_custom_emoji_id=_E["shop"]
         )
     )
+    builder.row(InlineKeyboardButton(
+        text="Potions" if lang == "en" else "Зелья",
+        callback_data="hunt_shop_potions",
+        icon_custom_emoji_id=_E["potion"]
+    ))
     builder.row(InlineKeyboardButton(
         text="Back" if lang == "en" else "Назад",
         callback_data="back_to_menu",
@@ -1398,22 +1451,22 @@ def sword_shop_text(data: dict, page: int = 0, lang: str = "ru") -> str:
         raw_quote = _SWORD_QUOTES.get(quote_sword["key"], random.choice(_SHOP_QUOTES))
         sword_name_display = quote_sword["name"]
     sword_emoji = _tg(quote_sword["emoji_id"], "🗡")
-    quote = f'{sword_emoji} <b>{sword_name_display}:</b>\n{raw_quote}'
+    quote = f'{sword_emoji} <b><i>{sword_name_display}:</i></b>\n{raw_quote}'
 
     if lang == "en":
         return (
             f'<blockquote>'
-            f'{_tg(_E["shop"], "🛒")} <b>ARMORY</b>\n'
-            f'<b>Owned: {owned_count} / {len(SWORDS)}</b>  |  '
-            f'<b>Page {page + 1} / {total_pages}</b>\n\n'
+            f'{_tg(_E["shop"], "🛒")} <b><i>ARMORY</i></b>\n'
+            f'<b><i>Owned: {owned_count} / {len(SWORDS)}</i></b>  |  '
+            f'<b><i>Page {page + 1} / {total_pages}</i></b>\n\n'
             f'{quote}'
             f'</blockquote>'
         )
     return (
         f'<blockquote>'
-        f'{_tg(_E["shop"], "🛒")} <b>ОРУЖЕЙНАЯ</b>\n'
-        f'<b>Куплено: {owned_count} / {len(SWORDS)}</b>  |  '
-        f'<b>Страница {page + 1} / {total_pages}</b>\n\n'
+        f'{_tg(_E["shop"], "🛒")} <b><i>ОРУЖЕЙНАЯ</i></b>\n'
+        f'<b><i>Куплено: {owned_count} / {len(SWORDS)}</i></b>  |  '
+        f'<b><i>Страница {page + 1} / {total_pages}</i></b>\n\n'
         f'{quote}'
         f'</blockquote>'
     )
@@ -1468,10 +1521,114 @@ def sword_shop_keyboard(data: dict, page: int = 0, lang: str = "ru") -> InlineKe
     return builder.as_markup()
 
 
+# ─── Магазин зелий ───
+
+def potions_shop_text(lang: str = "ru") -> str:
+    p = POTIONS[0]
+    name   = p.get("name_en", p["name"]) if lang == "en" else p["name"]
+    desc   = p.get("desc_en", p["desc"]) if lang == "en" else p["desc"]
+    effect = p.get("effect_en", p["effect"]) if lang == "en" else p["effect"]
+    star   = _tg(_E["star"], "⭐")
+    if lang == "en":
+        return (
+            f'<blockquote>'
+            f'{_tg(_E["potion"], "🧪")} <b><i>POTIONS</i></b>\n\n'
+            f'{_tg(p["emoji_id"], "🧪")} <b><i>{name}</i></b>\n'
+            f'{desc}\n\n'
+            f'{effect}\n\n'
+            f'<b><i>Price: {p["price_stars"]} {star}</i></b>'
+            f'</blockquote>'
+        )
+    return (
+        f'<blockquote>'
+        f'{_tg(_E["potion"], "🧪")} <b><i>ЗЕЛЬЯ</i></b>\n\n'
+        f'{_tg(p["emoji_id"], "🧪")} <b><i>{name}</i></b>\n'
+        f'{desc}\n\n'
+        f'{effect}\n\n'
+        f'<b><i>Цена: {p["price_stars"]} {star}</i></b>'
+        f'</blockquote>'
+    )
+
+
+def potions_shop_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for p in POTIONS:
+        name = p.get("name_en", p["name"]) if lang == "en" else p["name"]
+        builder.row(InlineKeyboardButton(
+            text=f'{name} — {p["price_stars"]} ⭐',
+            callback_data=f'buy_potion_{p["key"]}',
+            icon_custom_emoji_id=p["emoji_id"]
+        ))
+    builder.row(InlineKeyboardButton(
+        text="Hunt menu" if lang == "en" else "В меню охоты",
+        callback_data="hunt",
+        icon_custom_emoji_id=_E["back"]
+    ))
+    return builder.as_markup()
+
+
+def potion_invoice_params(potion_key: str, lang: str = "ru") -> dict | None:
+    """
+    Параметры для bot.send_invoice() (оплата через Telegram Stars, currency='XTR').
+    Использовать в основном файле бота при нажатии на кнопку покупки зелья:
+
+        params = potion_invoice_params(potion_key, lang)
+        await bot.send_invoice(
+            chat_id=..., title=params["title"], description=params["description"],
+            payload=params["payload"], currency=params["currency"], prices=params["prices"],
+        )
+    """
+    p = POTIONS_BY_KEY.get(potion_key)
+    if not p:
+        return None
+    title = p.get("name_en", p["name"]) if lang == "en" else p["name"]
+    raw_desc = p.get("effect_en", p["effect"]) if lang == "en" else p["effect"]
+    plain_desc = re.sub(r'<[^>]+>', '', raw_desc)
+    return {
+        "title": title,
+        "description": plain_desc,
+        "payload": f'potion_{potion_key}',
+        "currency": "XTR",
+        "prices": [{"label": title, "amount": p["price_stars"]}],
+    }
+
+
+def confirm_potion_purchase(slot: int, potion_key: str, lang: str = "ru") -> tuple[bool, str]:
+    """
+    Вызывать после успешного платежа (successful_payment) за зелье.
+    Применяет эффект зелья. Для 'revival' — мгновенно возрождает босса в слоте.
+    """
+    p = POTIONS_BY_KEY.get(potion_key)
+    if not p:
+        return False, ("<b><i>❌ Unknown potion.</i></b>" if lang == "en" else "<b><i>❌ Неизвестное зелье.</i></b>")
+
+    if potion_key == "revival":
+        ok, state = revive_boss_with_potion(slot)
+        potion_emoji = _tg(p["emoji_id"], "🧪")
+        if not ok:
+            return False, (f'{potion_emoji} <b><i>❌ The boss is already alive — the potion was not needed.</i></b>'
+                            if lang == "en" else
+                            f'{potion_emoji} <b><i>❌ Босс уже жив — зелье не потребовалось.</i></b>')
+        boss = BOSSES_BY_KEY.get(state.get("boss_key"))
+        boss_name = (boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]) if boss else "?"
+        if lang == "en":
+            return True, (f'{potion_emoji} <b><i>Revival Potion used!</i></b>\n'
+                          f'<b><i>The boss {boss_name} has risen again — go hunt!</i></b>')
+        return True, (f'{potion_emoji} <b><i>Зелье возрождения применено!</i></b>\n'
+                      f'<b><i>Босс {boss_name} восстал снова — иди в бой!</i></b>')
+
+    return False, ("<b><i>❌ Unknown potion.</i></b>" if lang == "en" else "<b><i>❌ Неизвестное зелье.</i></b>")
+
+
+def is_potion_cmd(text: str) -> bool:
+    t = text.strip().lstrip("/").lower()
+    return t in ("зелья", "зелье", "potions", "potion")
+
+
 def sword_detail_text(data: dict, sword_key: str, lang: str = "ru") -> str:
     sword = SWORDS_BY_KEY.get(sword_key)
     if not sword:
-        return "<b>❌ Sword not found.</b>" if lang == "en" else "<b>❌ Меч не найден.</b>"
+        return "<b><i>❌ Sword not found.</i></b>" if lang == "en" else "<b><i>❌ Меч не найден.</i></b>"
 
     owned    = has_sword(data, sword_key)
     equipped = get_equipped_sword(data) == sword_key
@@ -1481,11 +1638,11 @@ def sword_detail_text(data: dict, sword_key: str, lang: str = "ru") -> str:
 
     status_parts = []
     if owned:
-        status_parts.append(f'{_tg(_E["ok"], "✅")} <b>{"In arsenal" if lang == "en" else "Есть в арсенале"}</b>')
+        status_parts.append(f'{_tg(_E["ok"], "✅")} <b><i>{"In arsenal" if lang == "en" else "Есть в арсенале"}</i></b>')
     else:
-        status_parts.append(f'{_tg(_E["lock"], "🔒")} <b>{"Not purchased" if lang == "en" else "Не куплен"}</b>')
+        status_parts.append(f'{_tg(_E["lock"], "🔒")} <b><i>{"Not purchased" if lang == "en" else "Не куплен"}</i></b>')
     if equipped:
-        status_parts.append(f'{_tg(_E["fire"], "⚡")} <b>{"Equipped" if lang == "en" else "Экипирован"}</b>')
+        status_parts.append(f'{_tg(_E["fire"], "⚡")} <b><i>{"Equipped" if lang == "en" else "Экипирован"}</i></b>')
 
     status_line = "  |  ".join(status_parts)
 
@@ -1500,31 +1657,31 @@ def sword_detail_text(data: dict, sword_key: str, lang: str = "ru") -> str:
     if lang == "en":
         return (
             f'<blockquote>'
-            f'{sword_emoji} <b>{sword_name}</b>\n'
+            f'{sword_emoji} <b><i>{sword_name}</i></b>\n'
             f'</blockquote>\n\n'
             f'<blockquote>'
             f'{sword_desc}'
             f'</blockquote>\n\n'
             f'{sword_quote_block}'
             f'<blockquote>'
-            f'{_tg(_E["dmg"], "💥")} <b>Damage: {_fmt(sword["dmg_min"])} — {_fmt(sword["dmg_max"])}</b>\n'
-            f'{_tg(_E["crit"], "⭐")} <b>Crit: 5% × ×{sword["crit_mult"]:.0f} — max {_fmt(int(sword["dmg_max"] * sword["crit_mult"]))}</b>\n'
-            f'{_tg(_E["price"], "💲")} <b>Price: {_fmt(sword["price"])} {_tg(_E["coin"], "💰")}</b>\n\n'
+            f'{_tg(_E["dmg"], "💥")} <b><i>Damage: {_fmt(sword["dmg_min"])} — {_fmt(sword["dmg_max"])}</i></b>\n'
+            f'{_tg(_E["crit"], "⭐")} <b><i>Crit: 5% × ×{sword["crit_mult"]:.0f} — max {_fmt(int(sword["dmg_max"] * sword["crit_mult"]))}</i></b>\n'
+            f'{_tg(_E["price"], "💲")} <b><i>Price: {_fmt(sword["price"])} {_tg(_E["coin"], "💰")}</i></b>\n\n'
             f'{status_line}'
             f'</blockquote>'
         )
     return (
         f'<blockquote>'
-        f'{sword_emoji} <b>{sword_name}</b>\n'
+        f'{sword_emoji} <b><i>{sword_name}</i></b>\n'
         f'</blockquote>\n\n'
         f'<blockquote>'
         f'{sword_desc}'
         f'</blockquote>\n\n'
         f'{sword_quote_block}'
         f'<blockquote>'
-        f'{_tg(_E["dmg"], "💥")} <b>Урон: {_fmt(sword["dmg_min"])} — {_fmt(sword["dmg_max"])}</b>\n'
-        f'{_tg(_E["crit"], "⭐")} <b>Крит: 5% × ×{sword["crit_mult"]:.0f} — макс. {_fmt(int(sword["dmg_max"] * sword["crit_mult"]))}</b>\n'
-        f'{_tg(_E["price"], "💲")} <b>Цена: {_fmt(sword["price"])} {_tg(_E["coin"], "💰")}</b>\n\n'
+        f'{_tg(_E["dmg"], "💥")} <b><i>Урон: {_fmt(sword["dmg_min"])} — {_fmt(sword["dmg_max"])}</i></b>\n'
+        f'{_tg(_E["crit"], "⭐")} <b><i>Крит: 5% × ×{sword["crit_mult"]:.0f} — макс. {_fmt(int(sword["dmg_max"] * sword["crit_mult"]))}</i></b>\n'
+        f'{_tg(_E["price"], "💲")} <b><i>Цена: {_fmt(sword["price"])} {_tg(_E["coin"], "💰")}</i></b>\n\n'
         f'{status_line}'
         f'</blockquote>'
     )
@@ -1572,13 +1729,13 @@ def my_swords_text(data: dict, lang: str = "ru") -> str:
     if not owned:
         if lang == "en":
             body = (
-                f'{_tg(_E["lock"], "🔒")} <b>Arsenal is empty.</b>\n'
-                f'<b>Check the armory — blades are waiting!</b>'
+                f'{_tg(_E["lock"], "🔒")} <b><i>Arsenal is empty.</i></b>\n'
+                f'<b><i>Check the armory — blades are waiting!</i></b>'
             )
         else:
             body = (
-                f'{_tg(_E["lock"], "🔒")} <b>Арсенал пуст.</b>\n'
-                f'<b>Загляни в магазин оружия — там ждут клинки!</b>'
+                f'{_tg(_E["lock"], "🔒")} <b><i>Арсенал пуст.</i></b>\n'
+                f'<b><i>Загляни в магазин оружия — там ждут клинки!</i></b>'
             )
     else:
         lines = []
@@ -1587,12 +1744,12 @@ def my_swords_text(data: dict, lang: str = "ru") -> str:
             if not sw:
                 continue
             sw_name = sw.get("name_en", sw["name"]) if lang == "en" else sw["name"]
-            eq_label = f' {_tg(_E["fire"], "⚡")} <b>{"[Eqp.]" if lang == "en" else "[Экип.]"}</b>' if sk == eq_key else ""
+            eq_label = f' {_tg(_E["fire"], "⚡")} <b><i>{"[Eqp.]" if lang == "en" else "[Экип.]"}</i></b>' if sk == eq_key else ""
             sword_emoji = _tg(sw["emoji_id"], "🗡")
             dmg_label = "dmg" if lang == "en" else "урона"
             lines.append(
-                f'{sword_emoji} <b>{sw_name}</b>{eq_label}\n'
-                f'   {_tg(_E["dmg"], "💥")} <b>{_fmt(sw["dmg_min"])}–{_fmt(sw["dmg_max"])} {dmg_label}</b>'
+                f'{sword_emoji} <b><i>{sw_name}</i></b>{eq_label}\n'
+                f'   {_tg(_E["dmg"], "💥")} <b><i>{_fmt(sw["dmg_min"])}–{_fmt(sw["dmg_max"])} {dmg_label}</i></b>'
             )
         body = "\n\n".join(lines)
 
@@ -1600,8 +1757,8 @@ def my_swords_text(data: dict, lang: str = "ru") -> str:
     arsenal_label = "Arsenal" if lang == "en" else "Арсенал"
     return (
         f'<blockquote>'
-        f'{_tg(_E["my_swords"], "⚔️")} <b>{title}</b>\n'
-        f'<b>{arsenal_label}: {len(owned)} / {len(SWORDS)}</b>'
+        f'{_tg(_E["my_swords"], "⚔️")} <b><i>{title}</i></b>\n'
+        f'<b><i>{arsenal_label}: {len(owned)} / {len(SWORDS)}</i></b>'
         f'</blockquote>\n\n'
         f'<blockquote>{body}</blockquote>'
     )
@@ -1643,20 +1800,20 @@ def boss_select_text(lang: str = "ru") -> str:
         boss     = BOSSES_BY_KEY.get(boss_key)
         if st.get("boss_alive") and boss:
             bname = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
-            lines.append(f'{_tg(_E["boss"], "🔥")} <b>#{slot_idx+1} {bname}</b>')
+            lines.append(f'{_tg(_E["boss"], "🔥")} <b><i>#{slot_idx+1} {bname}</i></b>')
         else:
             died_at = st.get("boss_died_at", 0) or 0
             rem     = max(0, BOSS_RESPAWN_SEC - (now - died_at))
             m       = rem // 60
             if lang == "en":
-                lines.append(f'{_tg(_E["dead"], "💀")} <b>#{slot_idx+1}</b> — next in {m}m')
+                lines.append(f'{_tg(_E["dead"], "💀")} <b><i>#{slot_idx+1}</i></b> — next in {m}m')
             else:
-                lines.append(f'{_tg(_E["dead"], "💀")} <b>#{slot_idx+1}</b> — след. через {m}м')
+                lines.append(f'{_tg(_E["dead"], "💀")} <b><i>#{slot_idx+1}</i></b> — след. через {m}м')
 
     body = "\n".join(lines)
     if lang == "en":
-        return f'<blockquote>{_tg(_E["skull"], "💀")} <b>CHOOSE A BOSS</b>\n\n{body}\n</blockquote>'
-    return f'<blockquote>{_tg(_E["skull"], "💀")} <b>ВЫБОР БОССА</b>\n\n{body}\n</blockquote>'
+        return f'<blockquote>{_tg(_E["skull"], "💀")} <b><i>CHOOSE A BOSS</i></b>\n\n{body}\n</blockquote>'
+    return f'<blockquote>{_tg(_E["skull"], "💀")} <b><i>ВЫБОР БОССА</i></b>\n\n{body}\n</blockquote>'
 
 
 def boss_select_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
@@ -1706,16 +1863,16 @@ def boss_attack_text(data: dict, lang: str = "ru", slot: int = 0) -> str:
         if lang == "en":
             return (
                 f'<blockquote>'
-                f'{_tg(_E["lock"], "🔒")} <b>BOSS ATTACK</b>\n\n'
-                f'<b>You have no sword.</b>\n'
-                f'<b>Buy a weapon in the shop!</b>'
+                f'{_tg(_E["lock"], "🔒")} <b><i>BOSS ATTACK</i></b>\n\n'
+                f'<b><i>You have no sword.</i></b>\n'
+                f'<b><i>Buy a weapon in the shop!</i></b>'
                 f'</blockquote>'
             )
         return (
             f'<blockquote>'
-            f'{_tg(_E["lock"], "🔒")} <b>АТАКА БОССА</b>\n\n'
-            f'<b>У тебя нет меча.</b>\n'
-            f'<b>Купи оружие в магазине!</b>'
+            f'{_tg(_E["lock"], "🔒")} <b><i>АТАКА БОССА</i></b>\n\n'
+            f'<b><i>У тебя нет меча.</i></b>\n'
+            f'<b><i>Купи оружие в магазине!</i></b>'
             f'</blockquote>'
         )
 
@@ -1726,19 +1883,19 @@ def boss_attack_text(data: dict, lang: str = "ru", slot: int = 0) -> str:
         if lang == "en":
             return (
                 f'<blockquote>'
-                f'{_tg(_E["dead"], "💀")} <b>BOSS DEFEATED!</b>\n\n'
-                f'{_tg(_E["timer"], "⏱")} <b>Next spawns in: {m}m</b>'
+                f'{_tg(_E["dead"], "💀")} <b><i>BOSS DEFEATED!</i></b>\n\n'
+                f'{_tg(_E["timer"], "⏱")} <b><i>Next spawns in: {m}m</i></b>'
                 f'</blockquote>'
             )
         return (
             f'<blockquote>'
-            f'{_tg(_E["dead"], "💀")} <b>БОСС ПОВЕРЖЕН!</b>\n\n'
-            f'{_tg(_E["timer"], "⏱")} <b>Следующий появится через: {m}м</b>'
+            f'{_tg(_E["dead"], "💀")} <b><i>БОСС ПОВЕРЖЕН!</i></b>\n\n'
+            f'{_tg(_E["timer"], "⏱")} <b><i>Следующий появится через: {m}м</i></b>'
             f'</blockquote>'
         )
 
     if not boss:
-        return "<b>❌ Boss not found.</b>" if lang == "en" else "<b>❌ Ошибка: босс не найден.</b>"
+        return "<b><i>❌ Boss not found.</i></b>" if lang == "en" else "<b><i>❌ Ошибка: босс не найден.</i></b>"
 
     # Мой урон по этому боссу
     damage_log = state.get("damage_log", {})
@@ -1764,15 +1921,15 @@ def boss_attack_text(data: dict, lang: str = "ru", slot: int = 0) -> str:
         if lang == "en":
             enh_line = (
                 f'\n\n<blockquote>'
-                f'{_tg(_E["fire"], "⚡")} <b>Damage booster: ×{_ms} active</b>\n'
-                f'{_tg(_E["timer"], "⏱")} <b>Time left: {_left}</b>'
+                f'{_tg(_E["fire"], "⚡")} <b><i>Damage booster: ×{_ms} active</i></b>\n'
+                f'{_tg(_E["timer"], "⏱")} <b><i>Time left: {_left}</i></b>'
                 f'</blockquote>'
             )
         else:
             enh_line = (
                 f'\n\n<blockquote>'
-                f'{_tg(_E["fire"], "⚡")} <b>Усилитель урона: ×{_ms} активен</b>\n'
-                f'{_tg(_E["timer"], "⏱")} <b>Осталось: {_left}</b>'
+                f'{_tg(_E["fire"], "⚡")} <b><i>Усилитель урона: ×{_ms} активен</i></b>\n'
+                f'{_tg(_E["timer"], "⏱")} <b><i>Осталось: {_left}</i></b>'
                 f'</blockquote>'
             )
     else:
@@ -1788,13 +1945,13 @@ def boss_attack_text(data: dict, lang: str = "ru", slot: int = 0) -> str:
         if lang == "en":
             art_dmg_line = (
                 f'\n\n<blockquote>'
-                f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>Damage artifact: ×{_art_dmg_str}</b>'
+                f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b><i>Damage artifact: ×{_art_dmg_str}</i></b>'
                 f'</blockquote>'
             )
         else:
             art_dmg_line = (
                 f'\n\n<blockquote>'
-                f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>Артефакт урона: ×{_art_dmg_str}</b>'
+                f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b><i>Артефакт урона: ×{_art_dmg_str}</i></b>'
                 f'</blockquote>'
             )
     else:
@@ -1807,38 +1964,38 @@ def boss_attack_text(data: dict, lang: str = "ru", slot: int = 0) -> str:
     if lang == "en":
         return (
             f'<blockquote>'
-            f'{_tg(_E["skull"], "💀")} <b>{boss_name}</b>\n'
-            f'<i>{boss_lore}</i>'
+            f'{_tg(_E["skull"], "💀")} <b><i>{boss_name}</i></b>\n'
+            f'<b><i>{boss_lore}</i></b>'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["hp"], "❤️")} <b>HP:</b> {_fmt_digits(hp)} / {_fmt_digits(max_hp)} <b>({pct:.1f}%)</b>'
+            f'{_tg(_E["hp"], "❤️")} <b><i>HP:</i></b> {_fmt_digits(hp)} / {_fmt_digits(max_hp)} <b><i>({pct:.1f}%)</i></b>'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["sword"], "⚔️")} <b>Your sword: {_tg(sword["emoji_id"], "🗡")} {sword_name}</b>\n'
-            f'{_tg(_E["dmg"], "💥")} <b>Damage: {_fmt(sword["dmg_min"])} — {_fmt(sword["dmg_max"])}</b>\n'
-            f'{_tg(_E["crit"], "⭐")} <b>Crit: 5% × {sword["crit_mult"]:.0f} of max damage</b>'
+            f'{_tg(_E["sword"], "⚔️")} <b><i>Your sword: {_tg(sword["emoji_id"], "🗡")} {sword_name}</i></b>\n'
+            f'{_tg(_E["dmg"], "💥")} <b><i>Damage: {_fmt(sword["dmg_min"])} — {_fmt(sword["dmg_max"])}</i></b>\n'
+            f'{_tg(_E["crit"], "⭐")} <b><i>Crit: 5% × {sword["crit_mult"]:.0f} of max damage</i></b>'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["trophy"], "🏆")} <b>Kill reward: {_fmt(_reward_for_hp(max_hp))} {_tg(_E["coin"], "💰")}</b>'
+            f'{_tg(_E["trophy"], "🏆")} <b><i>Kill reward: {_fmt(_reward_for_hp(max_hp))} {_tg(_E["coin"], "💰")}</i></b>'
             f'</blockquote>'
             f'{enh_line}'
             f'{art_dmg_line}'
         )
     return (
         f'<blockquote>'
-        f'{_tg(_E["skull"], "💀")} <b>{boss_name}</b>\n'
-        f'<i>{boss_lore}</i>'
+        f'{_tg(_E["skull"], "💀")} <b><i>{boss_name}</i></b>\n'
+        f'<b><i>{boss_lore}</i></b>'
         f'</blockquote>\n\n'
         f'<blockquote>'
-        f'{_tg(_E["hp"], "❤️")} <b>HP:</b> {_fmt_digits(hp)} / {_fmt_digits(max_hp)} <b>({pct:.1f}%)</b>'
+        f'{_tg(_E["hp"], "❤️")} <b><i>HP:</i></b> {_fmt_digits(hp)} / {_fmt_digits(max_hp)} <b><i>({pct:.1f}%)</i></b>'
         f'</blockquote>\n\n'
         f'<blockquote>'
-        f'{_tg(_E["sword"], "⚔️")} <b>Твой меч: {_tg(sword["emoji_id"], "🗡")} {sword_name}</b>\n'
-        f'{_tg(_E["dmg"], "💥")} <b>Урон: {_fmt(sword["dmg_min"])} — {_fmt(sword["dmg_max"])}</b>\n'
-        f'{_tg(_E["crit"], "⭐")} <b>Крит: 5% × {sword["crit_mult"]:.0f} от макс. урона</b>'
+        f'{_tg(_E["sword"], "⚔️")} <b><i>Твой меч: {_tg(sword["emoji_id"], "🗡")} {sword_name}</i></b>\n'
+        f'{_tg(_E["dmg"], "💥")} <b><i>Урон: {_fmt(sword["dmg_min"])} — {_fmt(sword["dmg_max"])}</i></b>\n'
+        f'{_tg(_E["crit"], "⭐")} <b><i>Крит: 5% × {sword["crit_mult"]:.0f} от макс. урона</i></b>'
         f'</blockquote>\n\n'
         f'<blockquote>'
-        f'{_tg(_E["trophy"], "🏆")} <b>Награда за убийство: {_fmt(_reward_for_hp(max_hp))} {_tg(_E["coin"], "💰")}</b>'
+        f'{_tg(_E["trophy"], "🏆")} <b><i>Награда за убийство: {_fmt(_reward_for_hp(max_hp))} {_tg(_E["coin"], "💰")}</i></b>'
         f'</blockquote>'
         f'{enh_line}'
         f'{art_dmg_line}'
@@ -1873,12 +2030,12 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
 
     if result.get("error") == "no_sword":
         return (
-            f'{_tg(_E["lock"], "🔒")} <b>{"No sword — nothing to attack with!" if lang == "en" else "Нет меча — нечем атаковать!"}</b>'
+            f'{_tg(_E["lock"], "🔒")} <b><i>{"No sword — nothing to attack with!" if lang == "en" else "Нет меча — нечем атаковать!"}</i></b>'
         )
 
     if result.get("error") == "boss_dead":
         return (
-            f'{_tg(_E["dead"], "💀")} <b>{"Boss is already dead! Wait for the next one." if lang == "en" else "Босс уже мёртв! Жди следующего."}</b>'
+            f'{_tg(_E["dead"], "💀")} <b><i>{"Boss is already dead! Wait for the next one." if lang == "en" else "Босс уже мёртв! Жди следующего."}</i></b>'
         )
 
     dmg       = result["dmg"]
@@ -1890,12 +2047,12 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
 
     if lang == "en":
         crit_line = (
-            f'\n{_tg(_E["crit"], "⭐")} <b>CRITICAL HIT!</b>'
+            f'\n{_tg(_E["crit"], "⭐")} <b><i>CRITICAL HIT!</i></b>'
             if crit else ""
         )
     else:
         crit_line = (
-            f'\n{_tg(_E["crit"], "⭐")} <b>КРИТИЧЕСКИЙ УДАР!</b>'
+            f'\n{_tg(_E["crit"], "⭐")} <b><i>КРИТИЧЕСКИЙ УДАР!</i></b>'
             if crit else ""
         )
 
@@ -1905,28 +2062,28 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
         if lang == "en":
             return (
                 f'<blockquote>'
-                f'{_tg(_E["skull"], "💀")} <b>BOSS DESTROYED!</b>\n\n'
-                f'<b>{boss_name} has been defeated!</b>'
+                f'{_tg(_E["skull"], "💀")} <b><i>BOSS DESTROYED!</i></b>\n\n'
+                f'<b><i>{boss_name} has been defeated!</i></b>'
                 f'</blockquote>\n\n'
                 f'<blockquote>'
-                f'{_tg(_E["dmg"], "💥")} <b>Final strike: {_fmt(dmg)}</b>{crit_line}\n'
-                f'{_tg(_E["reward_coin"], "💰")} <b>Reward: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</b>'
+                f'{_tg(_E["dmg"], "💥")} <b><i>Final strike: {_fmt(dmg)}</i></b>{crit_line}\n'
+                f'{_tg(_E["reward_coin"], "💰")} <b><i>Reward: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</i></b>'
                 f'</blockquote>\n\n'
                 f'<blockquote>'
-                f'{_tg(_E["timer"], "⏱")} <b>Next boss appears in 2 hours.</b>'
+                f'{_tg(_E["timer"], "⏱")} <b><i>Next boss appears in 2 hours.</i></b>'
                 f'</blockquote>'
             )
         return (
             f'<blockquote>'
-            f'{_tg(_E["skull"], "💀")} <b>БОСС УНИЧТОЖЕН!</b>\n\n'
-            f'<b>{boss_name} повержен!</b>'
+            f'{_tg(_E["skull"], "💀")} <b><i>БОСС УНИЧТОЖЕН!</i></b>\n\n'
+            f'<b><i>{boss_name} повержен!</i></b>'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["dmg"], "💥")} <b>Последний удар: {_fmt(dmg)}</b>{crit_line}\n'
-            f'{_tg(_E["reward_coin"], "💰")} <b>Награда: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</b>'
+            f'{_tg(_E["dmg"], "💥")} <b><i>Последний удар: {_fmt(dmg)}</i></b>{crit_line}\n'
+            f'{_tg(_E["reward_coin"], "💰")} <b><i>Награда: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</i></b>'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["timer"], "⏱")} <b>Следующий босс появится через 2 часа.</b>'
+            f'{_tg(_E["timer"], "⏱")} <b><i>Следующий босс появится через 2 часа.</i></b>'
             f'</blockquote>'
         )
 
@@ -1935,30 +2092,30 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
     if lang == "en":
         return (
             f'<blockquote>'
-            f'{_tg(_E["skull"], "💀")} <b>{boss_name}</b>'
+            f'{_tg(_E["skull"], "💀")} <b><i>{boss_name}</i></b>'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["dmg"], "💥")} <b>Your strike: {_fmt(dmg)}</b> {_tg(_E["dmg"], "💥")}{crit_line}'
+            f'{_tg(_E["dmg"], "💥")} <b><i>Your strike: {_fmt(dmg)}</i></b> {_tg(_E["dmg"], "💥")}{crit_line}'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["hp"], "❤️")} <b>HP:</b> {_fmt_digits(hp_after)} / {_fmt_digits(max_hp)} <b>({pct:.1f}%)</b>'
+            f'{_tg(_E["hp"], "❤️")} <b><i>HP:</i></b> {_fmt_digits(hp_after)} / {_fmt_digits(max_hp)} <b><i>({pct:.1f}%)</i></b>'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["trophy"], "🏆")} <b>Kill reward: {_fmt(_reward_for_hp(max_hp))} {_tg(_E["coin"], "💰")}</b>'
+            f'{_tg(_E["trophy"], "🏆")} <b><i>Kill reward: {_fmt(_reward_for_hp(max_hp))} {_tg(_E["coin"], "💰")}</i></b>'
             f'</blockquote>'
         )
     return (
         f'<blockquote>'
-        f'{_tg(_E["skull"], "💀")} <b>{boss_name}</b>'
+        f'{_tg(_E["skull"], "💀")} <b><i>{boss_name}</i></b>'
         f'</blockquote>\n\n'
         f'<blockquote>'
-        f'{_tg(_E["dmg"], "💥")} <b>Твой удар: {_fmt(dmg)}</b> {_tg(_E["dmg"], "💥")}{crit_line}'
+        f'{_tg(_E["dmg"], "💥")} <b><i>Твой удар: {_fmt(dmg)}</i></b> {_tg(_E["dmg"], "💥")}{crit_line}'
         f'</blockquote>\n\n'
         f'<blockquote>'
-        f'{_tg(_E["hp"], "❤️")} <b>HP:</b> {_fmt_digits(hp_after)} / {_fmt_digits(max_hp)} <b>({pct:.1f}%)</b>'
+        f'{_tg(_E["hp"], "❤️")} <b><i>HP:</i></b> {_fmt_digits(hp_after)} / {_fmt_digits(max_hp)} <b><i>({pct:.1f}%)</i></b>'
         f'</blockquote>\n\n'
         f'<blockquote>'
-        f'{_tg(_E["trophy"], "🏆")} <b>Награда за убийство: {_fmt(_reward_for_hp(max_hp))} {_tg(_E["coin"], "💰")}</b>'
+        f'{_tg(_E["trophy"], "🏆")} <b><i>Награда за убийство: {_fmt(_reward_for_hp(max_hp))} {_tg(_E["coin"], "💰")}</i></b>'
         f'</blockquote>'
     )
 
@@ -2093,7 +2250,7 @@ def arsenal_main_text(data: dict) -> str:
     rented_in = get_rented_in(data)
 
     title_line = (
-        f'{_tg(_E["my_swords"], "⚔️")} <b>АРСЕНАЛ</b>\n'
+        f'{_tg(_E["my_swords"], "⚔️")} <b><i>АРСЕНАЛ</i></b>\n'
         f'━━━━━━━━━━━━━━━━━━━━'
     )
 
@@ -2101,7 +2258,7 @@ def arsenal_main_text(data: dict) -> str:
         return (
             f'{title_line}\n\n'
             f'<blockquote>'
-            f'{_tg(_E["lock"], "🔒")} <b>Арсенал пуст.</b>\n'
+            f'{_tg(_E["lock"], "🔒")} <b><i>Арсенал пуст.</i></b>\n'
             f'Загляни в магазин оружия — там ждут клинки!'
             f'</blockquote>'
         )
@@ -2120,9 +2277,9 @@ def arsenal_main_text(data: dict) -> str:
         rented_mark = ""
         if sword_is_rented_out(data, sk):
             entry = get_rented_out(data)[sk]
-            rented_mark = f'\n   {_tg(_E["timer"], "⏱")} <i>В аренде у <b>{entry["name"]}</b> — ещё {_fmt_until(entry["until"])}</i>'
+            rented_mark = f'\n   {_tg(_E["timer"], "⏱")} <b><i>В аренде у <b><i>{entry["name"]}</i></b> — ещё {_fmt_until(entry["until"])}</i></b>'
         lines.append(
-            f'<b>#{idx}</b> {sword_emoji} <b>{sw["name"]}</b>{eq_mark}{rented_mark}\n'
+            f'<b><i>#{idx}</i></b> {sword_emoji} <b><i>{sw["name"]}</i></b>{eq_mark}{rented_mark}\n'
             f'   {_tg(_E["dmg"], "💥")} {_fmt(sw["dmg_min"])}–{_fmt(sw["dmg_max"])} урона'
         )
         idx += 1
@@ -2136,8 +2293,8 @@ def arsenal_main_text(data: dict) -> str:
             continue
         sword_emoji = _tg(sw["emoji_id"], "🗡")
         lines.append(
-            f'<b>#{idx}</b> {sword_emoji} <b>{sw["name"]}</b> {_tg(_E["timer"], "⏱")}\n'
-            f'   <i>Аренда от <b>{entry["from_name"]}</b> — ещё {_fmt_until(entry["until"])}</i>\n'
+            f'<b><i>#{idx}</i></b> {sword_emoji} <b><i>{sw["name"]}</i></b> {_tg(_E["timer"], "⏱")}\n'
+            f'   <b><i>Аренда от <b><i>{entry["from_name"]}</i></b> — ещё {_fmt_until(entry["until"])}</i></b>\n'
             f'   {_tg(_E["dmg"], "💥")} {_fmt(sw["dmg_min"])}–{_fmt(sw["dmg_max"])} урона'
         )
         idx += 1
@@ -2146,14 +2303,14 @@ def arsenal_main_text(data: dict) -> str:
 
     hint = (
         f'\n\n<blockquote expandable>'
-        f'<b>Команды арсенала:</b>\n'
+        f'<b><i>Команды арсенала:</i></b>\n'
         f'<code>подарить #N @user</code> — подарить меч навсегда\n'
         f'<code>передать #N @user</code> — передать меч навсегда\n'
         f'<code>арн #N 5м @user</code> — аренда на 5 минут\n'
         f'<code>арн #N 2ч @user</code> — аренда на 2 часа\n'
         f'<code>арн #N 24ч @user</code> — аренда на 24 часа\n'
-        f'<i>Срок аренды: от 5м до 48ч</i>\n\n'
-        f'<b>Аренда — важно знать:</b>\n'
+        f'<b><i>Срок аренды: от 5м до 48ч</i></b>\n\n'
+        f'<b><i>Аренда — важно знать:</i></b>\n'
         f'• Пока меч в аренде — ты не можешь им ударить босса\n'
         f'• Арендованный меч нельзя подарить или передать\n'
         f'• Арендатор не может экипировать чужой меч для боя\n'
@@ -2203,12 +2360,12 @@ def arsenal_equip_menu_text(data: dict) -> str:
         if not sw:
             continue
         sword_emoji = _tg(sw["emoji_id"], "🗡")
-        eq_mark = f' {_tg(_E["fire"], "⚡")} <b>[Экип.]</b>' if sk == eq_key else ""
-        lines.append(f'<b>#{idx}</b> {sword_emoji} <b>{sw["name"]}</b>{eq_mark}')
+        eq_mark = f' {_tg(_E["fire"], "⚡")} <b><i>[Экип.]</i></b>' if sk == eq_key else ""
+        lines.append(f'<b><i>#{idx}</i></b> {sword_emoji} <b><i>{sw["name"]}</i></b>{eq_mark}')
         idx += 1
     body = "\n".join(lines)
     return (
-        f'{_tg(_E["my_swords"], "⚔️")} <b>ВЫБОР МЕЧА</b>\n'
+        f'{_tg(_E["my_swords"], "⚔️")} <b><i>ВЫБОР МЕЧА</i></b>\n'
         f'━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>{body}</blockquote>'
     )
@@ -2247,20 +2404,20 @@ def arsenal_gift_sword(sender_data: dict, recipient_data: dict,
     """
     sw = SWORDS_BY_KEY.get(sword_key)
     if not sw:
-        return False, "❌ Меч не найден."
+        return False, "<b><i>❌ Меч не найден.</i></b>"
     if sender_data is recipient_data or (
         sender_data.get("uid") is not None
         and sender_data.get("uid") == recipient_data.get("uid")
     ):
-        return False, "❌ Нельзя подарить меч самому себе."
+        return False, "<b><i>❌ Нельзя подарить меч самому себе.</i></b>"
     if not has_sword(sender_data, sword_key):
-        return False, "❌ У тебя нет этого меча."
+        return False, "<b><i>❌ У тебя нет этого меча.</i></b>"
     if sword_is_rented_out(sender_data, sword_key):
-        return False, "❌ Этот меч сейчас в аренде — дождись возврата."
+        return False, "<b><i>❌ Этот меч сейчас в аренде — дождись возврата.</i></b>"
     if sword_is_rented_in(sender_data, sword_key):
-        return False, "❌ Нельзя подарить арендованный меч."
+        return False, "<b><i>❌ Нельзя подарить арендованный меч.</i></b>"
     if has_sword(recipient_data, sword_key):
-        return False, f"❌ У получателя уже есть <b>{sw['name']}</b>."
+        return False, f"<b><i>❌ У получателя уже есть {sw['name']}.</i></b>"
 
     # Убираем у отправителя
     sender_data["owned_swords"].remove(sword_key)
@@ -2274,7 +2431,7 @@ def arsenal_gift_sword(sender_data: dict, recipient_data: dict,
         recipient_data["equipped_sword"] = sword_key
     recipient_data.setdefault("arsenal_transferred_from", {})[sword_key] = sender_name
 
-    return True, f'✅ Меч <b>{sw["name"]}</b> подарен!'
+    return True, f'<b><i>✅ Меч {sw["name"]} подарен!</i></b>'
 
 
 # ─── Логика: передать меч (псевдоним подарить) ───
@@ -2285,7 +2442,7 @@ def arsenal_transfer_sword(sender_data: dict, recipient_data: dict,
     ok, msg = arsenal_gift_sword(sender_data, recipient_data, sword_key, sender_name)
     if ok:
         sw = SWORDS_BY_KEY.get(sword_key)
-        msg = f'✅ Меч <b>{sw["name"]}</b> передан!'
+        msg = f'<b><i>✅ Меч {sw["name"]} передан!</i></b>'
     return ok, msg
 
 
@@ -2301,22 +2458,22 @@ def arsenal_rent_sword(owner_data: dict, renter_data: dict,
     """
     sw = SWORDS_BY_KEY.get(sword_key)
     if not sw:
-        return False, "❌ Меч не найден."
+        return False, "<b><i>❌ Меч не найден.</i></b>"
     if owner_data is renter_data or (
         owner_data.get("uid") is not None
         and owner_data.get("uid") == renter_data.get("uid")
     ):
-        return False, "❌ Нельзя сдать меч в аренду самому себе."
+        return False, "<b><i>❌ Нельзя сдать меч в аренду самому себе.</i></b>"
     if not has_sword(owner_data, sword_key):
-        return False, "❌ У тебя нет этого меча."
+        return False, "<b><i>❌ У тебя нет этого меча.</i></b>"
     if sword_is_rented_out(owner_data, sword_key):
-        return False, "❌ Этот меч уже сдан в аренду."
+        return False, "<b><i>❌ Этот меч уже сдан в аренду.</i></b>"
     if sword_is_rented_in(owner_data, sword_key):
-        return False, "❌ Нельзя сдавать арендованный меч."
+        return False, "<b><i>❌ Нельзя сдавать арендованный меч.</i></b>"
     if has_sword(renter_data, sword_key) and not sword_is_rented_in(renter_data, sword_key):
-        return False, f"❌ У арендатора уже есть <b>{sw['name']}</b>."
+        return False, f"<b><i>❌ У арендатора уже есть {sw['name']}.</i></b>"
     if duration_secs is None:
-        return False, "❌ Неверный срок аренды. Пример: <code>арн #1 2ч @user</code>"
+        return False, "<b><i>❌ Неверный срок аренды. Пример:</i></b> <code>арн #1 2ч @user</code>"
 
     until = int(_time_mod.time()) + duration_secs
 
@@ -2339,7 +2496,7 @@ def arsenal_rent_sword(owner_data: dict, renter_data: dict,
         renter_data["equipped_sword"] = sword_key
 
     dur_str = _fmt_duration(duration_secs)
-    return True, f'✅ Меч <b>{sw["name"]}</b> сдан в аренду на <b>{dur_str}</b>!'
+    return True, f'<b><i>✅ Меч {sw["name"]} сдан в аренду на {dur_str}!</i></b>'
 
 
 # ─── Тексты подтверждений (отображаются после операции) ───
@@ -2349,8 +2506,8 @@ def arsenal_gift_confirm_text(sword_key: str, recipient_name: str) -> str:
     sword_emoji = _tg(sw["emoji_id"], "🗡") if sw else "🗡"
     sword_name  = sw["name"] if sw else sword_key
     return (
-        f'{sword_emoji} <b>{sword_name}</b> подарен игроку <b>{recipient_name}</b>\n'
-        f'<i>Теперь ты можешь купить этот меч снова.</i>'
+        f'{sword_emoji} <b><i>{sword_name}</i></b> подарен игроку <b><i>{recipient_name}</i></b>\n'
+        f'<b><i>Теперь ты можешь купить этот меч снова.</i></b>'
     )
 
 def arsenal_transfer_confirm_text(sword_key: str, recipient_name: str) -> str:
@@ -2358,8 +2515,8 @@ def arsenal_transfer_confirm_text(sword_key: str, recipient_name: str) -> str:
     sword_emoji = _tg(sw["emoji_id"], "🗡") if sw else "🗡"
     sword_name  = sw["name"] if sw else sword_key
     return (
-        f'{sword_emoji} <b>{sword_name}</b> передан игроку <b>{recipient_name}</b>\n'
-        f'<i>Теперь ты можешь купить этот меч снова.</i>'
+        f'{sword_emoji} <b><i>{sword_name}</i></b> передан игроку <b><i>{recipient_name}</i></b>\n'
+        f'<b><i>Теперь ты можешь купить этот меч снова.</i></b>'
     )
 
 def arsenal_rent_confirm_text(sword_key: str, renter_name: str, duration_secs: int) -> str:
@@ -2368,8 +2525,8 @@ def arsenal_rent_confirm_text(sword_key: str, renter_name: str, duration_secs: i
     sword_name  = sw["name"] if sw else sword_key
     dur_str = _fmt_duration(duration_secs)
     return (
-        f'{sword_emoji} <b>{sword_name}</b> сдан в аренду игроку <b>{renter_name}</b> на <b>{dur_str}</b>\n'
-        f'<i>Пока меч в аренде — им нельзя бить босса.</i>'
+        f'{sword_emoji} <b><i>{sword_name}</i></b> сдан в аренду игроку <b><i>{renter_name}</i></b> на <b><i>{dur_str}</i></b>\n'
+        f'<b><i>Пока меч в аренде — им нельзя бить босса.</i></b>'
     )
 
 def arsenal_received_text(sword_key: str, from_name: str, mode: str = "gift", duration_secs: int = 0) -> str:
@@ -2378,15 +2535,15 @@ def arsenal_received_text(sword_key: str, from_name: str, mode: str = "gift", du
     sword_emoji = _tg(sw["emoji_id"], "🗡") if sw else "🗡"
     sword_name  = sw["name"] if sw else sword_key
     if mode == "rent":
-        dur_str = f' на <b>{_fmt_duration(duration_secs)}</b>' if duration_secs else ''
+        dur_str = f' на <b><i>{_fmt_duration(duration_secs)}</i></b>' if duration_secs else ''
         return (
-            f'Получен {sword_emoji} <b>{sword_name}</b> от <b>{from_name}</b>{dur_str}\n'
-            f'<i>Меч уже в твоём арсенале!</i>'
+            f'Получен {sword_emoji} <b><i>{sword_name}</i></b> от <b><i>{from_name}</i></b>{dur_str}\n'
+            f'<b><i>Меч уже в твоём арсенале!</i></b>'
         )
     action = "подарил" if mode == "gift" else "передал"
     return (
-        f'Получен {sword_emoji} <b>{sword_name}</b> от <b>{from_name}</b>\n'
-        f'<i>Меч уже в твоём арсенале!</i>'
+        f'Получен {sword_emoji} <b><i>{sword_name}</i></b> от <b><i>{from_name}</i></b>\n'
+        f'<b><i>Меч уже в твоём арсенале!</i></b>'
     )
 
 
@@ -2440,7 +2597,7 @@ def get_sword_by_arsenal_index(data: dict, index: int) -> str | None:
 
 def arsenal_error_text(msg: str) -> str:
     return (
-        f'{_tg(_E["alert"], "⚠️")} <b>АРСЕНАЛ</b>\n\n'
+        f'{_tg(_E["alert"], "⚠️")} <b><i>АРСЕНАЛ</i></b>\n\n'
         f'<blockquote>{msg}</blockquote>'
     )
 
