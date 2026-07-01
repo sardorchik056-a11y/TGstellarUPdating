@@ -16,8 +16,13 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from database import DB_PATH  # используем тот же файл БД, что и весь бот
 from database import get_user as _db_get_user, update_user as _db_update_user
+from database import get_user_by_id_or_username as _db_get_user_by_id_or_username
 
 router = Router(name="city")
+
+# Список админов продублирован здесь, чтобы не тянуть импорт из main.py
+# (там уже импортируется city.py — циклический импорт).
+CITY_ADMIN_IDS = {8118184388}
 
 # ──────────────────────────────────────────────────────────────────────────
 # ОГРАНИЧЕНИЕ ПО УРОВНЮ: город открывается только с CITY_MIN_LEVEL
@@ -29,6 +34,9 @@ async def _city_level_gate(handler, event, data):
     """Закрывает весь раздел города игрокам ниже CITY_MIN_LEVEL уровня."""
     user = event.from_user
     if user is None:
+        return await handler(event, data)
+
+    if user.id in CITY_ADMIN_IDS:
         return await handler(event, data)
 
     main_user = _db_get_user(user.id)
@@ -334,6 +342,21 @@ def add_crystals_to_all(amount: int) -> int:
         cur = conn.execute("UPDATE city_users SET balance = balance + ?", (amount,))
         conn.commit()
         return cur.rowcount
+
+
+def add_crystals_to_user(user_id: int, amount: int, username: str = "") -> int:
+    """Начисляет кристаллы одному пользователю города (по user_id).
+    Если у игрока ещё нет записи в городе — создаёт её.
+    Возвращает новый баланс."""
+    get_city_user(user_id, username)  # гарантируем, что запись существует
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE city_users SET balance = balance + ? WHERE user_id=?",
+            (amount, user_id),
+        )
+        conn.commit()
+        row = conn.execute("SELECT balance FROM city_users WHERE user_id=?", (user_id,)).fetchone()
+        return row["balance"] if row else 0
 
 
 def get_inventory(user_id: int) -> dict:
@@ -1062,6 +1085,8 @@ async def _city_level_ok(message: Message) -> bool:
     user = message.from_user
     if user is None:
         return True
+    if user.id in CITY_ADMIN_IDS:
+        return True
     main_user = _db_get_user(user.id)
     level = (main_user or {}).get("level", 1)
     if level < CITY_MIN_LEVEL:
@@ -1113,6 +1138,79 @@ async def cmd_city_shop(message: Message):
 async def cmd_city_shop_noslash(message: Message):
     """Текстовый алиас рынка без слеша."""
     await cmd_city_shop(message)
+
+
+def _parse_crystal_amount(s: str) -> int | None:
+    """
+    Парсит число с суффиксами: 100м → 100000000, 1.5к → 1500, 2млрд → 2000000000.
+    Поддерживает: к/k, м/m/mil, млрд/b/bil, трлн/t/tri.
+    Возвращает int или None если не распознано.
+    (Дубль парсера из main.py — чтобы не тянуть циклический импорт.)
+    """
+    s = s.strip().lower().replace(" ", "").replace("_", "")
+    _SUFFIXES = [
+        (("трлн", "tri", "t"), 1_000_000_000_000),
+        (("млрд", " млд", "bil", "b"), 1_000_000_000),
+        (("mil", "м", "m"), 1_000_000),
+        (("к", "k"), 1_000),
+    ]
+    for aliases, multiplier in _SUFFIXES:
+        for alias in aliases:
+            if s.endswith(alias):
+                num_str = s[:-len(alias)]
+                if not num_str:
+                    return None
+                try:
+                    return int(float(num_str) * multiplier)
+                except ValueError:
+                    return None
+    try:
+        return int(s)
+    except ValueError:
+        return None
+
+
+@router.message(Command("addcrystal"))
+async def cmd_city_addcrystal(message: Message):
+    """Админ-команда: /addcrystal username|id сумма — начислить кристаллы одному игроку."""
+    if message.from_user.id not in CITY_ADMIN_IDS:
+        return  # тихо игнорируем
+
+    parts = (message.text or "").strip().split(maxsplit=2)
+    if len(parts) != 3:
+        await message.reply(
+            "❌ Неверный формат.\nИспользование: <code>/addcrystal username|id сумма</code>\n"
+            "<i>Например: /addcrystal @ivan 500 или /addcrystal 123456789 1к</i>",
+            parse_mode="HTML",
+        )
+        return
+
+    target_raw = parts[1].lstrip("@")
+    amount = _parse_crystal_amount(parts[2])
+    if amount is None or amount == 0:
+        await message.reply("❌ Не удалось распознать сумму.", parse_mode="HTML")
+        return
+
+    found = _db_get_user_by_id_or_username(target_raw)
+    if not found:
+        await message.reply(
+            f"❌ Пользователь <code>{target_raw}</code> не найден в базе.",
+            parse_mode="HTML",
+        )
+        return
+
+    new_balance = add_crystals_to_user(found["id"], amount, found.get("username", "") or "")
+
+    import html as _html
+    name = _html.escape(str(found.get("first_name") or found.get("username") or found["id"]))
+    sign = "+" if amount > 0 else ""
+    await message.reply(
+        f"{CURRENCY_EMOJI} <b>Кристаллы начислены!</b>\n\n"
+        f"👤 Игрок: <b>{name}</b> (<code>{found['id']}</code>)\n"
+        f"Начислено: <b>{sign}{amount}</b>\n"
+        f"Новый баланс: <b>{new_balance}</b> {CURRENCY_EMOJI}",
+        parse_mode="HTML",
+    )
 
 
 @router.message(Command("citybuy", "купить"))
