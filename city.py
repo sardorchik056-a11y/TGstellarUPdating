@@ -1056,8 +1056,29 @@ def _help_text() -> str:
 #  /inventory, /sell и т.д. из main.py)
 # ──────────────────────────────────────────────────────────────────────────
 
+async def _city_level_ok(message: Message) -> bool:
+    """Проверка уровня для точек входа, которые могут вызываться напрямую
+    из main.py (в обход city_router и его outer_middleware).
+    Возвращает True если можно продолжать, иначе сама отвечает отказом."""
+    user = message.from_user
+    if user is None:
+        return True
+    main_user = _db_get_user(user.id)
+    level = (main_user or {}).get("level", 1)
+    if level < CITY_MIN_LEVEL:
+        await message.reply(
+            f"🔒 <b>Город откроется на {CITY_MIN_LEVEL} уровне.</b>\n"
+            f"Твой текущий уровень: <b>{level}</b>.",
+            parse_mode="HTML",
+        )
+        return False
+    return True
+
+
 @router.message(Command("city", "трейдер", "trader", "торг", "торговля", "город"))
 async def cmd_city_profile(message: Message):
+    if not await _city_level_ok(message):
+        return
     u = get_city_user(message.from_user.id, message.from_user.username or "")
     inv = get_inventory(u["user_id"])
     await message.reply(
@@ -1078,6 +1099,8 @@ async def cmd_city_profile_noslash(message: Message):
 
 @router.message(Command("citymarket", "рынок", "market"))
 async def cmd_city_shop(message: Message):
+    if not await _city_level_ok(message):
+        return
     await message.reply(
         _market_text(),
         parse_mode="HTML",
