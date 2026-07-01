@@ -69,6 +69,13 @@ from hunt import (
     parse_arsenal_cmd, get_sword_by_arsenal_index,
     arsenal_error_text, arsenal_back_keyboard,
     cleanup_expired_rentals,
+    # Зелья
+    POTIONS_BY_KEY,
+    potions_shop_text, potions_shop_keyboard,
+    potion_invoice_params, confirm_potion_purchase,
+    is_potion_cmd,
+    ACTIVE_BOSS_SLOTS,
+    _load_slot as _hunt_load_slot,
 )
 
 from stats import init_stats_db, track_user, stats_text, stats_keyboard
@@ -310,6 +317,9 @@ _pending_artifact_msg: dict[int, tuple] = {}
 
 # Хранит message_id экрана статуса перед оплатой: uid -> (chat_id, message_id, tier)
 _pending_status_msg: dict[int, tuple] = {}
+
+# Хранит message_id экрана зелий перед оплатой: uid -> (chat_id, message_id)
+_pending_potion_msg: dict[int, tuple] = {}
 
 # Хранит message_id экрана доната перед оплатой: uid -> (chat_id, message_id, pkg_key)
 _pending_donate_msg: dict[int, tuple] = {}
@@ -4160,6 +4170,50 @@ async def handle_callback(call: CallbackQuery):
             await edit(sword_shop_text(data, page, lang), sword_shop_keyboard(data, page, lang))
             return
 
+        # ===== ОХОТА: магазин зелий =====
+        if cd == "hunt_shop_potions":
+            await call.answer()
+            await edit(potions_shop_text(lang), potions_shop_keyboard(lang))
+            return
+
+        # ===== ОХОТА: купить зелье за звёзды (создаём инвойс) =====
+        if cd.startswith("buy_potion_"):
+            potion_key = cd.removeprefix("buy_potion_")
+            p = POTIONS_BY_KEY.get(potion_key)
+            if not p:
+                await call.answer("❌ Неизвестное зелье." if lang == "ru" else "❌ Unknown potion.", show_alert=True)
+                return
+            params = potion_invoice_params(potion_key, lang)
+            try:
+                invoice_url = await bot.create_invoice_link(
+                    title=params["title"],
+                    description=params["description"],
+                    payload=params["payload"],
+                    provider_token="",
+                    currency=params["currency"],
+                    prices=[LabeledPrice(label=pr["label"], amount=pr["amount"]) for pr in params["prices"]],
+                )
+            except Exception as e:
+                print(f"Potion invoice error: {e}")
+                await call.answer("❌ Ошибка при создании инвойса." if lang == "ru" else "❌ Invoice creation error.", show_alert=True)
+                return
+            _pending_potion_msg[call.from_user.id] = (
+                call.message.chat.id,
+                call.message.message_id,
+            )
+            pay_kb = InlineKeyboardBuilder()
+            pay_kb.row(InlineKeyboardButton(
+                text=f'Купить за {p["price_stars"]} ⭐' if lang == "ru" else f'Buy for {p["price_stars"]} ⭐',
+                url=invoice_url
+            ))
+            pay_kb.row(InlineKeyboardButton(
+                text="Назад" if lang == "ru" else "Back",
+                callback_data="hunt_shop_potions"
+            ))
+            await edit(potions_shop_text(lang), pay_kb.as_markup())
+            await call.answer()
+            return
+
         # ===== ОХОТА: мои мечи =====
         if cd == "hunt_my_swords":
             await edit(my_swords_text(data, lang), my_swords_keyboard(data, lang))
@@ -5185,6 +5239,66 @@ async def handle_successful_payment(message: Message):
                     f'{msg}'
                 )
             await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
+        return
+
+    # ===== ОПЛАТА: Зелье (например «Зелье Возрождения») =====
+    if payload.startswith("potion_"):
+        potion_key = payload.removeprefix("potion_")
+        from database import get_user, save_user
+
+        p = POTIONS_BY_KEY.get(potion_key)
+        paid_amount = message.successful_payment.total_amount
+        if not p or paid_amount != p["price_stars"]:
+            await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
+            return
+
+        # Защита от replay-атаки
+        charge_id = message.successful_payment.telegram_payment_charge_id
+        if is_charge_processed(charge_id):
+            return
+        mark_charge_processed(charge_id, message.from_user.id, payload)
+
+        uid = message.from_user.id
+        lock = await _get_user_lock(uid)
+        async with lock:
+            data = get_user(uid)
+            if not data:
+                data = get_or_create_user(message.from_user)
+            _lang = data.get("lang", "ru")
+
+            # Ищем первый мёртвый слот босса — именно его оживляем зельем
+            target_slot = None
+            for s in range(ACTIVE_BOSS_SLOTS):
+                st = _hunt_load_slot(s)
+                if st and not st.get("boss_alive", True):
+                    target_slot = s
+                    break
+
+            if target_slot is None:
+                ok, msg = False, (
+                    "<b><i>❌ Все боссы уже живы — зелье не потребовалось. Обратись в поддержку для возврата средств.</i></b>"
+                    if _lang == "ru" else
+                    "<b><i>❌ All bosses are already alive — the potion was not needed. Contact support for a refund.</i></b>"
+                )
+            else:
+                ok, msg = confirm_potion_purchase(target_slot, potion_key, _lang)
+
+            # Обновляем старое сообщение (экран зелий)
+            pending = _pending_potion_msg.pop(uid, None)
+            if pending:
+                old_chat_id, old_msg_id = pending
+                try:
+                    await bot.edit_message_text(
+                        potions_shop_text(_lang),
+                        chat_id=old_chat_id,
+                        message_id=old_msg_id,
+                        reply_markup=potions_shop_keyboard(_lang),
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+
+            await bot.send_message(message.chat.id, msg, parse_mode="HTML")
         return
 
     if payload.startswith("premium_pickaxe:"):
