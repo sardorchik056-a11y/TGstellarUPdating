@@ -12,18 +12,28 @@ from miner import init_mine_data, MAX_LEVEL, xp_for_level, COIN
 
 DB_PATH = "tgstellar.db"
 
-# ---------- Сокращённый формат чисел (100к / 1.5м / 2.3млрд) ----------
+# ---------- Сокращённый формат чисел (100K / 1.5M / 2.3B / 1.4Sx итд) ----------
 
 def format_amount(n) -> str:
     """
-    Сокращает число до буквенного вида:
+    Сокращает число до буквенного вида (стандартная короткая шкала,
+    единый стиль с miner.py -> _fmt_num):
       999          -> "999"
-      1500         -> "1.5к"
-      100000       -> "100к"
-      2300000      -> "2.3м"
-      100000000    -> "100м"
-      1500000000   -> "1.5млрд"
-    Дробная часть показывается только если она не нулевая (1.5к, но не 1.0к).
+      1500         -> "1.5K"
+      100000       -> "100K"
+      2300000      -> "2.3M"
+      100000000    -> "100M"
+      1500000000   -> "1.5B"
+      1_000_000_000_000        -> "1T"
+      1_000_000_000_000_000    -> "1Qa"  (quadrillion)
+      1_000_000_000_000_000_000-> "1Qi"  (quintillion)
+      10**21                   -> "1Sx"  (sextillion)
+      10**24                   -> "1Sp"  (septillion)
+      10**27                   -> "1Oc"  (octillion)
+      10**30                   -> "1No"  (nonillion)
+      10**33                   -> "1Dc"  (decillion)
+    Если число ещё больше — формат не ломается: продолжаем Dc2, Dc3, ...
+    Дробная часть показывается только если она не нулевая (1.5K, но не 1.0K).
     Знак сохраняется (для отрицательных значений, если вдруг понадобится).
     """
     try:
@@ -40,22 +50,24 @@ def format_amount(n) -> str:
             return f"{sign}{int(n)}"
         return f"{sign}{n:.1f}"
 
-    units = [
-        (1_000_000_000_000, "трлн"),
-        (1_000_000_000,     "млрд"),
-        (1_000_000,         "м"),
-        (1_000,             "к"),
-    ]
+    suffixes = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"]
+    idx = 0
+    val = n
+    while val >= 1000:
+        val /= 1000
+        idx += 1
 
-    for threshold, suffix in units:
-        if n >= threshold:
-            value = n / threshold
-            value = int(value * 10) / 10  # округление вниз до 1 знака после запятой
-            if value == int(value):
-                return f"{sign}{int(value)}{suffix}"
-            return f"{sign}{value:.1f}{suffix}"
+    val = int(val * 10) / 10  # округление вниз до 1 знака после запятой
 
-    return f"{sign}{int(n)}"
+    if idx < len(suffixes):
+        suffix = suffixes[idx]
+    else:
+        # За пределами "Dc" (10^33) продолжаем нумеровать: Dc2, Dc3, ...
+        suffix = f"Dc{idx - len(suffixes) + 2}"
+
+    if val == int(val):
+        return f"{sign}{int(val)}{suffix}"
+    return f"{sign}{val:.1f}{suffix}"
 
 
 # Короткий алиас, чтобы было удобно импортировать как `fmt`
