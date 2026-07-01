@@ -238,7 +238,7 @@ def progress_bar(percent: int, length: int = 10) -> str:
         else:
             eid = _E_EMPTY
         cells.append(f'<tg-emoji emoji-id="{eid}">⬜</tg-emoji>')
-    return "".join(cells) + f" {percent}%"
+    return "".join(cells) + f" <i><b>{percent}%</b></i>"
 
 
 def xp_for_level(level: int) -> int:
@@ -424,18 +424,18 @@ def ore_inventory_text(data: dict, short: bool = False, lang: str = "ru") -> str
         qty = data["ores"].get(ore["key"], 0)
         if qty > 0:
             worth = qty * ore["price"]
-            lines.append(f"<b>{_ore_name(ore, lang)}: {qty}</b> <b>(≈ {_fmt_num(worth)} {COIN})</b>")
+            lines.append(f"<i><b>{_ore_name(ore, lang)}: {qty} (≈ {_fmt_num(worth)} {COIN})</b></i>")
     if not lines:
-        return "<b>Inventory empty</b>" if lang == "en" else "<b>Инвентарь пуст</b>"
+        return "<i><b>Inventory empty</b></i>" if lang == "en" else "<i><b>Инвентарь пуст</b></i>"
     if short and len(lines) > 3:
         more = "...and more" if lang == "en" else "...и ещё"
-        return "\n".join(lines[:3]) + f"\n<b><i>{more}</i></b>"
+        return "\n".join(lines[:3]) + f"\n<i><b>{more}</b></i>"
     return "\n".join(lines)
 
 
 def inventory_screen_text(data: dict, lang: str = "ru") -> str:
     title   = "Inventory" if lang == "en" else "Инвентарь"
-    lines = [f'<tg-emoji emoji-id="5445221832074483553">🎟</tg-emoji> <b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━\n']
+    lines = [f'<tg-emoji emoji-id="5445221832074483553">🎟</tg-emoji> <i><b>{title}</b></i>\n━━━━━━━━━━━━━━━━━━━━\n']
     has_ores = False
     total_value = 0
     for ore in ORES:
@@ -444,12 +444,12 @@ def inventory_screen_text(data: dict, lang: str = "ru") -> str:
             has_ores = True
             worth = qty * ore["price"]
             total_value += worth
-            lines.append(f"<blockquote><b>{_ore_name(ore, lang)}: {qty} (≈ {_fmt_num(worth)} {COIN})</b></blockquote>")
+            lines.append(f"<blockquote><i><b>{_ore_name(ore, lang)}: {qty} (≈ {_fmt_num(worth)} {COIN})</b></i></blockquote>")
     if not has_ores:
-        lines.append("<b>Inventory empty</b>" if lang == "en" else "<b>Инвентарь пуст</b>")
+        lines.append("<i><b>Inventory empty</b></i>" if lang == "en" else "<i><b>Инвентарь пуст</b></i>")
     else:
         total_lbl = "Total" if lang == "en" else "Итого"
-        lines.append(f'\n<tg-emoji emoji-id="5303214794336125778">🎟</tg-emoji> <b>{total_lbl}: {_fmt_num(total_value)} {COIN}</b>')
+        lines.append(f'\n<tg-emoji emoji-id="5303214794336125778">🎟</tg-emoji> <i><b>{total_lbl}: {_fmt_num(total_value)} {COIN}</b></i>')
     return "\n".join(lines)
 
 
@@ -467,24 +467,24 @@ def mine_text(data: dict, lang: str = "ru") -> str:
 
     if data["mine_start"] is None or data["mine_collected"]:
         return (
-            f'<tg-emoji emoji-id="5197371802136892976">🎟</tg-emoji> <b>{t(lang, "mine_title")}</b>\n'
+            f'<tg-emoji emoji-id="5197371802136892976">🎟</tg-emoji> <i><b>{t(lang, "mine_title")}</b></i>\n'
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>{t(lang, "mine_selected")}: {pick["name"]}</b>\n'
-            f'<tg-emoji emoji-id="5440621591387980068">🎟</tg-emoji> <b>{t(lang, "mine_duration")}: {dur_lbl}</b>\n\n'
-            f'<blockquote><tg-emoji emoji-id="5445221832074483553">🎟</tg-emoji> <b>{t(lang, "mine_inventory_lbl")}:</b>\n{ore_inventory_text(data, short=True, lang=lang)}</blockquote>\n\n'
-            f'{t(lang, "mine_press_start")}'
+            f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <i><b>{t(lang, "mine_selected")}: {pick["name"]}</b></i>\n'
+            f'<tg-emoji emoji-id="5440621591387980068">🎟</tg-emoji> <i><b>{t(lang, "mine_duration")}: {dur_lbl}</b></i>\n\n'
+            f'<blockquote><tg-emoji emoji-id="5445221832074483553">🎟</tg-emoji> <i><b>{t(lang, "mine_inventory_lbl")}:</b></i>\n{ore_inventory_text(data, short=True, lang=lang)}</blockquote>\n\n'
+            f'<i><b>{t(lang, "mine_press_start")}</b></i>'
         )
     prog   = calc_mine_progress(data)
     bar    = progress_bar(prog["percent"])
     status = t(lang, "mine_finished") if prog["finished"] else t(lang, "mine_running")
     return (
-        f'<tg-emoji emoji-id="5197371802136892976">🎟</tg-emoji> <b>{t(lang, "mine_title")}</b>\n'
+        f'<tg-emoji emoji-id="5197371802136892976">🎟</tg-emoji> <i><b>{t(lang, "mine_title")}</b></i>\n'
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>{t(lang, "mine_selected")}: {pick["name"]}</b>\n'
-        f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>{t(lang, "mine_campaigns")}: {prog["campaigns_done"]}/{prog["total_campaigns"]}</b>\n\n'
-        f'<tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> <b>{t(lang, "mine_progress")}:</b>\n{bar}\n\n'
-        f"{status}\n\n"
-        f'<blockquote><tg-emoji emoji-id="5445221832074483553">🎟</tg-emoji> <b>{t(lang, "mine_inventory_lbl")}:</b>\n{ore_inventory_text(data, short=True, lang=lang)}</blockquote>'
+        f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <i><b>{t(lang, "mine_selected")}: {pick["name"]}</b></i>\n'
+        f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <i><b>{t(lang, "mine_campaigns")}: {prog["campaigns_done"]}/{prog["total_campaigns"]}</b></i>\n\n'
+        f'<tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> <i><b>{t(lang, "mine_progress")}:</b></i>\n{bar}\n\n'
+        f"<i><b>{status}</b></i>\n\n"
+        f'<blockquote><tg-emoji emoji-id="5445221832074483553">🎟</tg-emoji> <i><b>{t(lang, "mine_inventory_lbl")}:</b></i>\n{ore_inventory_text(data, short=True, lang=lang)}</blockquote>'
     )
 
 
@@ -492,12 +492,12 @@ def workshop_text(data: dict, page: int = 0, lang: str = "ru") -> str:
     from lang import t
     current = data.get("pickaxe", "wood_1")
     return (
-        f'<tg-emoji emoji-id="5278702045883292456">🎟</tg-emoji> <b>{t(lang, "mine_workshop_title")}</b>\n'
+        f'<tg-emoji emoji-id="5278702045883292456">🎟</tg-emoji> <i><b>{t(lang, "mine_workshop_title")}</b></i>\n'
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f'<blockquote><tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <b>{t(lang, "mine_workshop_balance")}: {_fmt_num(data["balance"])}{COIN}</b>\n'
-        f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>{t(lang, "mine_workshop_selected")}: {current}lvl</b>\n'
-        f'<tg-emoji emoji-id="5444856076954520455">🎟</tg-emoji> <b>{t(lang, "mine_workshop_page")}: {page + 1}/{WORKSHOP_TOTAL_PAGES}</b></blockquote>\n\n'
-        f'<b>{t(lang, "mine_workshop_choose")}</b>'
+        f'<blockquote><tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <i><b>{t(lang, "mine_workshop_balance")}: {_fmt_num(data["balance"])}{COIN}</b></i>\n'
+        f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <i><b>{t(lang, "mine_workshop_selected")}: {current}lvl</b></i>\n'
+        f'<tg-emoji emoji-id="5444856076954520455">🎟</tg-emoji> <i><b>{t(lang, "mine_workshop_page")}: {page + 1}/{WORKSHOP_TOTAL_PAGES}</b></i></blockquote>\n\n'
+        f'<i><b>{t(lang, "mine_workshop_choose")}</b></i>'
     )
 
 
@@ -554,12 +554,12 @@ def duration_shop_text(data: dict, lang: str = "ru") -> str:
     owned_durs = data.get("owned_durations", ["5min"])
     owned_cnt  = len([k for k in DURATIONS_ORDER if k in owned_durs])
     return (
-        f'<tg-emoji emoji-id="5440621591387980068">🎟</tg-emoji> <b>{t(lang, "mine_dur_title")}</b>\n'
+        f'<tg-emoji emoji-id="5440621591387980068">🎟</tg-emoji> <i><b>{t(lang, "mine_dur_title")}</b></i>\n'
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f'<blockquote><tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <b>{t(lang, "mine_sell_balance")}: {_fmt_num(data["balance"])}{COIN}</b>\n'
-        f'<tg-emoji emoji-id="5456140674028019486">🎟</tg-emoji> <b>{t(lang, "mine_dur_active")}: {cur_label}</b>\n'
-        f'<tg-emoji emoji-id="5296369303661067030">🎟</tg-emoji> <b>{t(lang, "mine_dur_unlocked")}: {owned_cnt}/{len(DURATIONS_ORDER)}</b></blockquote>\n\n'
-        f'<b>{t(lang, "mine_dur_choose")}</b>'
+        f'<blockquote><tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <i><b>{t(lang, "mine_sell_balance")}: {_fmt_num(data["balance"])}{COIN}</b></i>\n'
+        f'<tg-emoji emoji-id="5456140674028019486">🎟</tg-emoji> <i><b>{t(lang, "mine_dur_active")}: {cur_label}</b></i>\n'
+        f'<tg-emoji emoji-id="5296369303661067030">🎟</tg-emoji> <i><b>{t(lang, "mine_dur_unlocked")}: {owned_cnt}/{len(DURATIONS_ORDER)}</b></i></blockquote>\n\n'
+        f'<i><b>{t(lang, "mine_dur_choose")}</b></i>'
     )
 
 
@@ -576,12 +576,12 @@ def duration_detail_text(data: dict, dur_key: str, lang: str = "ru") -> str:
         status = t(lang, "mine_dur_status_none")
     price_str = _fmt_num(d["cost"]) if d["cost"] else t(lang, "mine_dur_free")
     return (
-        f'<tg-emoji emoji-id="5440621591387980068">🎟</tg-emoji> <b>{t(lang, "mine_dur_card_title")} {dur_lbl}</b>\n'
+        f'<tg-emoji emoji-id="5440621591387980068">🎟</tg-emoji> <i><b>{t(lang, "mine_dur_card_title")} {dur_lbl}</b></i>\n'
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f'<tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <b>{t(lang, "mine_sell_balance")}: {_fmt_num(data["balance"])}{COIN}</b>\n\n'
-        f'<tg-emoji emoji-id="5382194935057372936">🎟</tg-emoji> <b>{t(lang, "mine_dur_session")}: {dur_lbl}</b>\n'
-        f'<tg-emoji emoji-id="5330320040883411678">🎟</tg-emoji> <b>{t(lang, "mine_dur_price")}: {price_str}{COIN}</b>\n'
-        f'<tg-emoji emoji-id="5438496463044752972">🎟</tg-emoji> <b>{t(lang, "mine_dur_status")}: {status}</b>'
+        f'<tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <i><b>{t(lang, "mine_sell_balance")}: {_fmt_num(data["balance"])}{COIN}</b></i>\n\n'
+        f'<tg-emoji emoji-id="5382194935057372936">🎟</tg-emoji> <i><b>{t(lang, "mine_dur_session")}: {dur_lbl}</b></i>\n'
+        f'<tg-emoji emoji-id="5330320040883411678">🎟</tg-emoji> <i><b>{t(lang, "mine_dur_price")}: {price_str}{COIN}</b></i>\n'
+        f'<tg-emoji emoji-id="5438496463044752972">🎟</tg-emoji> <i><b>{t(lang, "mine_dur_status")}: {status}</b></i>'
     )
 
 
@@ -591,15 +591,15 @@ def sell_screen_text(data: dict, lang: str = "ru") -> str:
     title = t(lang, "mine_sell_title")
     if not has_ores:
         return (
-            f'<tg-emoji emoji-id="5429518319243775957">🎟</tg-emoji> <b>{title}</b>\n'
+            f'<tg-emoji emoji-id="5429518319243775957">🎟</tg-emoji> <i><b>{title}</b></i>\n'
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            f'<tg-emoji emoji-id="5445221832074483553">🎟</tg-emoji> <b>{t(lang, "mine_sell_empty")}</b>\n\n'
-            f'<b>{t(lang, "mine_sell_prompt")}</b>'
+            f'<tg-emoji emoji-id="5445221832074483553">🎟</tg-emoji> <i><b>{t(lang, "mine_sell_empty")}</b></i>\n\n'
+            f'<i><b>{t(lang, "mine_sell_prompt")}</b></i>'
         )
     lines = [
-        f'<tg-emoji emoji-id="5429518319243775957">🎟</tg-emoji> <b>{title}</b>\n'
+        f'<tg-emoji emoji-id="5429518319243775957">🎟</tg-emoji> <i><b>{title}</b></i>\n'
         f'━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<tg-emoji emoji-id="5305699699204837855">🎟</tg-emoji> <b>{t(lang, "mine_sell_prices")}</b>\n'
+        f'<tg-emoji emoji-id="5305699699204837855">🎟</tg-emoji> <i><b>{t(lang, "mine_sell_prices")}</b></i>\n'
     ]
     total_value = 0
     for ore in ORES:
@@ -607,9 +607,9 @@ def sell_screen_text(data: dict, lang: str = "ru") -> str:
         if qty > 0:
             worth = qty * ore["price"]
             total_value += worth
-            lines.append(f"<blockquote><b>{_ore_name(ore, lang)}: {qty} (≈ {_fmt_num(worth)} {COIN})</b></blockquote>")
-    lines.append(f'\n<tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <b>{t(lang, "mine_sell_balance")}: {_fmt_num(data["balance"])}</b>')
-    lines.append(f'\n<b>{t(lang, "mine_sell_total")}: {_fmt_num(total_value)} {COIN}</b>')
+            lines.append(f"<blockquote><i><b>{_ore_name(ore, lang)}: {qty} (≈ {_fmt_num(worth)} {COIN})</b></i></blockquote>")
+    lines.append(f'\n<tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <i><b>{t(lang, "mine_sell_balance")}: {_fmt_num(data["balance"])}</b></i>')
+    lines.append(f'\n<i><b>{t(lang, "mine_sell_total")}: {_fmt_num(total_value)} {COIN}</b></i>')
     return "\n".join(lines)
 
 
@@ -801,7 +801,7 @@ def sell_all_ores(data: dict, lang: str = "ru") -> tuple:
         if qty > 0:
             earned = qty * ore["price"]
             total += earned
-            lines.append(f"<blockquote><b>{_ore_name(ore, lang)}: {qty} (≈ {_fmt_num(earned)} {COIN})</b></blockquote>")
+            lines.append(f"<blockquote><i><b>{_ore_name(ore, lang)}: {qty} (≈ {_fmt_num(earned)} {COIN})</b></i></blockquote>")
             data["ores"][ore["key"]] = 0
     data["balance"] = data.get("balance", 0) + total
     report = "\n".join(lines) if lines else f"  {t(lang, 'mine_sell_nothing')}"
@@ -892,11 +892,11 @@ def stop_mine(data: dict, lang: str = "ru") -> tuple:
     if not can:
         mins = (wait + 59) // 60
         msg  = (
-            f'❌ <b>Нельзя остановить так рано!</b>\n\n'
-            f'<blockquote>Подожди ещё <b>{mins} мин.</b> после старта.</blockquote>'
+            f'❌ <i><b>Нельзя остановить так рано!</b></i>\n\n'
+            f'<blockquote>Подожди ещё <i><b>{mins} мин.</b></i> после старта.</blockquote>'
         ) if lang == "ru" else (
-            f'❌ <b>Too early to stop!</b>\n\n'
-            f'<blockquote>Wait <b>{mins} more min.</b> after start.</blockquote>'
+            f'❌ <i><b>Too early to stop!</b></i>\n\n'
+            f'<blockquote>Wait <i><b>{mins} more min.</b></i> after start.</blockquote>'
         )
         return None, msg
 
@@ -910,7 +910,7 @@ def stop_mine(data: dict, lang: str = "ru") -> tuple:
 
     stop_line = (
         f'\n\n<tg-emoji emoji-id="{EMOJI_BTN_STOP}">⏹</tg-emoji> '
-        f'<b>{"Шахта остановлена." if lang == "ru" else "Mine stopped."}</b>'
+        f'<i><b>{"Шахта остановлена." if lang == "ru" else "Mine stopped."}</b></i>'
     )
     return prog, (collect_text or "") + stop_line
 
@@ -945,25 +945,25 @@ def collect_mine(data: dict, lang: str = "ru") -> tuple:
             ore   = ORES_BY_KEY[key]
             worth = qty * ore["price"]
             ore_name = _ore_name(ore, lang)
-            loot_lines.append(f"<blockquote><b>{ore_name}: {qty} (≈ {_fmt_num(worth)} {COIN})</b></blockquote>")
+            loot_lines.append(f"<blockquote><i><b>{ore_name}: {qty} (≈ {_fmt_num(worth)} {COIN})</b></i></blockquote>")
         loot = "\n".join(loot_lines)
     else:
-        loot = f"<b>{t(lang, 'mine_collect_nothing')}</b>"
+        loot = f"<i><b>{t(lang, 'mine_collect_nothing')}</b></i>"
     bar = progress_bar(prog["percent"])
     booster_line = ""
     active = get_active_booster_info(data)
     if active:
         mult_label = _multiplier_label(active["multiplier"])
         booster_label = f"{t(lang, 'mine_booster_active')} {mult_label} {t(lang, 'mine_booster_active_sfx')}"
-        booster_line = f'<tg-emoji emoji-id="5438571934210082705">⚡</tg-emoji> <b>{booster_label}</b>\n'
+        booster_line = f'<tg-emoji emoji-id="5438571934210082705">⚡</tg-emoji> <i><b>{booster_label}</b></i>\n'
     _result_title   = t(lang, "mine_collect_title")
     _campaigns_lbl  = t(lang, "mine_collect_campaigns")
-    _session_done   = f"<b>{t(lang, 'mine_collect_done')}</b>"
-    _still_running  = f"<b>⏳ {t(lang, 'mine_collect_running')} {fmt_time(prog['time_left'], lang)}</b>"
+    _session_done   = f"<i><b>{t(lang, 'mine_collect_done')}</b></i>"
+    _still_running  = f"<i><b>⏳ {t(lang, 'mine_collect_running')} {fmt_time(prog['time_left'], lang)}</b></i>"
     result_text = (
-        f'<tg-emoji emoji-id="5197371802136892976">🎟</tg-emoji> <b>{_result_title}</b>\n'
+        f'<tg-emoji emoji-id="5197371802136892976">🎟</tg-emoji> <i><b>{_result_title}</b></i>\n'
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>{_campaigns_lbl}: {new_campaigns}</b>\n'
+        f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <i><b>{_campaigns_lbl}: {new_campaigns}</b></i>\n'
         f'<tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> {bar}\n'
         f"{booster_line}\n"
         f"{loot}\n\n"
@@ -999,7 +999,7 @@ def shop_pickaxes_text(lang: str = "ru") -> str:
     title = "SHOP — PICKAXES" if lang == "en" else "МАГАЗИН — КИРКИ"
     hits  = "Hits per campaign" if lang == "en" else "Ударов за кампанию"
     price = "Price" if lang == "en" else "Цена"
-    lines = [f"🛒 <b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━\n"]
+    lines = [f"🛒 <i><b>{title}</b></i>\n━━━━━━━━━━━━━━━━━━━━\n"]
     for key in PICKAXES_ORDER:
         p    = PICKAXES[key]
         cost = _fmt_cost(key, lang)
