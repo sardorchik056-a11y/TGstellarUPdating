@@ -502,30 +502,48 @@ def workshop_text(data: dict, page: int = 0, lang: str = "ru") -> str:
 
 
 def pickaxe_detail_text(data: dict, pick_key: str, lang: str = "ru") -> str:
-    from lang import t
     p     = PICKAXES[pick_key]
     owned = data.get("owned_pickaxes", ["wood_1"])
     tier  = TIER_LABELS.get(p.get("tier", ""), "")
+
+    if lang == "en":
+        lbl_balance = "Balance"
+        lbl_tier    = "Tier"
+        lbl_hits    = "Hits per campaign"
+        lbl_price   = "Price"
+        lbl_status  = "Status"
+        val_free    = "Free"
+        st_selected = "✅ Selected — currently equipped"
+        st_owned    = "📦 Owned — not equipped"
+        st_locked   = "🔒 Not purchased yet"
+    else:
+        lbl_balance = "Баланс"
+        lbl_tier    = "Тир"
+        lbl_hits    = "Ударов за кампанию"
+        lbl_price   = "Цена"
+        lbl_status  = "Статус"
+        val_free    = "Бесплатно"
+        st_selected = "✅ Выбрана — сейчас в работе"
+        st_owned    = "📦 Куплена — не выбрана"
+        st_locked   = "🔒 Ещё не куплена"
+
     if pick_key == data.get("pickaxe", "wood_1"):
-        status = t(lang, "mine_pick_selected")
+        status = st_selected
     elif pick_key in owned:
-        status = t(lang, "mine_pick_not_active")
+        status = st_owned
     else:
-        status = t(lang, "mine_pick_not_bought")
-    price_lbl = "Price" if lang == "en" else "Цена"
-    if p["cost"] == 0:
-        price_value = t(lang, "mine_pick_free")
-    else:
-        price_value = f'{_fmt_num(p["cost"])} {COIN}'
+        status = st_locked
+
+    price_value = val_free if p["cost"] == 0 else f'{_fmt_num(p["cost"])} {COIN}'
+
     return (
         f"<b>{p['name']}</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f'<blockquote><tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <b>{t(lang, "mine_workshop_balance")}: {_fmt_num(data["balance"])}</b>\n'
-        f'<b>{t(lang, "mine_pick_name")}: {p["name"]}</b>\n'
-        f'<b>{t(lang, "mine_pick_tier")}: {tier}</b>\n'
-        f'<b>{t(lang, "mine_pick_per5")}: {_fmt_num(p["dig_min"])}–{_fmt_num(p["dig_max"])}</b></blockquote>\n\n'
-        f'<blockquote><tg-emoji emoji-id="5287231198098117669">🎟</tg-emoji> <i><b>{price_lbl}: {price_value}</b></i></blockquote>\n\n'
-        f'<i><b>{t(lang, "mine_pick_status")}: {status}</b></i>'
+        f'<blockquote>💰 <i>{lbl_balance}:</i> <b>{_fmt_num(data["balance"])} {COIN}</b>\n'
+        f'🏷 <i>{lbl_tier}:</i> <b>{tier}</b>\n'
+        f'⛏ <i>{lbl_hits}:</i> <b>{_fmt_num(p["dig_min"])}–{_fmt_num(p["dig_max"])}</b></blockquote>\n\n'
+        f'<blockquote>💵 <i>{lbl_price}:</i> <b>{price_value}</b></blockquote>\n\n'
+        f'<i>{lbl_status}:</i> <b>{status}</b>'
     )
 
 
@@ -979,17 +997,16 @@ def init_mine_data() -> dict:
 
 def shop_pickaxes_text(lang: str = "ru") -> str:
     title = "SHOP — PICKAXES" if lang == "en" else "МАГАЗИН — КИРКИ"
-    hits  = "Hits" if lang == "en" else "Ударов"
+    hits  = "Hits per campaign" if lang == "en" else "Ударов за кампанию"
     price = "Price" if lang == "en" else "Цена"
-    per   = "per campaign" if lang == "en" else "за кампанию"
     lines = [f"🛒 <b>{title}</b>\n━━━━━━━━━━━━━━━━━━━━\n"]
     for key in PICKAXES_ORDER:
         p    = PICKAXES[key]
         cost = _fmt_cost(key, lang)
         lines.append(
             f"<b>{p['name']}</b>\n"
-            f"  ⛏ {hits}: <b>{_fmt_num(p['dig_min'])}–{_fmt_num(p['dig_max'])}</b> {per}\n"
-            f"  💵 <i><b>{price}: {cost}</b></i>\n"
+            f"  ⛏ <i>{hits}:</i> <b>{_fmt_num(p['dig_min'])}–{_fmt_num(p['dig_max'])}</b>\n"
+            f"  💵 <i>{price}:</i> <b>{cost}</b>\n"
         )
     return "\n".join(lines)
 
