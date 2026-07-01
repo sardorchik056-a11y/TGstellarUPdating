@@ -321,14 +321,26 @@ def _fmt_num(n) -> str:
 # ── Руды с пороговой (тиковой) логикой выпадения ────────────────────────────
 # Начиная с аметиста: выпадает НЕ через веса, а раз в TICK_THRESHOLD тиков
 # с заданным шансом (в процентах).
+# min_tier — минимальный тир кирки, начиная с которого руда вообще может выпасть.
 THRESHOLD_ORES = {
-    # key        : (tick_threshold, chance_pct)
-    "amethyst"   : (300, 65.0),
-    "jade"       : (300, 25.0),
-    "emerald"    : (300, 12.0),
-    "obsidian"   : (300, 5.0),
-    "sapphire"   : (300,  2.0),
+    # key        : (tick_threshold, chance_pct, min_tier)
+    "amethyst"   : (300, 65.0, "gold"),
+    "jade"       : (300, 25.0, "gold"),
+    "emerald"    : (300, 12.0, "uranium"),
+    "obsidian"   : (300,  5.0, "uranium"),
+    "sapphire"   : (300,  2.0, "uranium"),
 }
+
+# Порядок тиров кирок (используется для сравнения min_tier)
+TIER_ORDER = ["wood", "rock", "iron", "gold", "diamond", "uranium",
+              "amethyst", "vip", "vip_plus", "premium"]
+_TIER_INDEX = {tier: i for i, tier in enumerate(TIER_ORDER)}
+
+
+def _tier_at_least(pick_tier: str, min_tier: str) -> bool:
+    """True, если pick_tier не ниже min_tier по порядку TIER_ORDER."""
+    return _TIER_INDEX.get(pick_tier, 0) >= _TIER_INDEX.get(min_tier, 0)
+
 
 # Множество ключей, исключённых из обычного weight-броска
 _THRESHOLD_KEYS = set(THRESHOLD_ORES.keys())
@@ -370,11 +382,20 @@ def roll_ore(pick_key: str, multiplier: float = 1.0,
         - при наступлении порога — бросок с chance_pct% вероятностью
         - если выпало — добавляется 1 единица руды
     """
-    pick    = PICKAXES[pick_key]
-    dig_min = max(1, int(pick["dig_min"] * multiplier))
-    dig_max = max(1, int(pick["dig_max"] * multiplier))
-    n_digs  = random.randint(dig_min, dig_max)
-    found   = {}
+    pick      = PICKAXES[pick_key]
+    pick_tier = pick.get("tier", "wood")
+    dig_min   = max(1, int(pick["dig_min"] * multiplier))
+    dig_max   = max(1, int(pick["dig_max"] * multiplier))
+    n_digs    = random.randint(dig_min, dig_max)
+    found     = {}
+
+    # Пороговые руды, доступные ТЕКУЩЕЙ кирке (по min_tier), считаем один раз
+    # до цикла, чтобы не пересчитывать тир на каждом тике.
+    available_threshold = {
+        ore_key: (tick_threshold, chance_pct)
+        for ore_key, (tick_threshold, chance_pct, min_tier) in THRESHOLD_ORES.items()
+        if _tier_at_least(pick_tier, min_tier)
+    }
 
     for _ in range(n_digs):
         tick_counter += 1
@@ -383,8 +404,8 @@ def roll_ore(pick_key: str, multiplier: float = 1.0,
         ore = random.choices(_COMMON_ORES, weights=_COMMON_WEIGHTS, k=1)[0]
         found[ore["key"]] = found.get(ore["key"], 0) + 1
 
-        # ── Пороговые руды: проверяем на каждом тике ─────────────────────
-        for ore_key, (tick_threshold, chance_pct) in THRESHOLD_ORES.items():
+        # ── Пороговые руды: проверяем на каждом тике (только доступные) ──
+        for ore_key, (tick_threshold, chance_pct) in available_threshold.items():
             if tick_counter % tick_threshold == 0:
                 if random.random() * 100 < chance_pct:
                     found[ore_key] = found.get(ore_key, 0) + 1
