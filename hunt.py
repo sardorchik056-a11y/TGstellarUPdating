@@ -2345,7 +2345,7 @@ def boss_strike_keyboard(data: dict, lang: str = "ru", slot: int = 0) -> InlineK
     if state.get("boss_alive") and eq_key:
         if is_stunned:
             left = _fmt_stun_duration(stunned_until - now_ts)
-            btn_text = f"🔇 Silenced ({left})" if lang == "en" else f"🔇 Заглушён ({left})"
+            btn_text = f" Silenced ({left})" if lang == "en" else f" Заглушён ({left})"
         else:
             btn_text = "Strike again!" if lang == "en" else "Ударить ещё!"
         builder.row(InlineKeyboardButton(
