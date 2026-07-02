@@ -496,16 +496,16 @@ BOSS_KILL_REWARD = 5_000_000   # дефолт для отображения в U
 # ─────────────────────────────────────────
 #  МЕХАНИКИ БОССА: ЗАГЛУШКА И ПОДАВЛЕНИЕ
 # ─────────────────────────────────────────
-# Заглушка (stun): каждый раз, когда босс теряет ещё STUN_HP_LOSS_STEP
-# (30%) своего максимального HP (считая от точки последнего срабатывания),
-# он "оглушает" STUN_TARGET_SHARE (50%) игроков, ударивших его не позже
+# Заглушка (stun): один раз за бой, как только босс теряет
+# STUN_HP_THRESHOLD (50%) своего максимального HP, он "оглушает"
+# STUN_TARGET_SHARE (50%) игроков, ударивших его не позже
 # STUN_ATTACK_WINDOW_SEC (8) секунд назад. Оглушённые не могут атаковать
-# босса STUN_DURATION_MIN..STUN_DURATION_MAX (60-180) секунд.
-STUN_HP_LOSS_STEP        = 0.30
+# босса STUN_DURATION_MIN..STUN_DURATION_MAX (20-60) секунд.
+STUN_HP_THRESHOLD        = 0.50
 STUN_ATTACK_WINDOW_SEC   = 8
 STUN_TARGET_SHARE        = 0.50
-STUN_DURATION_MIN        = 60
-STUN_DURATION_MAX        = 180
+STUN_DURATION_MIN        = 20
+STUN_DURATION_MAX        = 60
 
 # Подавление (suppression): как только HP босса падает ниже
 # SUPPRESSION_HP_THRESHOLD (50%), он активирует ауру подавления —
