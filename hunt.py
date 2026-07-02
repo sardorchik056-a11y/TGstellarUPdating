@@ -47,6 +47,8 @@ _E = {
     "bag":          "5443038326535759644",  # инвентарь
     "boss":         "5438571934210082705",  # текущий босс
     "potion":       "5206523956537865948",  # зелье возрождения — TODO: заменить на свой премиум-эмодзи
+    "potion_antistun": "5206523956537865948",  # зелье антизаглушения — TODO: заменить на свой премиум-эмодзи
+    "potion_antisupp": "5206523956537865948",  # зелье антиподавления — TODO: заменить на свой премиум-эмодзи
     "star":         "5262643974912355126",  # звезда (валюта Telegram Stars) — TODO: заменить
 }
 
@@ -311,6 +313,26 @@ POTIONS = [
         "effect_en": "<b><i>Instantly revives the boss, skipping the respawn cooldown after death.</i></b>",
         "price_stars": 19,
     },
+    {
+        "key": "anti_stun",
+        "name": "Зелье Антизаглушения", "name_en": "Anti-Stun Potion",
+        "emoji_id": _E["potion_antistun"],
+        "desc": "<b><i>Горький настой из трав, что растут только там, где босс однажды взревел от бессилия.</i></b>",
+        "desc_en": "<b><i>A bitter brew of herbs that grow only where the boss once roared in helpless rage.</i></b>",
+        "effect": f"<b><i>Даёт {ANTI_STUN_CHARGES} заряда защиты: следующие {ANTI_STUN_CHARGES} попытки заглушить тебя гасятся зельем без последствий.</i></b>",
+        "effect_en": f"<b><i>Grants {ANTI_STUN_CHARGES} protection charges: the next {ANTI_STUN_CHARGES} stun attempts against you are absorbed with no effect.</i></b>",
+        "price_stars": 15,
+    },
+    {
+        "key": "anti_suppression",
+        "name": "Зелье Антиподавления", "name_en": "Anti-Suppression Potion",
+        "emoji_id": _E["potion_antisupp"],
+        "desc": "<b><i>Ледяной эликсир, что гасит ауру подавления прежде, чем она коснётся твоего клинка.</i></b>",
+        "desc_en": "<b><i>An icy elixir that snuffs out the suppression aura before it can touch your blade.</i></b>",
+        "effect": "<b><i>На 10 часов после применения босс не может подавить твой урон, даже под аурой подавления.</i></b>",
+        "effect_en": "<b><i>For 10 hours after use, the boss cannot suppress your damage, even under the suppression aura.</i></b>",
+        "price_stars": 29,
+    },
 ]
 
 POTIONS_BY_KEY = {p["key"]: p for p in POTIONS}
@@ -517,6 +539,14 @@ SUPPRESSION_HP_THRESHOLD      = 0.50
 SUPPRESSION_ATTACK_WINDOW_SEC = 60
 SUPPRESSION_DMG_MIN           = 0.20
 SUPPRESSION_DMG_MAX           = 0.50
+
+# Зелье антизаглушения: даёт ANTI_STUN_CHARGES зарядов, каждый из которых
+# гасит одну попытку заглушения игрока (заглушка не применяется, заряд тратится).
+ANTI_STUN_CHARGES              = 2
+
+# Зелье антиподавления: делает игрока полностью невосприимчивым к ауре
+# подавления на ANTI_SUPPRESSION_DURATION_SEC (10 часов) после использования.
+ANTI_SUPPRESSION_DURATION_SEC  = 10 * 60 * 60
 
 def _fmt_stun_duration(secs: int) -> str:
     """Компактный формат для оставшегося времени оглушения: '2м 05с' / '48с'."""
@@ -960,6 +990,13 @@ def init_hunt_db():
                 data_json   TEXT NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS hunt_player_buffs (
+                user_id                 INTEGER PRIMARY KEY,
+                anti_stun_charges       INTEGER NOT NULL DEFAULT 0,
+                anti_suppression_until  INTEGER NOT NULL DEFAULT 0
+            )
+        """)
         conn.commit()
     _ensure_all_slots()
 
@@ -1036,6 +1073,103 @@ def _atomic_slot_update(slot: int, mutator):
             raise
         finally:
             conn.close()
+
+
+_player_buff_locks: dict[int, threading.Lock] = {}
+_player_buff_locks_guard = threading.Lock()
+
+
+def _get_player_buff_lock(uid: int) -> threading.Lock:
+    with _player_buff_locks_guard:
+        lock = _player_buff_locks.get(uid)
+        if lock is None:
+            lock = threading.Lock()
+            _player_buff_locks[uid] = lock
+        return lock
+
+
+def _load_player_buffs(uid: int) -> dict:
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT anti_stun_charges, anti_suppression_until "
+            "FROM hunt_player_buffs WHERE user_id=?", (uid,)
+        ).fetchone()
+    if not row:
+        return {"anti_stun_charges": 0, "anti_suppression_until": 0}
+    return {
+        "anti_stun_charges": row["anti_stun_charges"],
+        "anti_suppression_until": row["anti_suppression_until"],
+    }
+
+
+def _save_player_buffs(uid: int, charges: int, supp_until: int):
+    with _get_conn() as conn:
+        conn.execute("""
+            INSERT INTO hunt_player_buffs (user_id, anti_stun_charges, anti_suppression_until)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                anti_stun_charges=excluded.anti_stun_charges,
+                anti_suppression_until=excluded.anti_suppression_until
+        """, (uid, charges, supp_until))
+        conn.commit()
+
+
+def _atomic_player_buff_update(uid: int, mutator):
+    """Атомарно (в рамках процесса) читает/меняет/сохраняет баффы игрока."""
+    lock = _get_player_buff_lock(uid)
+    with lock:
+        buffs = _load_player_buffs(uid)
+        new_buffs, ret = mutator(buffs)
+        _save_player_buffs(
+            uid,
+            new_buffs.get("anti_stun_charges", 0),
+            new_buffs.get("anti_suppression_until", 0),
+        )
+        return ret
+
+
+def grant_anti_stun_charges(uid: int, amount: int = ANTI_STUN_CHARGES) -> int:
+    """Начисляет заряды антизаглушения (складываются с текущими). Возвращает итоговое кол-во."""
+    def _mutator(buffs):
+        new_total = buffs.get("anti_stun_charges", 0) + amount
+        buffs["anti_stun_charges"] = new_total
+        return buffs, new_total
+    return _atomic_player_buff_update(uid, _mutator)
+
+
+def grant_anti_suppression(uid: int, duration: int = ANTI_SUPPRESSION_DURATION_SEC) -> int:
+    """Продлевает/активирует иммунитет к подавлению. Возвращает timestamp окончания."""
+    def _mutator(buffs):
+        base = max(buffs.get("anti_suppression_until", 0), _now_ts())
+        new_until = base + duration
+        buffs["anti_suppression_until"] = new_until
+        return buffs, new_until
+    return _atomic_player_buff_update(uid, _mutator)
+
+
+def _consume_anti_stun_charge(uid: int) -> int | None:
+    """Если у игрока есть заряды антизаглушения — тратит один и возвращает остаток.
+    Если зарядов нет — возвращает None (заглушка должна применяться как обычно)."""
+    def _mutator(buffs):
+        charges = buffs.get("anti_stun_charges", 0)
+        if charges <= 0:
+            return buffs, None
+        charges -= 1
+        buffs["anti_stun_charges"] = charges
+        return buffs, charges
+    return _atomic_player_buff_update(uid, _mutator)
+
+
+def get_anti_stun_charges(uid: int) -> int:
+    return _load_player_buffs(uid).get("anti_stun_charges", 0)
+
+
+def get_anti_suppression_until(uid: int) -> int:
+    return _load_player_buffs(uid).get("anti_suppression_until", 0)
+
+
+def is_anti_suppression_active(uid: int) -> bool:
+    return get_anti_suppression_until(uid) > _now_ts()
 
 
 def _pick_random_boss(exclude_keys: list[str] = None) -> dict:
@@ -1191,6 +1325,7 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
         "suppressed": False, "suppression_pct": 0.0,
         "suppression_triggered": False,
         "stun_triggered": False, "stunned_players": {},
+        "stun_blocked_players": {},
     }
 
     now = _now_ts()
@@ -1268,10 +1403,12 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
         hit_crit = False if is_infinite else crit
 
         # ── Подавление: снижает урон тем, кто бил босса недавно ──
+        # (кроме тех, у кого активно Зелье Антиподавления)
         suppressed = False
         suppression_pct = 0.0
+        anti_suppression_active = is_anti_suppression_active(int(uid_str))
         hit_times = state.setdefault("hit_times", {})
-        if not is_infinite and state.get("suppression_active"):
+        if not is_infinite and state.get("suppression_active") and not anti_suppression_active:
             prev_hit_ts = hit_times.get(uid_str, 0)
             if now - prev_hit_ts <= SUPPRESSION_ATTACK_WINDOW_SEC:
                 suppression_pct = random.uniform(SUPPRESSION_DMG_MIN, SUPPRESSION_DMG_MAX)
@@ -1304,6 +1441,7 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
             "suppressed": suppressed, "suppression_pct": suppression_pct,
             "suppression_triggered": False,
             "stun_triggered": False, "stunned_players": {},
+            "stun_blocked_players": {},
             "stunned_until": 0,
         }
 
@@ -1318,13 +1456,20 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
                 target_count = max(1, round(len(candidates) * STUN_TARGET_SHARE))
                 chosen = random.sample(candidates, min(target_count, len(candidates)))
                 stunned_players = {}
+                blocked_players = {}
                 for u in chosen:
+                    # Зелье Антизаглушения: тратит один заряд и гасит заглушку
+                    remaining = _consume_anti_stun_charge(int(u))
+                    if remaining is not None:
+                        blocked_players[u] = remaining
+                        continue
                     until = now + random.randint(STUN_DURATION_MIN, STUN_DURATION_MAX)
                     stunned_map[u] = until
                     stunned_players[u] = until
                 state["stun_used"] = True
-                out["stun_triggered"]   = True
-                out["stunned_players"]  = stunned_players
+                out["stun_triggered"]        = True
+                out["stunned_players"]       = stunned_players
+                out["stun_blocked_players"]  = blocked_players
                 if uid_str in stunned_players:
                     out["stunned_until"] = stunned_players[uid_str]
 
@@ -2261,6 +2406,16 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
         else:
             stun_note = (
                 f'\n{_tg(_E["lock"], "🔇")} <b><i>Босс заглушил тебя! Атака недоступна {_left_now}.</i></b>'
+            )
+    elif str(data.get("id", 0)) in result.get("stun_blocked_players", {}):
+        _charges_left = result["stun_blocked_players"][str(data.get("id", 0))]
+        if lang == "en":
+            stun_note = (
+                f'\n{_tg(_E["potion_antistun"], "🧪")} <b><i>Your Anti-Stun Potion absorbed the boss\'s silence! Charges left: {_charges_left}.</i></b>'
+            )
+        else:
+            stun_note = (
+                f'\n{_tg(_E["potion_antistun"], "🧪")} <b><i>Зелье Антизаглушения поглотило заглушку босса! Осталось зарядов: {_charges_left}.</i></b>'
             )
     else:
         stun_note = ""
