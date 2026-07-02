@@ -2158,11 +2158,22 @@ def boss_attack_keyboard(data: dict, lang: str = "ru", slot: int = 0) -> InlineK
     state   = _load_slot(slot)
     eq_key  = get_equipped_sword(data)
 
+    now_ts  = _now_ts()
+    uid_str = str(data.get("id", 0))
+    stunned_until = (state.get("stunned", {}) or {}).get(uid_str, 0)
+    is_stunned = stunned_until > now_ts
+
     if state.get("boss_alive") and eq_key:
+        if is_stunned:
+            left = _fmt_stun_duration(stunned_until - now_ts)
+            btn_text = f"🔇 Silenced ({left})" if lang == "en" else f"🔇 Заглушён ({left})"
+        else:
+            btn_text = "Strike!" if lang == "en" else "Ударить!"
         builder.row(InlineKeyboardButton(
-            text="Strike!" if lang == "en" else "Ударить!",
+            text=btn_text,
             callback_data=f"hunt_strike_{slot}",
-            icon_custom_emoji_id=_E["sword"]
+            icon_custom_emoji_id=_E["lock"] if is_stunned else _E["sword"],
+            style="danger" if is_stunned else "primary"
         ))
 
     builder.row(InlineKeyboardButton(
@@ -2189,6 +2200,27 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
             f'{_tg(_E["dead"], "💀")} <b><i>{"Boss is already dead! Wait for the next one." if lang == "en" else "Босс уже мёртв! Жди следующего."}</i></b>'
         )
 
+    if result.get("error") == "stunned":
+        left = _fmt_stun_duration(max(0, result.get("stunned_until", 0) - _now_ts()))
+        if lang == "en":
+            return (
+                f'<blockquote>'
+                f'{_tg(_E["lock"], "🔇")} <b><i>You are silenced!</i></b>\n'
+                f'<b><i>The boss stunned you — the strike didn\'t land. You can attack again in {left}.</i></b>'
+                f'</blockquote>'
+            )
+        return (
+            f'<blockquote>'
+            f'{_tg(_E["lock"], "🔇")} <b><i>Ты оглушён!</i></b>\n'
+            f'<b><i>Босс заглушил тебя — удар не прошёл. Атака снова доступна через {left}.</i></b>'
+            f'</blockquote>'
+        )
+
+    if result.get("error") == "cooldown":
+        return (
+            f'{_tg(_E["timer"], "⏱")} <b><i>{"Too fast! Wait a second before striking again." if lang == "en" else "Слишком быстро! Подожди секунду перед следующим ударом."}</i></b>'
+        )
+
     dmg       = result["dmg"]
     crit      = result["crit"]
     hp_after  = result["boss_hp_after"]
@@ -2206,6 +2238,32 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
             f'\n{_tg(_E["crit"], "⭐")} <b><i>КРИТИЧЕСКИЙ УДАР!</i></b>'
             if crit else ""
         )
+
+    if result.get("suppressed"):
+        _supp_pct = int(round(result.get("suppression_pct", 0.0) * 100))
+        if lang == "en":
+            suppression_note = (
+                f'\n{_tg(_E["alert"], "🌀")} <b><i>Suppression aura weakened this strike by {_supp_pct}%!</i></b>'
+            )
+        else:
+            suppression_note = (
+                f'\n{_tg(_E["alert"], "🌀")} <b><i>Аура подавления ослабила этот удар на {_supp_pct}%!</i></b>'
+            )
+    else:
+        suppression_note = ""
+
+    if result.get("stun_triggered") and str(data.get("id", 0)) in result.get("stunned_players", {}):
+        _left_now = _fmt_stun_duration(max(0, result["stunned_players"][str(data.get("id", 0))] - _now_ts()))
+        if lang == "en":
+            stun_note = (
+                f'\n{_tg(_E["lock"], "🔇")} <b><i>The boss silenced you! You cannot attack for {_left_now}.</i></b>'
+            )
+        else:
+            stun_note = (
+                f'\n{_tg(_E["lock"], "🔇")} <b><i>Босс заглушил тебя! Атака недоступна {_left_now}.</i></b>'
+            )
+    else:
+        stun_note = ""
 
     if killed:
         reward = result["reward"]
@@ -2246,7 +2304,7 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
             f'{_tg(_E["skull"], "💀")} <b><i>{boss_name}</i></b>'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["dmg"], "💥")} <b><i>Your strike: {_fmt(dmg)}</i></b> {_tg(_E["dmg"], "💥")}{crit_line}'
+            f'{_tg(_E["dmg"], "💥")} <b><i>Your strike: {_fmt(dmg)}</i></b> {_tg(_E["dmg"], "💥")}{crit_line}{suppression_note}'
             f'</blockquote>\n\n'
             f'<blockquote>'
             f'{_tg(_E["hp"], "❤️")} <b><i>HP:</i></b> {_fmt_digits(hp_after)} / {_fmt_digits(max_hp)} <b><i>({pct:.1f}%)</i></b>'
@@ -2254,13 +2312,14 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
             f'<blockquote>'
             f'{_tg(_E["trophy"], "🏆")} <b><i>Kill reward: {_fmt(_reward_for_hp(max_hp))} {_tg(_E["coin"], "💰")}</i></b>'
             f'</blockquote>'
+            f'{stun_note}'
         )
     return (
         f'<blockquote>'
         f'{_tg(_E["skull"], "💀")} <b><i>{boss_name}</i></b>'
         f'</blockquote>\n\n'
         f'<blockquote>'
-        f'{_tg(_E["dmg"], "💥")} <b><i>Твой удар: {_fmt(dmg)}</i></b> {_tg(_E["dmg"], "💥")}{crit_line}'
+        f'{_tg(_E["dmg"], "💥")} <b><i>Твой удар: {_fmt(dmg)}</i></b> {_tg(_E["dmg"], "💥")}{crit_line}{suppression_note}'
         f'</blockquote>\n\n'
         f'<blockquote>'
         f'{_tg(_E["hp"], "❤️")} <b><i>HP:</i></b> {_fmt_digits(hp_after)} / {_fmt_digits(max_hp)} <b><i>({pct:.1f}%)</i></b>'
@@ -2268,6 +2327,7 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
         f'<blockquote>'
         f'{_tg(_E["trophy"], "🏆")} <b><i>Награда за убийство: {_fmt(_reward_for_hp(max_hp))} {_tg(_E["coin"], "💰")}</i></b>'
         f'</blockquote>'
+        f'{stun_note}'
     )
 
 
@@ -2277,11 +2337,22 @@ def boss_strike_keyboard(data: dict, lang: str = "ru", slot: int = 0) -> InlineK
     state   = _load_slot(slot)
     eq_key  = get_equipped_sword(data)
 
+    now_ts  = _now_ts()
+    uid_str = str(data.get("id", 0))
+    stunned_until = (state.get("stunned", {}) or {}).get(uid_str, 0)
+    is_stunned = stunned_until > now_ts
+
     if state.get("boss_alive") and eq_key:
+        if is_stunned:
+            left = _fmt_stun_duration(stunned_until - now_ts)
+            btn_text = f"🔇 Silenced ({left})" if lang == "en" else f"🔇 Заглушён ({left})"
+        else:
+            btn_text = "Strike again!" if lang == "en" else "Ударить ещё!"
         builder.row(InlineKeyboardButton(
-            text="Strike again!" if lang == "en" else "Ударить ещё!",
+            text=btn_text,
             callback_data=f"hunt_strike_{slot}",
-            icon_custom_emoji_id=_E["sword"]
+            icon_custom_emoji_id=_E["lock"] if is_stunned else _E["sword"],
+            style="danger" if is_stunned else "primary"
         ))
 
     builder.row(InlineKeyboardButton(
