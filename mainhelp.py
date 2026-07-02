@@ -72,10 +72,18 @@ from hunt import (
     # Зелья
     POTIONS_BY_KEY,
     potions_shop_text, potions_shop_keyboard,
+    potions_menu_text, potions_menu_keyboard,
+    my_potions_text, my_potions_keyboard,
+    potion_use_detail_text, potion_use_detail_keyboard,
+    potion_detail_text, potion_detail_keyboard,
     potion_invoice_params, confirm_potion_purchase,
     is_potion_cmd,
     ACTIVE_BOSS_SLOTS,
     _load_slot as _hunt_load_slot,
+    revival_pick_slot_text, revival_pick_slot_keyboard,
+    use_potion,
+    get_all_slots,
+    _E,
 )
 
 from stats import init_stats_db, track_user, stats_text, stats_keyboard
@@ -2868,6 +2876,139 @@ async def handle_rass_media(message: Message):
     await rass_fsm_message(message, ADMIN_IDS)
 
 
+# ============================================================
+#  ПОТОКИ ЗЕЛИЙ (POTIONS) — обработчики кнопок
+# ============================================================
+
+@dp.callback_query(F.data == "hunt_potions_menu")
+async def potion_menu_callback(call: CallbackQuery):
+    data = get_or_create_user(call.from_user)
+    lang = get_lang(data)
+    text = potions_menu_text(lang)
+    keyboard = potions_menu_keyboard(lang)
+    await call.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await call.answer()
+
+@dp.callback_query(F.data == "hunt_shop_potions")
+async def potion_shop_callback(call: CallbackQuery):
+    data = get_or_create_user(call.from_user)
+    lang = get_lang(data)
+    text = potions_shop_text(lang)
+    keyboard = potions_shop_keyboard(lang)
+    await call.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await call.answer()
+
+@dp.callback_query(F.data == "hunt_my_potions")
+async def potion_my_callback(call: CallbackQuery):
+    uid = call.from_user.id
+    data = get_or_create_user(call.from_user)
+    lang = get_lang(data)
+    text = my_potions_text(uid, lang)
+    keyboard = my_potions_keyboard(uid, lang)
+    await call.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await call.answer()
+
+@dp.callback_query(F.data.startswith("potion_info_"))
+async def potion_info_callback(call: CallbackQuery):
+    potion_key = call.data.replace("potion_info_", "")
+    uid = call.from_user.id
+    data = get_or_create_user(call.from_user)
+    lang = get_lang(data)
+    text = potion_detail_text(potion_key, uid, lang)
+    keyboard = potion_detail_keyboard(potion_key, lang)
+    await call.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await call.answer()
+
+@dp.callback_query(F.data.startswith("potion_use_info_"))
+async def potion_use_info_callback(call: CallbackQuery):
+    potion_key = call.data.replace("potion_use_info_", "")
+    uid = call.from_user.id
+    data = get_or_create_user(call.from_user)
+    lang = get_lang(data)
+
+    if potion_key == "revival":
+        slots = get_all_slots()
+        any_dead = any(not st.get("boss_alive") for _, st in slots)
+        if not any_dead:
+            text = potion_use_detail_text(potion_key, uid, lang)
+            builder = InlineKeyboardBuilder()
+            builder.row(InlineKeyboardButton(
+                text="Back" if lang == "en" else "Назад",
+                callback_data="hunt_my_potions",
+                icon_custom_emoji_id=EMOJI_BACK
+            ))
+            await call.message.edit_text(
+                text + "\n\n" + ("❌ No dead bosses to revive." if lang == "en" else "❌ Нет мёртвых боссов для возрождения."),
+                reply_markup=builder.as_markup(),
+                parse_mode="HTML"
+            )
+            await call.answer()
+            return
+
+    text = potion_use_detail_text(potion_key, uid, lang)
+    keyboard = potion_use_detail_keyboard(potion_key, lang)
+    await call.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await call.answer()
+
+@dp.callback_query(F.data == "potion_use_revival_pick_slot")
+async def potion_use_revival_pick_callback(call: CallbackQuery):
+    data = get_or_create_user(call.from_user)
+    lang = get_lang(data)
+    text = revival_pick_slot_text(lang)
+    keyboard = revival_pick_slot_keyboard(lang)
+    await call.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await call.answer()
+
+@dp.callback_query(F.data.startswith("use_potion_revival_"))
+async def potion_use_revival_confirm_callback(call: CallbackQuery):
+    slot = int(call.data.replace("use_potion_revival_", ""))
+    uid = call.from_user.id
+    data = get_or_create_user(call.from_user)
+    lang = get_lang(data)
+
+    ok, msg = use_potion("revival", uid, slot, lang)
+
+    if ok:
+        save_user(uid, data)
+        text = hunt_main_text(data, lang)
+        keyboard = hunt_main_keyboard(data, lang)
+        await call.message.edit_text(
+            f"{msg}\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+    else:
+        await call.answer(msg, show_alert=True)
+        text = revival_pick_slot_text(lang)
+        keyboard = revival_pick_slot_keyboard(lang)
+        await call.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+    await call.answer()
+
+@dp.callback_query(F.data.startswith("use_potion_"))
+async def potion_use_callback(call: CallbackQuery):
+    potion_key = call.data.replace("use_potion_", "")
+    uid = call.from_user.id
+    data = get_or_create_user(call.from_user)
+    lang = get_lang(data)
+
+    ok, msg = use_potion(potion_key, uid, None, lang)
+
+    if ok:
+        save_user(uid, data)
+        text = my_potions_text(uid, lang)
+        keyboard = my_potions_keyboard(uid, lang)
+        await call.message.edit_text(
+            f"{msg}\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+    else:
+        await call.answer(msg, show_alert=True)
+
+    await call.answer()
+
+
 # ---------- CALLBACK HANDLER ----------
 
 @dp.callback_query(~F.data.startswith("city_"))
@@ -2932,6 +3073,9 @@ async def handle_callback(call: CallbackQuery):
         # кроме самого экрана ввода (duel_challenge_start) и кнопки отмены.
         if cd not in ("duel_challenge_start", "duel_challenge_cancel"):
             _challenge_input_pending.pop(user.id, None)
+
+        # ===== ЗЕЛЬЯ — НОВЫЕ ОБРАБОТЧИКИ (добавлены выше) =====
+        # Обработчики зелий находятся выше в секции "ПОТОКИ ЗЕЛИЙ"
 
         # ===== ВКЛАДЫ =====
 
@@ -5241,10 +5385,11 @@ async def handle_successful_payment(message: Message):
             await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
         return
 
-    # ===== ОПЛАТА: Зелье (например «Зелье Возрождения») =====
+    # ===== ОПЛАТА: Зелье =====
     if payload.startswith("potion_"):
         potion_key = payload.removeprefix("potion_")
         from database import get_user, save_user
+        from hunt import confirm_potion_purchase as _confirm_potion
 
         p = POTIONS_BY_KEY.get(potion_key)
         paid_amount = message.successful_payment.total_amount
@@ -5266,22 +5411,7 @@ async def handle_successful_payment(message: Message):
                 data = get_or_create_user(message.from_user)
             _lang = data.get("lang", "ru")
 
-            # Ищем первый мёртвый слот босса — именно его оживляем зельем
-            target_slot = None
-            for s in range(ACTIVE_BOSS_SLOTS):
-                st = _hunt_load_slot(s)
-                if st and not st.get("boss_alive", True):
-                    target_slot = s
-                    break
-
-            if target_slot is None:
-                ok, msg = False, (
-                    "<b><i>❌ Все боссы уже живы — зелье не потребовалось. Обратись в поддержку для возврата средств.</i></b>"
-                    if _lang == "ru" else
-                    "<b><i>❌ All bosses are already alive — the potion was not needed. Contact support for a refund.</i></b>"
-                )
-            else:
-                ok, msg = confirm_potion_purchase(target_slot, potion_key, _lang)
+            ok, msg = confirm_potion_purchase(potion_key, uid, _lang)
 
             # Обновляем старое сообщение (экран зелий)
             pending = _pending_potion_msg.pop(uid, None)
