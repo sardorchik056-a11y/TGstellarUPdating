@@ -2166,7 +2166,7 @@ def boss_attack_keyboard(data: dict, lang: str = "ru", slot: int = 0) -> InlineK
     if state.get("boss_alive") and eq_key:
         if is_stunned:
             left = _fmt_stun_duration(stunned_until - now_ts)
-            btn_text = f"🔇 Silenced ({left})" if lang == "en" else f"🔇 Заглушён ({left})"
+            btn_text = f" Silenced ({left})" if lang == "en" else f" Заглушён ({left})"
         else:
             btn_text = "Strike!" if lang == "en" else "Ударить!"
         builder.row(InlineKeyboardButton(
@@ -2243,11 +2243,11 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
         _supp_pct = int(round(result.get("suppression_pct", 0.0) * 100))
         if lang == "en":
             suppression_note = (
-                f'\n{_tg(_E["alert"], "🌀")} <b><i>Suppression aura weakened this strike by {_supp_pct}%!</i></b>'
+                f'\n<tg-emoji emoji-id="5269535069550162819">🌟</tg-emoji> <b><i>Suppression aura weakened this strike by {_supp_pct}%!</i></b>'
             )
         else:
             suppression_note = (
-                f'\n{_tg(_E["alert"], "🌀")} <b><i>Аура подавления ослабила этот удар на {_supp_pct}%!</i></b>'
+                f'\n<tg-emoji emoji-id="5269535069550162819">🌟</tg-emoji> <b><i>Аура подавления ослабила этот удар на {_supp_pct}%!</i></b>'
             )
     else:
         suppression_note = ""
