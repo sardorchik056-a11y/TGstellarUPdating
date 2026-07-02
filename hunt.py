@@ -502,6 +502,7 @@ BOSS_KILL_REWARD = 5_000_000   # дефолт для отображения в U
 # STUN_ATTACK_WINDOW_SEC (8) секунд назад. Оглушённые не могут атаковать
 # босса STUN_DURATION_MIN..STUN_DURATION_MAX (20-60) секунд.
 STUN_HP_THRESHOLD        = 0.50
+STUN_HP_LOSS_STEP        = 0.30
 STUN_ATTACK_WINDOW_SEC   = 8
 STUN_TARGET_SHARE        = 0.50
 STUN_DURATION_MIN        = 20
@@ -1069,7 +1070,7 @@ def _build_spawn_state(kill_duration: int = None, active_keys: list[str] = None)
         # ── заглушка / подавление ──
         "hit_times":              {},     # uid_str -> ts последнего удара по этому боссу
         "stunned":                {},     # uid_str -> ts до которого игрок оглушён
-        "last_stun_threshold_hp": next_hp,  # HP, от которого отсчитывается следующие -30%
+        "stun_used":              False,  # заглушка на 50% HP уже сработала (одноразово)
         "suppression_active":     False,  # включена ли аура подавления (HP < 50%)
     }
 
@@ -1306,11 +1307,10 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
             "stunned_until": 0,
         }
 
-        # ── Заглушка: срабатывает при потере очередных 30% HP ──
-        if hp_after > 0:
-            last_threshold = state.get("last_stun_threshold_hp", max_hp)
-            loss_needed = max_hp * STUN_HP_LOSS_STEP
-            if last_threshold - hp_after >= loss_needed:
+        # ── Заглушка: срабатывает один раз при падении HP до порога STUN_HP_THRESHOLD ──
+        if hp_after > 0 and not state.get("stun_used"):
+            threshold_hp = max_hp * STUN_HP_THRESHOLD
+            if hp_after <= threshold_hp:
                 candidates = [
                     u for u, ts in hit_times.items()
                     if now - ts <= STUN_ATTACK_WINDOW_SEC
@@ -1322,7 +1322,7 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
                     until = now + random.randint(STUN_DURATION_MIN, STUN_DURATION_MAX)
                     stunned_map[u] = until
                     stunned_players[u] = until
-                state["last_stun_threshold_hp"] = hp_after
+                state["stun_used"] = True
                 out["stun_triggered"]   = True
                 out["stunned_players"]  = stunned_players
                 if uid_str in stunned_players:
