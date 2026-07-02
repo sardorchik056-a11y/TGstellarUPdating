@@ -997,6 +997,14 @@ def init_hunt_db():
                 anti_suppression_until  INTEGER NOT NULL DEFAULT 0
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS hunt_potion_inventory (
+                user_id     INTEGER NOT NULL,
+                potion_key  TEXT NOT NULL,
+                count       INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (user_id, potion_key)
+            )
+        """)
         conn.commit()
     _ensure_all_slots()
 
@@ -1170,6 +1178,94 @@ def get_anti_suppression_until(uid: int) -> int:
 
 def is_anti_suppression_active(uid: int) -> bool:
     return get_anti_suppression_until(uid) > _now_ts()
+
+
+# ── Инвентарь зелий (куплено, но ещё не использовано) ──
+
+_potion_inv_locks: dict[int, threading.Lock] = {}
+_potion_inv_locks_guard = threading.Lock()
+
+
+def _get_potion_inv_lock(uid: int) -> threading.Lock:
+    with _potion_inv_locks_guard:
+        lock = _potion_inv_locks.get(uid)
+        if lock is None:
+            lock = threading.Lock()
+            _potion_inv_locks[uid] = lock
+        return lock
+
+
+def get_potion_inventory(uid: int) -> dict:
+    """Возвращает {potion_key: count} для всех зелий игрока с count > 0."""
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT potion_key, count FROM hunt_potion_inventory WHERE user_id=? AND count > 0",
+            (uid,)
+        ).fetchall()
+    return {row["potion_key"]: row["count"] for row in rows}
+
+
+def get_potion_count(uid: int, potion_key: str) -> int:
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT count FROM hunt_potion_inventory WHERE user_id=? AND potion_key=?",
+            (uid, potion_key)
+        ).fetchone()
+    return row["count"] if row else 0
+
+
+def add_potion_to_inventory(uid: int, potion_key: str, qty: int = 1) -> int:
+    """Добавляет qty зелий в инвентарь игрока. Возвращает итоговое количество."""
+    lock = _get_potion_inv_lock(uid)
+    with lock:
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT count FROM hunt_potion_inventory WHERE user_id=? AND potion_key=?",
+                (uid, potion_key)
+            ).fetchone()
+            total = (row["count"] if row else 0) + qty
+            conn.execute(
+                "INSERT INTO hunt_potion_inventory (user_id, potion_key, count) VALUES (?,?,?) "
+                "ON CONFLICT(user_id, potion_key) DO UPDATE SET count=excluded.count",
+                (uid, potion_key, total)
+            )
+            conn.commit()
+            return total
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
+def _consume_potion_from_inventory(uid: int, potion_key: str) -> int:
+    """Списывает одно зелье из инвентаря. Возвращает остаток (не может уйти ниже 0)."""
+    lock = _get_potion_inv_lock(uid)
+    with lock:
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT count FROM hunt_potion_inventory WHERE user_id=? AND potion_key=?",
+                (uid, potion_key)
+            ).fetchone()
+            remaining = max(0, (row["count"] if row else 0) - 1)
+            conn.execute(
+                "INSERT INTO hunt_potion_inventory (user_id, potion_key, count) VALUES (?,?,?) "
+                "ON CONFLICT(user_id, potion_key) DO UPDATE SET count=excluded.count",
+                (uid, potion_key, remaining)
+            )
+            conn.commit()
+            return remaining
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
 
 def _pick_random_boss(exclude_keys: list[str] = None) -> dict:
@@ -1676,7 +1772,7 @@ def hunt_main_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
     )
     builder.row(InlineKeyboardButton(
         text="Potions" if lang == "en" else "Зелья",
-        callback_data="hunt_shop_potions",
+        callback_data="hunt_potions_menu",
         icon_custom_emoji_id=_E["potion"]
     ))
     builder.row(InlineKeyboardButton(
@@ -1778,54 +1874,56 @@ def sword_shop_keyboard(data: dict, page: int = 0, lang: str = "ru") -> InlineKe
     return builder.as_markup()
 
 
-# ─── Магазин зелий ───
+# ─── Меню зелий: Магазин / Мои зелья ───
 
-def potions_shop_text(uid: int | None = None, lang: str = "ru") -> str:
-    """
-    Текст магазина зелий. Показывает все зелья (возрождение, антизаглушение,
-    антиподавление) с описанием, эффектом и ценой.
-
-    Если передан uid — дополнительно показывает текущий статус игрока:
-    сколько зарядов антизаглушения осталось и сколько ещё действует
-    антиподавление (если активно).
-    """
-    star = _tg(_E["star"], "⭐")
-    en = lang == "en"
-
-    blocks = []
-    for p in POTIONS:
-        name   = p.get("name_en", p["name"]) if en else p["name"]
-        desc   = p.get("desc_en", p["desc"]) if en else p["desc"]
-        effect = p.get("effect_en", p["effect"]) if en else p["effect"]
-        emoji  = _tg(p["emoji_id"], "🧪")
-
-        status = ""
-        if uid is not None:
-            if p["key"] == "anti_stun":
-                charges = get_anti_stun_charges(uid)
-                if charges > 0:
-                    status = (f'\n{_tg(_E["ok"], "✅")} <b><i>Active charges: {charges}</i></b>' if en else
-                               f'\n{_tg(_E["ok"], "✅")} <b><i>Активных зарядов: {charges}</i></b>')
-            elif p["key"] == "anti_suppression":
-                until = get_anti_suppression_until(uid)
-                left = until - _now_ts()
-                if left > 0:
-                    left_str = _fmt_duration(left)
-                    status = (f'\n{_tg(_E["ok"], "✅")} <b><i>Active for: {left_str}</i></b>' if en else
-                               f'\n{_tg(_E["ok"], "✅")} <b><i>Активно ещё: {left_str}</i></b>')
-
-        price_label = f'<b><i>{"Price" if en else "Цена"}: {p["price_stars"]} {star}</i></b>'
-        blocks.append(f'{emoji} <b><i>{name}</i></b>\n{desc}\n\n{effect}{status}\n{price_label}')
-
-    body = "\n\n➖➖➖➖➖➖➖➖➖\n\n".join(blocks)
-    header = "POTIONS" if en else "ЗЕЛЬЯ"
-    hint = ("<i>Tap a potion below to pay with Telegram Stars.</i>" if en else
-            "<i>Нажми на зелье ниже, чтобы оплатить Telegram Stars.</i>")
-
+def potions_menu_text(lang: str = "ru") -> str:
+    if lang == "en":
+        return (
+            f'<blockquote>'
+            f'{_tg(_E["potion"], "🧪")} <b><i>POTIONS</i></b>\n\n'
+            f'<b><i>Buy potions in the shop, then use them from "My Potions" whenever you need them.</i></b>'
+            f'</blockquote>'
+        )
     return (
         f'<blockquote>'
-        f'{_tg(_E["potion"], "🧪")} <b><i>{header}</i></b>\n\n'
-        f'{body}\n\n'
+        f'{_tg(_E["potion"], "🧪")} <b><i>ЗЕЛЬЯ</i></b>\n\n'
+        f'<b><i>Покупай зелья в магазине, а используй их в разделе «Мои зелья», когда потребуется.</i></b>'
+        f'</blockquote>'
+    )
+
+
+def potions_menu_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="Shop" if lang == "en" else "Магазин",
+            callback_data="hunt_shop_potions",
+            icon_custom_emoji_id=_E["shop"]
+        ),
+        InlineKeyboardButton(
+            text="My Potions" if lang == "en" else "Мои зелья",
+            callback_data="hunt_my_potions",
+            icon_custom_emoji_id=_E["potion"]
+        )
+    )
+    builder.row(InlineKeyboardButton(
+        text="Hunt menu" if lang == "en" else "В меню охоты",
+        callback_data="hunt",
+        icon_custom_emoji_id=_E["back"]
+    ))
+    return builder.as_markup()
+
+
+# ─── Магазин зелий (список, без описаний — как список мечей) ───
+
+def potions_shop_text(lang: str = "ru") -> str:
+    en = lang == "en"
+    header = "POTION SHOP" if en else "МАГАЗИН ЗЕЛИЙ"
+    hint = ("<i>Tap a potion to see its description and buy it.</i>" if en else
+            "<i>Нажми на зелье, чтобы посмотреть описание и купить.</i>")
+    return (
+        f'<blockquote>'
+        f'{_tg(_E["shop"], "🛒")} <b><i>{header}</i></b>\n\n'
         f'{hint}'
         f'</blockquote>'
     )
@@ -1837,13 +1935,69 @@ def potions_shop_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         name = p.get("name_en", p["name"]) if lang == "en" else p["name"]
         builder.row(InlineKeyboardButton(
             text=f'{name} — {p["price_stars"]} ⭐',
-            callback_data=f'buy_potion_{p["key"]}',
-            icon_custom_emoji_id="5262643974912355126",
+            callback_data=f'potion_info_{p["key"]}',
+            icon_custom_emoji_id=p["emoji_id"],
             style="success"
         ))
     builder.row(InlineKeyboardButton(
-        text="Hunt menu" if lang == "en" else "В меню охоты",
-        callback_data="hunt",
+        text="Back" if lang == "en" else "Назад",
+        callback_data="hunt_potions_menu",
+        icon_custom_emoji_id=_E["back"]
+    ))
+    return builder.as_markup()
+
+
+# ─── Карточка зелья в магазине (описание + эффект + кнопка покупки-инвойса) ───
+
+def potion_detail_text(potion_key: str, uid: int | None = None, lang: str = "ru") -> str:
+    p = POTIONS_BY_KEY.get(potion_key)
+    if not p:
+        return "<b><i>❌ Potion not found.</i></b>" if lang == "en" else "<b><i>❌ Зелье не найдено.</i></b>"
+
+    en = lang == "en"
+    star   = _tg(_E["star"], "⭐")
+    name   = p.get("name_en", p["name"]) if en else p["name"]
+    desc   = p.get("desc_en", p["desc"]) if en else p["desc"]
+    effect = p.get("effect_en", p["effect"]) if en else p["effect"]
+    emoji  = _tg(p["emoji_id"], "🧪")
+
+    owned_line = ""
+    if uid is not None:
+        have = get_potion_count(uid, potion_key)
+        if have > 0:
+            owned_line = (f'\n{_tg(_E["ok"], "✅")} <b><i>In inventory: {have}</i></b>' if en else
+                          f'\n{_tg(_E["ok"], "✅")} <b><i>В инвентаре: {have}</i></b>')
+
+    price_label = f'<b><i>{"Price" if en else "Цена"}: {p["price_stars"]} {star}</i></b>'
+
+    return (
+        f'<blockquote>'
+        f'{emoji} <b><i>{name}</i></b>\n'
+        f'</blockquote>\n\n'
+        f'<blockquote>'
+        f'{desc}'
+        f'</blockquote>\n\n'
+        f'<blockquote>'
+        f'{effect}\n\n'
+        f'{price_label}'
+        f'{owned_line}'
+        f'</blockquote>'
+    )
+
+
+def potion_detail_keyboard(potion_key: str, lang: str = "ru") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    p = POTIONS_BY_KEY.get(potion_key)
+    if p:
+        builder.row(InlineKeyboardButton(
+            text=f'{"Buy" if lang == "en" else "Купить"} — {p["price_stars"]} ⭐',
+            callback_data=f'buy_potion_{potion_key}',
+            icon_custom_emoji_id=p["emoji_id"],
+            style="success"
+        ))
+    builder.row(InlineKeyboardButton(
+        text="Back" if lang == "en" else "Назад",
+        callback_data="hunt_shop_potions",
         icon_custom_emoji_id=_E["back"]
     ))
     return builder.as_markup()
@@ -1852,13 +2006,17 @@ def potions_shop_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
 def potion_invoice_params(potion_key: str, lang: str = "ru") -> dict | None:
     """
     Параметры для bot.send_invoice() (оплата через Telegram Stars, currency='XTR').
-    Использовать в основном файле бота при нажатии на кнопку покупки зелья:
+    Использовать в основном файле бота при нажатии на кнопку "Купить" (callback_data
+    вида "buy_potion_<key>"):
 
         params = potion_invoice_params(potion_key, lang)
         await bot.send_invoice(
             chat_id=..., title=params["title"], description=params["description"],
             payload=params["payload"], currency=params["currency"], prices=params["prices"],
         )
+
+    После успешной оплаты (successful_payment) вызвать confirm_potion_purchase() —
+    зелье добавится в инвентарь игрока ("Мои зелья"), а не применится сразу.
     """
     p = POTIONS_BY_KEY.get(potion_key)
     if not p:
@@ -1875,12 +2033,187 @@ def potion_invoice_params(potion_key: str, lang: str = "ru") -> dict | None:
     }
 
 
-def confirm_potion_purchase(potion_key: str, uid: int, slot: int | None = None,
-                             lang: str = "ru") -> tuple[bool, str]:
+def confirm_potion_purchase(potion_key: str, uid: int, lang: str = "ru") -> tuple[bool, str]:
     """
-    Вызывать после успешного платежа (successful_payment) за зелье.
-    Применяет эффект зелья в зависимости от potion_key:
+    Вызывать после успешного платежа (successful_payment) за зелье (payload "potion_<key>").
+    Зелье НЕ применяется сразу — оно добавляется в инвентарь игрока ("Мои зелья"),
+    откуда его можно использовать в любой момент через use_potion().
 
+    Пример вызова в основном файле бота:
+        potion_key = payload.split("potion_", 1)[1]
+        ok, text = confirm_potion_purchase(potion_key, uid=message.from_user.id, lang=lang)
+        await message.answer(text)
+    """
+    p = POTIONS_BY_KEY.get(potion_key)
+    if not p:
+        return False, ("<b><i>❌ Unknown potion.</i></b>" if lang == "en" else "<b><i>❌ Неизвестное зелье.</i></b>")
+
+    name  = p.get("name_en", p["name"]) if lang == "en" else p["name"]
+    emoji = _tg(p["emoji_id"], "🧪")
+    total = add_potion_to_inventory(uid, potion_key, 1)
+
+    if lang == "en":
+        return True, (f'{emoji} <b><i>{name} purchased!</i></b>\n'
+                      f'<b><i>In your inventory: {total}. Use it anytime from "My Potions".</i></b>')
+    return True, (f'{emoji} <b><i>{name} куплено!</i></b>\n'
+                  f'<b><i>В инвентаре: {total}. Используй его в любой момент в разделе «Мои зелья».</i></b>')
+
+
+# ─── Мои зелья (инвентарь) ───
+
+def my_potions_text(uid: int, lang: str = "ru") -> str:
+    en = lang == "en"
+    inv = get_potion_inventory(uid)
+
+    if not inv:
+        body = (
+            f'{_tg(_E["lock"], "🔒")} <b><i>Your potion inventory is empty.</i></b>\n'
+            f'<b><i>Check the shop — potions are waiting!</i></b>' if en else
+            f'{_tg(_E["lock"], "🔒")} <b><i>Инвентарь зелий пуст.</i></b>\n'
+            f'<b><i>Загляни в магазин — там ждут зелья!</i></b>'
+        )
+    else:
+        lines = []
+        for key, count in inv.items():
+            p = POTIONS_BY_KEY.get(key)
+            if not p:
+                continue
+            name  = p.get("name_en", p["name"]) if en else p["name"]
+            emoji = _tg(p["emoji_id"], "🧪")
+            lines.append(f'{emoji} <b><i>{name}</i></b> — <b><i>×{count}</i></b>')
+        body = "\n".join(lines)
+
+    header = "MY POTIONS" if en else "МОИ ЗЕЛЬЯ"
+    hint = ("<i>Tap a potion to use it.</i>" if en else "<i>Нажми на зелье, чтобы использовать его.</i>")
+    return (
+        f'<blockquote>'
+        f'{_tg(_E["potion"], "🧪")} <b><i>{header}</i></b>\n\n'
+        f'{body}\n\n'
+        f'{hint}'
+        f'</blockquote>'
+    )
+
+
+def my_potions_keyboard(uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    inv = get_potion_inventory(uid)
+    for key, count in inv.items():
+        p = POTIONS_BY_KEY.get(key)
+        if not p:
+            continue
+        name = p.get("name_en", p["name"]) if lang == "en" else p["name"]
+        builder.row(InlineKeyboardButton(
+            text=f'{name} ×{count}',
+            callback_data=f'potion_use_info_{key}',
+            icon_custom_emoji_id=p["emoji_id"],
+            style="success"
+        ))
+    builder.row(InlineKeyboardButton(
+        text="Back" if lang == "en" else "Назад",
+        callback_data="hunt_potions_menu",
+        icon_custom_emoji_id=_E["back"]
+    ))
+    return builder.as_markup()
+
+
+def potion_use_detail_text(potion_key: str, uid: int, lang: str = "ru") -> str:
+    """Карточка зелья из инвентаря перед использованием (описание + эффект + кол-во)."""
+    p = POTIONS_BY_KEY.get(potion_key)
+    if not p:
+        return "<b><i>❌ Potion not found.</i></b>" if lang == "en" else "<b><i>❌ Зелье не найдено.</i></b>"
+
+    en = lang == "en"
+    name   = p.get("name_en", p["name"]) if en else p["name"]
+    desc   = p.get("desc_en", p["desc"]) if en else p["desc"]
+    effect = p.get("effect_en", p["effect"]) if en else p["effect"]
+    emoji  = _tg(p["emoji_id"], "🧪")
+    have   = get_potion_count(uid, potion_key)
+
+    have_line = (f'<b><i>{"In inventory" if en else "В инвентаре"}: {have}</i></b>')
+
+    return (
+        f'<blockquote>'
+        f'{emoji} <b><i>{name}</i></b>\n'
+        f'</blockquote>\n\n'
+        f'<blockquote>'
+        f'{desc}'
+        f'</blockquote>\n\n'
+        f'<blockquote>'
+        f'{effect}\n\n'
+        f'{have_line}'
+        f'</blockquote>'
+    )
+
+
+def potion_use_detail_keyboard(potion_key: str, lang: str = "ru") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if potion_key == "revival":
+        # Зелье возрождения требует выбора слота босса — ведём на выбор слота.
+        builder.row(InlineKeyboardButton(
+            text="Use" if lang == "en" else "Использовать",
+            callback_data="potion_use_revival_pick_slot",
+            icon_custom_emoji_id=_E["potion"],
+            style="success"
+        ))
+    else:
+        builder.row(InlineKeyboardButton(
+            text="Use" if lang == "en" else "Использовать",
+            callback_data=f'use_potion_{potion_key}',
+            icon_custom_emoji_id=_E["potion"],
+            style="success"
+        ))
+    builder.row(InlineKeyboardButton(
+        text="Back" if lang == "en" else "Назад",
+        callback_data="hunt_my_potions",
+        icon_custom_emoji_id=_E["back"]
+    ))
+    return builder.as_markup()
+
+
+def revival_pick_slot_text(lang: str = "ru") -> str:
+    if lang == "en":
+        return (
+            f'<blockquote>'
+            f'{_tg(_E["potion"], "🧪")} <b><i>CHOOSE A DEAD BOSS TO REVIVE</i></b>'
+            f'</blockquote>'
+        )
+    return (
+        f'<blockquote>'
+        f'{_tg(_E["potion"], "🧪")} <b><i>ВЫБЕРИ МЁРТВОГО БОССА ДЛЯ ВОЗРОЖДЕНИЯ</i></b>'
+        f'</blockquote>'
+    )
+
+
+def revival_pick_slot_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    slots = get_all_slots()
+    any_dead = False
+    for slot_idx, st in slots:
+        if st.get("boss_alive"):
+            continue
+        any_dead = True
+        builder.row(InlineKeyboardButton(
+            text=f'#{slot_idx + 1}',
+            callback_data=f'use_potion_revival_{slot_idx}',
+            icon_custom_emoji_id=_E["dead"]
+        ))
+    if not any_dead:
+        builder.row(InlineKeyboardButton(
+            text="No dead bosses" if lang == "en" else "Нет мёртвых боссов",
+            callback_data="potion_use_info_revival",
+            icon_custom_emoji_id=_E["lock"]
+        ))
+    builder.row(InlineKeyboardButton(
+        text="Back" if lang == "en" else "Назад",
+        callback_data="potion_use_info_revival",
+        icon_custom_emoji_id=_E["back"]
+    ))
+    return builder.as_markup()
+
+
+def use_potion(potion_key: str, uid: int, slot: int | None = None, lang: str = "ru") -> tuple[bool, str]:
+    """
+    Использует одно зелье из инвентаря игрока и применяет его эффект:
       - "revival"          — нужен slot (номер слота босса), мгновенно возрождает
                               босса, минуя откат после смерти.
       - "anti_stun"        — начисляет игроку uid ANTI_STUN_CHARGES зарядов
@@ -1888,16 +2221,17 @@ def confirm_potion_purchase(potion_key: str, uid: int, slot: int | None = None,
       - "anti_suppression" — включает/продлевает для игрока uid иммунитет
                               к ауре подавления на ANTI_SUPPRESSION_DURATION_SEC.
 
-    Пример вызова в основном файле бота (payload вида "potion_<key>"):
-        potion_key = payload.split("potion_", 1)[1]
-        ok, text = confirm_potion_purchase(
-            potion_key, uid=message.from_user.id, slot=current_slot, lang=lang
-        )
-        await message.answer(text)
+    Если зелья нет в инвентаре — возвращает ошибку без списания.
     """
     p = POTIONS_BY_KEY.get(potion_key)
     if not p:
         return False, ("<b><i>❌ Unknown potion.</i></b>" if lang == "en" else "<b><i>❌ Неизвестное зелье.</i></b>")
+
+    name = p.get("name_en", p["name"]) if lang == "en" else p["name"]
+    if get_potion_count(uid, potion_key) <= 0:
+        return False, (f'<b><i>❌ You don\'t have "{name}" in your inventory. Buy it in the shop first.</i></b>'
+                        if lang == "en" else
+                        f'<b><i>❌ У тебя нет «{name}» в инвентаре. Сначала купи его в магазине.</i></b>')
 
     potion_emoji = _tg(p["emoji_id"], "🧪")
 
@@ -1910,6 +2244,7 @@ def confirm_potion_purchase(potion_key: str, uid: int, slot: int | None = None,
             return False, (f'{potion_emoji} <b><i>❌ The boss is already alive — the potion was not needed.</i></b>'
                             if lang == "en" else
                             f'{potion_emoji} <b><i>❌ Босс уже жив — зелье не потребовалось.</i></b>')
+        _consume_potion_from_inventory(uid, potion_key)
         boss = BOSSES_BY_KEY.get(state.get("boss_key"))
         boss_name = (boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]) if boss else "?"
         if lang == "en":
@@ -1919,6 +2254,7 @@ def confirm_potion_purchase(potion_key: str, uid: int, slot: int | None = None,
                       f'<b><i>Босс {boss_name} восстал снова — иди в бой!</i></b>')
 
     if potion_key == "anti_stun":
+        _consume_potion_from_inventory(uid, potion_key)
         total = grant_anti_stun_charges(uid)
         if lang == "en":
             return True, (f'{potion_emoji} <b><i>Anti-Stun Potion activated!</i></b>\n'
@@ -1931,6 +2267,7 @@ def confirm_potion_purchase(potion_key: str, uid: int, slot: int | None = None,
                       f'без потери времени на атаки.</i></b>')
 
     if potion_key == "anti_suppression":
+        _consume_potion_from_inventory(uid, potion_key)
         until = grant_anti_suppression(uid)
         left = _fmt_duration(max(0, until - _now_ts()))
         if lang == "en":
