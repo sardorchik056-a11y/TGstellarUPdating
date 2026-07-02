@@ -493,6 +493,38 @@ def _reward_for_hp(max_hp: int) -> int:
 
 BOSS_KILL_REWARD = 5_000_000   # дефолт для отображения в UI
 
+# ─────────────────────────────────────────
+#  МЕХАНИКИ БОССА: ЗАГЛУШКА И ПОДАВЛЕНИЕ
+# ─────────────────────────────────────────
+# Заглушка (stun): каждый раз, когда босс теряет ещё STUN_HP_LOSS_STEP
+# (30%) своего максимального HP (считая от точки последнего срабатывания),
+# он "оглушает" STUN_TARGET_SHARE (50%) игроков, ударивших его не позже
+# STUN_ATTACK_WINDOW_SEC (8) секунд назад. Оглушённые не могут атаковать
+# босса STUN_DURATION_MIN..STUN_DURATION_MAX (60-180) секунд.
+STUN_HP_LOSS_STEP        = 0.30
+STUN_ATTACK_WINDOW_SEC   = 8
+STUN_TARGET_SHARE        = 0.50
+STUN_DURATION_MIN        = 60
+STUN_DURATION_MAX        = 180
+
+# Подавление (suppression): как только HP босса падает ниже
+# SUPPRESSION_HP_THRESHOLD (50%), он активирует ауру подавления —
+# каждый удар игрока, который бил босса не позже
+# SUPPRESSION_ATTACK_WINDOW_SEC (60) секунд назад, получает случайное
+# снижение урона в диапазоне SUPPRESSION_DMG_MIN..SUPPRESSION_DMG_MAX (20-50%).
+SUPPRESSION_HP_THRESHOLD      = 0.50
+SUPPRESSION_ATTACK_WINDOW_SEC = 60
+SUPPRESSION_DMG_MIN           = 0.20
+SUPPRESSION_DMG_MAX           = 0.50
+
+def _fmt_stun_duration(secs: int) -> str:
+    """Компактный формат для оставшегося времени оглушения: '2м 05с' / '48с'."""
+    secs = max(0, int(secs))
+    m, s = divmod(secs, 60)
+    if m:
+        return f"{m}м {s:02d}с"
+    return f"{s}с"
+
 BOSSES = [
     {
         "key": "ash_lord",
@@ -1034,6 +1066,11 @@ def _build_spawn_state(kill_duration: int = None, active_keys: list[str] = None)
         "boss_died_at":      None,
         "boss_kill_duration": None,
         "damage_log":        {},
+        # ── заглушка / подавление ──
+        "hit_times":              {},     # uid_str -> ts последнего удара по этому боссу
+        "stunned":                {},     # uid_str -> ts до которого игрок оглушён
+        "last_stun_threshold_hp": next_hp,  # HP, от которого отсчитывается следующие -30%
+        "suppression_active":     False,  # включена ли аура подавления (HP < 50%)
     }
 
 
@@ -1149,12 +1186,24 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
         "damage_rewards": {},
         "error": None,
         "slot": slot,
+        "stunned_until": 0,
+        "suppressed": False, "suppression_pct": 0.0,
+        "suppression_triggered": False,
+        "stun_triggered": False, "stunned_players": {},
     }
 
     now = _now_ts()
     last_hit = data.get("last_boss_hit", 0)
     if now - last_hit < 1:
         result["error"] = "cooldown"
+        return result
+
+    uid_str_check = str(data.get("id", 0))
+    _peek_state = _load_slot(slot)
+    _peek_until = (_peek_state.get("stunned", {}) or {}).get(uid_str_check, 0)
+    if _peek_until > now:
+        result["error"] = "stunned"
+        result["stunned_until"] = _peek_until
         return result
 
     sword_key = data.get("equipped_sword")
@@ -1202,11 +1251,42 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
         if not state or not state.get("boss_alive", False) or state.get("boss_key") not in BOSSES_BY_KEY:
             return state, {"error": "boss_dead"}
 
+        # Финальная (авторитетная) проверка заглушки — уже под блокировкой,
+        # чтобы исключить гонку между "проверил вне лока" и самим ударом.
+        stunned_map = state.setdefault("stunned", {})
+        stunned_until = stunned_map.get(uid_str, 0)
+        if stunned_until > now:
+            return state, {"error": "stunned", "stunned_until": stunned_until}
+
+        max_hp = state.get("boss_max_hp", BOSS_MAX_HP)
+
         # Админ-режим "infinite_dmg": урон = текущий HP босса (мгновенный килл).
         # Считаем именно тут, под блокировкой, чтобы взять актуальный HP —
         # а не значение, прочитанное до захвата лока.
         hit_dmg  = state["boss_hp"] if is_infinite else dmg
         hit_crit = False if is_infinite else crit
+
+        # ── Подавление: снижает урон тем, кто бил босса недавно ──
+        suppressed = False
+        suppression_pct = 0.0
+        hit_times = state.setdefault("hit_times", {})
+        if not is_infinite and state.get("suppression_active"):
+            prev_hit_ts = hit_times.get(uid_str, 0)
+            if now - prev_hit_ts <= SUPPRESSION_ATTACK_WINDOW_SEC:
+                suppression_pct = random.uniform(SUPPRESSION_DMG_MIN, SUPPRESSION_DMG_MAX)
+                hit_dmg = max(0, int(hit_dmg * (1 - suppression_pct)))
+                suppressed = True
+
+        hit_times[uid_str] = now
+        # Чистим устаревшие метки атак, чтобы словарь не рос бесконечно
+        stale_before = now - max(STUN_ATTACK_WINDOW_SEC, SUPPRESSION_ATTACK_WINDOW_SEC) * 4
+        for u in list(hit_times.keys()):
+            if hit_times[u] < stale_before:
+                del hit_times[u]
+        # Чистим истёкшие заглушки
+        for u in list(stunned_map.keys()):
+            if stunned_map[u] <= now:
+                del stunned_map[u]
 
         hp_before = state["boss_hp"]
         hp_after  = max(0, hp_before - hit_dmg)
@@ -1220,7 +1300,38 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
             "boss_hp_before": hp_before, "boss_hp_after": hp_after,
             "boss_killed": False, "reward": 0, "xp": 0,
             "damage_rewards": {}, "error": None,
+            "suppressed": suppressed, "suppression_pct": suppression_pct,
+            "suppression_triggered": False,
+            "stun_triggered": False, "stunned_players": {},
+            "stunned_until": 0,
         }
+
+        # ── Заглушка: срабатывает при потере очередных 30% HP ──
+        if hp_after > 0:
+            last_threshold = state.get("last_stun_threshold_hp", max_hp)
+            loss_needed = max_hp * STUN_HP_LOSS_STEP
+            if last_threshold - hp_after >= loss_needed:
+                candidates = [
+                    u for u, ts in hit_times.items()
+                    if now - ts <= STUN_ATTACK_WINDOW_SEC
+                ]
+                target_count = max(1, round(len(candidates) * STUN_TARGET_SHARE))
+                chosen = random.sample(candidates, min(target_count, len(candidates)))
+                stunned_players = {}
+                for u in chosen:
+                    until = now + random.randint(STUN_DURATION_MIN, STUN_DURATION_MAX)
+                    stunned_map[u] = until
+                    stunned_players[u] = until
+                state["last_stun_threshold_hp"] = hp_after
+                out["stun_triggered"]   = True
+                out["stunned_players"]  = stunned_players
+                if uid_str in stunned_players:
+                    out["stunned_until"] = stunned_players[uid_str]
+
+        # ── Подавление: активируется, когда HP падает ниже 50% ──
+        if hp_after > 0 and not state.get("suppression_active") and hp_after <= max_hp * SUPPRESSION_HP_THRESHOLD:
+            state["suppression_active"] = True
+            out["suppression_triggered"] = True
 
         if hp_after == 0:
             died_at = _now_ts()
@@ -1259,11 +1370,11 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
 
     mutated = _atomic_slot_update(slot, _mutator)
 
+    result.update({k: v for k, v in mutated.items() if k != "error"})
+
     if mutated.get("error"):
         result["error"] = mutated["error"]
         return result
-
-    result.update({k: v for k, v in mutated.items() if k != "error"})
 
     if result["boss_killed"]:
         # Начисляем убийце сразу (остальным — в main.py через damage_rewards)
@@ -1960,6 +2071,42 @@ def boss_attack_text(data: dict, lang: str = "ru", slot: int = 0) -> str:
             )
     else:
         art_dmg_line = ""
+
+    now_ts = _now_ts()
+    stunned_until = (state.get("stunned", {}) or {}).get(str(data.get("id", 0)), 0)
+    if stunned_until > now_ts:
+        left = _fmt_stun_duration(stunned_until - now_ts)
+        if lang == "en":
+            status_line = (
+                f'\n\n<blockquote>'
+                f'{_tg(_E["lock"], "🔇")} <b><i>You are silenced!</i></b>\n'
+                f'<b><i>The boss stunned you — you cannot attack for {left}.</i></b>'
+                f'</blockquote>'
+            )
+        else:
+            status_line = (
+                f'\n\n<blockquote>'
+                f'{_tg(_E["lock"], "🔇")} <b><i>Ты оглушён!</i></b>\n'
+                f'<b><i>Босс заглушил тебя — атака недоступна ещё {left}.</i></b>'
+                f'</blockquote>'
+            )
+    elif state.get("suppression_active"):
+        if lang == "en":
+            status_line = (
+                f'\n\n<blockquote>'
+                f'{_tg(_E["alert"], "🌀")} <b><i>Suppression aura active!</i></b>\n'
+                f'<b><i>Hitting the boss again within {SUPPRESSION_ATTACK_WINDOW_SEC}s of your last strike weakens your damage by 20–50%.</i></b>'
+                f'</blockquote>'
+            )
+        else:
+            status_line = (
+                f'\n\n<blockquote>'
+                f'{_tg(_E["alert"], "🌀")} <b><i>Аура подавления активна!</i></b>\n'
+                f'<b><i>Удар раньше чем через {SUPPRESSION_ATTACK_WINDOW_SEC}с после предыдущего снижает твой урон на 20–50%.</i></b>'
+                f'</blockquote>'
+            )
+    else:
+        status_line = ""
 
     boss_name  = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
     boss_lore  = boss.get("lore_en", boss["lore"]) if lang == "en" else boss["lore"]
