@@ -1780,29 +1780,53 @@ def sword_shop_keyboard(data: dict, page: int = 0, lang: str = "ru") -> InlineKe
 
 # ─── Магазин зелий ───
 
-def potions_shop_text(lang: str = "ru") -> str:
-    p = POTIONS[0]
-    name   = p.get("name_en", p["name"]) if lang == "en" else p["name"]
-    desc   = p.get("desc_en", p["desc"]) if lang == "en" else p["desc"]
-    effect = p.get("effect_en", p["effect"]) if lang == "en" else p["effect"]
-    star   = _tg(_E["star"], "⭐")
-    if lang == "en":
-        return (
-            f'<blockquote>'
-            f'{_tg(_E["potion"], "🧪")} <b><i>POTIONS</i></b>\n\n'
-            f'{_tg(p["emoji_id"], "🧪")} <b><i>{name}</i></b>\n'
-            f'{desc}\n\n'
-            f'{effect}\n\n'
-            f'<b><i>Price: {p["price_stars"]} {star}</i></b>'
-            f'</blockquote>'
-        )
+def potions_shop_text(uid: int | None = None, lang: str = "ru") -> str:
+    """
+    Текст магазина зелий. Показывает все зелья (возрождение, антизаглушение,
+    антиподавление) с описанием, эффектом и ценой.
+
+    Если передан uid — дополнительно показывает текущий статус игрока:
+    сколько зарядов антизаглушения осталось и сколько ещё действует
+    антиподавление (если активно).
+    """
+    star = _tg(_E["star"], "⭐")
+    en = lang == "en"
+
+    blocks = []
+    for p in POTIONS:
+        name   = p.get("name_en", p["name"]) if en else p["name"]
+        desc   = p.get("desc_en", p["desc"]) if en else p["desc"]
+        effect = p.get("effect_en", p["effect"]) if en else p["effect"]
+        emoji  = _tg(p["emoji_id"], "🧪")
+
+        status = ""
+        if uid is not None:
+            if p["key"] == "anti_stun":
+                charges = get_anti_stun_charges(uid)
+                if charges > 0:
+                    status = (f'\n{_tg(_E["ok"], "✅")} <b><i>Active charges: {charges}</i></b>' if en else
+                               f'\n{_tg(_E["ok"], "✅")} <b><i>Активных зарядов: {charges}</i></b>')
+            elif p["key"] == "anti_suppression":
+                until = get_anti_suppression_until(uid)
+                left = until - _now_ts()
+                if left > 0:
+                    left_str = _fmt_duration(left)
+                    status = (f'\n{_tg(_E["ok"], "✅")} <b><i>Active for: {left_str}</i></b>' if en else
+                               f'\n{_tg(_E["ok"], "✅")} <b><i>Активно ещё: {left_str}</i></b>')
+
+        price_label = f'<b><i>{"Price" if en else "Цена"}: {p["price_stars"]} {star}</i></b>'
+        blocks.append(f'{emoji} <b><i>{name}</i></b>\n{desc}\n\n{effect}{status}\n{price_label}')
+
+    body = "\n\n➖➖➖➖➖➖➖➖➖\n\n".join(blocks)
+    header = "POTIONS" if en else "ЗЕЛЬЯ"
+    hint = ("<i>Tap a potion below to pay with Telegram Stars.</i>" if en else
+            "<i>Нажми на зелье ниже, чтобы оплатить Telegram Stars.</i>")
+
     return (
         f'<blockquote>'
-        f'{_tg(_E["potion"], "🧪")} <b><i>ЗЕЛЬЯ</i></b>\n\n'
-        f'{_tg(p["emoji_id"], "🧪")} <b><i>{name}</i></b>\n'
-        f'{desc}\n\n'
-        f'{effect}\n\n'
-        f'<b><i>Цена: {p["price_stars"]} {star}</i></b>'
+        f'{_tg(_E["potion"], "🧪")} <b><i>{header}</i></b>\n\n'
+        f'{body}\n\n'
+        f'{hint}'
         f'</blockquote>'
     )
 
@@ -1851,18 +1875,37 @@ def potion_invoice_params(potion_key: str, lang: str = "ru") -> dict | None:
     }
 
 
-def confirm_potion_purchase(slot: int, potion_key: str, lang: str = "ru") -> tuple[bool, str]:
+def confirm_potion_purchase(potion_key: str, uid: int, slot: int | None = None,
+                             lang: str = "ru") -> tuple[bool, str]:
     """
     Вызывать после успешного платежа (successful_payment) за зелье.
-    Применяет эффект зелья. Для 'revival' — мгновенно возрождает босса в слоте.
+    Применяет эффект зелья в зависимости от potion_key:
+
+      - "revival"          — нужен slot (номер слота босса), мгновенно возрождает
+                              босса, минуя откат после смерти.
+      - "anti_stun"        — начисляет игроку uid ANTI_STUN_CHARGES зарядов
+                              (заряды складываются, если уже есть).
+      - "anti_suppression" — включает/продлевает для игрока uid иммунитет
+                              к ауре подавления на ANTI_SUPPRESSION_DURATION_SEC.
+
+    Пример вызова в основном файле бота (payload вида "potion_<key>"):
+        potion_key = payload.split("potion_", 1)[1]
+        ok, text = confirm_potion_purchase(
+            potion_key, uid=message.from_user.id, slot=current_slot, lang=lang
+        )
+        await message.answer(text)
     """
     p = POTIONS_BY_KEY.get(potion_key)
     if not p:
         return False, ("<b><i>❌ Unknown potion.</i></b>" if lang == "en" else "<b><i>❌ Неизвестное зелье.</i></b>")
 
+    potion_emoji = _tg(p["emoji_id"], "🧪")
+
     if potion_key == "revival":
+        if slot is None:
+            return False, ("<b><i>❌ Boss slot not specified.</i></b>" if lang == "en" else
+                            "<b><i>❌ Не указан слот босса.</i></b>")
         ok, state = revive_boss_with_potion(slot)
-        potion_emoji = _tg(p["emoji_id"], "🧪")
         if not ok:
             return False, (f'{potion_emoji} <b><i>❌ The boss is already alive — the potion was not needed.</i></b>'
                             if lang == "en" else
@@ -1874,6 +1917,29 @@ def confirm_potion_purchase(slot: int, potion_key: str, lang: str = "ru") -> tup
                           f'<b><i>The boss {boss_name} has risen again — go hunt!</i></b>')
         return True, (f'{potion_emoji} <b><i>Зелье возрождения применено!</i></b>\n'
                       f'<b><i>Босс {boss_name} восстал снова — иди в бой!</i></b>')
+
+    if potion_key == "anti_stun":
+        total = grant_anti_stun_charges(uid)
+        if lang == "en":
+            return True, (f'{potion_emoji} <b><i>Anti-Stun Potion activated!</i></b>\n'
+                          f'<b><i>Protection charges: {total}.</i></b>\n'
+                          f'<b><i>The next stun attempts against you will be absorbed automatically, '
+                          f'with no loss of damage time.</i></b>')
+        return True, (f'{potion_emoji} <b><i>Зелье Антизаглушения активировано!</i></b>\n'
+                      f'<b><i>Заряды защиты: {total}.</i></b>\n'
+                      f'<b><i>Следующие попытки босса заглушить тебя будут поглощены зельем автоматически — '
+                      f'без потери времени на атаки.</i></b>')
+
+    if potion_key == "anti_suppression":
+        until = grant_anti_suppression(uid)
+        left = _fmt_duration(max(0, until - _now_ts()))
+        if lang == "en":
+            return True, (f'{potion_emoji} <b><i>Anti-Suppression Potion activated!</i></b>\n'
+                          f'<b><i>For the next {left}, the boss cannot suppress your damage — '
+                          f'even if the suppression aura is active.</i></b>')
+        return True, (f'{potion_emoji} <b><i>Зелье Антиподавления активировано!</i></b>\n'
+                      f'<b><i>Следующие {left} босс не сможет подавить твой урон — '
+                      f'даже если аура подавления активна.</i></b>')
 
     return False, ("<b><i>❌ Unknown potion.</i></b>" if lang == "en" else "<b><i>❌ Неизвестное зелье.</i></b>")
 
