@@ -34,8 +34,15 @@
 #  ПОЛЯ, КОТОРЫЕ ИСПОЛЬЗУЕТ МОДУЛЬ
 #  ────────────────────────────────
 #  Уже существующие в проекте (проверено по вашим файлам) — работают из коробки:
-#    balance, level, mine_campaigns_done, owned_pickaxes, owned_swords,
+#    balance, level, owned_pickaxes, owned_durations, owned_swords,
 #    duel_wins, artifact_cases_opened, owned_pets, clan_id (из get_or_create_user)
+#
+#  ⛏ ШАХТА — уже подключена и работает из коробки. miner.py сам ведёт
+#  счётчики за всю игру (не сбрасываются продажей/остановкой шахты):
+#    mine_lifetime_campaigns, mine_sessions_completed, mine_early_stops,
+#    mine_total_ore_collected, mine_total_sold, mine_lifetime_ore_counts
+#  Ничего доинкрементировать не нужно — collect_mine/sell_all_ores/stop_mine
+#  в miner.py уже обновляют эти поля сами.
 #
 #  НОВЫЕ счётчики, которых в data пока нет — модуль просто вернёт для них
 #  прогресс 0/цель, пока вы не начнёте их инкрементировать в нужных местах
@@ -74,6 +81,14 @@ def _pickaxes_total() -> int:
         return len(PICKAXES)
     except Exception:
         return 6  # запасное значение — поправьте под свой список кирок
+
+
+def _durations_total() -> int:
+    try:
+        from miner import DURATIONS_ORDER
+        return len(DURATIONS_ORDER)
+    except Exception:
+        return 10  # запасное значение — поправьте под свой список длительностей
 
 
 def _pets_total() -> int:
@@ -214,41 +229,177 @@ ACHIEVEMENTS = [
          progress=lambda d: (d.get("level", 1), _max_level()),
          reward_coins=2_000_000, reward_xp=0),
 
-    # ───────────── ⛏ ШАХТА (5) ─────────────
+    # ───────────── ⛏ ШАХТА (25) ─────────────
+
+    # — Прогресс: количество завершённых экспедиций за всю игру —
     _ach("mine_1", "⛏", "Первая вылазка",
          "Заверши первую экспедицию в шахту",
          "mine",
-         lambda d: d.get("mine_campaigns_done", 0) >= 1,
-         progress=lambda d: (d.get("mine_campaigns_done", 0), 1),
+         lambda d: d.get("mine_lifetime_campaigns", 0) >= 1,
+         progress=lambda d: (d.get("mine_lifetime_campaigns", 0), 1),
          reward_coins=1_000, reward_xp=10),
 
     _ach("mine_10", "🪨", "Трудяга",
          "Заверши 10 экспедиций в шахту",
          "mine",
-         lambda d: d.get("mine_campaigns_done", 0) >= 10,
-         progress=lambda d: (d.get("mine_campaigns_done", 0), 10),
+         lambda d: d.get("mine_lifetime_campaigns", 0) >= 10,
+         progress=lambda d: (d.get("mine_lifetime_campaigns", 0), 10),
          reward_coins=5_000, reward_xp=30),
 
     _ach("mine_100", "⚒️", "Шахтёр по призванию",
          "Заверши 100 экспедиций в шахту",
          "mine",
-         lambda d: d.get("mine_campaigns_done", 0) >= 100,
-         progress=lambda d: (d.get("mine_campaigns_done", 0), 100),
+         lambda d: d.get("mine_lifetime_campaigns", 0) >= 100,
+         progress=lambda d: (d.get("mine_lifetime_campaigns", 0), 100),
          reward_coins=50_000, reward_xp=150),
 
     _ach("mine_500", "🏔", "Король забоя",
          "Заверши 500 экспедиций в шахту",
          "mine",
-         lambda d: d.get("mine_campaigns_done", 0) >= 500,
-         progress=lambda d: (d.get("mine_campaigns_done", 0), 500),
+         lambda d: d.get("mine_lifetime_campaigns", 0) >= 500,
+         progress=lambda d: (d.get("mine_lifetime_campaigns", 0), 500),
          reward_coins=300_000, reward_xp=500),
 
+    _ach("mine_2500", "🕳", "Легенда подземелья",
+         "Заверши 2 500 экспедиций в шахту",
+         "mine",
+         lambda d: d.get("mine_lifetime_campaigns", 0) >= 2_500,
+         progress=lambda d: (d.get("mine_lifetime_campaigns", 0), 2_500),
+         reward_coins=2_000_000, reward_xp=1500),
+
+    # — Снаряжение —
     _ach("mine_all_pickaxes", "🧰", "Полный арсенал кирок",
          "Приобрети все кирки",
          "mine",
          lambda d: len(d.get("owned_pickaxes", [])) >= _pickaxes_total(),
          progress=lambda d: (len(d.get("owned_pickaxes", [])), _pickaxes_total()),
          reward_coins=150_000, reward_xp=200),
+
+    _ach("mine_netherite_pickaxe", "⬛", "Кирка из преисподней",
+         "Приобрети кирку тира Netherite",
+         "mine",
+         lambda d: any(str(k).startswith("netherite") for k in d.get("owned_pickaxes", [])),
+         reward_coins=1_000_000, reward_xp=600),
+
+    # — Сессии и длительность —
+    _ach("mine_all_durations", "⏱", "Хронометрист",
+         "Открой все варианты длительности экспедиции",
+         "mine",
+         lambda d: len(d.get("owned_durations", [])) >= _durations_total(),
+         progress=lambda d: (len(d.get("owned_durations", [])), _durations_total()),
+         reward_coins=200_000, reward_xp=250),
+
+    _ach("mine_sessions_10", "📦", "Марафонец",
+         "Полностью заверши 10 сессий шахты",
+         "mine",
+         lambda d: d.get("mine_sessions_completed", 0) >= 10,
+         progress=lambda d: (d.get("mine_sessions_completed", 0), 10),
+         reward_coins=20_000, reward_xp=80),
+
+    _ach("mine_sessions_50", "🌙", "Бессонная смена",
+         "Полностью заверши 50 сессий шахты",
+         "mine",
+         lambda d: d.get("mine_sessions_completed", 0) >= 50,
+         progress=lambda d: (d.get("mine_sessions_completed", 0), 50),
+         reward_coins=250_000, reward_xp=400),
+
+    _ach("mine_early_stop", "⏹", "Нетерпеливый",
+         "Останови экспедицию досрочно",
+         "mine",
+         lambda d: d.get("mine_early_stops", 0) >= 1,
+         progress=lambda d: (d.get("mine_early_stops", 0), 1),
+         reward_coins=2_000, reward_xp=15),
+
+    # — Объёмы добычи —
+    _ach("mine_ore_1000", "🪵", "Добытчик",
+         "Добудь 1 000 единиц руды за всю игру",
+         "mine",
+         lambda d: d.get("mine_total_ore_collected", 0) >= 1_000,
+         progress=lambda d: (d.get("mine_total_ore_collected", 0), 1_000),
+         reward_coins=10_000, reward_xp=50),
+
+    _ach("mine_ore_100000", "📦", "Оптовик",
+         "Добудь 100 000 единиц руды за всю игру",
+         "mine",
+         lambda d: d.get("mine_total_ore_collected", 0) >= 100_000,
+         progress=lambda d: (d.get("mine_total_ore_collected", 0), 100_000),
+         reward_coins=100_000, reward_xp=250),
+
+    _ach("mine_ore_1000000", "🏭", "Промышленник",
+         "Добудь 1 000 000 единиц руды за всю игру",
+         "mine",
+         lambda d: d.get("mine_total_ore_collected", 0) >= 1_000_000,
+         progress=lambda d: (d.get("mine_total_ore_collected", 0), 1_000_000),
+         reward_coins=1_500_000, reward_xp=1000),
+
+    # — Редкие находки (первая добыча руды каждого ценного вида) —
+    _ach("mine_first_iron", "⚙️", "Первое железо",
+         "Добудь железо впервые",
+         "mine",
+         lambda d: d.get("mine_lifetime_ore_counts", {}).get("iron", 0) >= 1,
+         reward_coins=3_000, reward_xp=15),
+
+    _ach("mine_first_silver", "🩶", "Серебряная жила",
+         "Добудь серебро впервые",
+         "mine",
+         lambda d: d.get("mine_lifetime_ore_counts", {}).get("silver", 0) >= 1,
+         reward_coins=5_000, reward_xp=20),
+
+    _ach("mine_first_diamond", "💎", "Первый алмаз",
+         "Добудь алмаз впервые",
+         "mine",
+         lambda d: d.get("mine_lifetime_ore_counts", {}).get("diamond", 0) >= 1,
+         reward_coins=30_000, reward_xp=60),
+
+    _ach("mine_first_mithril", "🔮", "Мифриловая жила",
+         "Добудь мифрил впервые",
+         "mine",
+         lambda d: d.get("mine_lifetime_ore_counts", {}).get("mithril", 0) >= 1,
+         reward_coins=100_000, reward_xp=120),
+
+    _ach("mine_first_uranium", "☢️", "Радиоактивная находка",
+         "Добудь уран впервые",
+         "mine",
+         lambda d: d.get("mine_lifetime_ore_counts", {}).get("uranium", 0) >= 1,
+         reward_coins=200_000, reward_xp=180),
+
+    _ach("mine_first_amethyst", "💜", "Фиолетовый блеск",
+         "Добудь аметист впервые",
+         "mine",
+         lambda d: d.get("mine_lifetime_ore_counts", {}).get("amethyst", 0) >= 1,
+         reward_coins=350_000, reward_xp=250),
+
+    _ach("mine_first_jade", "🟢", "Нефритовый секрет",
+         "Добудь нефрит впервые",
+         "mine",
+         lambda d: d.get("mine_lifetime_ore_counts", {}).get("jade", 0) >= 1,
+         reward_coins=600_000, reward_xp=350),
+
+    _ach("mine_first_emerald", "🌿", "Изумрудная жила",
+         "Добудь изумруд впервые",
+         "mine",
+         lambda d: d.get("mine_lifetime_ore_counts", {}).get("emerald", 0) >= 1,
+         reward_coins=900_000, reward_xp=450),
+
+    _ach("mine_first_obsidian", "💀", "Чёрное стекло",
+         "Добудь обсидиан впервые",
+         "mine",
+         lambda d: d.get("mine_lifetime_ore_counts", {}).get("obsidian", 0) >= 1,
+         reward_coins=1_200_000, reward_xp=550),
+
+    _ach("mine_first_sapphire", "🔷", "Сапфировая мечта",
+         "Добудь сапфир впервые — самую редкую руду в игре",
+         "mine",
+         lambda d: d.get("mine_lifetime_ore_counts", {}).get("sapphire", 0) >= 1,
+         reward_coins=2_000_000, reward_xp=800),
+
+    # — Экономика шахты —
+    _ach("mine_sold_100m", "🏦", "Шахтный магнат",
+         "Выручи в сумме 100 000 000 монет с продажи руды",
+         "mine",
+         lambda d: d.get("mine_total_sold", 0) >= 100_000_000,
+         progress=lambda d: (d.get("mine_total_sold", 0), 100_000_000),
+         reward_coins=5_000_000, reward_xp=700),
 
     # ───────────── ⚔️ ОХОТА НА БОССОВ (6) ─────────────
     _ach("hunt_first_hit", "🗡", "Первая кровь",
@@ -501,7 +652,7 @@ ACHIEVEMENTS = [
          reward_coins=200_000, reward_xp=300),
 ]
 
-assert len(ACHIEVEMENTS) == 50, f"Ожидалось 50 достижений, а получилось {len(ACHIEVEMENTS)}"
+assert len(ACHIEVEMENTS) == 70, f"Ожидалось 70 достижений, а получилось {len(ACHIEVEMENTS)}"
 
 ACHIEVEMENTS_BY_ID = {a["id"]: a for a in ACHIEVEMENTS}
 
