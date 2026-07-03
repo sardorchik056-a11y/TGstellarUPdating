@@ -206,6 +206,102 @@ DAILY_QUEST_MINE2_REWARD = 2_000_000
 DAILY_QUEST_MINE3_TARGET = 30_000_000
 DAILY_QUEST_MINE3_REWARD = 5_000_000
 
+# ── Ранги клана (5 рангов) ──────────────────────────────────
+# Ранг повышает сложность клановых заданий: цели и награды всех
+# ежедневных заданий умножаются на multiplier ранга (x1/x2/x4/x8/x16 —
+# каждый следующий ранг ровно в 2 раза сложнее предыдущего).
+# Требования — сколько участников и казны нужно накопить, чтобы
+# ранг был присвоен клану (проверяется автоматически при вступлении
+# новых участников и при любом пополнении казны). Ранг не понижается
+# при убыли участников/трате казны — достигнутое остаётся достигнутым.
+#
+# rank 1 — стартовый, без требований.
+# rank 2 — 5 участников  + 10 000 000 в казне  → задания x2
+# rank 3 — 15 участников + 50 000 000 в казне  → задания x4
+# rank 4 — 30 участников + 200 000 000 в казне → задания x8
+# rank 5 — 50 участников + 1 000 000 000 в казне → задания x16
+CLAN_RANKS = [
+    {"rank": 1, "name_ru": "Новичок", "name_en": "Novice",  "members_required": 0,  "treasury_required": 0,             "multiplier": 1},
+    {"rank": 2, "name_ru": "Отряд",   "name_en": "Squad",   "members_required": 5,  "treasury_required": 10_000_000,    "multiplier": 2},
+    {"rank": 3, "name_ru": "Легион",  "name_en": "Legion",  "members_required": 15, "treasury_required": 50_000_000,    "multiplier": 4},
+    {"rank": 4, "name_ru": "Орден",   "name_en": "Order",   "members_required": 30, "treasury_required": 200_000_000,   "multiplier": 8},
+    {"rank": 5, "name_ru": "Империя", "name_en": "Empire",  "members_required": 50, "treasury_required": 1_000_000_000, "multiplier": 16},
+]
+MAX_CLAN_RANK = len(CLAN_RANKS)
+
+# Базовая цель для "боевого" общего задания (убийство босса) —
+# на ранге 1 нужен 1 килл, дальше — умножается вместе со всеми
+# остальными заданиями (rank 2 → 2 килла, rank 3 → 4 килла и т.д.)
+DAILY_QUEST_KILL_BASE_TARGET = 1
+
+
+def get_clan_rank_info(rank: int) -> dict:
+    """Возвращает описание ранга (безопасно клэмпит в диапазон 1..5)."""
+    idx = max(1, min(rank or 1, MAX_CLAN_RANK)) - 1
+    return CLAN_RANKS[idx]
+
+
+def get_clan_rank_multiplier(rank: int) -> int:
+    return get_clan_rank_info(rank)["multiplier"]
+
+
+def get_next_rank_info(rank: int) -> dict | None:
+    """Требования для следующего ранга или None, если ранг уже максимальный."""
+    rank = rank or 1
+    if rank >= MAX_CLAN_RANK:
+        return None
+    return CLAN_RANKS[rank]  # CLAN_RANKS[0]=rank1, поэтому CLAN_RANKS[rank] = rank+1
+
+
+def _maybe_rank_up(c, clan_id: int) -> int:
+    """
+    Проверяет условия и повышает ранг клана, если он их выполнил.
+    Вызывается внутри уже открытой транзакции (после изменения
+    численности участников или казны). Ранг никогда не понижается.
+    Возвращает актуальный ранг клана после проверки.
+    """
+    row = c.execute("SELECT rank, treasury FROM clans WHERE id=?", (clan_id,)).fetchone()
+    if not row:
+        return 1
+    cur_rank = row["rank"] or 1
+    treasury = row["treasury"] or 0
+    member_count = c.execute(
+        "SELECT COUNT(*) FROM clan_members WHERE clan_id=?", (clan_id,)
+    ).fetchone()[0]
+
+    new_rank = cur_rank
+    for req in CLAN_RANKS:
+        if req["rank"] <= new_rank:
+            continue
+        if member_count >= req["members_required"] and treasury >= req["treasury_required"]:
+            new_rank = req["rank"]
+        else:
+            break  # требования идут по возрастанию — дальше проверять бессмысленно
+
+    if new_rank != cur_rank:
+        c.execute("UPDATE clans SET rank=? WHERE id=?", (new_rank, clan_id))
+    return new_rank
+
+
+def get_clan_rank_progress(clan_id: int) -> dict:
+    """
+    Прогресс клана к следующему рангу — для UI (сколько участников/казны
+    не хватает). Если ранг уже максимальный — next будет None.
+    """
+    clan = get_clan(clan_id)
+    if not clan:
+        return {"rank": 1, "next": None}
+    rank = clan.get("rank") or 1
+    member_count = get_member_count(clan_id)
+    next_info = get_next_rank_info(rank)
+    return {
+        "rank":          rank,
+        "rank_info":     get_clan_rank_info(rank),
+        "member_count":  member_count,
+        "treasury":      clan.get("treasury", 0),
+        "next":          next_info,
+    }
+
 # ─────────────────────── БД ──────────────────────────────────
 
 def _conn():
@@ -271,6 +367,9 @@ def init_klan_db():
             c.execute("ALTER TABLE clans ADD COLUMN chat_username TEXT DEFAULT NULL")
         if "chat_title" not in clan_cols:
             c.execute("ALTER TABLE clans ADD COLUMN chat_title TEXT DEFAULT NULL")
+        # Миграция: ранг клана (система рангов, задания x2 за ранг)
+        if "rank" not in clan_cols:
+            c.execute("ALTER TABLE clans ADD COLUMN rank INTEGER DEFAULT 1")
         # Миграция: добавляем новые колонки к существующей таблице, если их нет
         existing_cols = {row[1] for row in c.execute("PRAGMA table_info(clan_daily_quests)").fetchall()}
         for col, ddl in [
@@ -279,6 +378,7 @@ def init_klan_db():
             ("mine1_reward_claimed", "ALTER TABLE clan_daily_quests ADD COLUMN mine1_reward_claimed INTEGER DEFAULT 0"),
             ("mine2_reward_claimed", "ALTER TABLE clan_daily_quests ADD COLUMN mine2_reward_claimed INTEGER DEFAULT 0"),
             ("mine3_reward_claimed", "ALTER TABLE clan_daily_quests ADD COLUMN mine3_reward_claimed INTEGER DEFAULT 0"),
+            ("boss_kills",           "ALTER TABLE clan_daily_quests ADD COLUMN boss_kills INTEGER DEFAULT 0"),
         ]:
             if col not in existing_cols:
                 c.execute(ddl)
@@ -604,6 +704,7 @@ def accept_application(creator_uid: int, app_id: int) -> dict:
         """, (app["uid"], m["clan_id"], int(time.time())))
         c.execute("DELETE FROM clan_applications WHERE clan_id=? AND uid=?",
                   (m["clan_id"], app["uid"]))
+        _maybe_rank_up(c, m["clan_id"])
         c.commit()
     return {"ok": True, "uid": app["uid"]}
 
@@ -650,6 +751,10 @@ def accept_all_applications(creator_uid: int) -> dict:
             c.execute("DELETE FROM clan_applications WHERE id=?", (app["id"],))
             c.commit()
         accepted += 1
+    if accepted:
+        with _conn() as c:
+            _maybe_rank_up(c, clan_id)
+            c.commit()
     return {"ok": True, "accepted": accepted, "skipped": skipped}
 
 
@@ -684,6 +789,7 @@ def deposit_treasury(uid: int, amount: int) -> dict:
         with _immediate_tx() as c:
             c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",              (amount, m["clan_id"]))
             c.execute("UPDATE clan_members SET contributed=contributed+? WHERE uid=?", (amount, uid))
+            _maybe_rank_up(c, m["clan_id"])
     return {"ok": True}
 
 
@@ -825,6 +931,12 @@ def _ensure_daily_quest_row(c, clan_id: int, date: str) -> None:
     """, (clan_id, date))
 
 
+def _clan_rank_multiplier_tx(c, clan_id: int) -> int:
+    """Множитель сложности заданий текущего ранга клана (внутри транзакции c)."""
+    row = c.execute("SELECT rank FROM clans WHERE id=?", (clan_id,)).fetchone()
+    return get_clan_rank_multiplier(row["rank"] if row else 1)
+
+
 def get_daily_quests(clan_id: int) -> dict:
     """Прогресс по ежедневным заданиям клана за сегодня (создаёт запись при первом обращении)."""
     date = _today_str()
@@ -842,10 +954,11 @@ def add_clan_boss_damage(uid: int, damage: int) -> dict:
     """
     Вызывать каждый раз, когда игрок наносит урон боссу.
     Урон суммируется в общий дневной прогресс клана игрока.
-    Когда суммарный урон клана за день достигает DAILY_QUEST_DMG_TARGET,
-    клан получает DAILY_QUEST_DMG_REWARD в казну (один раз за день).
-    При достижении DAILY_QUEST_DMG2_TARGET клан дополнительно получает
-    DAILY_QUEST_DMG2_REWARD в казну (один раз за день).
+    Цели и награды масштабируются множителем ранга клана (x1/x2/x4/x8/x16):
+    когда суммарный урон клана за день достигает
+    DAILY_QUEST_DMG_TARGET * multiplier, клан получает
+    DAILY_QUEST_DMG_REWARD * multiplier в казну (один раз за день).
+    Аналогично для второго порога (DMG2).
     """
     if damage <= 0:
         return {"ok": False, "error": "bad_damage"}
@@ -863,6 +976,10 @@ def add_clan_boss_damage(uid: int, damage: int) -> dict:
     rewarded2 = False
     with _clan_lock(clan_id):
         with _immediate_tx() as c:
+            mult = _clan_rank_multiplier_tx(c, clan_id)
+            target1, reward1 = DAILY_QUEST_DMG_TARGET  * mult, DAILY_QUEST_DMG_REWARD  * mult
+            target2, reward2 = DAILY_QUEST_DMG2_TARGET * mult, DAILY_QUEST_DMG2_REWARD * mult
+
             _ensure_daily_quest_row(c, clan_id, date)
             c.execute("""
                 UPDATE clan_daily_quests SET boss_damage = boss_damage + ?
@@ -872,28 +989,30 @@ def add_clan_boss_damage(uid: int, damage: int) -> dict:
                 SELECT boss_damage, dmg_reward_claimed, dmg2_reward_claimed FROM clan_daily_quests
                 WHERE clan_id=? AND quest_date=?
             """, (clan_id, date)).fetchone()
-            if row["boss_damage"] >= DAILY_QUEST_DMG_TARGET and not row["dmg_reward_claimed"]:
+            if row["boss_damage"] >= target1 and not row["dmg_reward_claimed"]:
                 cur = c.execute("""
                     UPDATE clan_daily_quests SET dmg_reward_claimed=1
                     WHERE clan_id=? AND quest_date=? AND dmg_reward_claimed=0
                 """, (clan_id, date))
                 if cur.rowcount:
                     c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",
-                              (DAILY_QUEST_DMG_REWARD, clan_id))
+                              (reward1, clan_id))
                     rewarded = True
-            if row["boss_damage"] >= DAILY_QUEST_DMG2_TARGET and not row["dmg2_reward_claimed"]:
+            if row["boss_damage"] >= target2 and not row["dmg2_reward_claimed"]:
                 cur = c.execute("""
                     UPDATE clan_daily_quests SET dmg2_reward_claimed=1
                     WHERE clan_id=? AND quest_date=? AND dmg2_reward_claimed=0
                 """, (clan_id, date))
                 if cur.rowcount:
                     c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",
-                              (DAILY_QUEST_DMG2_REWARD, clan_id))
+                              (reward2, clan_id))
                     rewarded2 = True
+            if rewarded or rewarded2:
+                _maybe_rank_up(c, clan_id)
     return {
         "ok": True, "clan_id": clan_id,
-        "rewarded": rewarded, "reward": DAILY_QUEST_DMG_REWARD,
-        "rewarded2": rewarded2, "reward2": DAILY_QUEST_DMG2_REWARD,
+        "rewarded": rewarded, "reward": reward1,
+        "rewarded2": rewarded2, "reward2": reward2,
     }
 
 
@@ -901,10 +1020,11 @@ def add_clan_mine_earnings(uid: int, amount: int) -> dict:
     """
     Вызывать каждый раз, когда игрок продаёт руду / зарабатывает монеты в шахте.
     Сумма суммируется в общий дневной прогресс клана игрока.
-    Пороговые задания (нарастающие, кланом суммарно за день):
-      DAILY_QUEST_MINE1_TARGET → DAILY_QUEST_MINE1_REWARD в казну
-      DAILY_QUEST_MINE2_TARGET → DAILY_QUEST_MINE2_REWARD в казну
-      DAILY_QUEST_MINE3_TARGET → DAILY_QUEST_MINE3_REWARD в казну
+    Пороговые задания (нарастающие, кланом суммарно за день), цели и
+    награды масштабируются множителем ранга клана (x1/x2/x4/x8/x16):
+      DAILY_QUEST_MINE1_TARGET * mult → DAILY_QUEST_MINE1_REWARD * mult в казну
+      DAILY_QUEST_MINE2_TARGET * mult → DAILY_QUEST_MINE2_REWARD * mult в казну
+      DAILY_QUEST_MINE3_TARGET * mult → DAILY_QUEST_MINE3_REWARD * mult в казну
     Каждая награда выдаётся один раз за день.
     """
     if amount <= 0:
@@ -920,6 +1040,7 @@ def add_clan_mine_earnings(uid: int, amount: int) -> dict:
     rewarded_tiers = []
     with _clan_lock(clan_id):
         with _immediate_tx() as c:
+            mult = _clan_rank_multiplier_tx(c, clan_id)
             _ensure_daily_quest_row(c, clan_id, date)
             c.execute("""
                 UPDATE clan_daily_quests SET mine_earned = mine_earned + ?
@@ -931,9 +1052,9 @@ def add_clan_mine_earnings(uid: int, amount: int) -> dict:
             """, (clan_id, date)).fetchone()
             earned = row["mine_earned"]
             tiers = [
-                (DAILY_QUEST_MINE1_TARGET, DAILY_QUEST_MINE1_REWARD, "mine1_reward_claimed", row["mine1_reward_claimed"]),
-                (DAILY_QUEST_MINE2_TARGET, DAILY_QUEST_MINE2_REWARD, "mine2_reward_claimed", row["mine2_reward_claimed"]),
-                (DAILY_QUEST_MINE3_TARGET, DAILY_QUEST_MINE3_REWARD, "mine3_reward_claimed", row["mine3_reward_claimed"]),
+                (DAILY_QUEST_MINE1_TARGET * mult, DAILY_QUEST_MINE1_REWARD * mult, "mine1_reward_claimed", row["mine1_reward_claimed"]),
+                (DAILY_QUEST_MINE2_TARGET * mult, DAILY_QUEST_MINE2_REWARD * mult, "mine2_reward_claimed", row["mine2_reward_claimed"]),
+                (DAILY_QUEST_MINE3_TARGET * mult, DAILY_QUEST_MINE3_REWARD * mult, "mine3_reward_claimed", row["mine3_reward_claimed"]),
             ]
             for target, reward, col, claimed in tiers:
                 if earned >= target and not claimed:
@@ -945,14 +1066,19 @@ def add_clan_mine_earnings(uid: int, amount: int) -> dict:
                         c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?", (reward, clan_id))
                         total_reward += reward
                         rewarded_tiers.append(target)
+            if total_reward:
+                _maybe_rank_up(c, clan_id)
     return {"ok": True, "clan_id": clan_id, "rewarded_tiers": rewarded_tiers, "total_reward": total_reward}
 
 
 def register_clan_boss_kill(uid: int) -> dict:
     """
     Вызывать каждый раз, когда игрок убивает босса.
-    Задание общее: засчитывается клану по первому убийству любым участником.
-    Если ещё не выполнено сегодня — клан получает DAILY_QUEST_KILL_REWARD в казну.
+    Задание общее на весь клан: нужно суммарно DAILY_QUEST_KILL_BASE_TARGET *
+    multiplier убийств боссов (любыми участниками) за день — на ранге 1
+    достаточно 1 килла, на ранге 5 нужно уже 16. Награда
+    DAILY_QUEST_KILL_REWARD * multiplier выдаётся один раз за день,
+    как только цель достигнута.
     """
     m = get_member(uid)
     if not m:
@@ -962,16 +1088,30 @@ def register_clan_boss_kill(uid: int) -> dict:
     rewarded = False
     with _clan_lock(clan_id):
         with _immediate_tx() as c:
+            mult   = _clan_rank_multiplier_tx(c, clan_id)
+            target = DAILY_QUEST_KILL_BASE_TARGET * mult
+            reward = DAILY_QUEST_KILL_REWARD * mult
+
             _ensure_daily_quest_row(c, clan_id, date)
-            cur = c.execute("""
-                UPDATE clan_daily_quests SET kill_reward_claimed=1
-                WHERE clan_id=? AND quest_date=? AND kill_reward_claimed=0
+            c.execute("""
+                UPDATE clan_daily_quests SET boss_kills = boss_kills + 1
+                WHERE clan_id=? AND quest_date=?
             """, (clan_id, date))
-            if cur.rowcount:
-                c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",
-                          (DAILY_QUEST_KILL_REWARD, clan_id))
-                rewarded = True
-    return {"ok": True, "clan_id": clan_id, "rewarded": rewarded, "reward": DAILY_QUEST_KILL_REWARD}
+            row = c.execute("""
+                SELECT boss_kills, kill_reward_claimed FROM clan_daily_quests
+                WHERE clan_id=? AND quest_date=?
+            """, (clan_id, date)).fetchone()
+            if row["boss_kills"] >= target and not row["kill_reward_claimed"]:
+                cur = c.execute("""
+                    UPDATE clan_daily_quests SET kill_reward_claimed=1
+                    WHERE clan_id=? AND quest_date=? AND kill_reward_claimed=0
+                """, (clan_id, date))
+                if cur.rowcount:
+                    c.execute("UPDATE clans SET treasury=treasury+? WHERE id=?",
+                              (reward, clan_id))
+                    rewarded = True
+                    _maybe_rank_up(c, clan_id)
+    return {"ok": True, "clan_id": clan_id, "rewarded": rewarded, "reward": reward}
 
 
 
@@ -1091,6 +1231,7 @@ def klan_card_text(clan: dict, member_count: int, lang: str = "ru") -> str:
             f'{e_sword} <b>{name}</b> <code>#{clan["id"]}</code>\n'
             f'━━━━━━━━━━━━━━━━━━━━\n\n'
             f'<blockquote>'
+            f'{e_star} <b>Rank:</b> {clan.get("rank") or 1}/{MAX_CLAN_RANK} · {get_clan_rank_info(clan.get("rank") or 1)["name_en"]}\n'
             f'{e_people} <b>Members:</b> {member_count}/{MAX_CLAN_MEMBERS}\n'
             f'{e_chest} <b>Treasury:</b> {_fmt(clan["treasury"])} {COIN}\n'
             f'{e_star} <b>Founded:</b> {created}\n'
@@ -1102,12 +1243,57 @@ def klan_card_text(clan: dict, member_count: int, lang: str = "ru") -> str:
         f'{e_sword} <b>{name}</b> <code>#{clan["id"]}</code>\n'
         f'━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>'
+        f'{e_star} <b>Ранг:</b> {clan.get("rank") or 1}/{MAX_CLAN_RANK} · {get_clan_rank_info(clan.get("rank") or 1)["name_ru"]}\n'
         f'{e_people} <b>Участников:</b> {member_count}/{MAX_CLAN_MEMBERS}\n'
         f'{e_chest} <b>Казна:</b> {_fmt(clan["treasury"])} {COIN}\n'
         f'{e_star} <b>Основан:</b> {created}\n'
         f'{e_apps} <b>О клане:</b> <i>{desc}</i>'
         f'{chat_line_ru}'
         f'</blockquote>'
+    )
+
+
+def _clan_rank_block(clan: dict, member_count: int, lang: str = "ru") -> str:
+    """Блок с текущим рангом клана и прогрессом до следующего (для my_klan_text)."""
+    rank      = clan.get("rank") or 1
+    rank_info = get_clan_rank_info(rank)
+    rank_name = rank_info["name_en"] if lang == "en" else rank_info["name_ru"]
+    e_star    = _e(_E_STAR, "⭐")
+    stars     = "⭐" * rank
+
+    next_info = get_next_rank_info(rank)
+    if next_info is None:
+        max_label = "Max rank" if lang == "en" else "Максимальный ранг"
+        return (
+            f'{e_star} <b>{"Rank" if lang=="en" else "Ранг"} {rank}/{MAX_CLAN_RANK} · {rank_name}</b> {stars}\n'
+            f'<i>{max_label} — {"quests" if lang=="en" else "задания"} x{rank_info["multiplier"]}</i>'
+        )
+
+    treasury = clan.get("treasury", 0)
+    need_members  = max(0, next_info["members_required"] - member_count)
+    need_treasury = max(0, next_info["treasury_required"] - treasury)
+    next_name = next_info["name_en"] if lang == "en" else next_info["name_ru"]
+
+    if lang == "en":
+        req_lines = []
+        if need_members > 0:
+            req_lines.append(f'👥 {member_count}/{next_info["members_required"]} members')
+        if need_treasury > 0:
+            req_lines.append(f'💰 {_fmt(treasury)}/{_fmt(next_info["treasury_required"])} {COIN}')
+        req_text = "  ·  ".join(req_lines) if req_lines else "ready to rank up!"
+        return (
+            f'{e_star} <b>Rank {rank}/{MAX_CLAN_RANK} · {rank_name}</b> {stars} <i>(quests x{rank_info["multiplier"]})</i>\n'
+            f'<i>Next: {next_name} (x{next_info["multiplier"]}) — {req_text}</i>'
+        )
+    req_lines = []
+    if need_members > 0:
+        req_lines.append(f'👥 {member_count}/{next_info["members_required"]} участников')
+    if need_treasury > 0:
+        req_lines.append(f'💰 {_fmt(treasury)}/{_fmt(next_info["treasury_required"])} {COIN}')
+    req_text = "  ·  ".join(req_lines) if req_lines else "все условия выполнены!"
+    return (
+        f'{e_star} <b>Ранг {rank}/{MAX_CLAN_RANK} · {rank_name}</b> {stars} <i>(задания x{rank_info["multiplier"]})</i>\n'
+        f'<i>Следующий: {next_name} (x{next_info["multiplier"]}) — {req_text}</i>'
     )
 
 
@@ -1135,6 +1321,8 @@ def my_klan_text(clan: dict, member: dict, member_count: int, lang: str = "ru") 
         chat_line_ru = ""
         chat_line_en = ""
 
+    rank_block = _clan_rank_block(clan, member_count, lang)
+
     if lang == "en":
         role_label = f'{e_crown} <b>Creator</b>' if member['role'] == 'creator' else '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji> <b>Member</b>'
         return (
@@ -1146,7 +1334,8 @@ def my_klan_text(clan: dict, member: dict, member_count: int, lang: str = "ru") 
             f'{e_chest} <b>Treasury:</b> {_fmt(clan["treasury"])} {COIN}\n'
             f'{e_plus} <b>Your contribution:</b> {_fmt(member["contributed"])} {COIN}'
             f'{chat_line_en}'
-            f'</blockquote>'
+            f'</blockquote>\n'
+            f'<blockquote>{rank_block}</blockquote>'
         )
     role_label = f'{e_crown} <b>Создатель</b>' if member['role'] == 'creator' else '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji> <b>Участник</b>'
     return (
@@ -1158,8 +1347,11 @@ def my_klan_text(clan: dict, member: dict, member_count: int, lang: str = "ru") 
         f'{e_chest} <b>Казна:</b> {_fmt(clan["treasury"])} {COIN}\n'
         f'{e_plus} <b>Твой вклад:</b> {_fmt(member["contributed"])} {COIN}'
         f'{chat_line_ru}'
-        f'</blockquote>'
+        f'</blockquote>\n'
+        f'<blockquote>{rank_block}</blockquote>'
     )
+
+
 
 
 def klan_members_text(clan: dict, members: list[dict], lang: str = "ru") -> str:
@@ -1278,9 +1470,11 @@ def klan_top_text(clans: list[dict], lang: str = "ru") -> str:
         )
     lines = []
     for i, cl in enumerate(clans, 1):
-        rank = _rank_emoji(i)
+        place = _rank_emoji(i)
+        clan_rank = cl.get("rank") or 1
+        rank_badge = "⭐" * clan_rank
         lines.append(
-            f'{rank} <b>{_esc(cl["name"])}</b>\n'
+            f'{place} <b>{_esc(cl["name"])}</b> {rank_badge}\n'
             f'    {e_people} <b>{cl["member_count"]}</b> · {e_chest} <b>{_fmt(cl["treasury"])}</b> {COIN}'
         )
     body = "\n\n".join(lines)
@@ -1353,10 +1547,24 @@ def klan_quests_text(clan: dict, quests: dict, lang: str = "ru") -> str:
     e_chest = _e(_E_CHEST, "💰")
     e_check = _e(_E_CHECK, "✅")
     e_cross = _e(_E_CROSS, "❌")
-    e_sword = _e(_E_SWORD, "⛏")
+    e_star  = _e(_E_STAR,  "⭐")
+
+    rank      = clan.get("rank") or 1
+    rank_info = get_clan_rank_info(rank)
+    mult      = rank_info["multiplier"]
+    rank_name = rank_info["name_en"] if lang == "en" else rank_info["name_ru"]
+
+    # Все цели/награды масштабируются множителем текущего ранга клана
+    dmg_target,   dmg_reward   = DAILY_QUEST_DMG_TARGET   * mult, DAILY_QUEST_DMG_REWARD   * mult
+    dmg2_target,  dmg2_reward  = DAILY_QUEST_DMG2_TARGET  * mult, DAILY_QUEST_DMG2_REWARD  * mult
+    kill_target,  kill_reward  = DAILY_QUEST_KILL_BASE_TARGET * mult, DAILY_QUEST_KILL_REWARD * mult
+    mine1_target, mine1_reward = DAILY_QUEST_MINE1_TARGET * mult, DAILY_QUEST_MINE1_REWARD * mult
+    mine2_target, mine2_reward = DAILY_QUEST_MINE2_TARGET * mult, DAILY_QUEST_MINE2_REWARD * mult
+    mine3_target, mine3_reward = DAILY_QUEST_MINE3_TARGET * mult, DAILY_QUEST_MINE3_REWARD * mult
 
     dmg        = quests["boss_damage"]
     dmg_done   = bool(quests["dmg_reward_claimed"])
+    kills      = quests.get("boss_kills", 0)
     kill_done  = bool(quests["kill_reward_claimed"])
     dmg2_done  = bool(quests.get("dmg2_reward_claimed", 0))
     mine       = quests.get("mine_earned", 0)
@@ -1371,78 +1579,98 @@ def klan_quests_text(clan: dict, quests: dict, lang: str = "ru") -> str:
     mine2_icon = e_check if mine2_done else e_cross
     mine3_icon = e_check if mine3_done else e_cross
 
-    dmg_bar    = _progress_bar(dmg, DAILY_QUEST_DMG_TARGET)
-    dmg_shown  = min(dmg, DAILY_QUEST_DMG_TARGET)
-    dmg2_bar   = _progress_bar(dmg, DAILY_QUEST_DMG2_TARGET)
-    dmg2_shown = min(dmg, DAILY_QUEST_DMG2_TARGET)
+    dmg_bar    = _progress_bar(dmg, dmg_target)
+    dmg_shown  = min(dmg, dmg_target)
+    dmg2_bar   = _progress_bar(dmg, dmg2_target)
+    dmg2_shown = min(dmg, dmg2_target)
 
-    mine1_bar   = _progress_bar(mine, DAILY_QUEST_MINE1_TARGET)
-    mine1_shown = min(mine, DAILY_QUEST_MINE1_TARGET)
-    mine2_bar   = _progress_bar(mine, DAILY_QUEST_MINE2_TARGET)
-    mine2_shown = min(mine, DAILY_QUEST_MINE2_TARGET)
-    mine3_bar   = _progress_bar(mine, DAILY_QUEST_MINE3_TARGET)
-    mine3_shown = min(mine, DAILY_QUEST_MINE3_TARGET)
+    mine1_bar   = _progress_bar(mine, mine1_target)
+    mine1_shown = min(mine, mine1_target)
+    mine2_bar   = _progress_bar(mine, mine2_target)
+    mine2_shown = min(mine, mine2_target)
+    mine3_bar   = _progress_bar(mine, mine3_target)
+    mine3_shown = min(mine, mine3_target)
+
+    kill_bar    = _progress_bar(kills, kill_target)
+    kill_shown  = min(kills, kill_target)
+
+    rank_line_en = f'{e_star} <b>Rank {rank}/{MAX_CLAN_RANK} · {rank_name}</b> — quests x{mult}'
+    rank_line_ru = f'{e_star} <b>Ранг {rank}/{MAX_CLAN_RANK} · {rank_name}</b> — задания x{mult}'
 
     if lang == "en":
+        kill_line = (
+            f'    <i>Shared quest — counts for any clan member</i>'
+            if kill_target <= 1 else
+            f'    {kill_bar}\n    {kill_shown} / {kill_target} kills\n'
+            f'    <i>Shared quest — counts for any clan member</i>'
+        )
         return (
             f'{e_hunt} <b>{name} — Daily Quests</b>\n'
-            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n'
+            f'{rank_line_en}\n\n'
             f'<blockquote>'
-            f'{dmg_icon} <b>1. Deal {_fmt(DAILY_QUEST_DMG_TARGET)} damage to the boss</b>\n'
+            f'{dmg_icon} <b>1. Deal {_fmt(dmg_target)} damage to the boss</b>\n'
             f'    {dmg_bar}\n'
-            f'    {_fmt(dmg_shown)} / {_fmt(DAILY_QUEST_DMG_TARGET)}\n'
-            f'    {e_chest} Reward: <b>{_fmt(DAILY_QUEST_DMG_REWARD)}</b> {COIN} to clan treasury\n\n'
-            f'{dmg2_icon} <b>2. Deal {_fmt(DAILY_QUEST_DMG2_TARGET)} damage to the boss</b>\n'
+            f'    {_fmt(dmg_shown)} / {_fmt(dmg_target)}\n'
+            f'    {e_chest} Reward: <b>{_fmt(dmg_reward)}</b> {COIN} to clan treasury\n\n'
+            f'{dmg2_icon} <b>2. Deal {_fmt(dmg2_target)} damage to the boss</b>\n'
             f'    {dmg2_bar}\n'
-            f'    {_fmt(dmg2_shown)} / {_fmt(DAILY_QUEST_DMG2_TARGET)}\n'
-            f'    {e_chest} Reward: <b>{_fmt(DAILY_QUEST_DMG2_REWARD)}</b> {COIN} to clan treasury\n\n'
-            f'{kill_icon} <b>3. Defeat any boss</b>\n'
-            f'    <i>Shared quest — counts for any clan member</i>\n'
-            f'    {e_chest} Reward: <b>{_fmt(DAILY_QUEST_KILL_REWARD)}</b> {COIN} to clan treasury\n\n'
-            f'{mine1_icon} <b>4. Earn {_fmt(DAILY_QUEST_MINE1_TARGET)} {COIN} from the mine</b>\n'
+            f'    {_fmt(dmg2_shown)} / {_fmt(dmg2_target)}\n'
+            f'    {e_chest} Reward: <b>{_fmt(dmg2_reward)}</b> {COIN} to clan treasury\n\n'
+            f'{kill_icon} <b>3. Defeat {kill_target} boss(es)</b>\n'
+            f'{kill_line}\n'
+            f'    {e_chest} Reward: <b>{_fmt(kill_reward)}</b> {COIN} to clan treasury\n\n'
+            f'{mine1_icon} <b>4. Earn {_fmt(mine1_target)} {COIN} from the mine</b>\n'
             f'    {mine1_bar}\n'
-            f'    {_fmt(mine1_shown)} / {_fmt(DAILY_QUEST_MINE1_TARGET)}\n'
-            f'    {e_chest} Reward: <b>{_fmt(DAILY_QUEST_MINE1_REWARD)}</b> {COIN} to clan treasury\n\n'
-            f'{mine2_icon} <b>5. Earn {_fmt(DAILY_QUEST_MINE2_TARGET)} {COIN} from the mine</b>\n'
+            f'    {_fmt(mine1_shown)} / {_fmt(mine1_target)}\n'
+            f'    {e_chest} Reward: <b>{_fmt(mine1_reward)}</b> {COIN} to clan treasury\n\n'
+            f'{mine2_icon} <b>5. Earn {_fmt(mine2_target)} {COIN} from the mine</b>\n'
             f'    {mine2_bar}\n'
-            f'    {_fmt(mine2_shown)} / {_fmt(DAILY_QUEST_MINE2_TARGET)}\n'
-            f'    {e_chest} Reward: <b>{_fmt(DAILY_QUEST_MINE2_REWARD)}</b> {COIN} to clan treasury\n\n'
-            f'{mine3_icon} <b>6. Earn {_fmt(DAILY_QUEST_MINE3_TARGET)} {COIN} from the mine</b>\n'
+            f'    {_fmt(mine2_shown)} / {_fmt(mine2_target)}\n'
+            f'    {e_chest} Reward: <b>{_fmt(mine2_reward)}</b> {COIN} to clan treasury\n\n'
+            f'{mine3_icon} <b>6. Earn {_fmt(mine3_target)} {COIN} from the mine</b>\n'
             f'    {mine3_bar}\n'
-            f'    {_fmt(mine3_shown)} / {_fmt(DAILY_QUEST_MINE3_TARGET)}\n'
-            f'    {e_chest} Reward: <b>{_fmt(DAILY_QUEST_MINE3_REWARD)}</b> {COIN} to clan treasury'
+            f'    {_fmt(mine3_shown)} / {_fmt(mine3_target)}\n'
+            f'    {e_chest} Reward: <b>{_fmt(mine3_reward)}</b> {COIN} to clan treasury'
             f'</blockquote>\n\n'
-            f'<i>Quests reset every day at 00:00 UTC</i>'
+            f'<i>Quests reset every day at 00:00 UTC · higher clan rank = harder quests, bigger rewards</i>'
         )
+    kill_line = (
+        f'    <i>Общее задание — засчитывается любому участнику клана</i>'
+        if kill_target <= 1 else
+        f'    {kill_bar}\n    {kill_shown} / {kill_target} убийств\n'
+        f'    <i>Общее задание — засчитывается любому участнику клана</i>'
+    )
     return (
         f'{e_hunt} <b>{name} — Ежедневные задания</b>\n'
-        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n'
+        f'{rank_line_ru}\n\n'
         f'<blockquote>'
-        f'{dmg_icon} <b>1. Нанести {_fmt(DAILY_QUEST_DMG_TARGET)} урона боссу</b>\n'
+        f'{dmg_icon} <b>1. Нанести {_fmt(dmg_target)} урона боссу</b>\n'
         f'    {dmg_bar}\n'
-        f'    {_fmt(dmg_shown)} / {_fmt(DAILY_QUEST_DMG_TARGET)}\n'
-        f'    {e_chest} Награда: <b>{_fmt(DAILY_QUEST_DMG_REWARD)}</b> {COIN} в казну клана\n\n'
-        f'{dmg2_icon} <b>2. Нанести {_fmt(DAILY_QUEST_DMG2_TARGET)} урона боссу</b>\n'
+        f'    {_fmt(dmg_shown)} / {_fmt(dmg_target)}\n'
+        f'    {e_chest} Награда: <b>{_fmt(dmg_reward)}</b> {COIN} в казну клана\n\n'
+        f'{dmg2_icon} <b>2. Нанести {_fmt(dmg2_target)} урона боссу</b>\n'
         f'    {dmg2_bar}\n'
-        f'    {_fmt(dmg2_shown)} / {_fmt(DAILY_QUEST_DMG2_TARGET)}\n'
-        f'    {e_chest} Награда: <b>{_fmt(DAILY_QUEST_DMG2_REWARD)}</b> {COIN} в казну клана\n\n'
-        f'{kill_icon} <b>3. Убить любого босса</b>\n'
-        f'    <i>Общее задание — засчитывается любому участнику клана</i>\n'
-        f'    {e_chest} Награда: <b>{_fmt(DAILY_QUEST_KILL_REWARD)}</b> {COIN} в казну клана\n\n'
-        f'{mine1_icon} <b>4. Заработать {_fmt(DAILY_QUEST_MINE1_TARGET)} {COIN} с шахты</b>\n'
+        f'    {_fmt(dmg2_shown)} / {_fmt(dmg2_target)}\n'
+        f'    {e_chest} Награда: <b>{_fmt(dmg2_reward)}</b> {COIN} в казну клана\n\n'
+        f'{kill_icon} <b>3. Убить {kill_target} босса(ов)</b>\n'
+        f'{kill_line}\n'
+        f'    {e_chest} Награда: <b>{_fmt(kill_reward)}</b> {COIN} в казну клана\n\n'
+        f'{mine1_icon} <b>4. Заработать {_fmt(mine1_target)} {COIN} с шахты</b>\n'
         f'    {mine1_bar}\n'
-        f'    {_fmt(mine1_shown)} / {_fmt(DAILY_QUEST_MINE1_TARGET)}\n'
-        f'    {e_chest} Награда: <b>{_fmt(DAILY_QUEST_MINE1_REWARD)}</b> {COIN} в казну клана\n\n'
-        f'{mine2_icon} <b>5. Заработать {_fmt(DAILY_QUEST_MINE2_TARGET)} {COIN} с шахты</b>\n'
+        f'    {_fmt(mine1_shown)} / {_fmt(mine1_target)}\n'
+        f'    {e_chest} Награда: <b>{_fmt(mine1_reward)}</b> {COIN} в казну клана\n\n'
+        f'{mine2_icon} <b>5. Заработать {_fmt(mine2_target)} {COIN} с шахты</b>\n'
         f'    {mine2_bar}\n'
-        f'    {_fmt(mine2_shown)} / {_fmt(DAILY_QUEST_MINE2_TARGET)}\n'
-        f'    {e_chest} Награда: <b>{_fmt(DAILY_QUEST_MINE2_REWARD)}</b> {COIN} в казну клана\n\n'
-        f'{mine3_icon} <b>6. Заработать {_fmt(DAILY_QUEST_MINE3_TARGET)} {COIN} с шахты</b>\n'
+        f'    {_fmt(mine2_shown)} / {_fmt(mine2_target)}\n'
+        f'    {e_chest} Награда: <b>{_fmt(mine2_reward)}</b> {COIN} в казну клана\n\n'
+        f'{mine3_icon} <b>6. Заработать {_fmt(mine3_target)} {COIN} с шахты</b>\n'
         f'    {mine3_bar}\n'
-        f'    {_fmt(mine3_shown)} / {_fmt(DAILY_QUEST_MINE3_TARGET)}\n'
-        f'    {e_chest} Награда: <b>{_fmt(DAILY_QUEST_MINE3_REWARD)}</b> {COIN} в казну клана'
+        f'    {_fmt(mine3_shown)} / {_fmt(mine3_target)}\n'
+        f'    {e_chest} Награда: <b>{_fmt(mine3_reward)}</b> {COIN} в казну клана'
         f'</blockquote>\n\n'
-        f'<i>Задания обновляются каждый день в 00:00 UTC</i>'
+        f'<i>Задания обновляются каждый день в 00:00 UTC · чем выше ранг клана, тем сложнее задания и больше награда</i>'
     )
 
 
