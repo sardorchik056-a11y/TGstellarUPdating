@@ -911,6 +911,7 @@ def sell_all_ores(data: dict, lang: str = "ru") -> tuple:
             lines.append(f"<blockquote><i><b>{_ore_name(ore, lang)}: {qty} (≈ {_fmt_num(earned)} {COIN})</b></i></blockquote>")
             data["ores"][ore["key"]] = 0
     data["balance"] = data.get("balance", 0) + total
+    data["mine_total_sold"] = data.get("mine_total_sold", 0) + total
     report = "\n".join(lines) if lines else f"  {t(lang, 'mine_sell_nothing')}"
     return total, report
 
@@ -1010,6 +1011,10 @@ def stop_mine(data: dict, lang: str = "ru") -> tuple:
     # Забираем всё что накопилось
     prog, collect_text = collect_mine(data, lang)
 
+    # Считаем это досрочной остановкой для достижений (только если сессия не была уже завершена)
+    if not prog["finished"]:
+        data["mine_early_stops"] = data.get("mine_early_stops", 0) + 1
+
     # Сбрасываем шахту в исходное состояние
     data["mine_start"]          = None
     data["mine_campaigns_done"] = 0
@@ -1042,8 +1047,18 @@ def collect_mine(data: dict, lang: str = "ru") -> tuple:
             data["ores"][ore["key"]] = data["ores"].get(ore["key"], 0) + qty
     data["total_ticks"] = tick_counter  # сохраняем обратно в профиль
     data["mine_campaigns_done"] = prog["campaigns_done"]
+
+    # ── Копим счётчики для достижений (никогда не сбрасываются) ──
+    data["mine_lifetime_campaigns"]  = data.get("mine_lifetime_campaigns", 0) + new_campaigns
+    total_ore_count_all = sum(results.values())
+    data["mine_total_ore_collected"] = data.get("mine_total_ore_collected", 0) + total_ore_count_all
+    lifetime_counts = data.setdefault("mine_lifetime_ore_counts", {})
+    for key, qty in results.items():
+        lifetime_counts[key] = lifetime_counts.get(key, 0) + qty
+
     if prog["finished"]:
         data["mine_collected"] = True
+        data["mine_sessions_completed"] = data.get("mine_sessions_completed", 0) + 1
     total_ore_count = sum(results.values())
     add_xp(data, total_ore_count * XP_PER_ORE)
     if results:
@@ -1091,14 +1106,21 @@ def get_pickaxe_page(pick_key: str) -> int:
 
 def init_mine_data() -> dict:
     return {
-        "ores":                {o["key"]: 0 for o in ORES},
-        "pickaxe":             "wood_1",
-        "owned_pickaxes":      ["wood_1"],
-        "mine_duration_key":   "5min",
-        "owned_durations":     ["5min"],
-        "mine_start":          None,
-        "mine_campaigns_done": 0,
-        "mine_collected":      False,
+        "ores":                     {o["key"]: 0 for o in ORES},
+        "pickaxe":                  "wood_1",
+        "owned_pickaxes":           ["wood_1"],
+        "mine_duration_key":        "5min",
+        "owned_durations":          ["5min"],
+        "mine_start":               None,
+        "mine_campaigns_done":      0,
+        "mine_collected":           False,
+        # ── Счётчики для достижений (никогда не сбрасываются продажей/остановкой) ──
+        "mine_lifetime_campaigns":  0,   # всего кампаний добычи за всю игру
+        "mine_sessions_completed":  0,   # всего полностью завершённых сессий шахты
+        "mine_early_stops":         0,   # всего досрочных остановок шахты
+        "mine_total_ore_collected": 0,   # всего единиц руды добыто за игру
+        "mine_total_sold":          0,   # всего монет выручено с продажи руды
+        "mine_lifetime_ore_counts": {},  # {ore_key: qty} — сколько руды каждого вида добыто за игру
     }
 
 
