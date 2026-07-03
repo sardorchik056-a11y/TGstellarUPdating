@@ -86,6 +86,11 @@ from hunt import (
     _E,
 )
 
+from achieves import (
+    check_achievements, achievement_unlocked_text,
+    achievements_list_text, achievements_keyboard, achievements_summary_line,
+)
+
 from stats import init_stats_db, track_user, stats_text, stats_keyboard
 from settings import (
     settings_text, settings_keyboard,
@@ -1495,6 +1500,29 @@ async def cmd_arsenal(message: Message):
     )
 
 
+@dp.message(Command("достижения", "ачивки", "achievements", "ach"))
+@dp.message(_text_in("достижения", "ачивки", "achievements", "ach"))
+async def cmd_achievements(message: Message):
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u):
+        return
+    newly = check_achievements(u)
+    save_user(message.from_user.id, u)
+    await message.reply(
+        achievements_list_text(u, lang),
+        parse_mode="HTML",
+        reply_markup=achievements_keyboard(lang),
+    )
+    for _ach in newly:
+        try:
+            await message.answer(achievement_unlocked_text(_ach, lang), parse_mode="HTML")
+        except Exception:
+            pass
+
+
+
 @dp.message(Command("pets", "питомцы", "pet", "питомец"))
 @dp.message(_text_in("питомцы", "pets", "питомец", "pet"))
 async def cmd_pets(message: Message):
@@ -2843,6 +2871,8 @@ async def handle_captcha_answer(message: Message):
                         notif_mode   = "rent"
 
                     if ok:
+                        _new_ach_sender    = check_achievements(u_fresh)
+                        _new_ach_recipient = check_achievements(r_fresh)
                         _su_ars(uid, u_fresh)
                         _su_ars(recipient_data["id"], r_fresh)
                         await message.reply(confirm_text, parse_mode="HTML", reply_markup=arsenal_back_keyboard())
@@ -2855,6 +2885,20 @@ async def handle_captcha_answer(message: Message):
                             )
                         except Exception:
                             pass
+                        # Уведомления о новых достижениях (у отправителя и получателя)
+                        for _ach in _new_ach_sender:
+                            try:
+                                await message.answer(achievement_unlocked_text(_ach, lang), parse_mode="HTML")
+                            except Exception:
+                                pass
+                        for _ach in _new_ach_recipient:
+                            try:
+                                _recip_lang = get_lang(r_fresh)
+                                await bot.send_message(
+                                    recipient_data["id"], achievement_unlocked_text(_ach, _recip_lang), parse_mode="HTML"
+                                )
+                            except Exception:
+                                pass
                     else:
                         await message.reply(
                             arsenal_error_text(msg),
@@ -4492,6 +4536,14 @@ async def handle_callback(call: CallbackQuery):
             await edit(arsenal_main_text(data), arsenal_main_keyboard(data))
             return
 
+        # ===== ДОСТИЖЕНИЯ: фильтр по категории =====
+        if cd.startswith("ach_cat_"):
+            cat = cd.removeprefix("ach_cat_")
+            cat = None if cat == "all" else cat
+            await call.answer()
+            await edit(achievements_list_text(data, lang, category=cat), achievements_keyboard(lang))
+            return
+
         # ===== АРСЕНАЛ: меню выбора меча для экипировки =====
         if cd == "arsenal_equip_menu":
             await call.answer()
@@ -4594,6 +4646,14 @@ async def handle_callback(call: CallbackQuery):
             else:
                 await call.answer()
             await edit(txt, kb)
+            # ── Уведомления о новых достижениях (за удар/убийство босса) ──
+            for _new_ach in result.get("new_achievements", []):
+                try:
+                    await bot.send_message(
+                        user.id, achievement_unlocked_text(_new_ach, lang), parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
             return
 
         # ===== КЕЙС АРТЕФАКТОВ: экран информации =====
