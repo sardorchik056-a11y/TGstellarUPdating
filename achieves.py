@@ -1,6 +1,6 @@
 # ============================================================
 #  achieves.py  —  Система достижений
-#  112 достижений: деньги, уровень, шахта, охота на боссов,
+#  123 достижения: деньги, уровень, шахта, охота на боссов,
 #  арсенал (мечи), дуэли, кейсы/артефакты (15, живые данные из shop.py),
 #  питомцы, клан (15, живые данные из klan.py), рефералы, донат,
 #  вклады, разное.
@@ -88,11 +88,22 @@
 #  хендлере successful_payment, и сразу после activate_status() — в
 #  хендлере оплаты VIP/Premium статуса.
 #
+#  👥 РЕФЕРАЛЫ — раздел подключён к реальным данным refs.py (15 достижений,
+#  больше не заглушка). refs.py хранит свою статистику в СВОЕЙ SQLite-базе
+#  (таблицы refs/ref_stats), а не в data, поэтому достижения читают её
+#  напрямую через _ref_stats(d)/_ref_in_top(d)/_ref_total_invited(d)/
+#  _ref_captcha_passed(d) (лениво импортируют refs.get_ref_stats/get_reftop/
+#  get_referrals_list/is_captcha_passed по data["id"]) — синхронизировать
+#  ничего не нужно, они всегда живые. reward_inviter() в refs.py сам
+#  инкрементирует total_refs/premium_refs/earned_coins при подтверждении
+#  реферала, а SQL-триггер trg_ref_income сам пополняет earned_coins с
+#  процентного дохода. Просто вызывайте check_achievements() сразу после
+#  reward_inviter() (и после прохождения капчи) в соответствующих хендлерах.
+#
 #  НОВЫЕ счётчики, которых в data пока нет — модуль просто вернёт для них
 #  прогресс 0/цель, пока вы не начнёте их инкрементировать в нужных местах
 #  (по одной строке в нужном хендлере, ничего сложного):
 #    stats_boss_hits, stats_boss_kills   — в hunt_strike после успешного удара
-#    ref_count                            — в хендлере обработки /start c реф-ссылкой
 #    deposits_opened, deposits_claimed    — после _cdl_open_deposit / _cdl_claim
 #    promo_activations                    — после успешного activate_promo(...)
 #    daily_streak                         — уже может считаться в cmd_daily,
@@ -370,8 +381,66 @@ def _active_status(d: dict) -> str:
             return sd.get("tier", "standart")
         return "standart"
 
+def _ref_stats(d: dict) -> dict:
+    """Живая статистика рефералов игрока — читает refs.get_ref_stats(uid)
+    напрямую из БД refs.py (таблица ref_stats), а не из data. refs.py сам
+    ведёт total_refs/premium_refs/earned_coins через reward_inviter() и
+    SQL-триггер % дохода — синхронизировать в data ничего не нужно."""
+    try:
+        from refs import get_ref_stats
+        uid = d.get("id")
+        return get_ref_stats(uid) if uid else {"total_refs": 0, "premium_refs": 0, "earned_coins": 0}
+    except Exception:
+        return {"total_refs": 0, "premium_refs": 0, "earned_coins": 0}
 
 
+def _ref_in_top(d: dict, period: str = "alltime", rank: int = 10) -> bool:
+    """True, если игрок входит в топ-`rank` рефереров за период — живые
+    данные refs.get_reftop(period)."""
+    try:
+        from refs import get_reftop
+        uid = d.get("id")
+        if not uid:
+            return False
+        leaders = get_reftop(period)[:rank]
+        return any(r.get("uid") == uid for r in leaders)
+    except Exception:
+        return False
+
+
+def _ref_total_invited(d: dict) -> int:
+    """Сколько всего людей когда-либо перешли по реф-ссылке игрока, включая
+    ещё не прошедших капчу / не принёсших награду — живой список
+    refs.get_referrals_list(uid)."""
+    try:
+        from refs import get_referrals_list
+        uid = d.get("id")
+        return len(get_referrals_list(uid)) if uid else 0
+    except Exception:
+        return 0
+
+
+def _ref_captcha_passed(d: dict) -> bool:
+    """Прошёл ли сам игрок капчу после /start — живые данные refs.is_captcha_passed(uid)."""
+    try:
+        from refs import is_captcha_passed
+        uid = d.get("id")
+        return bool(is_captcha_passed(uid)) if uid else False
+    except Exception:
+        return False
+
+
+def _ref_was_invited(d: dict) -> bool:
+    """Пришёл ли сам игрок по чьей-то реф-ссылке — живые данные refs.get_inviter(uid)."""
+    try:
+        from refs import get_inviter
+        uid = d.get("id")
+        return bool(uid) and get_inviter(uid) is not None
+    except Exception:
+        return False
+
+
+def _clan_member(d: dict) -> dict | None:
     """
     Живая (не дублируемая в data) запись игрока в клане — читает
     напрямую из БД klan.py по id игрока. Клановая система хранит своё
@@ -1187,34 +1256,119 @@ ACHIEVEMENTS = [
          reward_coins=15_000, reward_xp=60,
          name_en="Headquarters", desc_en="Link a chat to your clan"),
 
-    # ───────────── 👥 РЕФЕРАЛЫ (4) ─────────────
+    # ───────────── 👥 РЕФЕРАЛЫ (15) ─────────────
     _ach("refs_1", "👤", "Пригласил друга",
          "Пригласи 1 реферала",
          "refs",
-         lambda d: d.get("ref_count", 0) >= 1,
-         progress=lambda d: (d.get("ref_count", 0), 1),
+         lambda d: _ref_stats(d).get("total_refs", 0) >= 1,
+         progress=lambda d: (_ref_stats(d).get("total_refs", 0), 1),
          reward_coins=5_000, reward_xp=30),
 
     _ach("refs_5", "👥", "Рекрутер",
          "Пригласи 5 рефералов",
          "refs",
-         lambda d: d.get("ref_count", 0) >= 5,
-         progress=lambda d: (d.get("ref_count", 0), 5),
+         lambda d: _ref_stats(d).get("total_refs", 0) >= 5,
+         progress=lambda d: (_ref_stats(d).get("total_refs", 0), 5),
          reward_coins=25_000, reward_xp=100),
 
     _ach("refs_25", "📣", "Посол",
          "Пригласи 25 рефералов",
          "refs",
-         lambda d: d.get("ref_count", 0) >= 25,
-         progress=lambda d: (d.get("ref_count", 0), 25),
+         lambda d: _ref_stats(d).get("total_refs", 0) >= 25,
+         progress=lambda d: (_ref_stats(d).get("total_refs", 0), 25),
          reward_coins=150_000, reward_xp=300),
 
     _ach("refs_100", "🌍", "Легенда рефералки",
          "Пригласи 100 рефералов",
          "refs",
-         lambda d: d.get("ref_count", 0) >= 100,
-         progress=lambda d: (d.get("ref_count", 0), 100),
+         lambda d: _ref_stats(d).get("total_refs", 0) >= 100,
+         progress=lambda d: (_ref_stats(d).get("total_refs", 0), 100),
          reward_coins=1_000_000, reward_xp=800),
+
+    _ach("refs_500", "🏛", "Мега-амбассадор",
+         "Пригласи 500 рефералов",
+         "refs",
+         lambda d: _ref_stats(d).get("total_refs", 0) >= 500,
+         progress=lambda d: (_ref_stats(d).get("total_refs", 0), 500),
+         reward_coins=6_000_000, reward_xp=2_000,
+         name_en="Mega ambassador", desc_en="Invite 500 referrals"),
+
+    _ach("refs_premium_1", "⭐", "Премиум-приглашение",
+         "Пригласи 1 реферала с Telegram Premium",
+         "refs",
+         lambda d: _ref_stats(d).get("premium_refs", 0) >= 1,
+         progress=lambda d: (_ref_stats(d).get("premium_refs", 0), 1),
+         reward_coins=15_000, reward_xp=60,
+         name_en="Premium invite", desc_en="Invite 1 referral with Telegram Premium"),
+
+    _ach("refs_premium_10", "🌟", "Премиум-агент",
+         "Пригласи 10 рефералов с Telegram Premium",
+         "refs",
+         lambda d: _ref_stats(d).get("premium_refs", 0) >= 10,
+         progress=lambda d: (_ref_stats(d).get("premium_refs", 0), 10),
+         reward_coins=200_000, reward_xp=300,
+         name_en="Premium agent", desc_en="Invite 10 referrals with Telegram Premium"),
+
+    _ach("refs_premium_50", "💫", "Премиум-легенда",
+         "Пригласи 50 рефералов с Telegram Premium",
+         "refs",
+         lambda d: _ref_stats(d).get("premium_refs", 0) >= 50,
+         progress=lambda d: (_ref_stats(d).get("premium_refs", 0), 50),
+         reward_coins=1_500_000, reward_xp=1_200,
+         name_en="Premium legend", desc_en="Invite 50 referrals with Telegram Premium"),
+
+    _ach("refs_earned_100k", "🪙", "Пассивный доход",
+         "Заработай 100 000 монет с реф-системы",
+         "refs",
+         lambda d: _ref_stats(d).get("earned_coins", 0) >= 100_000,
+         progress=lambda d: (_ref_stats(d).get("earned_coins", 0), 100_000),
+         reward_coins=30_000, reward_xp=80,
+         name_en="Passive income", desc_en="Earn 100,000 coins from the referral system"),
+
+    _ach("refs_earned_1m", "💵", "Финансовая империя",
+         "Заработай 1 000 000 монет с реф-системы",
+         "refs",
+         lambda d: _ref_stats(d).get("earned_coins", 0) >= 1_000_000,
+         progress=lambda d: (_ref_stats(d).get("earned_coins", 0), 1_000_000),
+         reward_coins=150_000, reward_xp=250,
+         name_en="Financial empire", desc_en="Earn 1,000,000 coins from the referral system"),
+
+    _ach("refs_earned_10m", "🏦", "Реферальный магнат",
+         "Заработай 10 000 000 монет с реф-системы",
+         "refs",
+         lambda d: _ref_stats(d).get("earned_coins", 0) >= 10_000_000,
+         progress=lambda d: (_ref_stats(d).get("earned_coins", 0), 10_000_000),
+         reward_coins=800_000, reward_xp=600,
+         name_en="Referral tycoon", desc_en="Earn 10,000,000 coins from the referral system"),
+
+    _ach("refs_top10_alltime", "🏅", "В топе",
+         "Войди в топ-10 рефереров за всё время",
+         "refs",
+         lambda d: _ref_in_top(d, "alltime", 10),
+         reward_coins=100_000, reward_xp=150,
+         name_en="On the leaderboard", desc_en="Reach the all-time top-10 referrers"),
+
+    _ach("refs_top1_alltime", "👑", "Король рефералов",
+         "Займи 1 место в топе рефереров за всё время",
+         "refs",
+         lambda d: _ref_in_top(d, "alltime", 1),
+         reward_coins=500_000, reward_xp=500,
+         name_en="Referral king", desc_en="Reach #1 in the all-time referrers leaderboard"),
+
+    _ach("refs_captcha_verified", "🤖", "Не робот",
+         "Пройди проверку после /start",
+         "refs",
+         lambda d: _ref_captcha_passed(d),
+         reward_coins=1_000, reward_xp=10,
+         name_en="Not a robot", desc_en="Pass the captcha check after /start"),
+
+    _ach("refs_invited_total_20", "📈", "Инфлюенсер",
+         "Приведи по своей ссылке 20 человек (даже если ещё не все прошли капчу)",
+         "refs",
+         lambda d: _ref_total_invited(d) >= 20,
+         progress=lambda d: (_ref_total_invited(d), 20),
+         reward_coins=50_000, reward_xp=150,
+         name_en="Influencer", desc_en="Bring 20 people via your link (even before all pass the captcha)"),
 
     # ───────────── 💎 ДОНАТ (10) ─────────────
     _ach("donate_first", "💎", "Спонсор",
@@ -1335,7 +1489,7 @@ ACHIEVEMENTS = [
          reward_coins=200_000, reward_xp=300),
 ]
 
-assert len(ACHIEVEMENTS) == 112, f"Ожидалось 112 достижений, а получилось {len(ACHIEVEMENTS)}"
+assert len(ACHIEVEMENTS) == 123, f"Ожидалось 123 достижения, а получилось {len(ACHIEVEMENTS)}"
 
 ACHIEVEMENTS_BY_ID = {a["id"]: a for a in ACHIEVEMENTS}
 
