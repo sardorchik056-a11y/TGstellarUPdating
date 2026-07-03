@@ -87,7 +87,7 @@ from hunt import (
 )
 
 from achieves import (
-    check_achievements, achievement_unlocked_text,
+    check_achievements, achievement_unlocked_text, notify_new_achievements,
     achievements_list_text, achievements_keyboard, achievements_summary_line,
     achievements_menu_text, achievements_menu_keyboard,
     init_achievements_db,
@@ -282,6 +282,27 @@ BOT_TOKEN = '8693034024:AAFosgmMZQw3PDzQ-ML7XVM3YKWqMHwy83c'
 
 bot = Bot(token=BOT_TOKEN)
 
+
+async def _notify_ach(uid: int, data: dict, newly: list) -> None:
+    """
+    Шлёт уведомления о только что открытых достижениях СРАЗУ, в момент
+    выполнения действия. Вызывается ПОСЛЕ save_user(...), сразу следом за
+    check_achievements(...) (который нужно вызывать ДО save_user, чтобы
+    награды монет/опыта тоже попали в сохранённые данные).
+
+    Использование:
+        _ach_newly = check_achievements(u)
+        save_user(uid, u)
+        await _notify_ach(uid, u, _ach_newly)
+    """
+    if not newly:
+        return
+    try:
+        await notify_new_achievements(bot, uid, newly, get_lang(data))
+    except Exception:
+        pass
+
+
 import re as _re
 
 
@@ -454,6 +475,9 @@ def main_reply_keyboard(lang: str = "ru") -> ReplyKeyboardMarkup:
         KeyboardButton(text="🎮 Меню" if lang == "ru" else "🎮 Menu", style="primary"),
         KeyboardButton(text="⚔️ Клан" if lang == "ru" else "⚔️ Clan", style="primary"),
         KeyboardButton(text="🏙 Город" if lang == "ru" else "🏙 City", style="primary"),
+    )
+    builder.row(
+        KeyboardButton(text="🏆 Достижения" if lang == "ru" else "🏆 Achievements", style="primary"),
     )
     return builder.as_markup(resize_keyboard=True)
 
@@ -659,7 +683,9 @@ async def handle_pending_text_input(message: Message):
                 ok, reason, amount = activate_promo(promo_name, uid)
                 if ok:
                     u["balance"] = u.get("balance", 0) + amount
+                    _ach_newly = check_achievements(u)
                     save_user(uid, u)
+                    await _notify_ach(uid, u, _ach_newly)
                     await message.reply(promo_activate_text(amount, lang), parse_mode="HTML")
                 else:
                     await message.reply(promo_error_text(reason, lang), parse_mode="HTML")
@@ -783,6 +809,9 @@ def _clear_all_pending_inputs(uid: int, u: dict) -> None:
     _cdl_input_pending.pop(uid, None)
     _cdl_input_msg.pop(uid, None)
     if _clear_klan_pending(u):
+        # Синхронная функция — новые ачивки здесь не проверяем (это просто
+        # сброс pending-состояний, а не игровое действие), они поймаются
+        # на следующем реальном действии игрока.
         save_user(uid, u)
 
 
@@ -1232,7 +1261,9 @@ async def cmd_daily(message: Message):
         reward = _rnd_daily.randint(1000, 5000)
         u["balance"]    = u.get("balance", 0) + reward
         u["last_daily"] = now
+        _ach_newly = check_achievements(u)
         save_user(uid, u)
+        await _notify_ach(uid, u, _ach_newly)
 
         lang = get_lang(u)
         if lang == "en":
@@ -1333,7 +1364,9 @@ async def send_welcome(message: Message):
             ok, reason, amount = activate_check(check_code, uid)
             if ok:
                 u["balance"] = u.get("balance", 0) + amount
+                _ach_newly = check_achievements(u)
                 save_user(uid, u)
+                await _notify_ach(uid, u, _ach_newly)
                 await message.answer(check_activate_text(amount, lang), parse_mode="HTML")
             else:
                 await message.answer(check_error_text(reason, lang), parse_mode="HTML")
@@ -1420,6 +1453,19 @@ async def reply_btn_city(message: Message):
     await cmd_city_profile(message)
 
 
+@dp.message(_text_in("🏆 Достижения", "🏆 Achievements"), F.chat.type == "private")
+async def reply_btn_achievements(message: Message):
+    from database import get_or_create_user as _gou
+    uid = message.from_user.id
+    u   = _gou(message.from_user)
+    track_user(uid)
+
+    if await _check_onboarded(message, u): return
+    _clear_all_pending_inputs(uid, u)
+
+    await cmd_achievements(message)
+
+
 # ---------- КОМАНДЫ-АЛИАСЫ ДЛЯ РАЗДЕЛОВ ----------
 
 async def _check_onboarded(message: Message, u: dict) -> bool:
@@ -1495,12 +1541,14 @@ async def cmd_arsenal(message: Message):
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
     cleanup_expired_rentals(u)
+    _ach_newly = check_achievements(u)
     save_user(message.from_user.id, u)
     await message.reply(
         arsenal_main_text(u),
         parse_mode="HTML",
         reply_markup=arsenal_main_keyboard(u),
     )
+    await _notify_ach(message.from_user.id, u, _ach_newly)
 
 
 @dp.message(Command("достижения", "ачивки", "achievements", "ach"))
@@ -1511,18 +1559,14 @@ async def cmd_achievements(message: Message):
     track_user(message.from_user.id)
     if await _check_onboarded(message, u):
         return
-    newly = check_achievements(u)
+    _ach_newly = check_achievements(u)
     save_user(message.from_user.id, u)
     await message.reply(
         achievements_menu_text(u, lang),
         parse_mode="HTML",
         reply_markup=achievements_menu_keyboard(lang),
     )
-    for _ach in newly:
-        try:
-            await message.answer(achievement_unlocked_text(_ach, lang), parse_mode="HTML")
-        except Exception:
-            pass
+    await _notify_ach(message.from_user.id, u, _ach_newly)
 
 
 
@@ -1674,7 +1718,9 @@ async def cmd_promo(message: Message):
         ok, reason, amount = activate_promo(promo_name, uid)
         if ok:
             u["balance"] = u.get("balance", 0) + amount
+            _ach_newly = check_achievements(u)
             save_user(uid, u)
+            await _notify_ach(uid, u, _ach_newly)
             await message.reply(promo_activate_text(amount, lang), parse_mode="HTML")
         else:
             await message.reply(promo_error_text(reason, lang), parse_mode="HTML")
@@ -2018,7 +2064,9 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
         # --- Поиск клана ---
         if "_klan_search_pending" in data:
             _clear_klan_pending(data)
+            _ach_newly = check_achievements(data)
             save_user(uid, data)
+            await _notify_ach(uid, data, _ach_newly)
             results, total = search_clans(text, page=0)
             await message.answer(
                 klan_search_text(text, results, 0, total, lang),
@@ -2030,7 +2078,9 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
         # --- Создание клана ---
         if "_klan_create_pending" in data:
             _clear_klan_pending(data)
+            _ach_newly = check_achievements(data)
             save_user(uid, data)
+            await _notify_ach(uid, data, _ach_newly)
             name = text.strip()
             if not name:
                 err = (
@@ -2079,7 +2129,9 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
         # --- Исключение участника ---
         if "_klan_kick_pending" in data:
             _clear_klan_pending(data)
+            _ach_newly = check_achievements(data)
             save_user(uid, data)
+            await _notify_ach(uid, data, _ach_newly)
             m = get_member(uid)
             if not m or m["role"] != "creator":
                 err = "❌ Только создатель может исключать участников." if lang == "ru" \
@@ -2127,7 +2179,9 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
         # --- Пополнение казны ---
         if "_klan_deposit_pending" in data:
             _clear_klan_pending(data)
+            _ach_newly = check_achievements(data)
             save_user(uid, data)
+            await _notify_ach(uid, data, _ach_newly)
             cleaned = text.replace(" ", "").replace(",", "").replace("_", "")
             if not cleaned.isdigit() or int(cleaned) <= 0:
                 err = "❌ Отправь положительное число." if lang == "ru" else "❌ Send a positive number."
@@ -2164,7 +2218,9 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
         # --- Запрос на вывод из казны ---
         if "_klan_withdraw_pending" in data:
             _clear_klan_pending(data)
+            _ach_newly = check_achievements(data)
             save_user(uid, data)
+            await _notify_ach(uid, data, _ach_newly)
             raw_parts  = text.split("|", 1)
             amount_str = raw_parts[0].strip().replace(" ", "").replace(",", "").replace("_", "")
             reason     = raw_parts[1].strip() if len(raw_parts) > 1 else ""
@@ -2219,7 +2275,9 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
         if "_klan_apply_pending" in data:
             clan_id = data.get("_klan_apply_pending")
             _clear_klan_pending(data)
+            _ach_newly = check_achievements(data)
             save_user(uid, data)
+            await _notify_ach(uid, data, _ach_newly)
             app_msg = "" if text in ("—", "-", "") else text[:200]
             res     = apply_to_clan(uid, clan_id, app_msg)
             if res["ok"]:
@@ -2278,7 +2336,9 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
         # --- Привязка чата клана ---
         if "_klan_chat_pending" in data:
             _clear_klan_pending(data)
+            _ach_newly = check_achievements(data)
             save_user(uid, data)
+            await _notify_ach(uid, data, _ach_newly)
             m = get_member(uid)
             if not m or m["role"] != "creator":
                 await message.answer("❌ Только создатель клана!" if lang == "ru" else "❌ Creator only!", parse_mode="HTML")
@@ -2539,7 +2599,9 @@ async def cmd_sell(message: Message):
     ok, msg = sell_item_by_slot_id(u, slot_id, qty, lang)
     if ok:
         from database import save_user
+        _ach_newly = check_achievements(u)
         save_user(uid, u)
+        await _notify_ach(uid, u, _ach_newly)
     await message.reply(msg, parse_mode="HTML")
 
 
@@ -2692,7 +2754,9 @@ async def cmd_use_item(message: Message):
         u = get_or_create_user(message.from_user)
         ok, msg = use_item_by_slot_id(u, slot_id, lang)
         if ok:
+            _ach_newly = check_achievements(u)
             save_user(uid, u)
+            await _notify_ach(uid, u, _ach_newly)
         await message.reply(msg, parse_mode="HTML")
 
 
@@ -2729,7 +2793,9 @@ async def cmd_open_case_multi(message: Message):
         u = get_or_create_user(message.from_user)
         ok, msg = open_case_multi(u, case_num, qty, lang)
         if ok:
+            _ach_newly = check_achievements(u)
             save_user(uid, u)
+            await _notify_ach(uid, u, _ach_newly)
         await message.reply(msg, parse_mode="HTML")
 
 
@@ -2766,7 +2832,9 @@ async def cmd_stop_boost(message: Message):
         u = get_or_create_user(message.from_user)
         ok, msg = cancel_active_by_type(u, boost_type, lang)
         if ok:
+            _ach_newly = check_achievements(u)
             save_user(uid, u)
+            await _notify_ach(uid, u, _ach_newly)
         await message.reply(msg, parse_mode="HTML")
 
 
@@ -2800,7 +2868,9 @@ async def handle_captcha_answer(message: Message):
                         ok, reason, amount = activate_promo(promo_name, uid)
                         if ok:
                             u["balance"] = u.get("balance", 0) + amount
+                            _ach_newly = check_achievements(u)
                             save_user(uid, u)
+                            await _notify_ach(uid, u, _ach_newly)
                             await message.reply(promo_activate_text(amount, lang), parse_mode="HTML")
                         else:
                             await message.reply(promo_error_text(reason, lang), parse_mode="HTML")
@@ -3135,7 +3205,9 @@ async def potion_use_revival_confirm_callback(call: CallbackQuery):
     ok, msg = use_potion("revival", uid, slot, lang)
 
     if ok:
+        _ach_newly = check_achievements(data)
         save_user(uid, data)
+        await _notify_ach(uid, data, _ach_newly)
         text = hunt_main_text(data, lang)
         keyboard = hunt_main_keyboard(data, lang)
         await call.message.edit_text(
@@ -3161,7 +3233,9 @@ async def potion_use_callback(call: CallbackQuery):
     ok, msg = use_potion(potion_key, uid, None, lang)
 
     if ok:
+        _ach_newly = check_achievements(data)
         save_user(uid, data)
+        await _notify_ach(uid, data, _ach_newly)
         text = my_potions_text(uid, lang)
         keyboard = my_potions_keyboard(uid, lang)
         await call.message.edit_text(
@@ -3233,7 +3307,9 @@ async def handle_callback(call: CallbackQuery):
         _KLAN_INPUT_CALLBACKS = {"klan_search", "klan_create", "klan_kick", "klan_deposit", "klan_withdraw", "klan_chat_link", "klan_do_search"}
         if cd not in _KLAN_INPUT_CALLBACKS and not cd.startswith("klan_apply_"):
             if _clear_klan_pending(data):
+                _ach_newly = check_achievements(data)
                 save_user(user.id, data)
+                await _notify_ach(user.id, data, _ach_newly)
 
         # Сбрасываем ожидание ввода цели вызова при любом callback,
         # кроме самого экрана ввода (duel_challenge_start) и кнопки отмены.
@@ -3323,7 +3399,9 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer(f"🚫 Лимит исчерпан ({_lim_used2}/{_lim_max2}). Попробуй позже.", show_alert=True)
                 return
             data["balance"] = bal - amount
+            _ach_newly = check_achievements(data)
             save_user(user.id, data)
+            await _notify_ach(user.id, data, _ach_newly)
             _cdl_open_deposit(user.id, dep_key, amount)
             await edit(cdl_opened_text(dep_key, amount), cdl_main_keyboard(user.id))
             await call.answer("✅ Вклад открыт!")
@@ -3347,7 +3425,9 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer("Нет готовых вкладов!", show_alert=True)
                 return
             data["balance"] = data.get("balance", 0) + total_payout
+            _ach_newly = check_achievements(data)
             save_user(user.id, data)
+            await _notify_ach(user.id, data, _ach_newly)
             await edit(cdl_claim_text(total_payout, total_profit, count), cdl_main_keyboard(user.id))
             await call.answer(f"💰 +{format_amount(total_payout)} монет!")
             return
@@ -3485,7 +3565,9 @@ async def handle_callback(call: CallbackQuery):
             )
             await edit(prompt, klan_back_keyboard("klan_main", lang))
             data["_klan_create_pending"] = True
+            _ach_newly = check_achievements(data)
             save_user(user.id, data)
+            await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             return
 
@@ -3670,7 +3752,9 @@ async def handle_callback(call: CallbackQuery):
             )
             await edit(prompt, klan_back_keyboard("klan_my", lang))
             data["_klan_kick_pending"] = True
+            _ach_newly = check_achievements(data)
             save_user(user.id, data)
+            await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             return
 
@@ -3689,7 +3773,9 @@ async def handle_callback(call: CallbackQuery):
             )
             await edit(prompt, klan_back_keyboard("klan_treasury", lang))
             data["_klan_deposit_pending"] = True
+            _ach_newly = check_achievements(data)
             save_user(user.id, data)
+            await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             return
 
@@ -3712,7 +3798,9 @@ async def handle_callback(call: CallbackQuery):
             )
             await edit(prompt, klan_back_keyboard("klan_treasury", lang))
             data["_klan_withdraw_pending"] = True
+            _ach_newly = check_achievements(data)
             save_user(user.id, data)
+            await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             return
 
@@ -3727,7 +3815,9 @@ async def handle_callback(call: CallbackQuery):
             )
             await edit(prompt, klan_back_keyboard("klan_search", lang))
             data["_klan_search_pending"] = True
+            _ach_newly = check_achievements(data)
             save_user(user.id, data)
+            await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             return
 
@@ -3758,7 +3848,9 @@ async def handle_callback(call: CallbackQuery):
             )
             await edit(prompt, klan_back_keyboard("klan_my", lang))
             data["_klan_chat_pending"] = True
+            _ach_newly = check_achievements(data)
             save_user(user.id, data)
+            await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             return
 
@@ -3816,7 +3908,9 @@ async def handle_callback(call: CallbackQuery):
             )
             await edit(prompt, klan_back_keyboard(f"klan_view_{clan_id}", lang))
             data["_klan_apply_pending"] = clan_id
+            _ach_newly = check_achievements(data)
             save_user(user.id, data)
+            await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             return
 
@@ -4004,7 +4098,9 @@ async def handle_callback(call: CallbackQuery):
             case_key = cd.removeprefix("case_open_")
             ok, msg, instance = open_case(data, case_key, lang)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
                 await edit(msg, cases_shop_keyboard(lang))
             else:
                 await call.answer(_plain(msg), show_alert=True)
@@ -4069,7 +4165,9 @@ async def handle_callback(call: CallbackQuery):
             instance_id = cd.removeprefix("boost_activate_")
             ok, msg = activate_booster(data, instance_id, lang=lang)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
                 await call.answer("⚡ Ускоритель активирован!" if lang == "ru" else "⚡ Booster activated!", show_alert=True)
                 await edit(boosters_inventory_text(data, lang), boosters_inventory_keyboard(data, lang))
             elif msg.startswith("CONFIRM_REPLACE:"):
@@ -4084,7 +4182,9 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = activate_booster(data, instance_id, force=True, lang=lang)
             await call.answer(("⚡ Ускоритель заменён!" if lang == "ru" else "⚡ Booster replaced!") if ok else msg, show_alert=True)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             await edit(boosters_inventory_text(data, lang), boosters_inventory_keyboard(data, lang))
             return
 
@@ -4094,7 +4194,9 @@ async def handle_callback(call: CallbackQuery):
             ok, msg, price = sell_booster(data, instance_id, lang)
             await call.answer(f"💸 {'Продано' if lang == 'ru' else 'Sold'} {format_amount(price)}!" if ok else msg, show_alert=True)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             await edit(boosters_inventory_text(data, lang), boosters_inventory_keyboard(data, lang))
             return
 
@@ -4115,7 +4217,9 @@ async def handle_callback(call: CallbackQuery):
             instance_id = cd.removeprefix("xp_use_")
             ok, msg = use_xp_item(data, instance_id, lang=lang)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
                 await call.answer("✅ Применено!" if lang == "ru" else "✅ Applied!", show_alert=True)
                 await edit(xp_inventory_text(data, lang), xp_inventory_keyboard(data, lang))
             elif msg.startswith("CONFIRM_REPLACE_XP:"):
@@ -4130,7 +4234,9 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = use_xp_item(data, instance_id, force=True, lang=lang)
             await call.answer(("✅ XP-ускоритель заменён!" if lang == "ru" else "✅ XP booster replaced!") if ok else msg, show_alert=True)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             await edit(xp_inventory_text(data, lang), xp_inventory_keyboard(data, lang))
             return
 
@@ -4140,7 +4246,9 @@ async def handle_callback(call: CallbackQuery):
             ok, msg, price = sell_xp_item(data, instance_id, lang)
             await call.answer(f"💸 {'Продано' if lang == 'ru' else 'Sold'} {format_amount(price)}!" if ok else msg, show_alert=True)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             await edit(xp_inventory_text(data, lang), xp_inventory_keyboard(data, lang))
             return
 
@@ -4165,7 +4273,9 @@ async def handle_callback(call: CallbackQuery):
             instance_id = cd.removeprefix("enh_use_")
             ok, msg = use_poison(data, instance_id, lang=lang)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
                 await call.answer("☠️ Яд применён!" if lang == "ru" else "☠️ Poison applied!", show_alert=True)
                 await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
             elif msg.startswith("CONFIRM_REPLACE_POISON:"):
@@ -4179,7 +4289,9 @@ async def handle_callback(call: CallbackQuery):
             instance_id = cd.removeprefix("enh_activate_")
             ok, msg = activate_enh_boost(data, instance_id, lang=lang)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
                 await call.answer("⚡ Усилитель активирован!" if lang == "ru" else "⚡ Booster activated!", show_alert=True)
                 await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
             elif msg.startswith("CONFIRM_REPLACE_ENH:"):
@@ -4194,7 +4306,9 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = use_poison(data, instance_id, force=True, lang=lang)
             await call.answer(("☠️ Яд заменён!" if lang == "ru" else "☠️ Poison replaced!") if ok else msg, show_alert=True)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
             return
 
@@ -4204,7 +4318,9 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = activate_enh_boost(data, instance_id, force=True, lang=lang)
             await call.answer(("⚡ Усилитель заменён!" if lang == "ru" else "⚡ Booster replaced!") if ok else msg, show_alert=True)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
             return
 
@@ -4214,7 +4330,9 @@ async def handle_callback(call: CallbackQuery):
             ok, msg, price = sell_enh_item(data, instance_id, lang)
             await call.answer(f"💸 {'Продано' if lang == 'ru' else 'Sold'} {format_amount(price)}!" if ok else msg, show_alert=True)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
             return
             await edit(shop_pickaxes_text(), shop_pickaxes_keyboard(data))
@@ -4233,7 +4351,9 @@ async def handle_callback(call: CallbackQuery):
             ok, msg  = buy_pickaxe(data, pick_key, lang)
             await call.answer(_plain(msg), show_alert=True)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             page = get_pickaxe_page(pick_key)
             await edit(pickaxe_detail_text(data, pick_key, lang), pickaxe_detail_keyboard(data, pick_key, page, lang))
             return
@@ -4276,7 +4396,9 @@ async def handle_callback(call: CallbackQuery):
             ok, msg  = select_pickaxe(data, pick_key, lang)
             await call.answer(_plain(msg), show_alert=True)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             page = get_pickaxe_page(pick_key)
             await edit(pickaxe_detail_text(data, pick_key, lang), pickaxe_detail_keyboard(data, pick_key, page, lang))
             return
@@ -4293,7 +4415,9 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = buy_duration(data, dur_key, lang)
             await call.answer(_plain(msg), show_alert=True)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             await edit(duration_detail_text(data, dur_key, lang), duration_detail_keyboard(data, dur_key, lang))
             return
 
@@ -4303,7 +4427,9 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = select_duration(data, dur_key, lang)
             await call.answer(_plain(msg), show_alert=True)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             await edit(duration_detail_text(data, dur_key, lang), duration_detail_keyboard(data, dur_key, lang))
             return
 
@@ -4319,7 +4445,9 @@ async def handle_callback(call: CallbackQuery):
             data["mine_start"]          = now_ts()
             data["mine_campaigns_done"] = 0
             data["mine_collected"]      = False
+            _ach_newly = check_achievements(data)
             save_user(data["id"], data)
+            await _notify_ach(data["id"], data, _ach_newly)
             await edit(mine_text(data, lang), mine_keyboard(data, lang))
             return
 
@@ -4335,7 +4463,9 @@ async def handle_callback(call: CallbackQuery):
             if not result_text:
                 await call.answer(t(lang, "mine_no_campaigns"), show_alert=True)
                 return
+            _ach_newly = check_achievements(data)
             save_user(data["id"], data)
+            await _notify_ach(data["id"], data, _ach_newly)
             await edit(result_text, mine_keyboard(data, lang))
             return
 
@@ -4348,7 +4478,9 @@ async def handle_callback(call: CallbackQuery):
                 # can_stop вернул False — показываем причину алертом
                 await call.answer(_plain(result_text), show_alert=True)
                 return
+            _ach_newly = check_achievements(data)
             save_user(data["id"], data)
+            await _notify_ach(data["id"], data, _ach_newly)
             await edit(result_text, mine_keyboard(data, lang))
             return
 
@@ -4361,7 +4493,9 @@ async def handle_callback(call: CallbackQuery):
             if total == 0:
                 await call.answer(t(lang, "mine_sell_nothing"), show_alert=True)
                 return
+            _ach_newly = check_achievements(data)
             save_user(data["id"], data)
+            await _notify_ach(data["id"], data, _ach_newly)
             try:
                 add_clan_mine_earnings(user.id, total)
             except Exception as _qe:
@@ -4438,7 +4572,9 @@ async def handle_callback(call: CallbackQuery):
             pk      = cd.removeprefix("pet_buy_")
             ok, msg = buy_pet(data, pk, lang)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
                 await call.answer("✅", show_alert=False)
             else:
                 import re
@@ -4534,7 +4670,9 @@ async def handle_callback(call: CallbackQuery):
         # ===== АРСЕНАЛ: главный экран =====
         if cd == "hunt_arsenal":
             cleanup_expired_rentals(data)
+            _ach_newly = check_achievements(data)
             save_user(user.id, data)
+            await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             await edit(arsenal_main_text(data), arsenal_main_keyboard(data))
             return
@@ -4591,7 +4729,9 @@ async def handle_callback(call: CallbackQuery):
             sk = cd.removeprefix("sword_buy_")
             ok, msg = buy_sword(data, sk, lang)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
                 await call.answer(_plain(msg), show_alert=False)
             else:
                 import re as _re2
@@ -4605,7 +4745,9 @@ async def handle_callback(call: CallbackQuery):
             sk = cd.removeprefix("sword_equip_")
             ok, msg = equip_sword(data, sk, lang)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
                 await call.answer(_plain(msg), show_alert=False)
             await edit(my_swords_text(data, lang), my_swords_keyboard(data, lang))
             return
@@ -4637,12 +4779,16 @@ async def handle_callback(call: CallbackQuery):
             # арендованный меч с экипировки — сохраняем это, даже если сам
             # удар не засчитался (например sword_rented_out/no_sword).
             if result.get("needs_save") and not (result.get("boss_killed") or result.get("hit")):
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             if result.get("boss_killed") or result.get("hit"):
                 # ── Повышение уровня убийцы ──
                 if result.get("xp", 0) > 0:
                     _apply_xp(data, result["xp"])
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
                 # ── Запись статистики для лидерборда ──
                 try:
                     from hunt import _load_slot as _ld_slot
@@ -4931,7 +5077,9 @@ async def handle_callback(call: CallbackQuery):
         if cd in ("set_lang_ru", "set_lang_en"):
             new_lang = "ru" if cd == "set_lang_ru" else "en"
             data["lang"] = new_lang
+            _ach_newly = check_achievements(data)
             save_user(data["id"], data)
+            await _notify_ach(data["id"], data, _ach_newly)
             alert = "🇷🇺 Язык установлен: Русский" if new_lang == "ru" else "🇬🇧 Language set: English"
             await call.answer(alert, show_alert=True)
             await edit(settings_text(data), settings_keyboard(data))
@@ -4942,7 +5090,9 @@ async def handle_callback(call: CallbackQuery):
             new_lang = "ru" if cd == "start_lang_ru" else "en"
             data["lang"] = new_lang
             data["onboarded"] = True
+            _ach_newly = check_achievements(data)
             save_user(data["id"], data)
+            await _notify_ach(data["id"], data, _ach_newly)
             await call.message.answer(
                 "🎮",
                 reply_markup=main_reply_keyboard(new_lang),
@@ -5012,7 +5162,9 @@ async def handle_callback(call: CallbackQuery):
                 return
             data["balance"] -= price
             apply_gear_purchase(item_key, data)
+            _ach_newly = check_achievements(data)
             save_user(user.id, data)
+            await _notify_ach(user.id, data, _ach_newly)
             await call.answer(f"✅ Куплено: {item['name']}!", show_alert=True)
             await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data, page))
             return
@@ -5037,7 +5189,9 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = equip_skill(sk_key, data)
             await call.answer(msg, show_alert=not ok)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(user.id, data)
+                await _notify_ach(user.id, data, _ach_newly)
             # Возвращаемся на карточку
             await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
             return
@@ -5048,7 +5202,9 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = unequip_skill(sk_key, data)
             await call.answer(msg, show_alert=not ok)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(user.id, data)
+                await _notify_ach(user.id, data, _ach_newly)
             await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
             return
 
@@ -5090,7 +5246,9 @@ async def handle_callback(call: CallbackQuery):
                 return
             data["balance"] -= price
             owned_sk.append(sk_key)
+            _ach_newly = check_achievements(data)
             save_user(user.id, data)
+            await _notify_ach(user.id, data, _ach_newly)
             await call.answer(f"✅ Куплен навык: {sk['name']}!", show_alert=True)
             # Открываем карточку навыка — теперь можно экипировать
             await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
@@ -5119,7 +5277,9 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer("Сначала купи предмет.", show_alert=True)
                 return
             apply_gear_equip(item_key, data)
+            _ach_newly = check_achievements(data)
             save_user(user.id, data)
+            await _notify_ach(user.id, data, _ach_newly)
             await call.answer(f"✅ Надето: {item['name']}!", show_alert=True)
             await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data, page))
             return
@@ -5131,7 +5291,9 @@ async def handle_callback(call: CallbackQuery):
             page     = int(parts[2]) if len(parts) > 2 else 0
             item     = GEAR_CATALOG.get(item_key)
             apply_gear_unequip(item_key, data)
+            _ach_newly = check_achievements(data)
             save_user(user.id, data)
+            await _notify_ach(user.id, data, _ach_newly)
             await call.answer(f"❌ Снято: {item['name']}.", show_alert=True)
             await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data, page))
             return
@@ -5548,7 +5710,9 @@ async def handle_successful_payment(message: Message):
             ok, msg, chosen = open_artifact_case(data, _lang)
 
             # Сохраняем ВСЕГДА — деньги уже списаны, артефакт должен попасть в БД
+            _ach_newly = check_achievements(data)
             save_user(data["id"], data)
+            await _notify_ach(data["id"], data, _ach_newly)
 
             # 1) Обновляем старое сообщение — убираем ссылку-инвойс
             pending = _pending_artifact_msg.pop(uid, None)
@@ -5677,7 +5841,9 @@ async def handle_successful_payment(message: Message):
                 return
             ok, _ = grant_premium_pickaxe(data, pick_key)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             p    = PICKAXES[pick_key]
             tier = TIER_LABELS.get(p.get("tier", ""), "")
             page = get_pickaxe_page(pick_key)
@@ -5735,7 +5901,9 @@ async def handle_successful_payment(message: Message):
             _lang = data.get("lang", "ru")
             ok, msg = activate_status(data, "vip", _lang)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             # Обновляем старое сообщение
             pending = _pending_status_msg.pop(uid, None)
             if pending:
@@ -5793,7 +5961,9 @@ async def handle_successful_payment(message: Message):
             _lang = data.get("lang", "ru")
             ok, msg = activate_status(data, "premium", _lang)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             pending = _pending_status_msg.pop(uid, None)
             if pending:
                 old_chat_id, old_msg_id, _ = pending
@@ -5859,7 +6029,9 @@ async def handle_successful_payment(message: Message):
             _lang = data.get("lang", "ru")
             ok, msg, coins = apply_donate(data, pkg_key)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
 
             # Обновляем старое сообщение — убираем кнопку-инвойс
             pending = _pending_donate_msg.pop(uid, None)
@@ -5915,7 +6087,9 @@ async def handle_successful_payment(message: Message):
             _lang = data.get("lang", "ru")
             ok, msg = activate_status(data, "premium", _lang)
             if ok:
+                _ach_newly = check_achievements(data)
                 save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
             pending = _pending_status_msg.pop(uid, None)
             if pending:
                 old_chat_id, old_msg_id, _ = pending
