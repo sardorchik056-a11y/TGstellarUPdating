@@ -888,13 +888,19 @@ def achievement_unlocked_text(ach: dict, lang: str = "ru") -> str:
     desc = ach["desc_en"] if lang == "en" else ach["desc"]
     reward_str = _fmt_reward(ach, lang)
 
+    # иконка достижения: для разделов из CATEGORY_ICON_EMOJI (шахта/деньги/арсенал) —
+    # единый премиум-эмодзи раздела (как и в карточке достижения), для остальных —
+    # обычная эмодзи самой ачивки
+    _icon_key = CATEGORY_ICON_EMOJI.get(ach.get("category"))
+    icon = _cemoji(_icon_key, ach["emoji"]) if _icon_key else ach["emoji"]
+
     title = "Новое достижение" if lang == "ru" else "New achievement"
     lines = [
-        f'🏆 <b>{title}:</b> {ach["emoji"]} <b>{name}</b>',
+        f'🏆 <b>{title}:</b> {icon} <b>{name}</b>',
         f'<i>{desc}</i>',
     ]
     if reward_str:
-        lines.append(f'🎁 {reward_str}')
+        lines.append(f'{_cemoji("reward", "🎁")} {reward_str}')
     return "\n".join(lines)
 
 
