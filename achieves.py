@@ -1563,6 +1563,43 @@ ACHIEVEMENTS_BY_ID = {a["id"]: a for a in ACHIEVEMENTS}
 #  ЛОГИКА
 # ============================================================
 
+def _grant_xp(data: dict, amount: int) -> None:
+    """
+    Начисляет XP и повышает уровень по той же формуле xp_for_level/MAX_LEVEL
+    из miner.py, которую использует _apply_xp() в mainhelp.py для обычного
+    опыта (охота, дуэли и т.д.). Раньше check_achievements() просто прибавлял
+    reward_xp к data["xp"] напрямую — из-за этого XP от ачивок копился
+    (1.6K/100), а уровень никогда не рос, потому что порог xp_needed никогда
+    не проверялся и не вычитался. Цикл ниже — тот же, что в _apply_xp(), и
+    корректно обрабатывает даже несколько уровней за одно крупное начисление.
+    """
+    if amount <= 0:
+        return
+    try:
+        from miner import xp_for_level, MAX_LEVEL
+    except Exception:
+        # Нет доступа к miner.py (например, при автономном тестировании
+        # модуля) — просто копим XP без пересчёта уровня.
+        data["xp"] = data.get("xp", 0) + amount
+        return
+
+    data["xp"] = data.get("xp", 0) + amount
+    while True:
+        lvl = data.get("level", 1)
+        if lvl >= MAX_LEVEL:
+            data["xp"]     = 0
+            data["xp_max"] = xp_for_level(lvl)
+            break
+        xp_needed = xp_for_level(lvl)
+        data["xp_max"] = xp_needed
+        if data["xp"] >= xp_needed:
+            data["xp"]    -= xp_needed
+            data["level"]  = lvl + 1
+            data["xp_max"] = xp_for_level(lvl + 1)
+        else:
+            break
+
+
 def check_achievements(data: dict) -> list[dict]:
     """
     Проверяет ВСЕ ещё не открытые достижения игрока.
@@ -1594,7 +1631,7 @@ def check_achievements(data: dict) -> list[dict]:
         if ach["reward_coins"]:
             data["balance"] = data.get("balance", 0) + ach["reward_coins"]
         if ach["reward_xp"]:
-            data["xp"] = data.get("xp", 0) + ach["reward_xp"]
+            _grant_xp(data, ach["reward_xp"])
 
         newly.append(ach)
 
