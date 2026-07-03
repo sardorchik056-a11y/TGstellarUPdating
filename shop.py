@@ -118,50 +118,32 @@ def _dur_label(dur_key: str, lang: str = "ru") -> str:
 # ============================================================
 
 _BOOSTER_POOL = [
-    {"key": "boost_1.2x_10min", "multiplier": 1.2, "dur_key": "10min", "chance": 80},
-    {"key": "boost_1.2x_30min", "multiplier": 1.2, "dur_key": "30min", "chance": 65},
-    {"key": "boost_1.2x_1h",    "multiplier": 1.2, "dur_key": "1h",    "chance": 45},
-    {"key": "boost_1.2x_2h",    "multiplier": 1.2, "dur_key": "2h",    "chance": 35},
-    {"key": "boost_1.2x_4h",    "multiplier": 1.2, "dur_key": "4h",    "chance": 25},
-    {"key": "boost_1.2x_10h",   "multiplier": 1.2, "dur_key": "10h",   "chance": 18},
-    {"key": "boost_1.2x_24h",   "multiplier": 1.2, "dur_key": "24h",   "chance": 10},
-    {"key": "boost_1.5x_10min", "multiplier": 1.5, "dur_key": "10min", "chance": 60},
-    {"key": "boost_1.5x_30min", "multiplier": 1.5, "dur_key": "30min", "chance": 40},
-    {"key": "boost_1.5x_1h",    "multiplier": 1.5, "dur_key": "1h",    "chance": 35},
-    {"key": "boost_1.5x_2h",    "multiplier": 1.5, "dur_key": "2h",    "chance": 25},
-    {"key": "boost_1.5x_4h",    "multiplier": 1.5, "dur_key": "4h",    "chance": 19},
-    {"key": "boost_1.5x_10h",   "multiplier": 1.5, "dur_key": "10h",   "chance": 12},
-    {"key": "boost_1.5x_24h",   "multiplier": 1.5, "dur_key": "24h",   "chance":  5},
-    {"key": "boost_2x_10min",   "multiplier": 2.0, "dur_key": "10min", "chance": 40},
-    {"key": "boost_2x_30min",   "multiplier": 2.0, "dur_key": "30min", "chance": 30},
-    {"key": "boost_2x_1h",      "multiplier": 2.0, "dur_key": "1h",    "chance": 22},
-    {"key": "boost_2x_2h",      "multiplier": 2.0, "dur_key": "2h",    "chance": 12},
-    {"key": "boost_2x_4h",      "multiplier": 2.0, "dur_key": "4h",    "chance":  8},
-    {"key": "boost_2x_10h",     "multiplier": 2.0, "dur_key": "10h",   "chance":  3},
-    {"key": "boost_2x_24h",     "multiplier": 2.0, "dur_key": "24h",   "chance":  1},
+    {"key": "boost_1.4x_30min", "multiplier": 1.4, "dur_key": "30min", "chance": 55},
+    {"key": "boost_1.4x_4h",    "multiplier": 1.4, "dur_key": "4h",    "chance": 25},
+    {"key": "boost_1.4x_24h",   "multiplier": 1.4, "dur_key": "24h",   "chance": 10},
+    {"key": "boost_1.8x_30min", "multiplier": 1.8, "dur_key": "30min", "chance": 30},
+    {"key": "boost_1.8x_4h",    "multiplier": 1.8, "dur_key": "4h",    "chance": 12},
+    {"key": "boost_1.8x_24h",   "multiplier": 1.8, "dur_key": "24h",   "chance":  4},
+    {"key": "boost_2x_30min",   "multiplier": 2.0, "dur_key": "30min", "chance": 18},
+    {"key": "boost_2x_4h",      "multiplier": 2.0, "dur_key": "4h",    "chance":  7},
+    {"key": "boost_2x_24h",     "multiplier": 2.0, "dur_key": "24h",   "chance":  2},
 ]
 
 BOOSTERS_BY_KEY = {b["key"]: b for b in _BOOSTER_POOL}
 MAX_INVENTORY = 10
 
 _SELL_PRICES = {
-    ("1.2", "10min"): 500,   ("1.2", "30min"): 1_200, ("1.2", "1h"): 2_000,
-    ("1.2", "2h"):    3_500, ("1.2", "4h"):    5_500,  ("1.2", "10h"): 10_000,
-    ("1.2", "24h"):   18_000,
-    ("1.5", "10min"): 800,   ("1.5", "30min"): 2_000, ("1.5", "1h"): 3_500,
-    ("1.5", "2h"):    6_000, ("1.5", "4h"):    9_000,  ("1.5", "10h"): 16_000,
-    ("1.5", "24h"):   28_000,
-    ("2.0", "10min"): 1_200, ("2.0", "30min"): 3_000, ("2.0", "1h"): 5_500,
-    ("2.0", "2h"):    9_500, ("2.0", "4h"):    15_000, ("2.0", "10h"): 26_000,
-    ("2.0", "24h"):   45_000,
+    ("1.4", "30min"): 1_500, ("1.4", "4h"): 6_500,  ("1.4", "24h"): 20_000,
+    ("1.8", "30min"): 2_500, ("1.8", "4h"): 11_000, ("1.8", "24h"): 32_000,
+    ("2.0", "30min"): 3_500, ("2.0", "4h"): 16_000, ("2.0", "24h"): 48_000,
 }
 
 
 def get_sell_price(item: dict) -> int:
     m = item["multiplier"]
     if m >= 2.0:   mk = "2.0"
-    elif m >= 1.5: mk = "1.5"
-    else:          mk = "1.2"
+    elif m >= 1.8: mk = "1.8"
+    else:          mk = "1.4"
     return _SELL_PRICES.get((mk, item["dur_key"]), 1_000)
 
 
@@ -175,20 +157,15 @@ _XP_POOL = [
     {"key": "xp_750",  "type": "xp_instant", "xp": 750,  "chance": 35},
     {"key": "xp_2000", "type": "xp_instant", "xp": 2000, "chance": 12},
     {"key": "xp_5000", "type": "xp_instant", "xp": 5000, "chance":  3},
-    {"key": "xpboost_1.4x_30min", "type": "xp_boost", "multiplier": 1.4, "dur_key": "30min", "chance": 60},
-    {"key": "xpboost_1.4x_1h",   "type": "xp_boost", "multiplier": 1.4, "dur_key": "1h",    "chance": 45},
-    {"key": "xpboost_1.4x_2h",   "type": "xp_boost", "multiplier": 1.4, "dur_key": "2h",    "chance": 30},
-    {"key": "xpboost_1.4x_4h",   "type": "xp_boost", "multiplier": 1.4, "dur_key": "4h",    "chance": 20},
-    {"key": "xpboost_1.4x_6h",   "type": "xp_boost", "multiplier": 1.4, "dur_key": "6h",    "chance": 12},
-    {"key": "xpboost_1.4x_24h",  "type": "xp_boost", "multiplier": 1.4, "dur_key": "24h",   "chance":  5},
-    {"key": "xpboost_1.4x_48h",  "type": "xp_boost", "multiplier": 1.4, "dur_key": "48h",   "chance":  2},
-    {"key": "xpboost_1.8x_30min", "type": "xp_boost", "multiplier": 1.8, "dur_key": "30min", "chance": 35},
-    {"key": "xpboost_1.8x_1h",   "type": "xp_boost", "multiplier": 1.8, "dur_key": "1h",    "chance": 22},
-    {"key": "xpboost_1.8x_2h",   "type": "xp_boost", "multiplier": 1.8, "dur_key": "2h",    "chance": 14},
-    {"key": "xpboost_1.8x_4h",   "type": "xp_boost", "multiplier": 1.8, "dur_key": "4h",    "chance":  8},
-    {"key": "xpboost_1.8x_6h",   "type": "xp_boost", "multiplier": 1.8, "dur_key": "6h",    "chance":  4},
-    {"key": "xpboost_1.8x_24h",  "type": "xp_boost", "multiplier": 1.8, "dur_key": "24h",   "chance":  2},
-    {"key": "xpboost_1.8x_48h",  "type": "xp_boost", "multiplier": 1.8, "dur_key": "48h",   "chance":  1},
+    {"key": "xpboost_1.4x_30min", "type": "xp_boost", "multiplier": 1.4, "dur_key": "30min", "chance": 55},
+    {"key": "xpboost_1.4x_4h",    "type": "xp_boost", "multiplier": 1.4, "dur_key": "4h",    "chance": 25},
+    {"key": "xpboost_1.4x_24h",   "type": "xp_boost", "multiplier": 1.4, "dur_key": "24h",   "chance": 10},
+    {"key": "xpboost_1.8x_30min", "type": "xp_boost", "multiplier": 1.8, "dur_key": "30min", "chance": 30},
+    {"key": "xpboost_1.8x_4h",    "type": "xp_boost", "multiplier": 1.8, "dur_key": "4h",    "chance": 12},
+    {"key": "xpboost_1.8x_24h",   "type": "xp_boost", "multiplier": 1.8, "dur_key": "24h",   "chance":  4},
+    {"key": "xpboost_2x_30min",   "type": "xp_boost", "multiplier": 2.0, "dur_key": "30min", "chance": 18},
+    {"key": "xpboost_2x_4h",      "type": "xp_boost", "multiplier": 2.0, "dur_key": "4h",    "chance":  7},
+    {"key": "xpboost_2x_24h",     "type": "xp_boost", "multiplier": 2.0, "dur_key": "24h",   "chance":  2},
 ]
 
 XP_POOL_BY_KEY = {x["key"]: x for x in _XP_POOL}
@@ -199,30 +176,18 @@ MAX_XP_INVENTORY = 10
 # ============================================================
 
 _ENH_BOOSTER_POOL = [
-    # ── 1.2× ──────────────────────────────────────────────
-    {"key": "enh_boost_1.2x_5min",  "type": "enh_boost", "multiplier": 1.2, "dur_key": "5min",  "chance": 85},
-    {"key": "enh_boost_1.2x_30min", "type": "enh_boost", "multiplier": 1.2, "dur_key": "30min", "chance": 65},
-    {"key": "enh_boost_1.2x_1h",    "type": "enh_boost", "multiplier": 1.2, "dur_key": "1h",    "chance": 45},
-    {"key": "enh_boost_1.2x_2h",    "type": "enh_boost", "multiplier": 1.2, "dur_key": "2h",    "chance": 32},
-    {"key": "enh_boost_1.2x_4h",    "type": "enh_boost", "multiplier": 1.2, "dur_key": "4h",    "chance": 22},
-    {"key": "enh_boost_1.2x_10h",   "type": "enh_boost", "multiplier": 1.2, "dur_key": "10h",   "chance": 16},
-    {"key": "enh_boost_1.2x_24h",   "type": "enh_boost", "multiplier": 1.2, "dur_key": "24h",   "chance":  9},
-    # ── 1.5× ──────────────────────────────────────────────
-    {"key": "enh_boost_1.5x_5min",  "type": "enh_boost", "multiplier": 1.5, "dur_key": "5min",  "chance": 62},
-    {"key": "enh_boost_1.5x_30min", "type": "enh_boost", "multiplier": 1.5, "dur_key": "30min", "chance": 38},
-    {"key": "enh_boost_1.5x_1h",    "type": "enh_boost", "multiplier": 1.5, "dur_key": "1h",    "chance": 32},
-    {"key": "enh_boost_1.5x_2h",    "type": "enh_boost", "multiplier": 1.5, "dur_key": "2h",    "chance": 22},
-    {"key": "enh_boost_1.5x_4h",    "type": "enh_boost", "multiplier": 1.5, "dur_key": "4h",    "chance": 16},
-    {"key": "enh_boost_1.5x_10h",   "type": "enh_boost", "multiplier": 1.5, "dur_key": "10h",   "chance": 10},
-    {"key": "enh_boost_1.5x_24h",   "type": "enh_boost", "multiplier": 1.5, "dur_key": "24h",   "chance":  4},
+    # ── 1.4× ──────────────────────────────────────────────
+    {"key": "enh_boost_1.4x_30min", "type": "enh_boost", "multiplier": 1.4, "dur_key": "30min", "chance": 55},
+    {"key": "enh_boost_1.4x_4h",    "type": "enh_boost", "multiplier": 1.4, "dur_key": "4h",    "chance": 25},
+    {"key": "enh_boost_1.4x_24h",   "type": "enh_boost", "multiplier": 1.4, "dur_key": "24h",   "chance": 10},
+    # ── 1.8× ──────────────────────────────────────────────
+    {"key": "enh_boost_1.8x_30min", "type": "enh_boost", "multiplier": 1.8, "dur_key": "30min", "chance": 30},
+    {"key": "enh_boost_1.8x_4h",    "type": "enh_boost", "multiplier": 1.8, "dur_key": "4h",    "chance": 12},
+    {"key": "enh_boost_1.8x_24h",   "type": "enh_boost", "multiplier": 1.8, "dur_key": "24h",   "chance":  4},
     # ── 2× ────────────────────────────────────────────────
-    {"key": "enh_boost_2x_5min",    "type": "enh_boost", "multiplier": 2.0, "dur_key": "5min",  "chance": 42},
-    {"key": "enh_boost_2x_30min",   "type": "enh_boost", "multiplier": 2.0, "dur_key": "30min", "chance": 28},
-    {"key": "enh_boost_2x_1h",      "type": "enh_boost", "multiplier": 2.0, "dur_key": "1h",    "chance": 20},
-    {"key": "enh_boost_2x_2h",      "type": "enh_boost", "multiplier": 2.0, "dur_key": "2h",    "chance": 10},
+    {"key": "enh_boost_2x_30min",   "type": "enh_boost", "multiplier": 2.0, "dur_key": "30min", "chance": 18},
     {"key": "enh_boost_2x_4h",      "type": "enh_boost", "multiplier": 2.0, "dur_key": "4h",    "chance":  7},
-    {"key": "enh_boost_2x_10h",     "type": "enh_boost", "multiplier": 2.0, "dur_key": "10h",   "chance":  2},
-    {"key": "enh_boost_2x_24h",     "type": "enh_boost", "multiplier": 2.0, "dur_key": "24h",   "chance":  1},
+    {"key": "enh_boost_2x_24h",     "type": "enh_boost", "multiplier": 2.0, "dur_key": "24h",   "chance":  2},
 ]
 
 # 5 ядов: Гадюка / Кобра / Чёрная Мамба / Василиск / Левиафан
@@ -285,7 +250,7 @@ def _artifact_desc(a: dict, lang: str = "ru") -> str:
     eid  = a.get("emoji_id", "")
     emoji = f'<tg-emoji emoji-id="{eid}">♦️</tg-emoji> ' if eid else ""
     name = a.get("name_en", a["name"]) if lang == "en" else a["name"]
-    return f'{emoji}<b>{name}</b> — {a["multiplier"]}× {effect_label}'
+    return f'{emoji}<b><i>{name}</i></b> — {a["multiplier"]}× {effect_label}'
 
 
 _ARTIFACT_CASE_COIN_REWARD = 50_000_000  # монеты за 25%-шанс вместо артефакта
@@ -305,13 +270,13 @@ def open_artifact_case(data: dict, lang: str = "ru") -> tuple:
         data["balance"] = data.get("balance", 0) + coins
         if lang == "en":
             msg = (
-                f"<blockquote>{_pe('stats', '💎')} <b>Artifact Case opened!</b>\n"
-                f"{_pe('coin', '💰')} <b>Lucky coins drop: +{_fmt_num(coins)} {COIN}</b></blockquote>"
+                f"<blockquote>{_pe('stats', '💎')} <b><i>Artifact Case opened!</i></b>\n"
+                f"{_pe('coin', '💰')} <b><i>Lucky coins drop: +{_fmt_num(coins)} {COIN}</i></b></blockquote>"
             )
         else:
             msg = (
-                f"<blockquote>{_pe('stats', '💎')} <b>Кейс Артефактов открыт!</b>\n"
-                f"{_pe('coin', '💰')} <b>Монеты вместо артефакта: +{_fmt_num(coins)} {COIN}</b></blockquote>"
+                f"<blockquote>{_pe('stats', '💎')} <b><i>Кейс Артефактов открыт!</i></b>\n"
+                f"{_pe('coin', '💰')} <b><i>Монеты вместо артефакта: +{_fmt_num(coins)} {COIN}</i></b></blockquote>"
             )
         return True, msg, None
 
@@ -324,20 +289,20 @@ def open_artifact_case(data: dict, lang: str = "ru") -> tuple:
     already_have = any(entry["key"] == chosen["key"] for entry in artifacts)
     if not already_have:
         artifacts.append({"key": chosen["key"]})
-        added_msg = f"{_pe('ok', '✅')} <b>{_L(lang, 'Артефакт добавлен в коллекцию!', 'Artifact added to collection!')}</b>"
+        added_msg = f"{_pe('ok', '✅')} <b><i>{_L(lang, 'Артефакт добавлен в коллекцию!', 'Artifact added to collection!')}</i></b>"
     else:
         # Дубликат — выдаём монеты по множителю артефакта
         _dup_rewards = {1.3: 5_000_000, 1.5: 8_000_000, 1.8: 15_000_000, 1.4: 50_000_000}
         _dup_coins = _dup_rewards.get(chosen["multiplier"], 5_000_000)
         data["balance"] = data.get("balance", 0) + _dup_coins
         added_msg = (
-            f"{_pe('warn', '⚠️')} <b>{_L(lang, 'Этот артефакт у тебя уже есть!', 'You already have this artifact!')}</b>\n"
-            f"{_pe('coin', '💰')} <b>{_L(lang, 'Компенсация', 'Compensation')}: +{_fmt_num(_dup_coins)} {COIN}</b>"
+            f"{_pe('warn', '⚠️')} <b><i>{_L(lang, 'Этот артефакт у тебя уже есть!', 'You already have this artifact!')}</i></b>\n"
+            f"{_pe('coin', '💰')} <b><i>{_L(lang, 'Компенсация', 'Compensation')}: +{_fmt_num(_dup_coins)} {COIN}</i></b>"
         )
 
     msg = (
-        f"<blockquote>{_pe('stats', '💎')} <b>{_L(lang, 'Кейс Артефактов открыт!', 'Artifact Case opened!')}</b>\n"
-        f"{_pe('arrow', '➡️')} <b>{_L(lang, 'Выпало', 'Dropped')}: {_artifact_desc(chosen, lang)}</b></blockquote>\n"
+        f"<blockquote>{_pe('stats', '💎')} <b><i>{_L(lang, 'Кейс Артефактов открыт!', 'Artifact Case opened!')}</i></b>\n"
+        f"{_pe('arrow', '➡️')} <b><i>{_L(lang, 'Выпало', 'Dropped')}: {_artifact_desc(chosen, lang)}</i></b></blockquote>\n"
         f"\n<blockquote>{added_msg}</blockquote>"
     )
     return True, msg, chosen
@@ -371,18 +336,12 @@ def get_artifact_pets_multiplier(data: dict) -> float:
 
 
 _ENH_SELL_PRICES = {
-    # ── 1.2× ──
-    "enh_boost_1.2x_5min":  350,   "enh_boost_1.2x_30min": 1_000, "enh_boost_1.2x_1h":   1_700,
-    "enh_boost_1.2x_2h":  2_900,   "enh_boost_1.2x_4h":    4_600,  "enh_boost_1.2x_10h":  8_500,
-    "enh_boost_1.2x_24h": 15_000,
-    # ── 1.5× ──
-    "enh_boost_1.5x_5min":  550,   "enh_boost_1.5x_30min": 1_700,  "enh_boost_1.5x_1h":   3_000,
-    "enh_boost_1.5x_2h":  5_200,   "enh_boost_1.5x_4h":    8_000,  "enh_boost_1.5x_10h": 14_000,
-    "enh_boost_1.5x_24h": 24_000,
+    # ── 1.4× ──
+    "enh_boost_1.4x_30min": 1_500, "enh_boost_1.4x_4h": 6_500, "enh_boost_1.4x_24h": 20_000,
+    # ── 1.8× ──
+    "enh_boost_1.8x_30min": 2_500, "enh_boost_1.8x_4h": 11_000, "enh_boost_1.8x_24h": 32_000,
     # ── 2× ──
-    "enh_boost_2x_5min":   800,    "enh_boost_2x_30min":   2_600,  "enh_boost_2x_1h":     4_700,
-    "enh_boost_2x_2h":   8_500,    "enh_boost_2x_4h":     13_000,  "enh_boost_2x_10h":   22_000,
-    "enh_boost_2x_24h":  40_000,
+    "enh_boost_2x_30min":   3_500, "enh_boost_2x_4h":   16_000, "enh_boost_2x_24h":   48_000,
     # ── Яды ──
     "poison_1": 7_500,
     "poison_2": 13_000,
@@ -396,12 +355,9 @@ def get_enh_sell_price(item: dict) -> int:
     return _ENH_SELL_PRICES.get(item["key"], 1_000)
 
 _XP_SELL_PRICES = {
-    "xpboost_1.4x_30min": 1_500, "xpboost_1.4x_1h": 2_800, "xpboost_1.4x_2h": 5_000,
-    "xpboost_1.4x_4h": 8_500, "xpboost_1.4x_6h": 13_000, "xpboost_1.4x_24h": 22_000,
-    "xpboost_1.4x_48h": 38_000,
-    "xpboost_1.8x_30min": 3_000, "xpboost_1.8x_1h": 5_500, "xpboost_1.8x_2h": 10_000,
-    "xpboost_1.8x_4h": 17_000, "xpboost_1.8x_6h": 26_000, "xpboost_1.8x_24h": 45_000,
-    "xpboost_1.8x_48h": 80_000,
+    "xpboost_1.4x_30min": 1_500, "xpboost_1.4x_4h": 6_500,  "xpboost_1.4x_24h": 20_000,
+    "xpboost_1.8x_30min": 2_500, "xpboost_1.8x_4h": 11_000, "xpboost_1.8x_24h": 32_000,
+    "xpboost_2x_30min":   3_500, "xpboost_2x_4h":   16_000, "xpboost_2x_24h":   48_000,
 }
 
 
@@ -632,19 +588,19 @@ def open_case(data: dict, case_key: str, lang: str = "ru") -> tuple:
             data["xp_max"] = xp_max
             if lvl_ups:
                 if lang == "en":
-                    lvl_msg = f"\n🎉 <b>Level up to {level}!</b>" if lvl_ups <= 3 else f"\n🎉 <b>Level up to {level} (+{lvl_ups} lvl)!</b>"
+                    lvl_msg = f"\n🎉 <b><i>Level up to {level}!</i></b>" if lvl_ups <= 3 else f"\n🎉 <b><i>Level up to {level} (+{lvl_ups} lvl)!</i></b>"
                 else:
-                    lvl_msg = f"\n🎉 <b>Уровень повышен до {level}!</b>" * min(lvl_ups, 3) if lvl_ups <= 3 else f"\n🎉 <b>Уровень повышен до {level} (+{lvl_ups} ур.)!</b>"
+                    lvl_msg = f"\n🎉 <b><i>Уровень повышен до {level}!</i></b>" * min(lvl_ups, 3) if lvl_ups <= 3 else f"\n🎉 <b><i>Уровень повышен до {level} (+{lvl_ups} ур.)!</i></b>"
             else:
                 lvl_msg = ""
             data["cases_total_opened"] = data.get("cases_total_opened", 0) + 1
             data["cases_total_spent"]  = data.get("cases_total_spent",  0) + cost
             msg = (
-                f"<blockquote>{_pe('case', '📦')} <b>{_L(lang, 'Кейс открыт!', 'Case opened!')}</b>\n"
-                f"{_pe('arrow', '➡️')} <b>{_L(lang, 'Выпало', 'Dropped')}:</b> {name}</blockquote>\n"
-                f"\n<blockquote>{_pe('xp_instant', '✨')} <b>+{_fmt_num(gained)} XP {_L(lang, 'начислено сразу!', 'applied instantly!')}</b>{lvl_msg}</blockquote>\n"
-                f"\n<blockquote>{_pe('spent', '💸')} <b>{_L(lang, 'Потрачено', 'Spent')}: {_fmt_num(cost)}</b> {_pe('coin', '💰')}\n"
-                f"{_pe('balance', '💰')} <b>{_L(lang, 'Баланс', 'Balance')}: {_fmt_num(data['balance'])}</b> {_pe('coin', '💰')}</blockquote>"
+                f"<blockquote>{_pe('case', '📦')} <b><i>{_L(lang, 'Кейс открыт!', 'Case opened!')}</i></b>\n"
+                f"{_pe('arrow', '➡️')} <b><i>{_L(lang, 'Выпало', 'Dropped')}:</i></b> {name}</blockquote>\n"
+                f"\n<blockquote>{_pe('xp_instant', '✨')} <b><i>+{_fmt_num(gained)} XP {_L(lang, 'начислено сразу!', 'applied instantly!')}</i></b>{lvl_msg}</blockquote>\n"
+                f"\n<blockquote>{_pe('spent', '💸')} <b><i>{_L(lang, 'Потрачено', 'Spent')}: {_fmt_num(cost)}</i></b> {_pe('coin', '💰')}\n"
+                f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс', 'Balance')}: {_fmt_num(data['balance'])}</i></b> {_pe('coin', '💰')}</blockquote>"
             )
             return True, msg, instance
         else:
@@ -657,11 +613,11 @@ def open_case(data: dict, case_key: str, lang: str = "ru") -> tuple:
     data["cases_total_opened"] = data.get("cases_total_opened", 0) + 1
     data["cases_total_spent"]  = data.get("cases_total_spent",  0) + cost
     msg = (
-        f"<blockquote>{_pe('case', '📦')} <b>{_L(lang, 'Кейс открыт!', 'Case opened!')}</b>\n"
-        f"{_pe('arrow', '➡️')} <b>{_L(lang, 'Выпало', 'Dropped')}:</b> {name}</blockquote>\n"
-        f"\n<blockquote>{_pe('spent', '💸')} <b>{_L(lang, 'Потрачено', 'Spent')}: {_fmt_num(cost)}</b> {_pe('coin', '💰')}\n"
-        f"{_pe('balance', '💰')} <b>{_L(lang, 'Баланс', 'Balance')}: {_fmt_num(data['balance'])}</b> {_pe('coin', '💰')}\n"
-        f"{_pe('inv', '🎒')} <b>{inv_line}</b></blockquote>"
+        f"<blockquote>{_pe('case', '📦')} <b><i>{_L(lang, 'Кейс открыт!', 'Case opened!')}</i></b>\n"
+        f"{_pe('arrow', '➡️')} <b><i>{_L(lang, 'Выпало', 'Dropped')}:</i></b> {name}</blockquote>\n"
+        f"\n<blockquote>{_pe('spent', '💸')} <b><i>{_L(lang, 'Потрачено', 'Spent')}: {_fmt_num(cost)}</i></b> {_pe('coin', '💰')}\n"
+        f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс', 'Balance')}: {_fmt_num(data['balance'])}</i></b> {_pe('coin', '💰')}\n"
+        f"{_pe('inv', '🎒')} <b><i>{inv_line}</i></b></blockquote>"
     )
     return True, msg, instance
 
@@ -749,23 +705,23 @@ def open_case_multi(data: dict, case_num: int, qty: int, lang: str = "ru") -> tu
             e = ENH_POOL_BY_KEY.get(item_key)
             name = _enh_item_name_plain(e, lang) if e else item_key
         qty_str = f" ×{count}" if count > 1 else ""
-        result_lines.append(f"<b>{name}</b>{qty_str}")
+        result_lines.append(f"<b><i>{name}</i></b>{qty_str}")
 
     loot_text = "\n".join(f"  • {l}" for l in result_lines)
 
     if lang == "en":
         msg = (
-            f"<blockquote>{_pe('case', '📦')} <b>Opened {opened_count}× {cname} case{'s' if opened_count != 1 else ''}!</b></blockquote>\n"
-            f"\n<blockquote><b>Loot:</b>\n{loot_text}</blockquote>\n"
-            f"\n<blockquote>{_pe('spent', '💸')} <b>Spent: {_fmt_num(spent)}</b> {_pe('coin', '💰')}\n"
-            f"{_pe('balance', '💰')} <b>Balance: {_fmt_num(data['balance'])}</b> {_pe('coin', '💰')}</blockquote>"
+            f"<blockquote>{_pe('case', '📦')} <b><i>Opened {opened_count}× {cname} case{'s' if opened_count != 1 else ''}!</i></b></blockquote>\n"
+            f"\n<blockquote><b><i>Loot:</i></b>\n{loot_text}</blockquote>\n"
+            f"\n<blockquote>{_pe('spent', '💸')} <b><i>Spent: {_fmt_num(spent)}</i></b> {_pe('coin', '💰')}\n"
+            f"{_pe('balance', '💰')} <b><i>Balance: {_fmt_num(data['balance'])}</i></b> {_pe('coin', '💰')}</blockquote>"
         )
     else:
         msg = (
-            f"<blockquote>{_pe('case', '📦')} <b>Открыто {opened_count}× кейс {cname}!</b></blockquote>\n"
-            f"\n<blockquote><b>Лут:</b>\n{loot_text}</blockquote>\n"
-            f"\n<blockquote>{_pe('spent', '💸')} <b>Потрачено: {_fmt_num(spent)}</b> {_pe('coin', '💰')}\n"
-            f"{_pe('balance', '💰')} <b>Баланс: {_fmt_num(data['balance'])}</b> {_pe('coin', '💰')}</blockquote>"
+            f"<blockquote>{_pe('case', '📦')} <b><i>Открыто {opened_count}× кейс {cname}!</i></b></blockquote>\n"
+            f"\n<blockquote><b><i>Лут:</i></b>\n{loot_text}</blockquote>\n"
+            f"\n<blockquote>{_pe('spent', '💸')} <b><i>Потрачено: {_fmt_num(spent)}</i></b> {_pe('coin', '💰')}\n"
+            f"{_pe('balance', '💰')} <b><i>Баланс: {_fmt_num(data['balance'])}</i></b> {_pe('coin', '💰')}</blockquote>"
         )
     return True, msg
 
@@ -788,9 +744,9 @@ def activate_booster(data: dict, instance_id: str, force: bool = False, lang: st
     mult = _multiplier_label(item["multiplier"])
     dur  = _dur_label(item["dur_key"], lang)
     return True, (
-        f"<blockquote>{_pe('activate', '✅')} <b>{_L(lang, 'Ускоритель активирован!', 'Booster activated!')}</b>\n"
-        f"{_pe('boost', '⚡')} <b>{_booster_name(item, lang)}</b>\n"
-        f"<b>{_L(lang, 'Все показатели кирки', 'All pickaxe stats')} ×{mult} {_L(lang, 'на', 'for')} {dur}!</b></blockquote>"
+        f"<blockquote>{_pe('activate', '✅')} <b><i>{_L(lang, 'Ускоритель активирован!', 'Booster activated!')}</i></b>\n"
+        f"{_pe('boost', '⚡')} <b><i>{_booster_name(item, lang)}</i></b>\n"
+        f"<b><i>{_L(lang, 'Все показатели кирки', 'All pickaxe stats')} ×{mult} {_L(lang, 'на', 'for')} {dur}!</i></b></blockquote>"
     )
 
 
@@ -803,10 +759,10 @@ def sell_booster(data: dict, instance_id: str, lang: str = "ru") -> tuple:
     data["boosters_inventory"] = [x for x in inv if x["instance_id"] != instance_id]
     data["balance"] = data.get("balance", 0) + price
     return True, (
-        f"<blockquote>{_pe('sell', '💸')} <b>{_L(lang, 'Ускоритель продан!', 'Booster sold!')}</b>\n"
-        f"{_pe('boost', '⚡')} <b>{_booster_name(item, lang)}</b>\n"
-        f"{_pe('coin', '💰')} <b>+{_fmt_num(price)}</b>\n"
-        f"{_pe('balance', '💰')} <b>{_L(lang, 'Баланс', 'Balance')}: {_fmt_num(data['balance'])}</b> {_pe('coin', '💰')}</blockquote>"
+        f"<blockquote>{_pe('sell', '💸')} <b><i>{_L(lang, 'Ускоритель продан!', 'Booster sold!')}</i></b>\n"
+        f"{_pe('boost', '⚡')} <b><i>{_booster_name(item, lang)}</i></b>\n"
+        f"{_pe('coin', '💰')} <b><i>+{_fmt_num(price)}</i></b>\n"
+        f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс', 'Balance')}: {_fmt_num(data['balance'])}</i></b> {_pe('coin', '💰')}</blockquote>"
     ), price
 
 
@@ -829,8 +785,8 @@ def use_xp_item(data: dict, instance_id: str, force: bool = False, lang: str = "
         mult = _multiplier_label(item["multiplier"])
         dur  = _dur_label(item["dur_key"], lang)
         return True, (
-            f"<blockquote>{_pe('xp_boost', '🔮')} <b>{_L(lang, 'XP-ускоритель активирован!', 'XP booster activated!')}</b>\n"
-            f"{_pe('xp_instant', '✨')} <b>{_L(lang, 'Множитель опыта', 'XP multiplier')} ×{mult} {_L(lang, 'на', 'for')} {dur}!</b></blockquote>"
+            f"<blockquote>{_pe('xp_boost', '🔮')} <b><i>{_L(lang, 'XP-ускоритель активирован!', 'XP booster activated!')}</i></b>\n"
+            f"{_pe('xp_instant', '✨')} <b><i>{_L(lang, 'Множитель опыта', 'XP multiplier')} ×{mult} {_L(lang, 'на', 'for')} {dur}!</i></b></blockquote>"
         )
     from miner import xp_for_level, MAX_LEVEL
     gained = item["xp"]
@@ -850,18 +806,18 @@ def use_xp_item(data: dict, instance_id: str, force: bool = False, lang: str = "
     data["xp"]     = xp
     data["xp_max"] = xp_max
     if lang == "en":
-        lvl_msg = f"\n🎉 <b>Level up to {level}!</b>" * min(lvl_ups, 3)
+        lvl_msg = f"\n🎉 <b><i>Level up to {level}!</i></b>" * min(lvl_ups, 3)
         if lvl_ups > 3:
-            lvl_msg = f"\n🎉 <b>Level up to {level} (+{lvl_ups} lvl)!</b>"
+            lvl_msg = f"\n🎉 <b><i>Level up to {level} (+{lvl_ups} lvl)!</i></b>"
     else:
-        lvl_msg = f"\n🎉 <b>Уровень повышен до {level}!</b>" * min(lvl_ups, 3)
+        lvl_msg = f"\n🎉 <b><i>Уровень повышен до {level}!</i></b>" * min(lvl_ups, 3)
         if lvl_ups > 3:
-            lvl_msg = f"\n🎉 <b>Уровень повышен до {level} (+{lvl_ups} ур.)!</b>"
+            lvl_msg = f"\n🎉 <b><i>Уровень повышен до {level} (+{lvl_ups} ур.)!</i></b>"
     return True, (
-        f"<blockquote>{_pe('xp_instant', '✨')} <b>{_L(lang, 'Опыт получен!', 'XP received!')}</b>\n"
-        f"{_pe('xp_instant', '✨')} <b>+{_fmt_num(gained)} XP</b>{lvl_msg}</blockquote>\n"
-        f"\n<blockquote><b>{_L(lang, 'Уровень', 'Level')}: {level}</b>\n"
-        f"<b>{_L(lang, 'Опыт', 'XP')}: {_fmt_num(xp)}/{_fmt_num(xp_max)}</b></blockquote>"
+        f"<blockquote>{_pe('xp_instant', '✨')} <b><i>{_L(lang, 'Опыт получен!', 'XP received!')}</i></b>\n"
+        f"{_pe('xp_instant', '✨')} <b><i>+{_fmt_num(gained)} XP</i></b>{lvl_msg}</blockquote>\n"
+        f"\n<blockquote><b><i>{_L(lang, 'Уровень', 'Level')}: {level}</i></b>\n"
+        f"<b><i>{_L(lang, 'Опыт', 'XP')}: {_fmt_num(xp)}/{_fmt_num(xp_max)}</i></b></blockquote>"
     )
 
 
@@ -874,10 +830,10 @@ def sell_xp_item(data: dict, instance_id: str, lang: str = "ru") -> tuple:
     data["xp_inventory"] = [x for x in inv if x["instance_id"] != instance_id]
     data["balance"] = data.get("balance", 0) + price
     return True, (
-        f"<blockquote>{_pe('sell', '💸')} <b>{_L(lang, 'Продано!', 'Sold!')}</b>\n"
+        f"<blockquote>{_pe('sell', '💸')} <b><i>{_L(lang, 'Продано!', 'Sold!')}</i></b>\n"
         f"{_xp_item_name(item, lang)}\n"
-        f"{_pe('coin', '💰')} <b>+{_fmt_num(price)}</b>\n"
-        f"{_pe('balance', '💰')} <b>{_L(lang, 'Баланс', 'Balance')}: {_fmt_num(data['balance'])}</b> {_pe('coin', '💰')}</blockquote>"
+        f"{_pe('coin', '💰')} <b><i>+{_fmt_num(price)}</i></b>\n"
+        f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс', 'Balance')}: {_fmt_num(data['balance'])}</i></b> {_pe('coin', '💰')}</blockquote>"
     ), price
 
 
@@ -984,10 +940,10 @@ def use_poison(data: dict, instance_id: str, force: bool = False, lang: str = "r
     }
     pname = _poison_names_en.get(item["name"], item["name"]) if lang == "en" else item["name"]
     return True, (
-        f'<blockquote><tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>{_L(lang, "Яд применён!", "Poison applied!")}</b>\n'
-        f'<b>{pname}</b>\n'
-        f'<tg-emoji emoji-id="{_E["timer"]}">⏱</tg-emoji> <b>{_L(lang, "Урон наносится 30 минут автоматически", "Damage applied automatically for 30 minutes")}</b>\n'
-        f'<b>{_L(lang, "Суммарный урон боссу", "Total boss damage")}: {_fmt_num(item["damage"])}</b></blockquote>'
+        f'<blockquote><tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>{_L(lang, "Яд применён!", "Poison applied!")}</i></b>\n'
+        f'<b><i>{pname}</i></b>\n'
+        f'<tg-emoji emoji-id="{_E["timer"]}">⏱</tg-emoji> <b><i>{_L(lang, "Урон наносится 30 минут автоматически", "Damage applied automatically for 30 minutes")}</i></b>\n'
+        f'<b><i>{_L(lang, "Суммарный урон боссу", "Total boss damage")}: {_fmt_num(item["damage"])}</i></b></blockquote>'
     )
 
 
@@ -1004,10 +960,10 @@ def sell_enh_item(data: dict, instance_id: str, lang: str = "ru") -> tuple:
     data["enh_inventory"] = [x for x in inv if x["instance_id"] != instance_id]
     data["balance"] = data.get("balance", 0) + price
     return True, (
-        f'{_pe("sell", "💸")} <b>{_L(lang, "Продано!", "Sold!")}</b>\n'
+        f'{_pe("sell", "💸")} <b><i>{_L(lang, "Продано!", "Sold!")}</i></b>\n'
         f'{_enh_item_name(item, lang)}\n'
-        f'{_pe("coin", "💰")} <b>+{_fmt_num(price)}</b>\n'
-        f'{_pe("balance", "💰")} <b>{_L(lang, "Баланс", "Balance")}: {_fmt_num(data["balance"])}</b> {_pe("coin", "💰")}'
+        f'{_pe("coin", "💰")} <b><i>+{_fmt_num(price)}</i></b>\n'
+        f'{_pe("balance", "💰")} <b><i>{_L(lang, "Баланс", "Balance")}: {_fmt_num(data["balance"])}</i></b> {_pe("coin", "💰")}'
     ), price
 
 
@@ -1036,8 +992,8 @@ def activate_enh_boost(data: dict, instance_id: str, force: bool = False, lang: 
     mult = _multiplier_label(item["multiplier"])
     dur  = _dur_label(item["dur_key"], lang)
     return True, (
-        f'{_pe("enh_boost", "⚡")} <b>{_L(lang, "Усилитель активирован!", "Enhancer activated!")}</b>\n'
-        f'<b>{_L(lang, "Урон", "Damage")} ×{mult} {_L(lang, "на", "for")} {dur}!</b>'
+        f'{_pe("enh_boost", "⚡")} <b><i>{_L(lang, "Усилитель активирован!", "Enhancer activated!")}</i></b>\n'
+        f'<b><i>{_L(lang, "Урон", "Damage")} ×{mult} {_L(lang, "на", "for")} {dur}!</i></b>'
     )
 
 
@@ -1049,16 +1005,16 @@ def enh_inventory_text(data: dict, lang: str = "ru") -> str:
     inv      = data.setdefault("enh_inventory", [])
     poison   = get_active_poison_info(data)
     enh_act  = get_active_enh_booster_info(data)
-    lines    = [f'<blockquote><tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>{_L(lang, "УСИЛИТЕЛИ И ЯДЫ", "BOOSTERS & POISONS")}</b>\n']
+    lines    = [f'<blockquote><tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>{_L(lang, "УСИЛИТЕЛИ И ЯДЫ", "BOOSTERS & POISONS")}</i></b>\n']
     if enh_act:
         left = _fmt_time_left(enh_act["ends_at"] - _now_ts(), lang)
         mult = _multiplier_label(enh_act["multiplier"])
         lines.append(
-            f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>{_L(lang, "Активен усилитель", "Active booster")}: ×{mult}</b>\n'
-            f'{_pe("timer", "⏱")} <b>{_L(lang, "Осталось", "Left")}: {left}</b>\n'
+            f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>{_L(lang, "Активен усилитель", "Active booster")}: ×{mult}</i></b>\n'
+            f'{_pe("timer", "⏱")} <b><i>{_L(lang, "Осталось", "Left")}: {left}</i></b>\n'
         )
     else:
-        lines.append(f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>{_L(lang, "Нет активного усилителя.", "No active booster.")}</b>\n')
+        lines.append(f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>{_L(lang, "Нет активного усилителя.", "No active booster.")}</i></b>\n')
     if poison:
         left = _fmt_time_left(poison["ends_at"] - _now_ts(), lang)
         dmg  = _fmt_num(poison["damage"])
@@ -1070,22 +1026,22 @@ def enh_inventory_text(data: dict, lang: str = "ru") -> str:
         pname = _poison_names_en.get(poison["name"], poison["name"]) if lang == "en" else poison["name"]
         dmg_label = "dmg" if lang == "en" else "урона"
         lines.append(
-            f'{_pe("ok", "✅")} <b>{_L(lang, "Яд", "Poison")}: {pname} — {dmg} {dmg_label}</b>\n'
-            f'{_pe("timer", "⏱")} <b>{_L(lang, "Осталось", "Left")}: {left}</b>'
+            f'{_pe("ok", "✅")} <b><i>{_L(lang, "Яд", "Poison")}: {pname} — {dmg} {dmg_label}</i></b>\n'
+            f'{_pe("timer", "⏱")} <b><i>{_L(lang, "Осталось", "Left")}: {left}</i></b>'
         )
     else:
-        lines.append(f'{_pe("cancel", "❌")} <b>{_L(lang, "Нет активного яда.", "No active poison.")}</b>')
+        lines.append(f'{_pe("cancel", "❌")} <b><i>{_L(lang, "Нет активного яда.", "No active poison.")}</i></b>')
     lines.append("</blockquote>")
     if not inv:
         lines.append(
             f'\n<blockquote><tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji>'
-            f' <b>{_L(lang, "Инвентарь пуст. Открой Кейс усилителей!", "Inventory empty. Open an Enhancer case!")}</b></blockquote>'
+            f' <b><i>{_L(lang, "Инвентарь пуст. Открой Кейс усилителей!", "Inventory empty. Open an Enhancer case!")}</i></b></blockquote>'
         )
     else:
-        lines.append(f'\n<blockquote><b>{_L(lang, "В инвентаре", "In inventory")} ({len(inv)}/{MAX_ENH_INVENTORY}):</b>')
+        lines.append(f'\n<blockquote><b><i>{_L(lang, "В инвентаре", "In inventory")} ({len(inv)}/{MAX_ENH_INVENTORY}):</i></b>')
         for i, item in enumerate(inv, 1):
             price = get_enh_sell_price(item)
-            lines.append(f'\n<b>{i}. {_enh_item_name(item, lang)}</b>\n{_pe("coin", "💰")} <b>{_fmt_num(price)}</b>')
+            lines.append(f'\n<b><i>{i}. {_enh_item_name(item, lang)}</i></b>\n{_pe("coin", "💰")} <b><i>{_fmt_num(price)}</i></b>')
         lines.append('</blockquote>')
     return "".join(lines)
 
@@ -1118,8 +1074,8 @@ def enh_item_detail_text(data: dict, instance_id: str, lang: str = "ru") -> str:
             }
             aname = _poison_names_en.get(poison_act["name"], poison_act["name"]) if lang == "en" else poison_act["name"]
             warning = (
-                f'\n\n<blockquote>{_pe("warn", "⚠️")} <b>{_L(lang, "Уже активен", "Already active")}: {aname}</b>\n'
-                f'{_pe("timer", "⏱")} <b>{_L(lang, "Осталось", "Left")}: {left}</b></blockquote>'
+                f'\n\n<blockquote>{_pe("warn", "⚠️")} <b><i>{_L(lang, "Уже активен", "Already active")}: {aname}</i></b>\n'
+                f'{_pe("timer", "⏱")} <b><i>{_L(lang, "Осталось", "Left")}: {left}</i></b></blockquote>'
             )
         _poison_names_en2 = {
             "Яд Гадюки": "Viper Venom", "Яд Кобры": "Cobra Venom",
@@ -1129,12 +1085,12 @@ def enh_item_detail_text(data: dict, instance_id: str, lang: str = "ru") -> str:
         pname = _poison_names_en2.get(item["name"], item["name"]) if lang == "en" else item["name"]
         return (
             f'<blockquote><tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji>'
-            f' <b>{pname}</b>\n'
-            f'{_pe("timer", "⏱")} <b>{_L(lang, "Длительность: 30 минут", "Duration: 30 minutes")}</b>\n'
-            f'<b>{_L(lang, "Суммарный урон боссу", "Total boss damage")}: {_fmt_num(item["damage"])}</b></blockquote>\n'
-            f'\n<blockquote><b>{_L(lang, "Яд действует автоматически — урон списывается равномерно каждую минуту.", "Poison works automatically — damage applied evenly each minute.")}</b>\n'
-            f'<b>{_L(lang, "Работает на текущего активного босса.", "Works on the current active boss.")}</b></blockquote>\n'
-            f'\n<blockquote>{_pe("coin", "💰")} <b>{_L(lang, "Цена продажи", "Sell price")}: {_fmt_num(price)}</b></blockquote>'
+            f' <b><i>{pname}</i></b>\n'
+            f'{_pe("timer", "⏱")} <b><i>{_L(lang, "Длительность: 30 минут", "Duration: 30 minutes")}</i></b>\n'
+            f'<b><i>{_L(lang, "Суммарный урон боссу", "Total boss damage")}: {_fmt_num(item["damage"])}</i></b></blockquote>\n'
+            f'\n<blockquote><b><i>{_L(lang, "Яд действует автоматически — урон списывается равномерно каждую минуту.", "Poison works automatically — damage applied evenly each minute.")}</i></b>\n'
+            f'<b><i>{_L(lang, "Работает на текущего активного босса.", "Works on the current active boss.")}</i></b></blockquote>\n'
+            f'\n<blockquote>{_pe("coin", "💰")} <b><i>{_L(lang, "Цена продажи", "Sell price")}: {_fmt_num(price)}</i></b></blockquote>'
             f'{warning}'
         )
     # enh_boost
@@ -1147,16 +1103,16 @@ def enh_item_detail_text(data: dict, instance_id: str, lang: str = "ru") -> str:
         act_mult = _multiplier_label(active["multiplier"])
         act_dur  = _dur_label(active["dur_key"], lang)
         warning  = (
-            f'\n\n<blockquote>{_pe("warn", "⚠️")} <b>{_L(lang, "Активен", "Active")}: {act_mult} {_L(lang, "на", "for")} {act_dur}</b>\n'
-            f'{_pe("timer", "⏱")} <b>{_L(lang, "Осталось", "Left")}: {left}</b></blockquote>'
+            f'\n\n<blockquote>{_pe("warn", "⚠️")} <b><i>{_L(lang, "Активен", "Active")}: {act_mult} {_L(lang, "на", "for")} {act_dur}</i></b>\n'
+            f'{_pe("timer", "⏱")} <b><i>{_L(lang, "Осталось", "Left")}: {left}</i></b></blockquote>'
         )
     return (
         f'<blockquote><tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji>'
-        f' <b>{_L(lang, "Усилитель урона", "Damage booster")} {mult}</b>\n'
-        f'{_pe("timer", "⏱")} <b>{_L(lang, "Длительность", "Duration")}: {dur}</b>\n'
-        f'{_pe("mult", "🔢")} <b>{_L(lang, "Множитель", "Multiplier")}: {mult}</b></blockquote>\n'
-        f'\n<blockquote><b>{_L(lang, f"Увеличивает весь урон по боссу в {mult} на {dur}.", f"Increases all boss damage by {mult} for {dur}.")}</b></blockquote>\n'
-        f'\n<blockquote>{_pe("coin", "💰")} <b>{_L(lang, "Цена продажи", "Sell price")}: {_fmt_num(price)}</b></blockquote>'
+        f' <b><i>{_L(lang, "Усилитель урона", "Damage booster")} {mult}</i></b>\n'
+        f'{_pe("timer", "⏱")} <b><i>{_L(lang, "Длительность", "Duration")}: {dur}</i></b>\n'
+        f'{_pe("mult", "🔢")} <b><i>{_L(lang, "Множитель", "Multiplier")}: {mult}</i></b></blockquote>\n'
+        f'\n<blockquote><b><i>{_L(lang, f"Увеличивает весь урон по боссу в {mult} на {dur}.", f"Increases all boss damage by {mult} for {dur}.")}</i></b></blockquote>\n'
+        f'\n<blockquote>{_pe("coin", "💰")} <b><i>{_L(lang, "Цена продажи", "Sell price")}: {_fmt_num(price)}</i></b></blockquote>'
         f'{warning}'
     )
 
@@ -1190,11 +1146,11 @@ def enh_confirm_replace_text(data: dict, instance_id: str, replace_type: str, la
         aname = _poison_names_en.get(active["name"], active["name"]) if lang == "en" else active["name"]
         iname = _poison_names_en.get(item["name"], item["name"]) if lang == "en" else item["name"]
         return (
-            f'<blockquote>{_pe("warn", "⚠️")} <b>{_L(lang, "Замена яда", "Replace poison")}</b>\n'
-            f'<b>{_L(lang, "Сейчас активен", "Currently active")}: {aname}</b>\n'
-            f'{_pe("timer", "⏱")} <b>{_L(lang, "Осталось", "Left")}: {left}</b></blockquote>\n'
-            f'\n<blockquote><b>{_L(lang, "Заменить на", "Replace with")}: {iname}?</b>\n'
-            f'{_pe("warn", "⚠️")} <b>{_L(lang, "Текущий яд будет потерян!", "Current poison will be lost!")}</b></blockquote>'
+            f'<blockquote>{_pe("warn", "⚠️")} <b><i>{_L(lang, "Замена яда", "Replace poison")}</i></b>\n'
+            f'<b><i>{_L(lang, "Сейчас активен", "Currently active")}: {aname}</i></b>\n'
+            f'{_pe("timer", "⏱")} <b><i>{_L(lang, "Осталось", "Left")}: {left}</i></b></blockquote>\n'
+            f'\n<blockquote><b><i>{_L(lang, "Заменить на", "Replace with")}: {iname}?</i></b>\n'
+            f'{_pe("warn", "⚠️")} <b><i>{_L(lang, "Текущий яд будет потерян!", "Current poison will be lost!")}</i></b></blockquote>'
         )
     active = data.get("active_enh_booster")
     if not active:
@@ -1205,11 +1161,11 @@ def enh_confirm_replace_text(data: dict, instance_id: str, replace_type: str, la
     new_mult = _multiplier_label(item["multiplier"])
     new_dur  = _dur_label(item["dur_key"], lang)
     return (
-        f'<blockquote>{_pe("warn", "⚠️")} <b>{_L(lang, "Замена усилителя", "Replace booster")}</b>\n'
-        f'<b>{_L(lang, "Сейчас активен", "Currently active")}: {act_mult} {_L(lang, "на", "for")} {act_dur}</b>\n'
-        f'{_pe("timer", "⏱")} <b>{_L(lang, "Осталось", "Left")}: {left}</b></blockquote>\n'
-        f'\n<blockquote><b>{_L(lang, "Заменить на", "Replace with")}: {new_mult} {_L(lang, "на", "for")} {new_dur}?</b>\n'
-        f'{_pe("warn", "⚠️")} <b>{_L(lang, "Старый усилитель будет потерян!", "Old booster will be lost!")}</b></blockquote>'
+        f'<blockquote>{_pe("warn", "⚠️")} <b><i>{_L(lang, "Замена усилителя", "Replace booster")}</i></b>\n'
+        f'<b><i>{_L(lang, "Сейчас активен", "Currently active")}: {act_mult} {_L(lang, "на", "for")} {act_dur}</i></b>\n'
+        f'{_pe("timer", "⏱")} <b><i>{_L(lang, "Осталось", "Left")}: {left}</i></b></blockquote>\n'
+        f'\n<blockquote><b><i>{_L(lang, "Заменить на", "Replace with")}: {new_mult} {_L(lang, "на", "for")} {new_dur}?</i></b>\n'
+        f'{_pe("warn", "⚠️")} <b><i>{_L(lang, "Старый усилитель будет потерян!", "Old booster will be lost!")}</i></b></blockquote>'
     )
 
 
@@ -1234,20 +1190,20 @@ def cases_shop_text(data: dict = None, lang: str = "ru") -> str:
     total_spent  = (data or {}).get("cases_total_spent",  0)
     if lang == "en":
         return (
-            f"<blockquote>{_pe('shop', '🛒')} <b>CASE SHOP</b>\n"
-            f"<b>Open cases and get bonuses!</b></blockquote>\n"
-            f'\n<blockquote><tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> <b>Your stats</b>\n'
-            f"<b>Cases opened: {_fmt_num(total_opened)}</b>\n"
-            f"{_pe('spent', '💸')} <b>Spent: {_fmt_num(total_spent)}</b> {_pe('coin', '💰')}</blockquote>\n"
-            f'\n<blockquote><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji> <b>Good luck! May something great drop</b><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji></blockquote>'
+            f"<blockquote>{_pe('shop', '🛒')} <b><i>CASE SHOP</i></b>\n"
+            f"<b><i>Open cases and get bonuses!</i></b></blockquote>\n"
+            f'\n<blockquote><tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> <b><i>Your stats</i></b>\n'
+            f"<b><i>Cases opened: {_fmt_num(total_opened)}</i></b>\n"
+            f"{_pe('spent', '💸')} <b><i>Spent: {_fmt_num(total_spent)}</i></b> {_pe('coin', '💰')}</blockquote>\n"
+            f'\n<blockquote><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji> <b><i>Good luck! May something great drop</i></b><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji></blockquote>'
         )
     return (
-        f"<blockquote>{_pe('shop', '🛒')} <b>МАГАЗИН КЕЙСОВ</b>\n"
-        f"<b>Открывай кейсы и получай бонусы!</b></blockquote>\n"
-        f'\n<blockquote><tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> <b>Твоя статистика</b>\n'
-        f"<b>Открыто кейсов: {_fmt_num(total_opened)}</b>\n"
-        f"{_pe('spent', '💸')} <b>Потрачено: {_fmt_num(total_spent)}</b> {_pe('coin', '💰')}</blockquote>\n"
-        f'\n<blockquote><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji> <b>Удачи тебе! Пусть выпадет что-то крутое</b><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji></blockquote>'
+        f"<blockquote>{_pe('shop', '🛒')} <b><i>МАГАЗИН КЕЙСОВ</i></b>\n"
+        f"<b><i>Открывай кейсы и получай бонусы!</i></b></blockquote>\n"
+        f'\n<blockquote><tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> <b><i>Твоя статистика</i></b>\n'
+        f"<b><i>Открыто кейсов: {_fmt_num(total_opened)}</i></b>\n"
+        f"{_pe('spent', '💸')} <b><i>Потрачено: {_fmt_num(total_spent)}</i></b> {_pe('coin', '💰')}</blockquote>\n"
+        f'\n<blockquote><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji> <b><i>Удачи тебе! Пусть выпадет что-то крутое</i></b><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji></blockquote>'
     )
 
 
@@ -1285,51 +1241,53 @@ def case_detail_text(data: dict, case_key: str, lang: str = "ru") -> str:
     if case["type"] == "booster":
         if lang == "en":
             loot_lines = (
-                f"{_pe('boost', '⚡')} <b>Booster 1.2× — 10min to 24h</b>\n"
-                f"{_pe('boost', '⚡')} <b>Booster 1.5× — 10min to 24h</b>\n"
-                f"{_pe('boost', '⚡')} <b>Booster 2× — 10min to 24h</b>"
+                f"{_pe('boost', '⚡')} <b><i>Booster 1.4× — 30min to 24h</i></b>\n"
+                f"{_pe('boost', '⚡')} <b><i>Booster 1.8× — 30min to 24h</i></b>\n"
+                f"{_pe('boost', '⚡')} <b><i>Booster 2× — 30min to 24h</i></b>"
             )
         else:
             loot_lines = (
-                f"{_pe('boost', '⚡')} <b>Ускоритель 1.2× — 10мин до 24ч</b>\n"
-                f"{_pe('boost', '⚡')} <b>Ускоритель 1.5× — 10мин до 24ч</b>\n"
-                f"{_pe('boost', '⚡')} <b>Ускоритель 2× — 10мин до 24ч</b>"
+                f"{_pe('boost', '⚡')} <b><i>Ускоритель 1.4× — 30мин до 24ч</i></b>\n"
+                f"{_pe('boost', '⚡')} <b><i>Ускоритель 1.8× — 30мин до 24ч</i></b>\n"
+                f"{_pe('boost', '⚡')} <b><i>Ускоритель 2× — 30мин до 24ч</i></b>"
             )
     elif case["type"] == "enhancer":
         if lang == "en":
             loot_lines = (
-                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>Damage booster 1.2× — 5min to 24h</b>\n'
-                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>Damage booster 1.5× — 5min to 24h</b>\n'
-                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>Damage booster 2× — 5min to 24h</b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>Viper Venom — 100 000 dmg (5%)</b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>Cobra Venom — 150 000 dmg (3%)</b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>Black Mamba Venom — 225 000 dmg (2%)</b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>Basilisk Venom — 350 000 dmg (1%)</b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>Leviathan Venom — 500 000 dmg (0.5%)</b>'
+                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Damage booster 1.4× — 30min to 24h</i></b>\n'
+                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Damage booster 1.8× — 30min to 24h</i></b>\n'
+                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Damage booster 2× — 30min to 24h</i></b>\n'
+                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Viper Venom — 100 000 dmg (5%)</i></b>\n'
+                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Cobra Venom — 150 000 dmg (3%)</i></b>\n'
+                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Black Mamba Venom — 225 000 dmg (2%)</i></b>\n'
+                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Basilisk Venom — 350 000 dmg (1%)</i></b>\n'
+                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Leviathan Venom — 500 000 dmg (0.5%)</i></b>'
             )
         else:
             loot_lines = (
-                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>Усилитель урона 1.2× — 5мин до 24ч</b>\n'
-                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>Усилитель урона 1.5× — 5мин до 24ч</b>\n'
-                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>Усилитель урона 2× — 5мин до 24ч</b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>Яд Гадюки — 100 000 урона (5%)</b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>Яд Кобры — 150 000 урона (3%)</b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>Яд Чёрной Мамбы — 225 000 урона (2%)</b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>Яд Василиска — 350 000 урона (1%)</b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>Яд Левиафана — 500 000 урона (0.5%)</b>'
+                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Усилитель урона 1.4× — 30мин до 24ч</i></b>\n'
+                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Усилитель урона 1.8× — 30мин до 24ч</i></b>\n'
+                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Усилитель урона 2× — 30мин до 24ч</i></b>\n'
+                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Яд Гадюки — 100 000 урона (5%)</i></b>\n'
+                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Яд Кобры — 150 000 урона (3%)</i></b>\n'
+                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Яд Чёрной Мамбы — 225 000 урона (2%)</i></b>\n'
+                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Яд Василиска — 350 000 урона (1%)</i></b>\n'
+                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Яд Левиафана — 500 000 урона (0.5%)</i></b>'
             )
     else:
         if lang == "en":
             loot_lines = (
-                f"{_pe('xp_instant', '✨')} <b>Instant XP: 100 / 225 / 750 / 2 000 / 5 000</b>\n"
-                f"{_pe('xp_boost', '🔮')} <b>XP booster ×1.4 — 30min to 48h</b>\n"
-                f"{_pe('xp_boost', '🔮')} <b>XP booster ×1.8 — 30min to 48h</b>"
+                f"{_pe('xp_instant', '✨')} <b><i>Instant XP: 100 / 225 / 750 / 2 000 / 5 000</i></b>\n"
+                f"{_pe('xp_boost', '🔮')} <b><i>XP booster ×1.4 — 30min to 24h</i></b>\n"
+                f"{_pe('xp_boost', '🔮')} <b><i>XP booster ×1.8 — 30min to 24h</i></b>\n"
+                f"{_pe('xp_boost', '🔮')} <b><i>XP booster ×2 — 30min to 24h</i></b>"
             )
         else:
             loot_lines = (
-                f"{_pe('xp_instant', '✨')} <b>Моментальный опыт: 100 / 225 / 750 / 2 000 / 5 000 XP</b>\n"
-                f"{_pe('xp_boost', '🔮')} <b>XP-ускоритель ×1.4 — от 30 мин до 48 ч</b>\n"
-                f"{_pe('xp_boost', '🔮')} <b>XP-ускоритель ×1.8 — от 30 мин до 48 ч</b>"
+                f"{_pe('xp_instant', '✨')} <b><i>Моментальный опыт: 100 / 225 / 750 / 2 000 / 5 000 XP</i></b>\n"
+                f"{_pe('xp_boost', '🔮')} <b><i>XP-ускоритель ×1.4 — от 30 мин до 24 ч</i></b>\n"
+                f"{_pe('xp_boost', '🔮')} <b><i>XP-ускоритель ×1.8 — от 30 мин до 24 ч</i></b>\n"
+                f"{_pe('xp_boost', '🔮')} <b><i>XP-ускоритель ×2 — от 30 мин до 24 ч</i></b>"
             )
     if case["type"] == "booster":
         e_key = "case"
@@ -1341,9 +1299,9 @@ def case_detail_text(data: dict, case_key: str, lang: str = "ru") -> str:
     cname = _CASE_NAMES_EN.get(case["key"], case["name"]) if lang == "en" else case["name"]
     case_label = "case" if lang == "en" else "кейс"
     status = (
-        f"{_pe('ok', '✅')} <b>{_L(lang, 'Хватает монет', 'Enough coins')}</b>"
+        f"{_pe('ok', '✅')} <b><i>{_L(lang, 'Хватает монет', 'Enough coins')}</i></b>"
         if can_buy else
-        f"{_pe('cancel', '❌')} <b>{_L(lang, 'Недостаточно монет', 'Not enough coins')}</b>"
+        f"{_pe('cancel', '❌')} <b><i>{_L(lang, 'Недостаточно монет', 'Not enough coins')}</i></b>"
     )
     # Номера кейсов для команды открытия
     _CASE_NUM = {"common": 1, "xp": 2, "enhancer": 3}
@@ -1361,10 +1319,10 @@ def case_detail_text(data: dict, case_key: str, lang: str = "ru") -> str:
             f"</i></blockquote>"
         )
     return (
-        f"<blockquote>{_pe(e_key, '📦')} <b>{cname} {case_label}</b>\n"
-        f"{_pe('coin', '💰')} <b>{_L(lang, 'Цена', 'Price')}:</b> <b>{_fmt_num(case['cost'])}</b>\n"
-        f"{_pe('balance', '💰')} <b>{_L(lang, 'Баланс', 'Balance')}:</b> <b>{bal_str}</b></blockquote>\n"
-        f"\n<blockquote><b>{_L(lang, 'Возможный лут', 'Possible loot')}:</b>\n{loot_lines}</blockquote>\n"
+        f"<blockquote>{_pe(e_key, '📦')} <b><i>{cname} {case_label}</i></b>\n"
+        f"{_pe('coin', '💰')} <b><i>{_L(lang, 'Цена', 'Price')}:</i></b> <b><i>{_fmt_num(case['cost'])}</i></b>\n"
+        f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс', 'Balance')}:</i></b> <b><i>{bal_str}</i></b></blockquote>\n"
+        f"\n<blockquote><b><i>{_L(lang, 'Возможный лут', 'Possible loot')}:</i></b>\n{loot_lines}</blockquote>\n"
         f"\n<blockquote>{status}</blockquote>"
         f"{cmd_hint}"
     )
@@ -1401,21 +1359,21 @@ def artifact_case_detail_text(data: dict, lang: str = "ru") -> str:
         eff_label = _get_effect_label(a["effect"], lang)
         aname = a.get("name_en", a["name"]) if lang == "en" else a["name"]
         return (
-            f'{_ae(a)} <b>{aname}</b> — '
-            f'<b><i>{a["multiplier"]}× {eff_label}</i></b> <b>({pct}%)</b>\n'
+            f'{_ae(a)} <b><i>{aname}</i></b> — '
+            f'<b><i><i>{a["multiplier"]}× {eff_label}</i></i></b> <b><i>({pct}%)</i></b>\n'
         )
 
     loot = "".join(_row(a, a["chance"]) for a in _ARTIFACT_POOL)
 
     return (
-        f'<blockquote><tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>{_L(lang, "Кейс Артефактов", "Artifact Case")}</b>\n'
-        f'<tg-emoji emoji-id="5262643974912355126">⭐</tg-emoji> <b>{_L(lang, "Цена", "Price")}: {ARTIFACT_CASE_COST_STARS} Telegram Stars</b></blockquote>\n'
-        f'\n<blockquote><b>{_L(lang, "Возможный лут", "Possible loot")}:</b>\n{loot}</blockquote>\n'
+        f'<blockquote><tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b><i>{_L(lang, "Кейс Артефактов", "Artifact Case")}</i></b>\n'
+        f'<tg-emoji emoji-id="5262643974912355126">⭐</tg-emoji> <b><i>{_L(lang, "Цена", "Price")}: {ARTIFACT_CASE_COST_STARS} Telegram Stars</i></b></blockquote>\n'
+        f'\n<blockquote><b><i>{_L(lang, "Возможный лут", "Possible loot")}:</i></b>\n{loot}</blockquote>\n'
         f'\n<blockquote>'
-        f'<tg-emoji emoji-id="{_E_BONUS}">✨</tg-emoji> <b>{_L(lang, "Артефакты дают постоянный бонус навсегда!", "Artifacts give a permanent bonus forever!")}</b>\n'
-        f'{_pe("warn", "⚠️")} <b>{_L(lang, "Дубликат — компенсация монетами.", "Duplicate — compensated with coins.")}</b></blockquote>\n'
-        f'\n<blockquote><tg-emoji emoji-id="5359664288241829619">📦</tg-emoji> <b>{_L(lang, "Открыто кейсов", "Cases opened")}: {opened}</b>  |  '
-        f'{_pe("stats", "💎")} <b>{_L(lang, "Коллекция", "Collection")}: {len(owned)}/10</b></blockquote>'
+        f'<tg-emoji emoji-id="{_E_BONUS}">✨</tg-emoji> <b><i>{_L(lang, "Артефакты дают постоянный бонус навсегда!", "Artifacts give a permanent bonus forever!")}</i></b>\n'
+        f'{_pe("warn", "⚠️")} <b><i>{_L(lang, "Дубликат — компенсация монетами.", "Duplicate — compensated with coins.")}</i></b></blockquote>\n'
+        f'\n<blockquote><tg-emoji emoji-id="5359664288241829619">📦</tg-emoji> <b><i>{_L(lang, "Открыто кейсов", "Cases opened")}: {opened}</i></b>  |  '
+        f'{_pe("stats", "💎")} <b><i>{_L(lang, "Коллекция", "Collection")}: {len(owned)}/10</i></b></blockquote>'
     )
 
 
@@ -1448,8 +1406,8 @@ def artifact_collection_text(data: dict, lang: str = "ru") -> str:
     owned = data.get("artifacts", [])
     if not owned:
         return (
-            f'<blockquote><tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>{_L(lang, "МОЯ КОЛЛЕКЦИЯ АРТЕФАКТОВ", "MY ARTIFACT COLLECTION")}</b>\n'
-            f'{_pe("cancel", "❌")} <b>{_L(lang, "У тебя пока нет артефактов.", "You have no artifacts yet.")}</b>\n'
+            f'<blockquote><tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b><i>{_L(lang, "МОЯ КОЛЛЕКЦИЯ АРТЕФАКТОВ", "MY ARTIFACT COLLECTION")}</i></b>\n'
+            f'{_pe("cancel", "❌")} <b><i>{_L(lang, "У тебя пока нет артефактов.", "You have no artifacts yet.")}</i></b>\n'
             f'{_L(lang, "Открой Кейс Артефактов, чтобы получить первый!", "Open an Artifact Case to get your first one!")}</blockquote>'
         )
 
@@ -1471,8 +1429,8 @@ def artifact_collection_text(data: dict, lang: str = "ru") -> str:
             effect_label = _get_effect_label(a["effect"], lang)
             aname = a.get("name_en", a["name"]) if lang == "en" else a["name"]
             artifact_lines.append(
-                f'{ae} <b>{aname}</b> — '
-                f'<b><i>{a["multiplier"]}× {effect_label}</i></b>\n'
+                f'{ae} <b><i>{aname}</i></b> — '
+                f'<b><i><i>{a["multiplier"]}× {effect_label}</i></i></b>\n'
             )
 
     mine_icon  = f'<tg-emoji emoji-id="{_E_MINE}">⛏</tg-emoji>'
@@ -1482,14 +1440,14 @@ def artifact_collection_text(data: dict, lang: str = "ru") -> str:
 
     return (
         f'<blockquote><tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> '
-        f'<b>{_L(lang, "МОЯ КОЛЛЕКЦИЯ", "MY COLLECTION")} ({len(owned)}/10)</b></blockquote>\n'
+        f'<b><i>{_L(lang, "МОЯ КОЛЛЕКЦИЯ", "MY COLLECTION")} ({len(owned)}/10)</i></b></blockquote>\n'
         f'\n<blockquote>'
-        f'{bonus_icon} <b>{_L(lang, "Итоговые бонусы", "Total bonuses")}:</b>\n'
-        f'{mine_icon} <b>{_L(lang, "Руда", "Ore")}: ×{mine_mult}</b>\n'
-        f'{dmg_icon} <b>{_L(lang, "Босс", "Boss")}: ×{damage_mult}</b>\n'
-        f'{pets_icon} <b>{_L(lang, "Питомцы", "Pets")}: ×{pets_mult}</b>'
+        f'{bonus_icon} <b><i>{_L(lang, "Итоговые бонусы", "Total bonuses")}:</i></b>\n'
+        f'{mine_icon} <b><i>{_L(lang, "Руда", "Ore")}: ×{mine_mult}</i></b>\n'
+        f'{dmg_icon} <b><i>{_L(lang, "Босс", "Boss")}: ×{damage_mult}</i></b>\n'
+        f'{pets_icon} <b><i>{_L(lang, "Питомцы", "Pets")}: ×{pets_mult}</i></b>'
         f'</blockquote>\n'
-        f'\n<blockquote><b>{_L(lang, "Артефакты", "Artifacts")}:</b>\n' + "".join(artifact_lines) + '</blockquote>'
+        f'\n<blockquote><b><i>{_L(lang, "Артефакты", "Artifacts")}:</i></b>\n' + "".join(artifact_lines) + '</blockquote>'
     )
 
 
@@ -1513,16 +1471,16 @@ def inventory_main_text(data: dict, lang: str = "ru") -> str:
     if active:
         left = _fmt_time_left(active["ends_at"] - _now_ts(), lang)
         mult = _multiplier_label(active["multiplier"])
-        b_active_str = f"\n{_pe('boost', '⚡')} <b>{'Active' if lang == 'en' else 'Активен'}: {mult} — ⏱ {left}</b>"
+        b_active_str = f"\n{_pe('boost', '⚡')} <b><i>{'Active' if lang == 'en' else 'Активен'}: {mult} — ⏱ {left}</i></b>"
     if xp_act:
         left = _fmt_time_left(xp_act["ends_at"] - _now_ts(), lang)
         mult = _multiplier_label(xp_act["multiplier"])
-        xp_active_str = f"\n{_pe('xp_boost', '🔮')} <b>{'Active' if lang == 'en' else 'Активен'}: ×{mult} XP — ⏱ {left}</b>"
+        xp_active_str = f"\n{_pe('xp_boost', '🔮')} <b><i>{'Active' if lang == 'en' else 'Активен'}: ×{mult} XP — ⏱ {left}</i></b>"
     if enh_act:
         left = _fmt_time_left(enh_act["ends_at"] - _now_ts(), lang)
         mult = _multiplier_label(enh_act["multiplier"])
         lbl = "Booster" if lang == "en" else "Усилитель"
-        enh_active_str += f'\n<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>{lbl}: ×{mult} — ⏱ {left}</b>'
+        enh_active_str += f'\n<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>{lbl}: ×{mult} — ⏱ {left}</i></b>'
     if poison:
         left = _fmt_time_left(poison["ends_at"] - _now_ts(), lang)
         _poison_names_en = {
@@ -1531,20 +1489,20 @@ def inventory_main_text(data: dict, lang: str = "ru") -> str:
             "Яд Левиафана": "Leviathan Venom",
         }
         pname = _poison_names_en.get(poison["name"], poison["name"]) if lang == "en" else poison["name"]
-        enh_active_str += f'\n<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>{"Poison" if lang == "en" else "Яд"}: {pname} — ⏱ {left}</b>'
+        enh_active_str += f'\n<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>{"Poison" if lang == "en" else "Яд"}: {pname} — ⏱ {left}</i></b>'
 
     if lang == "en":
         return (
-            f"<blockquote>{_pe('inv', '🎒')} <b>INVENTORY</b></blockquote>\n"
-            f"\n<blockquote>{_pe('boost', '⚡')} <b>Pickaxe boosters</b>  <b>[{len(b_inv)}/{MAX_INVENTORY}]</b>{b_active_str}</blockquote>\n"
-            f"\n<blockquote>{_pe('xp_boost', '🔮')} <b>XP items</b>  <b>[{len(xp_inv)}/{MAX_XP_INVENTORY}]</b>{xp_active_str}</blockquote>\n"
-            f'\n<blockquote><tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>Damage boosters & poisons</b>  <b>[{len(enh_inv)}/{MAX_ENH_INVENTORY}]</b>{enh_active_str}</blockquote>'
+            f"<blockquote>{_pe('inv', '🎒')} <b><i>INVENTORY</i></b></blockquote>\n"
+            f"\n<blockquote>{_pe('boost', '⚡')} <b><i>Pickaxe boosters</i></b>  <b><i>[{len(b_inv)}/{MAX_INVENTORY}]</i></b>{b_active_str}</blockquote>\n"
+            f"\n<blockquote>{_pe('xp_boost', '🔮')} <b><i>XP items</i></b>  <b><i>[{len(xp_inv)}/{MAX_XP_INVENTORY}]</i></b>{xp_active_str}</blockquote>\n"
+            f'\n<blockquote><tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Damage boosters & poisons</i></b>  <b><i>[{len(enh_inv)}/{MAX_ENH_INVENTORY}]</i></b>{enh_active_str}</blockquote>'
         )
     return (
-        f"<blockquote>{_pe('inv', '🎒')} <b>ИНВЕНТАРЬ</b></blockquote>\n"
-        f"\n<blockquote>{_pe('boost', '⚡')} <b>Ускорители кирки</b>  <b>[{len(b_inv)}/{MAX_INVENTORY}]</b>{b_active_str}</blockquote>\n"
-        f"\n<blockquote>{_pe('xp_boost', '🔮')} <b>XP-предметы</b>  <b>[{len(xp_inv)}/{MAX_XP_INVENTORY}]</b>{xp_active_str}</blockquote>\n"
-        f'\n<blockquote><tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>Усилители и яды</b>  <b>[{len(enh_inv)}/{MAX_ENH_INVENTORY}]</b>{enh_active_str}</blockquote>'
+        f"<blockquote>{_pe('inv', '🎒')} <b><i>ИНВЕНТАРЬ</i></b></blockquote>\n"
+        f"\n<blockquote>{_pe('boost', '⚡')} <b><i>Ускорители кирки</i></b>  <b><i>[{len(b_inv)}/{MAX_INVENTORY}]</i></b>{b_active_str}</blockquote>\n"
+        f"\n<blockquote>{_pe('xp_boost', '🔮')} <b><i>XP-предметы</i></b>  <b><i>[{len(xp_inv)}/{MAX_XP_INVENTORY}]</i></b>{xp_active_str}</blockquote>\n"
+        f'\n<blockquote><tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Усилители и яды</i></b>  <b><i>[{len(enh_inv)}/{MAX_ENH_INVENTORY}]</i></b>{enh_active_str}</blockquote>'
     )
 
 
@@ -1567,41 +1525,41 @@ def boosters_inventory_text(data: dict, lang: str = "ru") -> str:
     inv    = data.get("boosters_inventory", [])
     active = get_active_booster_info(data)
     if lang == "en":
-        lines = [f"<blockquote>{_pe('boost', '⚡')} <b>PICKAXE BOOSTERS</b>\n"]
+        lines = [f"<blockquote>{_pe('boost', '⚡')} <b><i>PICKAXE BOOSTERS</i></b>\n"]
         if active:
             left = _fmt_time_left(active["ends_at"] - _now_ts(), lang)
             mult = _multiplier_label(active["multiplier"])
             dur  = _dur_label(active["dur_key"], lang)
-            lines.append(f"{_pe('ok', '✅')} <b>Active: {mult} for {dur}</b>\n{_pe('timer', '⏱')} <b>Left: {left}</b>")
+            lines.append(f"{_pe('ok', '✅')} <b><i>Active: {mult} for {dur}</i></b>\n{_pe('timer', '⏱')} <b><i>Left: {left}</i></b>")
         else:
-            lines.append(f"{_pe('cancel', '❌')} <b>No active booster.</b>")
+            lines.append(f"{_pe('cancel', '❌')} <b><i>No active booster.</i></b>")
         lines.append("</blockquote>")
         if not inv:
-            lines.append(f"\n<blockquote>{_pe('case', '📦')} <b>Inventory empty. Open a Booster case!</b></blockquote>")
+            lines.append(f"\n<blockquote>{_pe('case', '📦')} <b><i>Inventory empty. Open a Booster case!</i></b></blockquote>")
         else:
-            inv_lines = [f"\n<blockquote><b>In inventory ({len(inv)}/{MAX_INVENTORY}):</b>"]
+            inv_lines = [f"\n<blockquote><b><i>In inventory ({len(inv)}/{MAX_INVENTORY}):</i></b>"]
             for i, item in enumerate(inv, 1):
                 price = get_sell_price(item)
-                inv_lines.append(f"\n<b>{i}. {_booster_name(item, lang)}</b>\n{_pe('coin', '💰')} <b>{_fmt_num(price)}</b>")
+                inv_lines.append(f"\n<b><i>{i}. {_booster_name(item, lang)}</i></b>\n{_pe('coin', '💰')} <b><i>{_fmt_num(price)}</i></b>")
             inv_lines.append("</blockquote>")
             lines.extend(inv_lines)
     else:
-        lines = [f"<blockquote>{_pe('boost', '⚡')} <b>УСКОРИТЕЛИ КИРКИ</b>\n"]
+        lines = [f"<blockquote>{_pe('boost', '⚡')} <b><i>УСКОРИТЕЛИ КИРКИ</i></b>\n"]
         if active:
             left = _fmt_time_left(active["ends_at"] - _now_ts(), lang)
             mult = _multiplier_label(active["multiplier"])
             dur  = _dur_label(active["dur_key"], lang)
-            lines.append(f"{_pe('ok', '✅')} <b>Активен: {mult} на {dur}</b>\n{_pe('timer', '⏱')} <b>Осталось: {left}</b>")
+            lines.append(f"{_pe('ok', '✅')} <b><i>Активен: {mult} на {dur}</i></b>\n{_pe('timer', '⏱')} <b><i>Осталось: {left}</i></b>")
         else:
-            lines.append(f"{_pe('cancel', '❌')} <b>Нет активного ускорителя.</b>")
+            lines.append(f"{_pe('cancel', '❌')} <b><i>Нет активного ускорителя.</i></b>")
         lines.append("</blockquote>")
         if not inv:
-            lines.append(f"\n<blockquote>{_pe('case', '📦')} <b>Инвентарь пуст. Открой Кейс ускорителей!</b></blockquote>")
+            lines.append(f"\n<blockquote>{_pe('case', '📦')} <b><i>Инвентарь пуст. Открой Кейс ускорителей!</i></b></blockquote>")
         else:
-            inv_lines = [f"\n<blockquote><b>В инвентаре ({len(inv)}/{MAX_INVENTORY}):</b>"]
+            inv_lines = [f"\n<blockquote><b><i>В инвентаре ({len(inv)}/{MAX_INVENTORY}):</i></b>"]
             for i, item in enumerate(inv, 1):
                 price = get_sell_price(item)
-                inv_lines.append(f"\n<b>{i}. {_booster_name(item, lang)}</b>\n{_pe('coin', '💰')} <b>{_fmt_num(price)}</b>")
+                inv_lines.append(f"\n<b><i>{i}. {_booster_name(item, lang)}</i></b>\n{_pe('coin', '💰')} <b><i>{_fmt_num(price)}</i></b>")
             inv_lines.append("</blockquote>")
             lines.extend(inv_lines)
     return "".join(lines)
@@ -1631,18 +1589,18 @@ def booster_detail_text(data: dict, instance_id: str, lang: str = "ru") -> str:
         act_mult = _multiplier_label(active["multiplier"])
         act_dur  = _dur_label(active["dur_key"], lang)
         warning  = (
-            f"\n\n<blockquote>{_pe('warn', '⚠️')} <b>{_L(lang, 'Активен', 'Active')}: {act_mult} {_L(lang, 'на', 'for')} {act_dur}</b>\n"
-            f"{_pe('timer', '⏱')} <b>{_L(lang, 'Осталось', 'Left')}: {left}</b></blockquote>"
+            f"\n\n<blockquote>{_pe('warn', '⚠️')} <b><i>{_L(lang, 'Активен', 'Active')}: {act_mult} {_L(lang, 'на', 'for')} {act_dur}</i></b>\n"
+            f"{_pe('timer', '⏱')} <b><i>{_L(lang, 'Осталось', 'Left')}: {left}</i></b></blockquote>"
         )
     return (
-        f"<blockquote>{_pe('boost', '⚡')} <b>{_booster_name(item, lang)}</b>\n"
-        f"{_pe('timer', '⏱')} <b>{_L(lang, 'Длительность', 'Duration')}: {dur}</b>\n"
-        f"{_pe('mult', '🔢')} <b>{_L(lang, 'Множитель', 'Multiplier')}: {mult}</b></blockquote>\n"
-        f"\n<blockquote><b>{_L(lang, 'Эффект (все показатели кирки):', 'Effect (all pickaxe stats):')} </b>\n"
-        f"<b>• {_L(lang, 'Ударов за кампанию', 'Hits per campaign')}: ×{mult}</b>\n"
-        f"<b>• {_L(lang, 'Монет в час', 'Coins per hour')}: ×{mult}</b>\n"
-        f"<b>• {_L(lang, 'Скорость добычи', 'Mining speed')}: ×{mult}</b></blockquote>\n"
-        f"\n<blockquote>{_pe('coin', '💰')} <b>{_L(lang, 'Цена продажи', 'Sell price')}: {_fmt_num(price)}</b></blockquote>"
+        f"<blockquote>{_pe('boost', '⚡')} <b><i>{_booster_name(item, lang)}</i></b>\n"
+        f"{_pe('timer', '⏱')} <b><i>{_L(lang, 'Длительность', 'Duration')}: {dur}</i></b>\n"
+        f"{_pe('mult', '🔢')} <b><i>{_L(lang, 'Множитель', 'Multiplier')}: {mult}</i></b></blockquote>\n"
+        f"\n<blockquote><b><i>{_L(lang, 'Эффект (все показатели кирки):', 'Effect (all pickaxe stats):')} </i></b>\n"
+        f"<b><i>• {_L(lang, 'Ударов за кампанию', 'Hits per campaign')}: ×{mult}</i></b>\n"
+        f"<b><i>• {_L(lang, 'Монет в час', 'Coins per hour')}: ×{mult}</i></b>\n"
+        f"<b><i>• {_L(lang, 'Скорость добычи', 'Mining speed')}: ×{mult}</i></b></blockquote>\n"
+        f"\n<blockquote>{_pe('coin', '💰')} <b><i>{_L(lang, 'Цена продажи', 'Sell price')}: {_fmt_num(price)}</i></b></blockquote>"
         f"{warning}"
     )
 
@@ -1667,11 +1625,11 @@ def booster_confirm_replace_text(data: dict, instance_id: str, lang: str = "ru")
     new_mult = _multiplier_label(item["multiplier"])
     new_dur  = _dur_label(item["dur_key"], lang)
     return (
-        f"<blockquote>{_pe('warn', '⚠️')} <b>{_L(lang, 'Замена ускорителя', 'Replace booster')}</b>\n"
-        f"<b>{_L(lang, 'Сейчас активен', 'Currently active')}: {act_mult} {_L(lang, 'на', 'for')} {act_dur}</b>\n"
-        f"{_pe('timer', '⏱')} <b>{_L(lang, 'Осталось', 'Left')}: {left}</b></blockquote>\n"
-        f"\n<blockquote><b>{_L(lang, 'Заменить на', 'Replace with')}: {new_mult} {_L(lang, 'на', 'for')} {new_dur}?</b>\n"
-        f"{_pe('warn', '⚠️')} <b>{_L(lang, 'Старый ускоритель будет потерян!', 'Old booster will be lost!')}</b></blockquote>"
+        f"<blockquote>{_pe('warn', '⚠️')} <b><i>{_L(lang, 'Замена ускорителя', 'Replace booster')}</i></b>\n"
+        f"<b><i>{_L(lang, 'Сейчас активен', 'Currently active')}: {act_mult} {_L(lang, 'на', 'for')} {act_dur}</i></b>\n"
+        f"{_pe('timer', '⏱')} <b><i>{_L(lang, 'Осталось', 'Left')}: {left}</i></b></blockquote>\n"
+        f"\n<blockquote><b><i>{_L(lang, 'Заменить на', 'Replace with')}: {new_mult} {_L(lang, 'на', 'for')} {new_dur}?</i></b>\n"
+        f"{_pe('warn', '⚠️')} <b><i>{_L(lang, 'Старый ускоритель будет потерян!', 'Old booster will be lost!')}</i></b></blockquote>"
     )
 
 
@@ -1687,25 +1645,25 @@ def booster_confirm_replace_keyboard(instance_id: str, lang: str = "ru") -> Inli
 def xp_inventory_text(data: dict, lang: str = "ru") -> str:
     inv    = data.setdefault("xp_inventory", [])
     xp_act = get_active_xp_booster_info(data)
-    lines = [f"<blockquote>{_pe('xp_boost', '🔮')} <b>{_L(lang, 'XP-ПРЕДМЕТЫ', 'XP ITEMS')}</b>\n"]
+    lines = [f"<blockquote>{_pe('xp_boost', '🔮')} <b><i>{_L(lang, 'XP-ПРЕДМЕТЫ', 'XP ITEMS')}</i></b>\n"]
     if xp_act:
         left = _fmt_time_left(xp_act["ends_at"] - _now_ts(), lang)
         mult = _multiplier_label(xp_act["multiplier"])
         dur  = _dur_label(xp_act["dur_key"], lang)
         lines.append(
-            f"{_pe('ok', '✅')} <b>{_L(lang, 'Активен XP-ускоритель', 'Active XP booster')}: ×{mult} {_L(lang, 'на', 'for')} {dur}</b>\n"
-            f"{_pe('timer', '⏱')} <b>{_L(lang, 'Осталось', 'Left')}: {left}</b>"
+            f"{_pe('ok', '✅')} <b><i>{_L(lang, 'Активен XP-ускоритель', 'Active XP booster')}: ×{mult} {_L(lang, 'на', 'for')} {dur}</i></b>\n"
+            f"{_pe('timer', '⏱')} <b><i>{_L(lang, 'Осталось', 'Left')}: {left}</i></b>"
         )
     else:
-        lines.append(f"{_pe('cancel', '❌')} <b>{_L(lang, 'Нет активного XP-ускорителя.', 'No active XP booster.')}</b>")
+        lines.append(f"{_pe('cancel', '❌')} <b><i>{_L(lang, 'Нет активного XP-ускорителя.', 'No active XP booster.')}</i></b>")
     lines.append("</blockquote>")
     if not inv:
-        lines.append(f"\n<blockquote>{_pe('xp_case', '🔮')} <b>{_L(lang, 'XP-инвентарь пуст. Открой XP-кейс!', 'XP inventory empty. Open an XP case!')}</b></blockquote>")
+        lines.append(f"\n<blockquote>{_pe('xp_case', '🔮')} <b><i>{_L(lang, 'XP-инвентарь пуст. Открой XP-кейс!', 'XP inventory empty. Open an XP case!')}</i></b></blockquote>")
     else:
-        inv_lines = [f"\n<blockquote><b>{_L(lang, 'В инвентаре', 'In inventory')} ({len(inv)}/{MAX_XP_INVENTORY}):</b>"]
+        inv_lines = [f"\n<blockquote><b><i>{_L(lang, 'В инвентаре', 'In inventory')} ({len(inv)}/{MAX_XP_INVENTORY}):</i></b>"]
         for i, item in enumerate(inv, 1):
             price = get_xp_sell_price(item)
-            inv_lines.append(f"\n<b>{i}. {_xp_item_name(item, lang)}</b>\n{_pe('coin', '💰')} <b>{_fmt_num(price)}</b>")
+            inv_lines.append(f"\n<b><i>{i}. {_xp_item_name(item, lang)}</i></b>\n{_pe('coin', '💰')} <b><i>{_fmt_num(price)}</i></b>")
         inv_lines.append("</blockquote>")
         lines.extend(inv_lines)
     return "".join(lines)
@@ -1729,11 +1687,11 @@ def xp_item_detail_text(data: dict, instance_id: str, lang: str = "ru") -> str:
     xp_act = get_active_xp_booster_info(data)
     if item["type"] == "xp_instant":
         return (
-            f"<blockquote>{_pe('xp_instant', '✨')} <b>{_L(lang, 'Моментальный опыт', 'Instant XP')}</b>\n"
-            f"{_pe('xp_instant', '✨')} <b>{_L(lang, 'Опыт', 'XP')}: +{_fmt_num(item['xp'])} XP</b></blockquote>\n"
-            f"\n<blockquote><b>{_L(lang, 'Применить — сразу получишь опыт.', 'Apply — you get XP immediately.')}</b>\n"
-            f"<b>{_L(lang, 'Учитывает активный XP-ускоритель!', 'Counts active XP booster!')}</b></blockquote>\n"
-            f"\n<blockquote>{_pe('coin', '💰')} <b>{_L(lang, 'Цена продажи', 'Sell price')}: {_fmt_num(price)}</b></blockquote>"
+            f"<blockquote>{_pe('xp_instant', '✨')} <b><i>{_L(lang, 'Моментальный опыт', 'Instant XP')}</i></b>\n"
+            f"{_pe('xp_instant', '✨')} <b><i>{_L(lang, 'Опыт', 'XP')}: +{_fmt_num(item['xp'])} XP</i></b></blockquote>\n"
+            f"\n<blockquote><b><i>{_L(lang, 'Применить — сразу получишь опыт.', 'Apply — you get XP immediately.')}</i></b>\n"
+            f"<b><i>{_L(lang, 'Учитывает активный XP-ускоритель!', 'Counts active XP booster!')}</i></b></blockquote>\n"
+            f"\n<blockquote>{_pe('coin', '💰')} <b><i>{_L(lang, 'Цена продажи', 'Sell price')}: {_fmt_num(price)}</i></b></blockquote>"
         )
     mult = _multiplier_label(item["multiplier"])
     dur  = _dur_label(item["dur_key"], lang)
@@ -1743,15 +1701,15 @@ def xp_item_detail_text(data: dict, instance_id: str, lang: str = "ru") -> str:
         act_mult = _multiplier_label(xp_act["multiplier"])
         act_dur  = _dur_label(xp_act["dur_key"], lang)
         warning  = (
-            f"\n\n<blockquote>{_pe('warn', '⚠️')} <b>{_L(lang, 'Активен', 'Active')}: ×{act_mult} {_L(lang, 'на', 'for')} {act_dur}</b>\n"
-            f"{_pe('timer', '⏱')} <b>{_L(lang, 'Осталось', 'Left')}: {left}</b></blockquote>"
+            f"\n\n<blockquote>{_pe('warn', '⚠️')} <b><i>{_L(lang, 'Активен', 'Active')}: ×{act_mult} {_L(lang, 'на', 'for')} {act_dur}</i></b>\n"
+            f"{_pe('timer', '⏱')} <b><i>{_L(lang, 'Осталось', 'Left')}: {left}</i></b></blockquote>"
         )
     return (
-        f"<blockquote>{_pe('xp_boost', '🔮')} <b>{_L(lang, 'XP-ускоритель', 'XP booster')} {mult}</b>\n"
-        f"{_pe('mult', '🔢')} <b>{_L(lang, 'Множитель', 'Multiplier')}: ×{mult}</b>\n"
-        f"{_pe('timer', '⏱')} <b>{_L(lang, 'Длительность', 'Duration')}: {dur}</b></blockquote>\n"
-        f"\n<blockquote><b>{_L(lang, f'Умножает весь получаемый опыт на {mult} на {dur}.', f'Multiplies all XP gained by {mult} for {dur}.')}</b></blockquote>\n"
-        f"\n<blockquote>{_pe('coin', '💰')} <b>{_L(lang, 'Цена продажи', 'Sell price')}: {_fmt_num(price)}</b></blockquote>"
+        f"<blockquote>{_pe('xp_boost', '🔮')} <b><i>{_L(lang, 'XP-ускоритель', 'XP booster')} {mult}</i></b>\n"
+        f"{_pe('mult', '🔢')} <b><i>{_L(lang, 'Множитель', 'Multiplier')}: ×{mult}</i></b>\n"
+        f"{_pe('timer', '⏱')} <b><i>{_L(lang, 'Длительность', 'Duration')}: {dur}</i></b></blockquote>\n"
+        f"\n<blockquote><b><i>{_L(lang, f'Умножает весь получаемый опыт на {mult} на {dur}.', f'Multiplies all XP gained by {mult} for {dur}.')}</i></b></blockquote>\n"
+        f"\n<blockquote>{_pe('coin', '💰')} <b><i>{_L(lang, 'Цена продажи', 'Sell price')}: {_fmt_num(price)}</i></b></blockquote>"
         f"{warning}"
     )
 
@@ -1778,11 +1736,11 @@ def xp_confirm_replace_text(data: dict, instance_id: str, lang: str = "ru") -> s
     new_mult = _multiplier_label(item["multiplier"])
     new_dur  = _dur_label(item["dur_key"], lang)
     return (
-        f"<blockquote>{_pe('warn', '⚠️')} <b>{_L(lang, 'Замена XP-ускорителя', 'Replace XP booster')}</b>\n"
-        f"<b>{_L(lang, 'Сейчас активен', 'Currently active')}: ×{act_mult} {_L(lang, 'на', 'for')} {act_dur}</b>\n"
-        f"{_pe('timer', '⏱')} <b>{_L(lang, 'Осталось', 'Left')}: {left}</b></blockquote>\n"
-        f"\n<blockquote><b>{_L(lang, 'Заменить на', 'Replace with')}: ×{new_mult} {_L(lang, 'на', 'for')} {new_dur}?</b>\n"
-        f"{_pe('warn', '⚠️')} <b>{_L(lang, 'Старый XP-ускоритель будет потерян!', 'Old XP booster will be lost!')}</b></blockquote>"
+        f"<blockquote>{_pe('warn', '⚠️')} <b><i>{_L(lang, 'Замена XP-ускорителя', 'Replace XP booster')}</i></b>\n"
+        f"<b><i>{_L(lang, 'Сейчас активен', 'Currently active')}: ×{act_mult} {_L(lang, 'на', 'for')} {act_dur}</i></b>\n"
+        f"{_pe('timer', '⏱')} <b><i>{_L(lang, 'Осталось', 'Left')}: {left}</i></b></blockquote>\n"
+        f"\n<blockquote><b><i>{_L(lang, 'Заменить на', 'Replace with')}: ×{new_mult} {_L(lang, 'на', 'for')} {new_dur}?</i></b>\n"
+        f"{_pe('warn', '⚠️')} <b><i>{_L(lang, 'Старый XP-ускоритель будет потерян!', 'Old XP booster will be lost!')}</i></b></blockquote>"
     )
 
 
@@ -1912,42 +1870,42 @@ def unified_inventory_text(data: dict, lang: str = "ru") -> str:
     enh_act  = get_active_enh_booster_info(data)
     poison   = get_active_poison_info(data)
 
-    lines = [f"<blockquote>{_pe('inv', '🎒')} <b>{'INVENTORY' if lang == 'en' else 'ИНВЕНТАРЬ'}</b></blockquote>\n"]
+    lines = [f"<blockquote>{_pe('inv', '🎒')} <b><i>{'INVENTORY' if lang == 'en' else 'ИНВЕНТАРЬ'}</i></b></blockquote>\n"]
 
     # Активные бусты
     active_lines = []
     if active:
         left = _fmt_time_left(active["ends_at"] - _now_ts(), lang)
         mult = _multiplier_label(active["multiplier"])
-        active_lines.append(f"{_pe('boost','⚡')} <b>{'Pickaxe' if lang=='en' else 'Кирка'}: {mult} — ⏱ {left}</b>")
+        active_lines.append(f"{_pe('boost','⚡')} <b><i>{'Pickaxe' if lang=='en' else 'Кирка'}: {mult} — ⏱ {left}</i></b>")
     if xp_act:
         left = _fmt_time_left(xp_act["ends_at"] - _now_ts(), lang)
         mult = _multiplier_label(xp_act["multiplier"])
-        active_lines.append(f"{_pe('xp_boost','🔮')} <b>XP: ×{mult} — ⏱ {left}</b>")
+        active_lines.append(f"{_pe('xp_boost','🔮')} <b><i>XP: ×{mult} — ⏱ {left}</i></b>")
     if enh_act:
         left = _fmt_time_left(enh_act["ends_at"] - _now_ts(), lang)
         mult = _multiplier_label(enh_act["multiplier"])
-        active_lines.append(f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>{"Damage" if lang=="en" else "Урон"}: ×{mult} — ⏱ {left}</b>')
+        active_lines.append(f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>{"Damage" if lang=="en" else "Урон"}: ×{mult} — ⏱ {left}</i></b>')
     if poison:
         left = _fmt_time_left(poison["ends_at"] - _now_ts(), lang)
         _pn_en = {"Яд Гадюки":"Viper","Яд Кобры":"Cobra","Яд Чёрной Мамбы":"Black Mamba","Яд Василиска":"Basilisk","Яд Левиафана":"Leviathan"}
         pname = _pn_en.get(poison["name"], poison["name"]) if lang == "en" else poison["name"]
-        active_lines.append(f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>{"Poison" if lang=="en" else "Яд"}: {pname} — ⏱ {left}</b>')
+        active_lines.append(f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>{"Poison" if lang=="en" else "Яд"}: {pname} — ⏱ {left}</i></b>')
 
     if active_lines:
         lbl = "Active" if lang == "en" else "Активно"
-        lines.append(f"\n<blockquote>{_pe('ok','✅')} <b>{lbl}:</b>\n" + "\n".join(active_lines) + "</blockquote>\n")
+        lines.append(f"\n<blockquote>{_pe('ok','✅')} <b><i>{lbl}:</i></b>\n" + "\n".join(active_lines) + "</blockquote>\n")
 
     if not stacks:
         lbl = "Inventory is empty. Open cases!" if lang == "en" else "Инвентарь пуст. Открой кейсы!"
-        lines.append(f"\n<blockquote>{_pe('case','📦')} <b>{lbl}</b></blockquote>")
+        lines.append(f"\n<blockquote>{_pe('case','📦')} <b><i>{lbl}</i></b></blockquote>")
     else:
         total = sum(s["count"] for s in stacks)
         lbl_inv = "In inventory" if lang == "en" else "В инвентаре"
-        lines.append(f"\n<blockquote expandable><b>{lbl_inv} ({total} шт.):</b>\n")
+        lines.append(f"\n<blockquote expandable><b><i>{lbl_inv} ({total} шт.):</i></b>\n")
         for s in stacks:
             cnt_str = f" <i>({s['count']} шт.)</i>" if s["count"] > 1 else ""
-            lines.append(f"<b>#{s['slot_id']}</b> <i>{s['display']}</i>{cnt_str}\n")
+            lines.append(f"<b><i>#{s['slot_id']}</i></b> <i>{s['display']}</i>{cnt_str}\n")
         lines.append("</blockquote>")
 
     lbl_hint = (
@@ -1996,7 +1954,7 @@ def use_item_by_slot_id(data: dict, slot_id: int, lang: str = "ru") -> tuple:
                     left = _fmt_time_left(active["ends_at"] - _now_ts(), lang)
                     mult = _multiplier_label(active["multiplier"])
                     return False, (
-                        f"❌ <b>{'Already active' if lang=='en' else 'Уже активен'}: {mult} ⏱ {left}</b>\n"
+                        f"❌ <b><i>{'Already active' if lang=='en' else 'Уже активен'}: {mult} ⏱ {left}</i></b>\n"
                         f"{'Cancel with' if lang=='en' else 'Отменить через'} <code>{'stop' if lang=='en' else 'стоп'} #N</code>"
                     )
                 return activate_booster(data, instance_id, force=False, lang=lang)
@@ -2007,7 +1965,7 @@ def use_item_by_slot_id(data: dict, slot_id: int, lang: str = "ru") -> tuple:
                         left = _fmt_time_left(xp_act["ends_at"] - _now_ts(), lang)
                         mult = _multiplier_label(xp_act["multiplier"])
                         return False, (
-                            f"❌ <b>{'XP booster already active' if lang=='en' else 'XP-ускоритель уже активен'}: ×{mult} ⏱ {left}</b>\n"
+                            f"❌ <b><i>{'XP booster already active' if lang=='en' else 'XP-ускоритель уже активен'}: ×{mult} ⏱ {left}</i></b>\n"
                             f"{'Cancel with' if lang=='en' else 'Отменить через'} <code>{'stop' if lang=='en' else 'стоп'} #N</code>"
                         )
                 return use_xp_item(data, instance_id, force=False, lang=lang)
@@ -2018,7 +1976,7 @@ def use_item_by_slot_id(data: dict, slot_id: int, lang: str = "ru") -> tuple:
                         left = _fmt_time_left(enh_act["ends_at"] - _now_ts(), lang)
                         mult = _multiplier_label(enh_act["multiplier"])
                         return False, (
-                            f"❌ <b>{'Damage booster already active' if lang=='en' else 'Усилитель урона уже активен'}: ×{mult} ⏱ {left}</b>\n"
+                            f"❌ <b><i>{'Damage booster already active' if lang=='en' else 'Усилитель урона уже активен'}: ×{mult} ⏱ {left}</i></b>\n"
                             f"{'Cancel with' if lang=='en' else 'Отменить через'} <code>{'stop' if lang=='en' else 'стоп'} #N</code>"
                         )
                     return activate_enh_boost(data, instance_id, force=False, lang=lang)
@@ -2027,7 +1985,7 @@ def use_item_by_slot_id(data: dict, slot_id: int, lang: str = "ru") -> tuple:
                     if poison_act:
                         left = _fmt_time_left(poison_act["ends_at"] - _now_ts(), lang)
                         return False, (
-                            f"❌ <b>{'Poison already active' if lang=='en' else 'Яд уже активен'} ⏱ {left}</b>\n"
+                            f"❌ <b><i>{'Poison already active' if lang=='en' else 'Яд уже активен'} ⏱ {left}</i></b>\n"
                             f"{'Cancel with' if lang=='en' else 'Отменить через'} <code>{'stop' if lang=='en' else 'стоп'} #N</code>"
                         )
                     return use_poison(data, instance_id, force=False, lang=lang)
@@ -2089,7 +2047,7 @@ def get_all_active_boosters_text(data: dict, lang: str = "ru") -> str:
         mult = _multiplier_label(active["multiplier"])
         dur  = _dur_label(active["dur_key"], lang)
         lines.append(
-            f"{_pe('boost','⚡')} <b>{'Pickaxe booster' if lang=='en' else 'Ускоритель кирки'}: {mult} {'for' if lang=='en' else 'на'} <i>{dur}</i></b>\n"
+            f"{_pe('boost','⚡')} <b><i>{'Pickaxe booster' if lang=='en' else 'Ускоритель кирки'}: {mult} {'for' if lang=='en' else 'на'} <i>{dur}</i></i></b>\n"
             f"   ⏱ <i>{'Left' if lang=='en' else 'Осталось'}: {left}</i> — <code>{'/stop boost' if lang=='en' else '/стоп буст'}</code>"
         )
     if xp_act:
@@ -2097,7 +2055,7 @@ def get_all_active_boosters_text(data: dict, lang: str = "ru") -> str:
         mult = _multiplier_label(xp_act["multiplier"])
         dur  = _dur_label(xp_act["dur_key"], lang)
         lines.append(
-            f"{_pe('xp_boost','🔮')} <b>XP-{'booster' if lang=='en' else 'ускоритель'}: ×{mult} {'for' if lang=='en' else 'на'} <i>{dur}</i></b>\n"
+            f"{_pe('xp_boost','🔮')} <b><i>XP-{'booster' if lang=='en' else 'ускоритель'}: ×{mult} {'for' if lang=='en' else 'на'} <i>{dur}</i></i></b>\n"
             f"   ⏱ <i>{'Left' if lang=='en' else 'Осталось'}: {left}</i> — <code>{'/stop xp' if lang=='en' else '/стоп xp'}</code>"
         )
     if enh_act:
@@ -2105,7 +2063,7 @@ def get_all_active_boosters_text(data: dict, lang: str = "ru") -> str:
         mult = _multiplier_label(enh_act["multiplier"])
         dur  = _dur_label(enh_act["dur_key"], lang)
         lines.append(
-            f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b>{"Damage booster" if lang=="en" else "Усилитель урона"}: ×{mult} {"for" if lang=="en" else "на"} <i>{dur}</i></b>\n'
+            f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>{"Damage booster" if lang=="en" else "Усилитель урона"}: ×{mult} {"for" if lang=="en" else "на"} <i>{dur}</i></i></b>\n'
             f'   ⏱ <i>{"Left" if lang=="en" else "Осталось"}: {left}</i> — <code>{"/stop dmg" if lang=="en" else "/стоп урон"}</code>'
         )
     if poison:
@@ -2113,13 +2071,13 @@ def get_all_active_boosters_text(data: dict, lang: str = "ru") -> str:
         _pn_en = {"Яд Гадюки":"Viper Venom","Яд Кобры":"Cobra Venom","Яд Чёрной Мамбы":"Black Mamba Venom","Яд Василиска":"Basilisk Venom","Яд Левиафана":"Leviathan Venom"}
         pname = _pn_en.get(poison["name"], poison["name"]) if lang == "en" else poison["name"]
         lines.append(
-            f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b>{"Poison" if lang=="en" else "Яд"}: {pname}</b>\n'
+            f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>{"Poison" if lang=="en" else "Яд"}: {pname}</i></b>\n'
             f'   ⏱ <i>{"Left" if lang=="en" else "Осталось"}: {left}</i> — <code>{"/stop poison" if lang=="en" else "/стоп яд"}</code>'
         )
 
     if not lines:
         empty = "No active boosters." if lang == "en" else "Нет активных ускорителей."
-        return f"<blockquote>{_pe('cancel','❌')} <b>{empty}</b></blockquote>"
+        return f"<blockquote>{_pe('cancel','❌')} <b><i>{empty}</i></b></blockquote>"
 
     title = "ACTIVE BOOSTERS" if lang == "en" else "АКТИВНЫЕ УСКОРИТЕЛИ"
     body  = "\n\n".join(lines)
@@ -2137,7 +2095,7 @@ def get_all_active_boosters_text(data: dict, lang: str = "ru") -> str:
         "<code>/stop dmg</code> — damage\n"
         "<code>/stop poison</code> — poison</i></blockquote>"
     )
-    return f"<blockquote>{_pe('boost','⚡')} <b>{title}</b>\n\n{body}</blockquote>" + (hint_en if lang == "en" else hint_ru)
+    return f"<blockquote>{_pe('boost','⚡')} <b><i>{title}</i></b>\n\n{body}</blockquote>" + (hint_en if lang == "en" else hint_ru)
 
 
 def sell_item_by_slot_id(data: dict, slot_id: int, qty: int = 1, lang: str = "ru") -> tuple[bool, str]:
@@ -2228,16 +2186,16 @@ def sell_item_by_slot_id(data: dict, slot_id: int, qty: int = 1, lang: str = "ru
     if lang == "en":
         qty_str = f"{qty} шт. " if qty > 1 else ""
         msg = (
-            f"<blockquote>💰 <b>Sold {qty_str}{name}</b>\n"
+            f"<blockquote>💰 <b><i>Sold {qty_str}{name}</i></b>\n"
             f"+ {_fa(total_earn)} {'(× ' + str(qty) + ')' if qty > 1 else ''}\n"
-            f"Balance: <b>{_fa(data['balance'])}</b></blockquote>"
+            f"Balance: <b><i>{_fa(data['balance'])}</i></b></blockquote>"
         )
     else:
         qty_str = f"{qty} шт. " if qty > 1 else ""
         msg = (
-            f"<blockquote>💰 <b>Продано: {qty_str}{name}</b>\n"
+            f"<blockquote>💰 <b><i>Продано: {qty_str}{name}</i></b>\n"
             f"+ {_fa(total_earn)}{' (× ' + str(qty) + ')' if qty > 1 else ''}\n"
-            f"Баланс: <b>{_fa(data['balance'])}</b></blockquote>"
+            f"Баланс: <b><i>{_fa(data['balance'])}</i></b></blockquote>"
         )
     return True, msg
 
@@ -2336,20 +2294,20 @@ def transfer_item_by_slot_id(
     if lang == "en":
         sender_msg = (
             f'<tg-emoji emoji-id="5201691993775818138">✅</tg-emoji> '
-            f'<b>You successfully sent {qty_str}{name} to player {recip_name}!</b>'
+            f'<b><i>You successfully sent {qty_str}{name} to player {recip_name}!</i></b>'
         )
         recip_msg = (
             f'<tg-emoji emoji-id="5222113468051629260">🎁</tg-emoji> '
-            f'<b>You received {qty_str}{name} from {sender_name}!</b>'
+            f'<b><i>You received {qty_str}{name} from {sender_name}!</i></b>'
         )
     else:
         sender_msg = (
             f'<tg-emoji emoji-id="5201691993775818138">✅</tg-emoji> '
-            f'<b>Вы успешно передали {qty_str}{name} игроку {recip_name}!</b>'
+            f'<b><i>Вы успешно передали {qty_str}{name} игроку {recip_name}!</i></b>'
         )
         recip_msg = (
             f'<tg-emoji emoji-id="5222113468051629260">🎁</tg-emoji> '
-            f'<b>Вы получили {qty_str}{name} от {sender_name}!</b>'
+            f'<b><i>Вы получили {qty_str}{name} от {sender_name}!</i></b>'
         )
 
     return True, sender_msg, recip_msg
