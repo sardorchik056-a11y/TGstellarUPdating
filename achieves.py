@@ -868,11 +868,52 @@ def achievements_list_text(data: dict, lang: str = "ru", category: str | None = 
     return "\n".join(lines).strip()
 
 
+def achievements_menu_text(data: dict, lang: str = "ru") -> str:
+    """
+    Текст ГЛАВНОГО экрана достижений (уровень 0) — общий прогресс и список
+    разделов с их прогрессом. Отсюда игрок выбирает конкретный раздел.
+    """
+    unlocked_set = set(data.get("achievements_unlocked", []))
+    prompt = "Выберите раздел:" if lang == "ru" else "Choose a category:"
+
+    lines = [achievements_summary_line(data, lang), "", prompt, ""]
+    for cat, info in CATEGORIES.items():
+        items = _category_items(cat)
+        done = sum(1 for a in items if a["id"] in unlocked_set)
+        name = info["name_en"] if lang == "en" else info["name"]
+        lines.append(f'{info["emoji"]} {name} — {done}/{len(items)}')
+
+    return "\n".join(lines).strip()
+
+
+def achievements_menu_keyboard(lang: str = "ru"):
+    """
+    Клавиатура ГЛАВНОГО экрана достижений (уровень 0): кнопки всех разделов
+    + выход в главное меню бота. Требует aiogram (импортируется лениво).
+    """
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    menu_lbl = "🔙 Menu" if lang == "en" else "🔙 В меню"
+
+    builder = InlineKeyboardBuilder()
+    for cat, info in CATEGORIES.items():
+        name = info["name_en"] if lang == "en" else info["name"]
+        builder.button(text=f'{info["emoji"]} {name}', callback_data=f"ach_cat_{cat}")
+    builder.adjust(2)
+
+    builder.row(InlineKeyboardButton(text=menu_lbl, callback_data="back_to_menu"))
+
+    return builder.as_markup()
+
+
 def achievements_keyboard(lang: str = "ru", category: str | None = None, page: int = 0):
     """
-    Инлайн-клавиатура: сверху — выбор раздела, дальше — простая пагинация
-    (◀ Назад / Вперёд ▶, только если страниц больше одной), и в самом низу —
-    отдельная кнопка выхода в главное меню. Требует aiogram (импортируется лениво).
+    Клавиатура ВНУТРИ РАЗДЕЛА (уровень 1): только пагинация (◀ Назад / Вперёд ▶,
+    только если страниц больше одной) и одна кнопка "◀ Назад", которая
+    возвращает в МЕНЮ ДОСТИЖЕНИЙ (callback "ach_menu"), а не в главное меню
+    бота. Кнопки других разделов здесь не показываются. Требует aiogram
+    (импортируется лениво).
     """
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
@@ -882,16 +923,13 @@ def achievements_keyboard(lang: str = "ru", category: str | None = None, page: i
 
     back_lbl = "Back" if lang == "en" else "Назад"
     fwd_lbl  = "Next" if lang == "en" else "Вперёд"
-    menu_lbl = "🔙 Menu" if lang == "en" else "🔙 В меню"
-
-    builder = InlineKeyboardBuilder()
-    for cat, info in CATEGORIES.items():
-        name = info["name_en"] if lang == "en" else info["name"]
-        builder.button(text=f'{info["emoji"]} {name}', callback_data=f"ach_cat_{cat}")
-    builder.adjust(2)
+    back_to_menu_lbl = "◀ Back" if lang == "en" else "◀ Назад"
 
     total_pages = category_page_count(category)
     page = max(0, min(page, total_pages - 1))
+
+    builder = InlineKeyboardBuilder()
+
     if total_pages > 1:
         nav = []
         if page > 0:
@@ -900,7 +938,7 @@ def achievements_keyboard(lang: str = "ru", category: str | None = None, page: i
             nav.append(InlineKeyboardButton(text=f'{fwd_lbl} ▶', callback_data=f"ach_page_{category}_{page + 1}"))
         builder.row(*nav)
 
-    builder.row(InlineKeyboardButton(text=menu_lbl, callback_data="back_to_menu"))
+    builder.row(InlineKeyboardButton(text=back_to_menu_lbl, callback_data="ach_menu"))
 
     return builder.as_markup()
 
@@ -908,9 +946,20 @@ def achievements_keyboard(lang: str = "ru", category: str | None = None, page: i
 # ============================================================
 #  ПРИМЕР ХЕНДЛЕРА (скопируйте в mainhelp.py и раскомментируйте,
 #  поправив импорты под свой проект)
+#
+#  Схема теперь двухуровневая:
+#   • Уровень 0 — меню достижений (achievements_menu_text/keyboard):
+#     список разделов кнопками, открывается командой и кнопкой "◀ Назад"
+#     из любого раздела. Отсюда же — выход в главное меню бота.
+#   • Уровень 1 — сам раздел (achievements_list_text/keyboard): только
+#     достижения текущего раздела + пагинация (если страниц больше 1) +
+#     одна кнопка "◀ Назад", которая возвращает на уровень 0.
 # ============================================================
 #
-# from achieves import achievements_list_text, achievements_keyboard, DEFAULT_CATEGORY
+# from achieves import (
+#     achievements_menu_text, achievements_menu_keyboard,
+#     achievements_list_text, achievements_keyboard,
+# )
 #
 # @dp.message(Command("достижения", "ачивки", "achievements", "ach"))
 # @dp.message(_text_in("достижения", "ачивки", "achievements", "ach"))
@@ -921,16 +970,27 @@ def achievements_keyboard(lang: str = "ru", category: str | None = None, page: i
 #     if await _check_onboarded(message, u):
 #         return
 #     await message.reply(
-#         achievements_list_text(u, lang, category=DEFAULT_CATEGORY, page=0),
+#         achievements_menu_text(u, lang),
 #         parse_mode="HTML",
-#         reply_markup=achievements_keyboard(lang, category=DEFAULT_CATEGORY, page=0),
+#         reply_markup=achievements_menu_keyboard(lang),
 #     )
 #
 # И в handle_callback (mainhelp.py) добавить обработку:
-#   cd.startswith("ach_cat_")   -> переключение раздела, всегда открывает page=0
-#   cd.startswith("ach_page_")  -> пагинация внутри текущего раздела
+#   cd == "ach_menu"             -> вернуться в меню достижений (уровень 0)
+#   cd.startswith("ach_cat_")    -> открыть раздел, всегда со page=0
+#   cd.startswith("ach_page_")   -> пагинация внутри текущего раздела
 #
 # Пример:
+#
+# @dp.callback_query(F.data == "ach_menu")
+# async def cb_ach_menu(cq: CallbackQuery):
+#     u    = get_or_create_user(cq.from_user)
+#     lang = get_lang(u)
+#     await cq.message.edit_text(
+#         achievements_menu_text(u, lang),
+#         parse_mode="HTML",
+#         reply_markup=achievements_menu_keyboard(lang),
+#     )
 #
 # @dp.callback_query(F.data.startswith("ach_cat_"))
 # async def cb_ach_category(cq: CallbackQuery):
