@@ -1,8 +1,9 @@
 # ============================================================
 #  achieves.py  —  Система достижений
-#  92 достижения: деньги, уровень, шахта, охота на боссов,
-#  арсенал (мечи), дуэли, кейсы/артефакты, питомцы, клан (15, живые
-#  данные из klan.py), рефералы, донат, вклады, разное.
+#  104 достижения: деньги, уровень, шахта, охота на боссов,
+#  арсенал (мечи), дуэли, кейсы/артефакты (15, живые данные из shop.py),
+#  питомцы, клан (15, живые данные из klan.py), рефералы, донат,
+#  вклады, разное.
 # ============================================================
 #
 #  КАК ПОДКЛЮЧИТЬ
@@ -41,6 +42,17 @@
 #    mine_total_ore_collected, mine_total_sold, mine_lifetime_ore_counts
 #  Ничего доинкрементировать не нужно — collect_mine/sell_all_ores/stop_mine
 #  в miner.py уже обновляют эти поля сами.
+#
+#  🎁 КЕЙСЫ / АРТЕФАКТЫ — уже подключены и работают из коробки, shop.py сам
+#  ведёт все нужные счётчики (15 достижений, больше не заглушка):
+#    cases_total_opened, cases_total_spent   — open_case() сам инкрементирует
+#    artifact_cases_opened                    — open_artifact_case() сам инкрементирует
+#    artifacts (список {"key": ...})          — open_artifact_case() сам добавляет
+#  Достижения по редкости/эффекту/полной коллекции читают data["artifacts"]
+#  через _artifact_keys(d)/_artifact_has_multiplier(d, ...)/_artifact_effects_owned(d),
+#  которые лениво импортируют ARTIFACT_POOL_BY_KEY из shop.py — ничего
+#  синхронизировать не нужно. ВАЖНО: поле называется "artifacts", а НЕ
+#  "owned_artifacts" (в старой версии модуля было опечаткой заглушки).
 #
 #  🤺 ДУЭЛИ — раздел подключён к реальным полям duel.py (15 достижений,
 #  больше не заглушка). Что уже работает из коробки:
@@ -288,6 +300,49 @@ def _duel_equipped_slots_count(d: dict) -> int:
         GEAR_SLOTS_ORDER = ["helmet", "armor", "gloves", "pants", "boots"]
     equipped = d.get("duel_equipped", {}) or {}
     return sum(1 for slot in GEAR_SLOTS_ORDER if equipped.get(slot))
+
+
+def _artifact_keys(d: dict) -> set:
+    """Ключи артефактов, которые есть у игрока. Хранятся в data['artifacts']
+    (список {'key': ...}) — именно это поле пишет shop.open_artifact_case,
+    а НЕ 'owned_artifacts' (старое поле было опечаткой заглушки)."""
+    return {entry.get("key") for entry in d.get("artifacts", []) if isinstance(entry, dict) and entry.get("key")}
+
+
+def _artifacts_total() -> int:
+    """Сколько всего разных артефактов существует в пуле кейса артефактов."""
+    try:
+        from shop import _ARTIFACT_POOL
+        return len(_ARTIFACT_POOL)
+    except Exception:
+        return 10  # запасное значение — поправьте под свой пул артефактов
+
+
+def _artifact_has_multiplier(d: dict, mult: float) -> bool:
+    """Есть ли у игрока хотя бы один артефакт с данным множителем (редкостью)."""
+    try:
+        from shop import ARTIFACT_POOL_BY_KEY
+    except Exception:
+        return False
+    for key in _artifact_keys(d):
+        a = ARTIFACT_POOL_BY_KEY.get(key)
+        if a and abs(a.get("multiplier", 0) - mult) < 1e-6:
+            return True
+    return False
+
+
+def _artifact_effects_owned(d: dict) -> set:
+    """Множество эффектов (mine/damage/pets/all) артефактов, которые есть у игрока."""
+    try:
+        from shop import ARTIFACT_POOL_BY_KEY
+    except Exception:
+        return set()
+    effects = set()
+    for key in _artifact_keys(d):
+        a = ARTIFACT_POOL_BY_KEY.get(key)
+        if a:
+            effects.add(a.get("effect"))
+    return effects
 
 
 def _clan_member(d: dict) -> dict | None:
@@ -853,27 +908,123 @@ ACHIEVEMENTS = [
          progress=lambda d: (_duel_owned_skills_count(d), _duel_skills_total()),
          reward_coins=10_000_000, reward_xp=3000),
 
-    # ───────────── 🎁 КЕЙСЫ / АРТЕФАКТЫ (3) ─────────────
-    _ach("cases_first", "📦", "Искатель удачи",
+    # ───────────── 🎁 КЕЙСЫ / АРТЕФАКТЫ (15) ─────────────
+    _ach("cases_open_1", "📦", "Искатель удачи",
+         "Открой свой первый кейс (ускорителей/XP/усилителей)",
+         "cases",
+         lambda d: d.get("cases_total_opened", 0) >= 1,
+         progress=lambda d: (d.get("cases_total_opened", 0), 1),
+         reward_coins=3_000, reward_xp=20,
+         name_en="Fortune Seeker", desc_en="Open your first case (boosters/XP/enhancers)"),
+
+    _ach("cases_open_10", "📦", "Завсегдатай магазина",
+         "Открой 10 кейсов",
+         "cases",
+         lambda d: d.get("cases_total_opened", 0) >= 10,
+         progress=lambda d: (d.get("cases_total_opened", 0), 10),
+         reward_coins=15_000, reward_xp=60,
+         name_en="Shop Regular", desc_en="Open 10 cases"),
+
+    _ach("cases_open_50", "🎰", "Азартный игрок",
+         "Открой 50 кейсов",
+         "cases",
+         lambda d: d.get("cases_total_opened", 0) >= 50,
+         progress=lambda d: (d.get("cases_total_opened", 0), 50),
+         reward_coins=100_000, reward_xp=200,
+         name_en="Gambler", desc_en="Open 50 cases"),
+
+    _ach("cases_open_250", "🎲", "Кейсоман",
+         "Открой 250 кейсов",
+         "cases",
+         lambda d: d.get("cases_total_opened", 0) >= 250,
+         progress=lambda d: (d.get("cases_total_opened", 0), 250),
+         reward_coins=750_000, reward_xp=500,
+         name_en="Case Addict", desc_en="Open 250 cases"),
+
+    _ach("cases_spent_1m", "💸", "Транжира",
+         "Потрать суммарно 1 000 000 монет на кейсы",
+         "cases",
+         lambda d: d.get("cases_total_spent", 0) >= 1_000_000,
+         progress=lambda d: (d.get("cases_total_spent", 0), 1_000_000),
+         reward_coins=50_000, reward_xp=100,
+         name_en="Big Spender", desc_en="Spend a total of 1,000,000 coins on cases"),
+
+    _ach("cases_spent_50m", "💰", "Крупный вкладчик",
+         "Потрать суммарно 50 000 000 монет на кейсы",
+         "cases",
+         lambda d: d.get("cases_total_spent", 0) >= 50_000_000,
+         progress=lambda d: (d.get("cases_total_spent", 0), 50_000_000),
+         reward_coins=2_000_000, reward_xp=400,
+         name_en="High Roller", desc_en="Spend a total of 50,000,000 coins on cases"),
+
+    _ach("artifact_case_first", "💎", "Охотник за реликвиями",
          "Открой свой первый кейс артефактов",
          "cases",
          lambda d: d.get("artifact_cases_opened", 0) >= 1,
          progress=lambda d: (d.get("artifact_cases_opened", 0), 1),
-         reward_coins=3_000, reward_xp=20),
+         reward_coins=10_000, reward_xp=40,
+         name_en="Relic Hunter", desc_en="Open your first artifact case"),
 
-    _ach("cases_25", "🎰", "Азартный игрок",
-         "Открой 25 кейсов артефактов",
+    _ach("artifact_case_10", "💎", "Расхититель гробниц",
+         "Открой 10 кейсов артефактов",
          "cases",
-         lambda d: d.get("artifact_cases_opened", 0) >= 25,
-         progress=lambda d: (d.get("artifact_cases_opened", 0), 25),
-         reward_coins=50_000, reward_xp=150),
+         lambda d: d.get("artifact_cases_opened", 0) >= 10,
+         progress=lambda d: (d.get("artifact_cases_opened", 0), 10),
+         reward_coins=200_000, reward_xp=250,
+         name_en="Tomb Raider", desc_en="Open 10 artifact cases"),
 
-    _ach("cases_collection", "🏺", "Коллекционер артефактов",
-         "Собери 10 разных артефактов",
+    _ach("artifact_case_50", "💎", "Легенда артефактов",
+         "Открой 50 кейсов артефактов",
          "cases",
-         lambda d: len(d.get("owned_artifacts", [])) >= 10,
-         progress=lambda d: (len(d.get("owned_artifacts", [])), 10),
-         reward_coins=300_000, reward_xp=400),
+         lambda d: d.get("artifact_cases_opened", 0) >= 50,
+         progress=lambda d: (d.get("artifact_cases_opened", 0), 50),
+         reward_coins=2_000_000, reward_xp=600,
+         name_en="Artifact Legend", desc_en="Open 50 artifact cases"),
+
+    _ach("artifact_collect_3", "🏺", "Начинающий коллекционер",
+         "Собери 3 разных артефакта",
+         "cases",
+         lambda d: len(_artifact_keys(d)) >= 3,
+         progress=lambda d: (len(_artifact_keys(d)), 3),
+         reward_coins=100_000, reward_xp=150,
+         name_en="Budding Collector", desc_en="Collect 3 different artifacts"),
+
+    _ach("artifact_collect_6", "🏺", "Опытный коллекционер",
+         "Собери 6 разных артефактов",
+         "cases",
+         lambda d: len(_artifact_keys(d)) >= 6,
+         progress=lambda d: (len(_artifact_keys(d)), 6),
+         reward_coins=500_000, reward_xp=350,
+         name_en="Seasoned Collector", desc_en="Collect 6 different artifacts"),
+
+    _ach("artifact_collect_all", "🏛", "Хранитель реликвий",
+         "Собери всю коллекцию артефактов",
+         "cases",
+         lambda d: len(_artifact_keys(d)) >= _artifacts_total(),
+         progress=lambda d: (len(_artifact_keys(d)), _artifacts_total()),
+         reward_coins=5_000_000, reward_xp=1000,
+         name_en="Relic Keeper", desc_en="Complete the entire artifact collection"),
+
+    _ach("artifact_epic", "🔮", "Обладатель эпики",
+         "Получи артефакт высшей обычной редкости (1.65×)",
+         "cases",
+         lambda d: _artifact_has_multiplier(d, 1.65),
+         reward_coins=300_000, reward_xp=250,
+         name_en="Epic Holder", desc_en="Obtain a top-rarity artifact (1.65×)"),
+
+    _ach("artifact_legendary", "💍", "Избранный судьбой",
+         "Получи Кольцо Перерождений (шанс выпадения 1%)",
+         "cases",
+         lambda d: "art_vsevlastniy" in _artifact_keys(d),
+         reward_coins=2_000_000, reward_xp=700,
+         name_en="Chosen by Fate", desc_en="Obtain the Ring of Rebirths (1% drop chance)"),
+
+    _ach("artifact_effect_master", "🌐", "Универсал",
+         "Собери хотя бы по одному артефакту на добычу руды, урон и питомцев",
+         "cases",
+         lambda d: {"mine", "damage", "pets"} <= _artifact_effects_owned(d),
+         reward_coins=800_000, reward_xp=400,
+         name_en="All-Rounder", desc_en="Own at least one artifact for ore mining, boss damage, and pet income each"),
 
     # ───────────── 🐾 ПИТОМЦЫ (3) ─────────────
     _ach("pets_first", "🐣", "Друг найден",
@@ -1096,7 +1247,7 @@ ACHIEVEMENTS = [
          reward_coins=200_000, reward_xp=300),
 ]
 
-assert len(ACHIEVEMENTS) == 92, f"Ожидалось 92 достижения, а получилось {len(ACHIEVEMENTS)}"
+assert len(ACHIEVEMENTS) == 104, f"Ожидалось 104 достижения, а получилось {len(ACHIEVEMENTS)}"
 
 ACHIEVEMENTS_BY_ID = {a["id"]: a for a in ACHIEVEMENTS}
 
