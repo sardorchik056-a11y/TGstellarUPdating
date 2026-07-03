@@ -3448,6 +3448,10 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer(f"🚫 Лимит исчерпан ({_lim_used2}/{_lim_max2}). Попробуй позже.", show_alert=True)
                 return
             data["balance"] = bal - amount
+            data["deposits_opened"] = data.get("deposits_opened", 0) + 1
+            _dep_types = data.setdefault("deposits_types_opened", [])
+            if dep_key not in _dep_types:
+                _dep_types.append(dep_key)
             _ach_newly = check_achievements(data)
             save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
@@ -3474,6 +3478,8 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer("Нет готовых вкладов!", show_alert=True)
                 return
             data["balance"] = data.get("balance", 0) + total_payout
+            data["deposits_claimed"] = data.get("deposits_claimed", 0) + count
+            data["deposits_total_profit"] = data.get("deposits_total_profit", 0) + total_profit
             _ach_newly = check_achievements(data)
             save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
@@ -6236,6 +6242,9 @@ async def _cdl_payout_loop():
                             continue
                         udata = _js.loads(row["data_json"])
                         udata["balance"] = udata.get("balance", 0) + total_payout
+                        udata["deposits_claimed"] = udata.get("deposits_claimed", 0) + len(paid_deps)
+                        udata["deposits_total_profit"] = udata.get("deposits_total_profit", 0) + total_profit
+                        _ach_newly = check_achievements(udata)
                         _conn.execute(
                             "UPDATE users SET data_json=? WHERE uid=?",
                             (_js.dumps(udata, ensure_ascii=False), uid)
@@ -6244,6 +6253,9 @@ async def _cdl_payout_loop():
                 except Exception as _db_e:
                     print(f"[cdl_payout_loop] ошибка начисления uid={uid}: {_db_e}")
                     continue
+
+                if _ach_newly:
+                    await _notify_ach(uid, udata, _ach_newly)
 
                 # Шлём отдельное уведомление на каждый вклад
                 for dep in paid_deps:
