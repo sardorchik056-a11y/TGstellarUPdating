@@ -3,6 +3,10 @@
 #  • Награда за обычного реферала:  3 000 монет
 #  • Награда за Premium-реферала:   5 000 монет
 #  • Капча после /start: простые примеры (5 попыток → блок 30 мин)
+#  • Процентная реф-система: 10% / 15% (Premium) от ЛЮБОГО дохода
+#    реферала начисляется рефереру автоматически (см. блок
+#    "ПРОЦЕНТНАЯ РЕФ-СИСТЕМА" ниже — реализовано SQL-триггером,
+#    database.py НЕ модифицируется).
 # ============================================================
 
 import sqlite3
@@ -19,6 +23,13 @@ REF_REWARD_NORMAL  = 3_000
 REF_REWARD_PREMIUM = 8_000
 CAPTCHA_MAX_TRIES  = 5
 CAPTCHA_BLOCK_SEC  = 30 * 60
+
+# Процент от ЛЮБОГО дохода реферала, который автоматически уходит
+# рефереру (пассивный доход). Считается от каждого положительного
+# изменения баланса (начисление монет), не только от разовой награды
+# за приглашение.
+REF_PERCENT_NORMAL  = 10   # обычный реферал (без Telegram Premium)
+REF_PERCENT_PREMIUM = 15   # реферал с Telegram Premium
 
 # Рабочие emoji-id из проекта
 _E_PREMIUM = "5427168083074628963"
@@ -152,6 +163,94 @@ def init_refs_db():
         if "msg_id" not in cols:
             c.execute("ALTER TABLE captcha_state ADD COLUMN msg_id INTEGER")
         c.commit()
+
+        # ── Миграция: колонки для процентной реф-системы ──
+        # is_premium — есть ли у реферала Telegram Premium (фиксируется
+        #              в момент подтверждения реферала, см. reward_inviter);
+        # percent    — % отчислений рефереру с любого дохода этого реферала
+        #              (10 обычный / 15 Telegram Premium).
+        ref_cols = {row["name"] for row in c.execute("PRAGMA table_info(refs)").fetchall()}
+        if "is_premium" not in ref_cols:
+            c.execute("ALTER TABLE refs ADD COLUMN is_premium INTEGER DEFAULT 0")
+        if "percent" not in ref_cols:
+            c.execute(f"ALTER TABLE refs ADD COLUMN percent INTEGER DEFAULT {REF_PERCENT_NORMAL}")
+        c.commit()
+
+        _install_ref_income_trigger(c)
+
+
+def _install_ref_income_trigger(c: sqlite3.Connection):
+    """
+    ПРОЦЕНТНАЯ РЕФ-СИСТЕМА (10% / 15%).
+
+    Ставим задачу так: "проверять ЛЮБОЕ начисление" пользователю и
+    отдавать % его рефереру — а database.py трогать нельзя, потому что
+    от save_user() зависит куча других файлов проекта.
+
+    Решение: SQL-триггер прямо на таблице users (её создаёт database.py,
+    но триггер вешается отдельным DDL-запросом и не требует правок
+    самого database.py — он будет отрабатывать при КАЖДОМ UPDATE
+    data_json, откуда бы он ни пришёл: из miner.py, shop.py, admin-панели
+    и т.д.).
+
+    Как это работает:
+      1. Триггер сравнивает старый и новый JSON-баланс пользователя.
+      2. Если баланс ВЫРОС (delta > 0) и у пользователя есть реферер —
+         реферер получает delta * percent / 100 монет (округление до
+         целого), где percent берётся из refs.percent (10 или 15).
+      3. Если баланс уменьшился (трата, покупка, вывод и т.п.) —
+         триггер не срабатывает, комиссия не начисляется.
+      4. Начисление комиссии рефереру — это тоже UPDATE users, но
+         SQLite по умолчанию (recursive_triggers = OFF) НЕ запускает
+         триггеры из других триггеров. Поэтому комиссия уходит только
+         на 1 уровень вверх (прямому рефереру), а не каскадом по всей
+         цепочке — как и требовалось.
+      5. Параллельно обновляется earned_coins в ref_stats — те же
+         цифры, что уже показываются в /refs.
+    """
+    c.executescript(f"""
+        DROP TRIGGER IF EXISTS trg_ref_income;
+        CREATE TRIGGER trg_ref_income
+        AFTER UPDATE OF data_json ON users
+        FOR EACH ROW
+        WHEN
+            CAST(json_extract(NEW.data_json, '$.balance') AS REAL)
+              > CAST(json_extract(OLD.data_json, '$.balance') AS REAL)
+            AND (SELECT inviter_uid FROM refs WHERE uid = NEW.uid) IS NOT NULL
+        BEGIN
+            UPDATE users
+            SET data_json = json_set(
+                    data_json, '$.balance',
+                    CAST(
+                        CAST(json_extract(data_json, '$.balance') AS REAL)
+                        + ROUND(
+                            (CAST(json_extract(NEW.data_json, '$.balance') AS REAL)
+                             - CAST(json_extract(OLD.data_json, '$.balance') AS REAL))
+                            * (SELECT COALESCE(percent, {REF_PERCENT_NORMAL}) FROM refs WHERE uid = NEW.uid) / 100.0
+                          )
+                    AS INTEGER)
+                )
+            WHERE uid = (SELECT inviter_uid FROM refs WHERE uid = NEW.uid);
+
+            INSERT INTO ref_stats (uid, total_refs, premium_refs, earned_coins)
+            VALUES (
+                (SELECT inviter_uid FROM refs WHERE uid = NEW.uid),
+                0, 0,
+                CAST(ROUND(
+                    (CAST(json_extract(NEW.data_json, '$.balance') AS REAL)
+                     - CAST(json_extract(OLD.data_json, '$.balance') AS REAL))
+                    * (SELECT COALESCE(percent, {REF_PERCENT_NORMAL}) FROM refs WHERE uid = NEW.uid) / 100.0
+                ) AS INTEGER)
+            )
+            ON CONFLICT(uid) DO UPDATE SET
+                earned_coins = earned_coins + CAST(ROUND(
+                    (CAST(json_extract(NEW.data_json, '$.balance') AS REAL)
+                     - CAST(json_extract(OLD.data_json, '$.balance') AS REAL))
+                    * (SELECT COALESCE(percent, {REF_PERCENT_NORMAL}) FROM refs WHERE uid = NEW.uid) / 100.0
+                ) AS INTEGER);
+        END;
+    """)
+    c.commit()
 
 
 def _conn():
@@ -328,9 +427,20 @@ def reward_inviter(uid: int, is_premium: bool) -> tuple[bool, int]:
             # ТОЛЬКО если rewarded ещё не был выставлен. Это устраняет
             # классический TOCTOU (read rewarded -> ... -> write rewarded),
             # из-за которого было возможно двойное начисление монет.
+            # Заодно фиксируем is_premium и % отчислений (10/15) для этого
+            # реферала — с этого момента SQL-триггер trg_ref_income начнёт
+            # автоматически отдавать рефереру процент с ЛЮБОГО дохода uid.
+            # Активация привязана к тому же моменту, что и разовая награда
+            # (после капчи), чтобы не начислять % с ещё не подтверждённых
+            # рефералов.
+            percent = REF_PERCENT_PREMIUM if is_premium else REF_PERCENT_NORMAL
             cur = c.execute(
-                "UPDATE refs SET rewarded=1 WHERE uid=? AND rewarded=0 AND inviter_uid IS NOT NULL",
-                (uid,),
+                """
+                UPDATE refs
+                SET rewarded=1, is_premium=?, percent=?
+                WHERE uid=? AND rewarded=0 AND inviter_uid IS NOT NULL
+                """,
+                (1 if is_premium else 0, percent, uid),
             )
             c.commit()
             if cur.rowcount == 0:
@@ -400,6 +510,26 @@ def get_inviter(uid: int) -> int | None:
         row = c.execute("SELECT inviter_uid FROM refs WHERE uid=?", (uid,)).fetchone()
     return row["inviter_uid"] if row else None
 
+
+def get_ref_percent_info(uid: int) -> dict:
+    """
+    Возвращает информацию об активной % ставке для пользователя uid как
+    для реферала (сколько % с его дохода уходит его рефереру и активна
+    ли уже эта ставка — она включается после reward_inviter()).
+    """
+    with _conn() as c:
+        row = c.execute(
+            "SELECT inviter_uid, rewarded, is_premium, percent FROM refs WHERE uid=?",
+            (uid,),
+        ).fetchone()
+    if not row or row["inviter_uid"] is None:
+        return {"active": False, "percent": 0, "is_premium": False}
+    return {
+        "active":     bool(row["rewarded"]),
+        "percent":    row["percent"] if row["rewarded"] else 0,
+        "is_premium": bool(row["is_premium"]),
+    }
+
 # ──────────────────────── тексты UI ──────────────────────────
 
 def refs_main_text(uid: int, bot_username: str, lang: str = "ru") -> str:
@@ -415,7 +545,8 @@ def refs_main_text(uid: int, bot_username: str, lang: str = "ru") -> str:
         f'<blockquote>'
         f'<tg-emoji emoji-id="{_E_STAR}">🎯</tg-emoji> <b>{t(lang, "refs_rewards_title")}</b>\n'
         f'<tg-emoji emoji-id="5452085950022707790">🪙</tg-emoji> <i>{t(lang, "refs_reward_normal")} — <b>+{REF_REWARD_NORMAL:,}</b> {COIN}\n'
-        f'<tg-emoji emoji-id="{_E_PREMIUM}">⭐</tg-emoji> {t(lang, "refs_reward_premium")} — <b>+{REF_REWARD_PREMIUM:,}</b> </i>{COIN}'
+        f'<tg-emoji emoji-id="{_E_PREMIUM}">⭐</tg-emoji> {t(lang, "refs_reward_premium")} — <b>+{REF_REWARD_PREMIUM:,}</b> </i>{COIN}\n'
+        f'<tg-emoji emoji-id="5199552030615558774">📈</tg-emoji> <i>+ {REF_PERCENT_NORMAL}% / {REF_PERCENT_PREMIUM}% <tg-emoji emoji-id="{_E_PREMIUM}">⭐</tg-emoji> {"от дохода реферала — навсегда" if lang != "en" else "of referral income — forever"}</i>'
         f'</blockquote>\n\n'
         f'<blockquote>'
         f'<tg-emoji emoji-id="5231200819986047254">📊</tg-emoji> <b>{t(lang, "refs_stats_title")}</b>\n'
