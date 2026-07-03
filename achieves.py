@@ -241,23 +241,44 @@ CATEGORIES = {
 # по какой-то причине не отрисуется (старый клиент и т.п.).
 
 CUSTOM_EMOJI_IDS = {
-    "mine_icon":    "5197371802136892976",   # иконка ВСЕХ достижений раздела "Шахта"
-    "money_icon":   "5391292736647209211",   # иконка ВСЕХ достижений раздела "Богатство"
-    "arsenal_icon": "5463277406435422003",   # иконка ВСЕХ достижений раздела "Арсенал"
-    "status":       "5262844652964303985",   # перед словом "Статус"
-    "locked":       "5296369303661067030",   # состояние "не выполнено"
-    "unlocked":     "5206607081334906820",   # состояние "выполнено"
-    "reward":       "5222113468051629260",   # перед словом "Награда"
-    "players":      "5438496463044752972",   # перед словом "Выполнили"
+    "mine_icon":       "5197371802136892976",   # иконка ВСЕХ достижений раздела "Шахта"
+    "money_icon":      "5391292736647209211",   # иконка ВСЕХ достижений раздела "Богатство"
+    "arsenal_icon":    "5463277406435422003",   # иконка ВСЕХ достижений раздела "Арсенал"
+    "level_icon":      "5429651785352501917",   # иконка ВСЕХ достижений раздела "Прогресс"
+    "hunt_icon":       "5424972470023104089",   # иконка ВСЕХ достижений раздела "Охота"
+    "duel_icon":       "5454014806950429357",   # иконка ВСЕХ достижений раздела "Дуэли"
+    "cases_icon":      "5442939099906325301",   # иконка ВСЕХ достижений раздела "Кейсы"
+    "pets_icon":       "5337047059180566409",   # иконка ВСЕХ достижений раздела "Питомцы"
+    "clan_icon":       "5453957997418004470",   # иконка ВСЕХ достижений раздела "Клан"
+    "refs_icon":       "5332724926216428039",   # иконка ВСЕХ достижений раздела "Рефералы"
+    "donate_icon":     "5267500801240092311",   # иконка ВСЕХ достижений раздела "Донат"
+    "deposit_icon":    "5397916757333654639",   # иконка ВСЕХ достижений раздела "Вклады"
+    "misc_icon":       "5269531045165816230",   # иконка ВСЕХ достижений раздела "Разное"
+    "new_achievement": "5150415989841593609",   # перед словом "новое достижение!" в уведомлении
+    "status":          "5262844652964303985",   # перед словом "Статус"
+    "locked":          "5296369303661067030",   # состояние "не выполнено"
+    "unlocked":        "5206607081334906820",   # состояние "выполнено"
+    "reward":          "5222113468051629260",   # перед словом "Награда"
+    "players":         "5438496463044752972",   # перед словом "Выполнили"
 }
 
 # Разделы, у которых ВСЕ достижения показываются с одним общим премиум-эмодзи
 # вместо индивидуальной иконки каждой ачивки. Добавляете новый раздел — просто
 # впишите сюда его id и ключ из CUSTOM_EMOJI_IDS.
 CATEGORY_ICON_EMOJI = {
-    "mine": "mine_icon",
-    "money": "money_icon",
+    "money":   "money_icon",
+    "level":   "level_icon",
+    "mine":    "mine_icon",
+    "hunt":    "hunt_icon",
     "arsenal": "arsenal_icon",
+    "duel":    "duel_icon",
+    "cases":   "cases_icon",
+    "pets":    "pets_icon",
+    "clan":    "clan_icon",
+    "refs":    "refs_icon",
+    "donate":  "donate_icon",
+    "deposit": "deposit_icon",
+    "misc":    "misc_icon",
 }
 
 
@@ -885,22 +906,28 @@ def _fmt_reward(ach: dict, lang: str = "ru") -> str:
 
 def achievement_unlocked_text(ach: dict, lang: str = "ru") -> str:
     name = ach["name_en"] if lang == "en" else ach["name"]
-    desc = ach["desc_en"] if lang == "en" else ach["desc"]
-    reward_str = _fmt_reward(ach, lang)
 
-    # иконка достижения: для разделов из CATEGORY_ICON_EMOJI (шахта/деньги/арсенал) —
-    # единый премиум-эмодзи раздела (как и в карточке достижения), для остальных —
-    # обычная эмодзи самой ачивки
+    # иконка достижения: единый премиум-эмодзи раздела (Шахта/Богатство/Арсенал/...
+    # /Прогресс/Охота/Дуэли/Кейсы/Питомцы/Клан/Рефералы/Донат/Вклады/Разное)
     _icon_key = CATEGORY_ICON_EMOJI.get(ach.get("category"))
     icon = _cemoji(_icon_key, ach["emoji"]) if _icon_key else ach["emoji"]
 
-    title = "Новое достижение" if lang == "ru" else "New achievement"
+    new_ach_emoji = _cemoji("new_achievement", "🏆")
+    header_word = "новое достижение!" if lang == "ru" else "new achievement!"
+
     lines = [
-        f'🏆 <b>{title}:</b> {icon} <b>{name}</b>',
-        f'<i>{desc}</i>',
+        f'<blockquote>{new_ach_emoji}{header_word}  —  {icon} <b>{name}</b></blockquote>',
     ]
-    if reward_str:
-        lines.append(f'{_cemoji("reward", "🎁")} {reward_str}')
+
+    reward_parts = []
+    if ach["reward_coins"]:
+        reward_parts.append(f'{_fmt_num(ach["reward_coins"])} {"монет" if lang == "ru" else "coins"}')
+    if ach["reward_xp"]:
+        reward_parts.append(f'{ach["reward_xp"]} {"опыта" if lang == "ru" else "XP"}')
+    if reward_parts:
+        lines.append("")
+        lines.append(f'{_cemoji("reward", "🎁")} : {" / ".join(reward_parts)}')
+
     return "\n".join(lines)
 
 
