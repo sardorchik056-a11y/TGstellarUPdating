@@ -378,7 +378,7 @@ def crystal_leaders_keyboard(period: str) -> InlineKeyboardMarkup:
 
     builder.row(InlineKeyboardButton(
         text="Назад",
-        callback_data="back_to_menu",
+        callback_data="city_nav_profile",
         icon_custom_emoji_id=_E["back"],
     ))
 
