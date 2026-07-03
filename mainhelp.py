@@ -1743,6 +1743,21 @@ async def cmd_promo(message: Message):
 #   2) Явное указание получателя:
 #      /gift @username 500   /gift 123456789 500   gift @user 500   gift 123456789 500
 
+def _fmt_full(n) -> str:
+    """
+    Полная запись числа с разделителями разрядов, без буквенных
+    сокращений (K/M/B/...) — используется в команде передачи монет,
+    чтобы игрок видел точную сумму: 1_000_000_000 -> "1 000 000 000",
+    а не "1B".
+    """
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return str(n)
+    sign = "-" if n < 0 else ""
+    return f"{sign}{abs(n):,}".replace(",", " ")
+
+
 _GIFT_MIN = 1          # минимум перевода
 _COIN_GIFT = '<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji>'
 _GIFT_WINDOW = 86400   # 24 часа — окно суточного лимита
@@ -1891,7 +1906,7 @@ async def cmd_gift(message: Message):
 
     if amount is None or amount < _GIFT_MIN:
         await message.reply(
-            f"❌ Минимальная сумма перевода: <b>{format_amount(_GIFT_MIN)}</b> {_COIN_GIFT}",
+            f"❌ Минимальная сумма перевода: <b>{_fmt_full(_GIFT_MIN)}</b> {_COIN_GIFT}",
             parse_mode="HTML"
         )
         return
@@ -1955,8 +1970,8 @@ async def cmd_gift(message: Message):
                 await message.reply(
                     f"❌ Недостаточно монет.\n\n"
                     f"<blockquote>"
-                    f"Ваш баланс: <b>{format_amount(sender_balance)}</b> {_COIN_GIFT}\n"
-                    f"Нужно: <b>{format_amount(amount)}</b> {_COIN_GIFT}"
+                    f"Ваш баланс: <b>{_fmt_full(sender_balance)}</b> {_COIN_GIFT}\n"
+                    f"Нужно: <b>{_fmt_full(amount)}</b> {_COIN_GIFT}"
                     f"</blockquote>",
                     parse_mode="HTML"
                 )
@@ -1982,7 +1997,7 @@ async def cmd_gift(message: Message):
                     )
                     await message.reply(
                         f'<tg-emoji emoji-id="5420323339723881652">🌟</tg-emoji><b><i> Игроку <b>{recipient_name_err}</b> можно передать до '
-                        f"<b>{format_amount(daily_limit)}</b>{_COIN_GIFT} монет в день.</i></b>",
+                        f"<b>{_fmt_full(daily_limit)}</b>{_COIN_GIFT} монет в день.</i></b>",
                         parse_mode="HTML"
                     )
                     return
@@ -2008,8 +2023,8 @@ async def cmd_gift(message: Message):
         f'<tg-emoji emoji-id="5201691993775818138">✅</tg-emoji> <b>Перевод выполнен!</b>\n\n'
         f'<blockquote>'
         f'<tg-emoji emoji-id="5452085950022707790">✅</tg-emoji> <i><b>Получатель: {recipient_name}</b></i>\n'
-        f'<tg-emoji emoji-id="5224257782013769471">✅</tg-emoji> <i><b>Сумма: {format_amount(amount)}{_COIN_GIFT}</b></i>\n'
-        f'<tg-emoji emoji-id="5278467510604160626">✅</tg-emoji> <i><b>Ваш баланс: {format_amount(sender_data["balance"])}</b></i>'
+        f'<tg-emoji emoji-id="5224257782013769471">✅</tg-emoji> <i><b>Сумма: {_fmt_full(amount)}{_COIN_GIFT}</b></i>\n'
+        f'<tg-emoji emoji-id="5278467510604160626">✅</tg-emoji> <i><b>Ваш баланс: {_fmt_full(sender_data["balance"])}</b></i>'
         f'</blockquote>',
         parse_mode="HTML"
     )
@@ -2021,8 +2036,8 @@ async def cmd_gift(message: Message):
             f'<tg-emoji emoji-id="5222113468051629260">🎁</tg-emoji> <b>Вам перевели монеты!</b>\n\n'
             f'<blockquote>'
             f'<tg-emoji emoji-id="5452085950022707790">✅</tg-emoji> <i><b>От: {sender_name}</b></i>\n'
-            f'<tg-emoji emoji-id="5224257782013769471">✅</tg-emoji> <i><b>Сумма: {format_amount(amount)}{_COIN_GIFT}</b></i>\n'
-            f'<tg-emoji emoji-id="5278467510604160626">✅</tg-emoji> <i><b>Ваш баланс: {format_amount(recipient_data["balance"])}</b></i>'
+            f'<tg-emoji emoji-id="5224257782013769471">✅</tg-emoji> <i><b>Сумма: {_fmt_full(amount)}{_COIN_GIFT}</b></i>\n'
+            f'<tg-emoji emoji-id="5278467510604160626">✅</tg-emoji> <i><b>Ваш баланс: {_fmt_full(recipient_data["balance"])}</b></i>'
             f'</blockquote>',
             parse_mode="HTML"
         )
