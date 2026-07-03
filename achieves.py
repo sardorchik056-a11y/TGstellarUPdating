@@ -1,6 +1,6 @@
 # ============================================================
 #  achieves.py  —  Система достижений
-#  104 достижения: деньги, уровень, шахта, охота на боссов,
+#  112 достижений: деньги, уровень, шахта, охота на боссов,
 #  арсенал (мечи), дуэли, кейсы/артефакты (15, живые данные из shop.py),
 #  питомцы, клан (15, живые данные из klan.py), рефералы, донат,
 #  вклады, разное.
@@ -75,13 +75,24 @@
 #                               и заработает сразу, как только счётчики
 #                               начнут расти.
 #
+#  💎 ДОНАТ — раздел подключён к реальным данным donate.py и status.py
+#  (10 достижений, больше не заглушка). apply_donate() в donate.py сам
+#  инкрементирует:
+#    donate_purchases, total_donated_stars, total_donated_coins,
+#    donate_purchased_keys (список купленных pkg_key, напр. "donate_10")
+#  VIP/Premium ачивки читают статус живьём через _active_status(d), которая
+#  лениво зовёт status.get_active_status(d) — то же самое поле
+#  data["status_subscription"], которое пишет activate_status() в status.py.
+#  Никаких is_vip/vip_until заводить и синхронизировать не нужно.
+#  Просто вызывайте check_achievements() сразу после apply_donate() в
+#  хендлере successful_payment, и сразу после activate_status() — в
+#  хендлере оплаты VIP/Premium статуса.
+#
 #  НОВЫЕ счётчики, которых в data пока нет — модуль просто вернёт для них
 #  прогресс 0/цель, пока вы не начнёте их инкрементировать в нужных местах
 #  (по одной строке в нужном хендлере, ничего сложного):
 #    stats_boss_hits, stats_boss_kills   — в hunt_strike после успешного удара
 #    ref_count                            — в хендлере обработки /start c реф-ссылкой
-#    is_vip / vip_until                   — в месте выдачи VIP/premium статуса
-#    donate_purchases                     — после успешной оплаты доната
 #    deposits_opened, deposits_claimed    — после _cdl_open_deposit / _cdl_claim
 #    promo_activations                    — после успешного activate_promo(...)
 #    daily_streak                         — уже может считаться в cmd_daily,
@@ -345,7 +356,22 @@ def _artifact_effects_owned(d: dict) -> set:
     return effects
 
 
-def _clan_member(d: dict) -> dict | None:
+def _active_status(d: dict) -> str:
+    """Текущий активный тариф подписки: 'standart' / 'vip' / 'premium'.
+    Живые данные из status.py (data['status_subscription']) — ничего
+    синхронизировать не нужно, activate_status() в status.py сам пишет
+    этот словарь при покупке/продлении."""
+    try:
+        from status import get_active_status
+        return get_active_status(d)
+    except Exception:
+        sd = d.get("status_subscription") or {}
+        if sd.get("ends_at", 0) > int(_time.time()):
+            return sd.get("tier", "standart")
+        return "standart"
+
+
+
     """
     Живая (не дублируемая в data) запись игрока в клане — читает
     напрямую из БД klan.py по id игрока. Клановая система хранит своё
@@ -1190,7 +1216,7 @@ ACHIEVEMENTS = [
          progress=lambda d: (d.get("ref_count", 0), 100),
          reward_coins=1_000_000, reward_xp=800),
 
-    # ───────────── 💎 ДОНАТ (2) ─────────────
+    # ───────────── 💎 ДОНАТ (10) ─────────────
     _ach("donate_first", "💎", "Спонсор",
          "Соверши первую покупку доната",
          "donate",
@@ -1198,11 +1224,73 @@ ACHIEVEMENTS = [
          progress=lambda d: (d.get("donate_purchases", 0), 1),
          reward_coins=20_000, reward_xp=50),
 
+    _ach("donate_5", "🎗", "Постоянный клиент",
+         "Соверши 5 покупок доната",
+         "donate",
+         lambda d: d.get("donate_purchases", 0) >= 5,
+         progress=lambda d: (d.get("donate_purchases", 0), 5),
+         reward_coins=75_000, reward_xp=120,
+         name_en="Regular customer", desc_en="Make 5 donate purchases"),
+
+    _ach("donate_25", "🏵", "Меценат",
+         "Соверши 25 покупок доната",
+         "donate",
+         lambda d: d.get("donate_purchases", 0) >= 25,
+         progress=lambda d: (d.get("donate_purchases", 0), 25),
+         reward_coins=400_000, reward_xp=350,
+         name_en="Patron", desc_en="Make 25 donate purchases"),
+
+    _ach("donate_stars_1000", "⭐", "Звёздный путь",
+         "Потрать в сумме 1 000 Stars на донаты",
+         "donate",
+         lambda d: d.get("total_donated_stars", 0) >= 1_000,
+         progress=lambda d: (d.get("total_donated_stars", 0), 1_000),
+         reward_coins=50_000, reward_xp=80,
+         name_en="Star path", desc_en="Spend a total of 1,000 Stars on donations"),
+
+    _ach("donate_stars_5000", "🌟", "Звёздный меценат",
+         "Потрать в сумме 5 000 Stars на донаты",
+         "donate",
+         lambda d: d.get("total_donated_stars", 0) >= 5_000,
+         progress=lambda d: (d.get("total_donated_stars", 0), 5_000),
+         reward_coins=200_000, reward_xp=250,
+         name_en="Star patron", desc_en="Spend a total of 5,000 Stars on donations"),
+
+    _ach("donate_coins_1b", "💰", "Золотой дождь",
+         "Получи от донатов в сумме 1 000 000 000 монет",
+         "donate",
+         lambda d: d.get("total_donated_coins", 0) >= 1_000_000_000,
+         progress=lambda d: (d.get("total_donated_coins", 0), 1_000_000_000),
+         reward_coins=100_000, reward_xp=100,
+         name_en="Golden rain", desc_en="Receive a total of 1,000,000,000 coins from donations"),
+
+    _ach("donate_coins_10b", "🏆", "Хранилище изобилия",
+         "Получи от донатов в сумме 10 000 000 000 монет",
+         "donate",
+         lambda d: d.get("total_donated_coins", 0) >= 10_000_000_000,
+         progress=lambda d: (d.get("total_donated_coins", 0), 10_000_000_000),
+         reward_coins=500_000, reward_xp=400,
+         name_en="Vault of abundance", desc_en="Receive a total of 10,000,000,000 coins from donations"),
+
+    _ach("donate_absolute", "🌌", "Абсолют",
+         "Купи пакет доната «Абсолют»",
+         "donate",
+         lambda d: "donate_10" in d.get("donate_purchased_keys", []),
+         reward_coins=1_500_000, reward_xp=1000,
+         name_en="Absolute", desc_en="Buy the «Absolute» donate package"),
+
     _ach("donate_vip", "👑", "Элита",
          "Получи VIP-статус",
          "donate",
-         lambda d: bool(d.get("is_vip")) or d.get("vip_until", 0) > int(_time.time()),
+         lambda d: _active_status(d) == "vip",
          reward_coins=50_000, reward_xp=100),
+
+    _ach("donate_premium", "💠", "Премиум-класс",
+         "Получи Premium-статус",
+         "donate",
+         lambda d: _active_status(d) == "premium",
+         reward_coins=150_000, reward_xp=250,
+         name_en="Premium class", desc_en="Get Premium status"),
 
     # ───────────── 🏦 ВКЛАДЫ (2) ─────────────
     _ach("deposit_first_open", "🏦", "Инвестор",
@@ -1247,7 +1335,7 @@ ACHIEVEMENTS = [
          reward_coins=200_000, reward_xp=300),
 ]
 
-assert len(ACHIEVEMENTS) == 104, f"Ожидалось 104 достижения, а получилось {len(ACHIEVEMENTS)}"
+assert len(ACHIEVEMENTS) == 112, f"Ожидалось 112 достижений, а получилось {len(ACHIEVEMENTS)}"
 
 ACHIEVEMENTS_BY_ID = {a["id"]: a for a in ACHIEVEMENTS}
 
