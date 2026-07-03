@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from miner import COIN
+from achieves import check_achievements as _check_achievements
 
 DB_PATH = "tgstellar.db"
 
@@ -1550,6 +1551,7 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
         "suppression_triggered": False,
         "stun_triggered": False, "stunned_players": {},
         "stun_blocked_players": {},
+        "new_achievements": [],
     }
 
     now = _now_ts()
@@ -1760,6 +1762,16 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
         # Начисляем убийце сразу (остальным — в main.py через damage_rewards)
         data["balance"] = data.get("balance", 0) + result["reward"]
         data["xp"]      = data.get("xp", 0) + result["xp"]
+
+    # ── Статистика для достижений ──
+    if result.get("hit"):
+        data["stats_boss_hits"] = data.get("stats_boss_hits", 0) + 1
+    if result.get("boss_killed"):
+        data["stats_boss_kills"] = data.get("stats_boss_kills", 0) + 1
+
+    # ── Проверка достижений (только когда удар реально засчитался) ──
+    if result.get("hit"):
+        result["new_achievements"] = _check_achievements(data)
 
     return result
 
@@ -3352,6 +3364,9 @@ def arsenal_gift_sword(sender_data: dict, recipient_data: dict,
         recipient_data["equipped_sword"] = sword_key
     recipient_data.setdefault("arsenal_transferred_from", {})[sword_key] = sender_name
 
+    # ── Статистика для достижений ──
+    sender_data["stats_swords_gifted"] = sender_data.get("stats_swords_gifted", 0) + 1
+
     return True, f'<b><i>✅ Меч {sw["name"]} подарен!</i></b>'
 
 
@@ -3424,6 +3439,10 @@ def arsenal_rent_sword(owner_data: dict, renter_data: dict,
         renter_data.setdefault("owned_swords", []).append(sword_key)
     if not renter_data.get("equipped_sword"):
         renter_data["equipped_sword"] = sword_key
+
+    # ── Статистика для достижений ──
+    owner_data["stats_swords_rented_out"]  = owner_data.get("stats_swords_rented_out", 0) + 1
+    renter_data["stats_swords_rented_in"]  = renter_data.get("stats_swords_rented_in", 0) + 1
 
     dur_str = _fmt_duration(duration_secs)
     return True, f'<b><i>✅ Меч {sw["name"]} сдан в аренду на {dur_str}!</i></b>'
