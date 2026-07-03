@@ -1693,18 +1693,14 @@ async def cmd_gift(message: Message):
 
                 received_today = recipient_data.get("gift_received_today", 0)
                 if received_today + amount > daily_limit:
-                    remaining  = max(0, daily_limit - received_today)
-                    reset_left = _GIFT_WINDOW - (now_gift - window_start)
-                    hours      = reset_left // 3600
-                    minutes    = (reset_left % 3600) // 60
+                    recipient_name_err = _esc(
+                        recipient_data.get("first_name")
+                        or recipient_data.get("username")
+                        or str(recipient_data["id"])
+                    )
                     await message.reply(
-                        f"❌ Дневной лимит получения монет для {recipient_level} уровня: "
-                        f"<b>{format_amount(daily_limit)}</b> {_COIN_GIFT}\n\n"
-                        f"<blockquote>"
-                        f"Получатель уже получил сегодня: <b>{format_amount(received_today)}</b> {_COIN_GIFT}\n"
-                        f"Можно передать ещё: <b>{format_amount(remaining)}</b> {_COIN_GIFT}\n"
-                        f"Сброс лимита через: <b>{hours}ч {minutes}м</b>"
-                        f"</blockquote>",
+                        f"❌ Игроку <b>{recipient_name_err}</b> можно передать до "
+                        f"<b>{format_amount(daily_limit)}</b>{_COIN_GIFT} монет в день.",
                         parse_mode="HTML"
                     )
                     return
