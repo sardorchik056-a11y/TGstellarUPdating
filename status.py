@@ -191,12 +191,12 @@ def activate_status(data: dict, tier: str, lang: str = "ru") -> tuple[bool, str]
             new_item["instance_id"] = str(uuid.uuid4())[:8]
             inv.append(new_item)
             poison_name = _L(lang, "Яд Гадюки", "Viper Poison") if poison_key == VIP_BONUS_POISON_KEY else _L(lang, "Яд Кобры", "Cobra Poison")
-            poison_msg = f'\n{_pe("poison", "☠️")} <b>{_L(lang, f"Бонусный {poison_name} добавлен в инвентарь!", f"Bonus {poison_name} added to your inventory!")}</b>'
+            poison_msg = f'\n{_pe("poison", "☠️")} <b><i>{_L(lang, f"Бонусный {poison_name} добавлен в инвентарь!", f"Bonus {poison_name} added to your inventory!")}</i></b>'
         else:
-            poison_msg = f'\n{_pe("warn", "⚠️")} <b>{_L(lang, "Инвентарь усилителей полон — яд не выдан.", "Booster inventory is full — poison was not given.")}</b>'
+            poison_msg = f'\n{_pe("warn", "⚠️")} <b><i>{_L(lang, "Инвентарь усилителей полон — яд не выдан.", "Booster inventory is full — poison was not given.")}</i></b>'
 
     label = "VIP" if tier == "vip" else "Premium"
-    return True, f'{_pe("ok", "✅")} <b>{_L(lang, f"Статус {label} {action_label} на 30 дней!", f"{label} status {action_label} for 30 days!")}</b>{poison_msg}'
+    return True, f'{_pe("ok", "✅")} <b><i>{_L(lang, f"Статус {label} {action_label} на 30 дней!", f"{label} status {action_label} for 30 days!")}</i></b>{poison_msg}'
 
 
 # ────────────────────────────────────────────────────────────
@@ -210,46 +210,38 @@ def status_main_text(data: dict, lang: str = "ru") -> str:
     # Шапка с текущим статусом
     if active == "premium":
         current_line = (
-            f'{_pe("cur_status", "✅")} <b>{_L(lang, "Текущий статус: Premium", "Current status: Premium")}</b>\n'
-            f'{_pe("timer", "⏱")} <b>{_L(lang, "Осталось", "Left")}: {_fmt_time_left(ends_at - _now_ts(), lang)}</b>'
+            f'{_pe("cur_status", "✅")} <b><i>{_L(lang, "Текущий статус: Premium", "Current status: Premium")}</i></b>\n'
+            f'{_pe("timer", "⏱")} <b><i>{_L(lang, "Осталось", "Left")}: {_fmt_time_left(ends_at - _now_ts(), lang)}</i></b>'
         )
     elif active == "vip":
         current_line = (
-            f'{_pe("cur_status", "✅")} <b>{_L(lang, "Текущий статус: VIP", "Current status: VIP")}</b>\n'
-            f'{_pe("timer", "⏱")} <b>{_L(lang, "Осталось", "Left")}: {_fmt_time_left(ends_at - _now_ts(), lang)}</b>'
+            f'{_pe("cur_status", "✅")} <b><i>{_L(lang, "Текущий статус: VIP", "Current status: VIP")}</i></b>\n'
+            f'{_pe("timer", "⏱")} <b><i>{_L(lang, "Осталось", "Left")}: {_fmt_time_left(ends_at - _now_ts(), lang)}</i></b>'
         )
     else:
         current_line = (
-            f'{_pe("cur_status", "✅")} <b>{_L(lang, "Текущий статус: Standart", "Current status: Standart")}</b>\n'
-            f'<b>{_L(lang, "Подпишись, чтобы получить привилегии", "Subscribe to unlock privileges")}</b>'
+            f'{_pe("cur_status", "✅")} <b><i>{_L(lang, "Текущий статус: Standart", "Current status: Standart")}</i></b>\n'
+            f'<b><i>{_L(lang, "Подпишись, чтобы получить привилегии", "Subscribe to unlock privileges")}</i></b>'
         )
 
     return (
-        f'<blockquote>{_pe("vip", "👑")} <b>{_L(lang, "СТАТУСЫ TGStellar", "TGStellar STATUSES")}</b>\n\n'
+        f'<blockquote>{_pe("vip", "👑")} <b><i>{_L(lang, "СТАТУСЫ TGStellar", "TGStellar STATUSES")}</i></b>\n\n'
         f'{current_line}</blockquote>\n\n'
 
         f'<blockquote>'
-        f'{_pe("standart", "🎟")} <b>Standart</b> — {_L(lang, "базовый статус", "basic status")}\n'
-        f'<b>{_L(lang, "Доступен всем игрокам бесплатно", "Available to all players for free")}</b>\n'
-        f'<b>• {_L(lang, "Без бонусов к добыче", "No mining bonuses")}</b>\n'
-        f'<b>• {_L(lang, "Без бонуса к критическому урону", "No critical damage bonus")}</b>\n'
-        f'<b>• {_L(lang, "Без удачи в кейсах", "No luck bonus in cases")}</b>'
+        f'{_pe("vip", "👑")} <b><i>VIP</i></b> — {VIP_COST_STARS} {_pe("star", "⭐")} / {_L(lang, "30 дней", "30 days")}\n'
+        f'{_pe("mine", "⛏")} <b><i>{_L(lang, "+1.3× ко всем видам добычи", "+1.3× to all types of mining/farming")}</i></b>\n'
+        f'{_pe("crit", "⚡")} <b><i>{_L(lang, "Шанс крита", "Crit chance")}: +15%</i></b>\n'
+        f'{_pe("luck", "🍀")} <b><i>{_L(lang, "Повышенная удача в кейсах", "Increased luck in cases")}</i></b>\n'
+        f'{_pe("poison", "☠️")} <b><i>{_L(lang, "Бонус: Яд Гадюки при активации", "Bonus: Viper Poison on activation")}</i></b>'
         f'</blockquote>\n\n'
 
         f'<blockquote>'
-        f'{_pe("vip", "👑")} <b>VIP</b> — {VIP_COST_STARS} {_pe("star", "⭐")} / {_L(lang, "30 дней", "30 days")}\n'
-        f'{_pe("mine", "⛏")} <b>{_L(lang, "+1.3× ко всем видам добычи", "+1.3× to all types of mining/farming")}</b>\n'
-        f'{_pe("crit", "⚡")} <b>{_L(lang, "Шанс крита", "Crit chance")}: +15%</b>\n'
-        f'{_pe("luck", "🍀")} <b>{_L(lang, "Повышенная удача в кейсах", "Increased luck in cases")}</b>\n'
-        f'{_pe("poison", "☠️")} <b>{_L(lang, "Бонус: Яд Гадюки при активации", "Bonus: Viper Poison on activation")}</b>'
-        f'</blockquote>\n\n'
-
-        f'<blockquote>'
-        f'{_pe("premium", "⭐")} <b>Premium</b> — {PREMIUM_COST_STARS} {_pe("star", "⭐")} / {_L(lang, "30 дней", "30 days")}\n'
-        f'{_pe("mine", "⛏")} <b>{_L(lang, "+1.6× ко всем видам добычи", "+1.6× to all types of mining/farming")}</b>\n'
-        f'{_pe("crit", "⚡")} <b>{_L(lang, "Шанс крита", "Crit chance")}: +25%</b>\n'
-        f'{_pe("luck", "🍀")} <b>{_L(lang, "Максимальная удача в кейсах", "Maximum luck in cases")}</b>\n'
-        f'{_pe("poison", "☠️")} <b>{_L(lang, "Бонус: Яд Кобры при активации", "Bonus: Cobra Poison on activation")}</b>'
+        f'{_pe("premium", "⭐")} <b><i>Premium</i></b> — {PREMIUM_COST_STARS} {_pe("star", "⭐")} / {_L(lang, "30 дней", "30 days")}\n'
+        f'{_pe("mine", "⛏")} <b><i>{_L(lang, "+1.6× ко всем видам добычи", "+1.6× to all types of mining/farming")}</i></b>\n'
+        f'{_pe("crit", "⚡")} <b><i>{_L(lang, "Шанс крита", "Crit chance")}: +25%</i></b>\n'
+        f'{_pe("luck", "🍀")} <b><i>{_L(lang, "Максимальная удача в кейсах", "Maximum luck in cases")}</i></b>\n'
+        f'{_pe("poison", "☠️")} <b><i>{_L(lang, "Бонус: Яд Кобры при активации", "Bonus: Cobra Poison on activation")}</i></b>'
         f'</blockquote>'
     )
 
@@ -269,37 +261,37 @@ def status_vip_text(data: dict, lang: str = "ru") -> str:
     if active == "vip":
         ends_at = get_status_ends_at(data)
         active_line = (
-            f'\n\n<blockquote>{_pe("ok", "✅")} <b>{_L(lang, "VIP активен!", "VIP is active!")}</b>\n'
-            f'{_pe("timer", "⏱")} <b>{_L(lang, "Осталось", "Left")}: {_fmt_time_left(ends_at - _now_ts(), lang)}</b>\n'
-            f'<b>{_L(lang, "Покупка продлит срок ещё на 30 дней", "Purchase will extend it by another 30 days")}</b></blockquote>'
+            f'\n\n<blockquote>{_pe("ok", "✅")} <b><i>{_L(lang, "VIP активен!", "VIP is active!")}</i></b>\n'
+            f'{_pe("timer", "⏱")} <b><i>{_L(lang, "Осталось", "Left")}: {_fmt_time_left(ends_at - _now_ts(), lang)}</i></b>\n'
+            f'<b><i>{_L(lang, "Покупка продлит срок ещё на 30 дней", "Purchase will extend it by another 30 days")}</i></b></blockquote>'
         )
     elif active == "premium":
         active_line = (
-            f'\n\n<blockquote>{_pe("warn", "⚠️")} <b>{_L(lang, "У тебя активен Premium — VIP недоступен.", "You have an active Premium — VIP is unavailable.")}</b>\n'
-            f'<b>{_L(lang, "Более высокий статус нельзя заменить на низкий.", "A higher status cannot be downgraded to a lower one.")}</b></blockquote>'
+            f'\n\n<blockquote>{_pe("warn", "⚠️")} <b><i>{_L(lang, "У тебя активен Premium — VIP недоступен.", "You have an active Premium — VIP is unavailable.")}</i></b>\n'
+            f'<b><i>{_L(lang, "Более высокий статус нельзя заменить на низкий.", "A higher status cannot be downgraded to a lower one.")}</i></b></blockquote>'
         )
 
     return (
         f'<blockquote>'
-        f'{_pe("vip", "👑")} <b>{_L(lang, "Статус VIP", "VIP Status")}</b>\n\n'
-        f'{_pe("calendar", "📅")} <b>{_L(lang, "Срок: 30 дней", "Duration: 30 days")}</b>\n'
-        f'{_pe("star", "⭐")} <b>{_L(lang, "Стоимость", "Cost")}: {VIP_COST_STARS} Stars</b>'
+        f'{_pe("vip", "👑")} <b><i>{_L(lang, "Статус VIP", "VIP Status")}</i></b>\n\n'
+        f'{_pe("calendar", "📅")} <b><i>{_L(lang, "Срок: 30 дней", "Duration: 30 days")}</i></b>\n'
+        f'{_pe("star", "⭐")} <b><i>{_L(lang, "Стоимость", "Cost")}: {VIP_COST_STARS} Stars</i></b>'
         f'</blockquote>\n\n'
 
         f'<blockquote>'
-        f'<b>{_L(lang, "Преимущества VIP:", "VIP benefits:")}</b>\n\n'
-        f'{_pe("mine", "⛏")} <b>{_L(lang, "×1.3 к добыче руды в шахте", "×1.3 to ore mining in the mine")}</b>\n'
-        f'{_pe("hunt", "⚔️")} <b>{_L(lang, "×1.3 к урону в охоте", "×1.3 to hunting damage")}</b>\n'
-        f'{_pe("pets", "🐾")} <b>{_L(lang, "×1.3 к доходу питомцев", "×1.3 to pets income")}</b>\n\n'
-        f'{_pe("crit", "⚡")} <b>{_L(lang, "Шанс критического удара +15%", "Critical hit chance +15%")}</b>\n'
-        f'{_pe("luck", "🍀")} <b>{_L(lang, "Повышенная удача при открытии кейсов", "Increased luck when opening cases")}</b>\n'
-        f'{_pe("luck", "🍀")} <b>{_L(lang, "Удача при покупке в магазине", "Luck bonus on shop purchases")}</b>'
+        f'<b><i>{_L(lang, "Преимущества VIP:", "VIP benefits:")}</i></b>\n\n'
+        f'{_pe("mine", "⛏")} <b><i>{_L(lang, "×1.3 к добыче руды в шахте", "×1.3 to ore mining in the mine")}</i></b>\n'
+        f'{_pe("hunt", "⚔️")} <b><i>{_L(lang, "×1.3 к урону в охоте", "×1.3 to hunting damage")}</i></b>\n'
+        f'{_pe("pets", "🐾")} <b><i>{_L(lang, "×1.3 к доходу питомцев", "×1.3 to pets income")}</i></b>\n\n'
+        f'{_pe("crit", "⚡")} <b><i>{_L(lang, "Шанс критического удара +15%", "Critical hit chance +15%")}</i></b>\n'
+        f'{_pe("luck", "🍀")} <b><i>{_L(lang, "Повышенная удача при открытии кейсов", "Increased luck when opening cases")}</i></b>\n'
+        f'{_pe("luck", "🍀")} <b><i>{_L(lang, "Удача при покупке в магазине", "Luck bonus on shop purchases")}</i></b>'
         f'</blockquote>\n\n'
 
         f'<blockquote>'
-        f'{_pe("poison", "☠️")} <b>{_L(lang, "Бонус при активации:", "Activation bonus:")}</b>\n'
-        f'<b>{_L(lang, "Яд Гадюки — 100 000 урона за 30 мин", "Viper Poison — 100,000 damage over 30 min")}</b>\n'
-        f'<b>{_L(lang, "(добавляется в инвентарь сразу)", "(added to inventory immediately)")}</b>'
+        f'{_pe("poison", "☠️")} <b><i>{_L(lang, "Бонус при активации:", "Activation bonus:")}</i></b>\n'
+        f'<b><i>{_L(lang, "Яд Гадюки — 100 000 урона за 30 мин", "Viper Poison — 100,000 damage over 30 min")}</i></b>\n'
+        f'<b><i>{_L(lang, "(добавляется в инвентарь сразу)", "(added to inventory immediately)")}</i></b>'
         f'</blockquote>'
         f'{active_line}'
     )
@@ -348,37 +340,37 @@ def status_premium_text(data: dict, lang: str = "ru") -> str:
     if active == "premium":
         ends_at = get_status_ends_at(data)
         active_line = (
-            f'\n\n<blockquote>{_pe("ok", "✅")} <b>{_L(lang, "Premium активен!", "Premium is active!")}</b>\n'
-            f'{_pe("timer", "⏱")} <b>{_L(lang, "Осталось", "Left")}: {_fmt_time_left(ends_at - _now_ts(), lang)}</b>\n'
-            f'<b>{_L(lang, "Покупка продлит срок ещё на 30 дней", "Purchase will extend it by another 30 days")}</b></blockquote>'
+            f'\n\n<blockquote>{_pe("ok", "✅")} <b><i>{_L(lang, "Premium активен!", "Premium is active!")}</i></b>\n'
+            f'{_pe("timer", "⏱")} <b><i>{_L(lang, "Осталось", "Left")}: {_fmt_time_left(ends_at - _now_ts(), lang)}</i></b>\n'
+            f'<b><i>{_L(lang, "Покупка продлит срок ещё на 30 дней", "Purchase will extend it by another 30 days")}</i></b></blockquote>'
         )
     elif active == "vip":
         active_line = (
-            f'\n\n<blockquote>{_pe("ok", "✅")} <b>{_L(lang, "У тебя активен VIP.", "You have an active VIP.")}</b>\n'
-            f'<b>{_L(lang, f"Можешь улучшить до Premium за {UPGRADE_COST_STARS} ⭐", f"You can upgrade to Premium for {UPGRADE_COST_STARS} ⭐")}</b></blockquote>'
+            f'\n\n<blockquote>{_pe("ok", "✅")} <b><i>{_L(lang, "У тебя активен VIP.", "You have an active VIP.")}</i></b>\n'
+            f'<b><i>{_L(lang, f"Можешь улучшить до Premium за {UPGRADE_COST_STARS} ⭐", f"You can upgrade to Premium for {UPGRADE_COST_STARS} ⭐")}</i></b></blockquote>'
         )
 
     return (
         f'<blockquote>'
-        f'{_pe("premium", "⭐")} <b>{_L(lang, "Статус Premium", "Premium Status")}</b>\n\n'
-        f'{_pe("calendar", "📅")} <b>{_L(lang, "Срок: 30 дней", "Duration: 30 days")}</b>\n'
-        f'{_pe("star", "⭐")} <b>{_L(lang, "Стоимость", "Cost")}: {PREMIUM_COST_STARS} Stars</b>'
+        f'{_pe("premium", "⭐")} <b><i>{_L(lang, "Статус Premium", "Premium Status")}</i></b>\n\n'
+        f'{_pe("calendar", "📅")} <b><i>{_L(lang, "Срок: 30 дней", "Duration: 30 days")}</i></b>\n'
+        f'{_pe("star", "⭐")} <b><i>{_L(lang, "Стоимость", "Cost")}: {PREMIUM_COST_STARS} Stars</i></b>'
         f'</blockquote>\n\n'
 
         f'<blockquote>'
-        f'<b>{_L(lang, "Преимущества Premium:", "Premium benefits:")}</b>\n\n'
-        f'{_pe("mine", "⛏")} <b>{_L(lang, "×1.6 к добыче руды в шахте", "×1.6 to ore mining in the mine")}</b>\n'
-        f'{_pe("hunt", "⚔️")} <b>{_L(lang, "×1.6 к урону в охоте", "×1.6 to hunting damage")}</b>\n'
-        f'{_pe("pets", "🐾")} <b>{_L(lang, "×1.6 к доходу питомцев", "×1.6 to pets income")}</b>\n\n'
-        f'{_pe("crit", "⚡")} <b>{_L(lang, "Шанс критического удара +25%", "Critical hit chance +25%")}</b>\n'
-        f'{_pe("luck", "🍀")} <b>{_L(lang, "Максимальная удача в кейсах", "Maximum luck in cases")}</b>\n'
-        f'{_pe("luck", "🍀")} <b>{_L(lang, "Максимальная удача при покупках", "Maximum luck on purchases")}</b>'
+        f'<b><i>{_L(lang, "Преимущества Premium:", "Premium benefits:")}</i></b>\n\n'
+        f'{_pe("mine", "⛏")} <b><i>{_L(lang, "×1.6 к добыче руды в шахте", "×1.6 to ore mining in the mine")}</i></b>\n'
+        f'{_pe("hunt", "⚔️")} <b><i>{_L(lang, "×1.6 к урону в охоте", "×1.6 to hunting damage")}</i></b>\n'
+        f'{_pe("pets", "🐾")} <b><i>{_L(lang, "×1.6 к доходу питомцев", "×1.6 to pets income")}</i></b>\n\n'
+        f'{_pe("crit", "⚡")} <b><i>{_L(lang, "Шанс критического удара +25%", "Critical hit chance +25%")}</i></b>\n'
+        f'{_pe("luck", "🍀")} <b><i>{_L(lang, "Максимальная удача в кейсах", "Maximum luck in cases")}</i></b>\n'
+        f'{_pe("luck", "🍀")} <b><i>{_L(lang, "Максимальная удача при покупках", "Maximum luck on purchases")}</i></b>'
         f'</blockquote>\n\n'
 
         f'<blockquote>'
-        f'{_pe("poison", "☠️")} <b>{_L(lang, "Бонус при активации:", "Activation bonus:")}</b>\n'
-        f'<b>{_L(lang, "Яд Кобры — 150 000 урона за 30 мин", "Cobra Poison — 150,000 damage over 30 min")}</b>\n'
-        f'<b>{_L(lang, "(добавляется в инвентарь сразу)", "(added to inventory immediately)")}</b>'
+        f'{_pe("poison", "☠️")} <b><i>{_L(lang, "Бонус при активации:", "Activation bonus:")}</i></b>\n'
+        f'<b><i>{_L(lang, "Яд Кобры — 150 000 урона за 30 мин", "Cobra Poison — 150,000 damage over 30 min")}</i></b>\n'
+        f'<b><i>{_L(lang, "(добавляется в инвентарь сразу)", "(added to inventory immediately)")}</i></b>'
         f'</blockquote>'
         f'{active_line}'
     )
