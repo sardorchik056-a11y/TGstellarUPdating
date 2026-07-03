@@ -53,13 +53,13 @@ MAX_LEVEL = 150
 ORES = [
     # ── Common ───────────────────────────────────────────────────────────
     {"name": "🪨 Камень",  "name_en": "🪨 Stone",    "key": "stone",    "chance": 75.000, "weight": 500, "price":         50},
-    {"name": '<tg-emoji emoji-id="5773638078321135255">🖤</tg-emoji> Уголь',    "name_en": '<tg-emoji emoji-id="5773638078321135255">🖤</tg-emoji> Coal',      "key": "coal",     "chance": 30.000, "weight": 200, "price":         85},
-    {"name": '<tg-emoji emoji-id="5431869843903102028">🪨</tg-emoji> Кремень', "name_en": '<tg-emoji emoji-id="5431869843903102028">🪨</tg-emoji> Flint',    "key": "flint",    "chance": 22.000, "weight": 160, "price":        105},
-    {"name": '<tg-emoji emoji-id="5339390195768774311">🟤</tg-emoji> Медь',     "name_en": '<tg-emoji emoji-id="5339390195768774311">🟤</tg-emoji> Copper',    "key": "copper",   "chance": 20.000, "weight": 120, "price":        125},
+    {"name": '<tg-emoji emoji-id="5773638078321135255">🖤</tg-emoji> Уголь',    "name_en": '<tg-emoji emoji-id="5773638078321135255">🖤</tg-emoji> Coal',      "key": "coal",     "chance": 30.000, "weight": 200, "price":         105},
+    {"name": '<tg-emoji emoji-id="5431869843903102028">🪨</tg-emoji> Кремень', "name_en": '<tg-emoji emoji-id="5431869843903102028">🪨</tg-emoji> Flint',    "key": "flint",    "chance": 22.000, "weight": 160, "price":        155},
+    {"name": '<tg-emoji emoji-id="5339390195768774311">🟤</tg-emoji> Медь',     "name_en": '<tg-emoji emoji-id="5339390195768774311">🟤</tg-emoji> Copper',    "key": "copper",   "chance": 20.000, "weight": 120, "price":        175},
     # ── Rare ─────────────────────────────────────────────────────────────
-    {"name": '<tg-emoji emoji-id="5206502799528976649">⚙️</tg-emoji> Железо',  "name_en": '<tg-emoji emoji-id="5206502799528976649">⚙️</tg-emoji> Iron',      "key": "iron",     "chance":  8.000, "weight":  60, "price":        280},
-    {"name": '<tg-emoji emoji-id="6005900138638218214">🩶</tg-emoji> Серебро', "name_en": '<tg-emoji emoji-id="6005900138638218214">🩶</tg-emoji> Silver',   "key": "silver",   "chance":  5.500, "weight":  45, "price":        420},
-    {"name": '<tg-emoji emoji-id="5773878407511150045">🔵</tg-emoji> Лазурит', "name_en": '<tg-emoji emoji-id="5773878407511150045">🔵</tg-emoji> Lazurite', "key": "lazurite", "chance":  5.000, "weight":  40, "price":        450},
+    {"name": '<tg-emoji emoji-id="5206502799528976649">⚙️</tg-emoji> Железо',  "name_en": '<tg-emoji emoji-id="5206502799528976649">⚙️</tg-emoji> Iron',      "key": "iron",     "chance":  8.000, "weight":  60, "price":        380},
+    {"name": '<tg-emoji emoji-id="6005900138638218214">🩶</tg-emoji> Серебро', "name_en": '<tg-emoji emoji-id="6005900138638218214">🩶</tg-emoji> Silver',   "key": "silver",   "chance":  5.500, "weight":  45, "price":        450},
+    {"name": '<tg-emoji emoji-id="5773878407511150045">🔵</tg-emoji> Лазурит', "name_en": '<tg-emoji emoji-id="5773878407511150045">🔵</tg-emoji> Lazurite', "key": "lazurite", "chance":  5.000, "weight":  40, "price":        650},
     {"name": '<tg-emoji emoji-id="5445256208992718797">🌕</tg-emoji> Золото',   "name_en": '<tg-emoji emoji-id="5445256208992718797">🌕</tg-emoji> Gold',      "key": "gold",     "chance":  3.000, "weight":  20, "price":        800},
     {"name": '<tg-emoji emoji-id="5219909303720233242">🧱</tg-emoji> Гранит',  "name_en": '<tg-emoji emoji-id="5219909303720233242">🧱</tg-emoji> Granite',  "key": "granite",  "chance":  2.000, "weight":  14, "price":      2_500},
     # ── Epic ─────────────────────────────────────────────────────────────
