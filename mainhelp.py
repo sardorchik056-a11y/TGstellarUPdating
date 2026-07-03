@@ -1699,8 +1699,8 @@ async def cmd_gift(message: Message):
                         or str(recipient_data["id"])
                     )
                     await message.reply(
-                        f"❌ Игроку <b>{recipient_name_err}</b> можно передать до "
-                        f"<b>{format_amount(daily_limit)}</b>{_COIN_GIFT} монет в день.",
+                        f'<tg-emoji emoji-id="5420323339723881652">🌟</tg-emoji><b><i> Игроку <b>{recipient_name_err}</b> можно передать до '
+                        f"<b>{format_amount(daily_limit)}</b>{_COIN_GIFT} монет в день.</i></b>",
                         parse_mode="HTML"
                     )
                     return
