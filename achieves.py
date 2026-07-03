@@ -1,6 +1,6 @@
 # ============================================================
 #  achieves.py  —  Система достижений
-#  126 достижений: деньги, уровень, шахта, охота на боссов,
+#  129 достижений: деньги, уровень, шахта, охота на боссов,
 #  арсенал (мечи), дуэли, кейсы/артефакты (15, живые данные из shop.py),
 #  питомцы, клан (15, живые данные из klan.py), рефералы, донат,
 #  вклады, разное.
@@ -114,11 +114,24 @@
 #  читает живой топ-10 по балансу через _is_top10_balance(d) (лениво зовёт
 #  database.get_all_users()) — ничего в data хранить не нужно.
 #
+#  🏦 ВКЛАДЫ — раздел подключён к реальным данным cdl.py (5 достижений,
+#  больше не заглушка). Инкрементируются прямо в mainhelp.py:
+#    deposits_opened          — в хендлере cdl_confirm_ после успешного
+#                                списания баланса (открытие вклада)
+#    deposits_types_opened    — список ключей тарифов (dep_24h/48h/96h/144h),
+#                                которые игрок открывал хотя бы раз; тем же
+#                                хендлером, что и deposits_opened
+#    deposits_claimed         — в хендлере cdl_claim_all и в фоновой задаче
+#                                _cdl_payout_loop, по числу забранных вкладов
+#    deposits_total_profit    — там же, суммой (payout - amount) по каждому
+#                                забранному вкладу
+#  Ачивка deposit_elite проверяет "dep_144h" in deposits_types_opened,
+#  deposit_all_types — что len(set(deposits_types_opened)) >= 4.
+#
 #  НОВЫЕ счётчики, которых в data пока нет — модуль просто вернёт для них
 #  прогресс 0/цель, пока вы не начнёте их инкрементировать в нужных местах
 #  (по одной строке в нужном хендлере, ничего сложного):
 #    stats_boss_hits, stats_boss_kills   — в hunt_strike после успешного удара
-#    deposits_opened, deposits_claimed    — после _cdl_open_deposit / _cdl_claim
 #
 #  🏰 КЛАН — раздел подключён к реальным данным klan.py (15 достижений,
 #  больше не заглушка). Клан хранит своё состояние в СВОЕЙ SQLite-базе
@@ -1503,7 +1516,7 @@ ACHIEVEMENTS = [
          reward_coins=150_000, reward_xp=250,
          name_en="Premium class", desc_en="Get Premium status"),
 
-    # ───────────── 🏦 ВКЛАДЫ (2) ─────────────
+    # ───────────── 🏦 ВКЛАДЫ (5) ─────────────
     _ach("deposit_first_open", "🏦", "Инвестор",
          "Открой свой первый вклад",
          "deposit",
@@ -1517,6 +1530,30 @@ ACHIEVEMENTS = [
          lambda d: d.get("deposits_claimed", 0) >= 1,
          progress=lambda d: (d.get("deposits_claimed", 0), 1),
          reward_coins=10_000, reward_xp=40),
+
+    _ach("deposit_elite", "👑", "Элитный вкладчик",
+         "Открой Элитный вклад (144ч)",
+         "deposit",
+         lambda d: "dep_144h" in d.get("deposits_types_opened", []),
+         progress=lambda d: (int("dep_144h" in d.get("deposits_types_opened", [])), 1),
+         reward_coins=50_000, reward_xp=100,
+         name_en="Elite depositor", desc_en="Open an Elite deposit (144h)"),
+
+    _ach("deposit_all_types", "📊", "Диверсификация",
+         "Открой вклад каждого из 4 тарифов",
+         "deposit",
+         lambda d: len(set(d.get("deposits_types_opened", []))) >= 4,
+         progress=lambda d: (len(set(d.get("deposits_types_opened", []))), 4),
+         reward_coins=75_000, reward_xp=150,
+         name_en="Diversification", desc_en="Open a deposit of each of the 4 tariffs"),
+
+    _ach("deposit_profit_10m", "💵", "Финансовый магнат",
+         "Заработай в сумме 10,000,000 монет прибыли на вкладах",
+         "deposit",
+         lambda d: d.get("deposits_total_profit", 0) >= 10_000_000,
+         progress=lambda d: (d.get("deposits_total_profit", 0), 10_000_000),
+         reward_coins=150_000, reward_xp=250,
+         name_en="Financial magnate", desc_en="Earn a total of 10,000,000 coins in deposit profit"),
 
     # ───────────── 🎯 РАЗНОЕ (5) ─────────────
     _ach("misc_onboarded", "🚪", "Добро пожаловать",
@@ -1554,7 +1591,7 @@ ACHIEVEMENTS = [
          reward_coins=200_000, reward_xp=300),
 ]
 
-assert len(ACHIEVEMENTS) == 126, f"Ожидалось 126 достижений, а получилось {len(ACHIEVEMENTS)}"
+assert len(ACHIEVEMENTS) == 129, f"Ожидалось 129 достижений, а получилось {len(ACHIEVEMENTS)}"
 
 ACHIEVEMENTS_BY_ID = {a["id"]: a for a in ACHIEVEMENTS}
 
