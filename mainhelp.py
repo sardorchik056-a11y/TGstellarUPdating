@@ -1566,8 +1566,8 @@ async def cmd_arsenal(message: Message):
     await _notify_ach(message.from_user.id, u, _ach_newly)
 
 
-@dp.message(Command("достижения", "ачивки", "achievements", "ach"))
-@dp.message(_text_in("достижения", "ачивки", "achievements", "ach"))
+@dp.message(Command("достижения", "ачивки", "achievements", "ach", "ач", "достижени", "дс"))
+@dp.message(_text_in("достижения", "ачивки", "achievements", "ach", "ач", "достижени", "дс"))
 async def cmd_achievements(message: Message):
     u    = get_or_create_user(message.from_user)
     lang = get_lang(u)
