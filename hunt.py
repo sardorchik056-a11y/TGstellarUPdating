@@ -50,9 +50,9 @@ _E = {
     "price":        "5397782960512444700",  # ценник
     "bag":          "5443038326535759644",  # инвентарь
     "boss":         "5438571934210082705",  # текущий босс
-    "potion":       "5206523956537865948",  # зелье возрождения — TODO: заменить на свой премиум-эмодзи
-    "potion_antistun": "5206523956537865948",  # зелье антизаглушения — TODO: заменить на свой премиум-эмодзи
-    "potion_antisupp": "5206523956537865948",  # зелье антиподавления — TODO: заменить на свой премиум-эмодзи
+    "potion":       "5454087928768649744",  # зелье возрождения — TODO: заменить на свой премиум-эмодзи
+    "potion_antistun": "5258304747978385987",  # зелье антизаглушения — TODO: заменить на свой премиум-эмодзи
+    "potion_antisupp": "5292050714044952143",  # зелье антиподавления — TODO: заменить на свой премиум-эмодзи
     "star":         "5262643974912355126",  # звезда (валюта Telegram Stars) — TODO: заменить
 }
 
@@ -1898,7 +1898,7 @@ def potions_menu_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text="Shop" if lang == "en" else "Магазин",
             callback_data="hunt_shop_potions",
-            icon_custom_emoji_id=_E["shop"]
+            icon_custom_emoji_id="5294423099360435952"
         ),
         InlineKeyboardButton(
             text="My Potions" if lang == "en" else "Мои зелья",
@@ -1923,7 +1923,7 @@ def potions_shop_text(lang: str = "ru") -> str:
             "<i>Нажми на зелье, чтобы посмотреть описание и купить.</i>")
     return (
         f'<blockquote>'
-        f'{_tg(_E["shop"], "🛒")} <b><i>{header}</i></b>\n\n'
+        f'{_tg("5294423099360435952", "🛒")} <b><i>{header}</i></b>\n\n'
         f'{hint}'
         f'</blockquote>'
     )
