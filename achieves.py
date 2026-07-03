@@ -1680,9 +1680,57 @@ def _progress_bar(cur: int, target: int, length: int = 10) -> str:
     return "▰" * filled + "▱" * (length - filled)
 
 
-def _fmt_num(n: int) -> str:
-    """1234567 -> '1 234 567' — единый формат чисел во всех текстах модуля."""
-    return f"{n:,}".replace(",", " ")
+def _fmt_num(n) -> str:
+    """
+    Сокращает число до буквенного вида — та же короткая шкала и та же
+    логика округления, что в database.py -> format_amount() / miner.py ->
+    _fmt_num(), единый стиль чисел по всему проекту:
+      999          -> "999"
+      1500         -> "1.5K"
+      100000       -> "100K"
+      2300000      -> "2.3M"
+      1500000000   -> "1.5B"
+      10**12       -> "1T"
+      10**15       -> "1Qa"  (quadrillion)
+      10**18       -> "1Qi"  (quintillion)
+      10**21       -> "1Sx"  (sextillion)
+      10**24       -> "1Sp"  (septillion)
+      10**27       -> "1Oc"  (octillion)
+      10**30       -> "1No"  (nonillion)
+      10**33       -> "1Dc"  (decillion)
+    Если число ещё больше — формат не ломается: продолжаем Dc2, Dc3, ...
+    Дробная часть показывается только если она не нулевая (1.5K, но не 1.0K).
+    """
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return str(n)
+
+    sign = "-" if n < 0 else ""
+    n = abs(n)
+
+    if n < 1000:
+        if n == int(n):
+            return f"{sign}{int(n)}"
+        return f"{sign}{n:.1f}"
+
+    suffixes = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"]
+    idx = 0
+    val = n
+    while val >= 1000:
+        val /= 1000
+        idx += 1
+
+    val = int(val * 10) / 10  # округление вниз до 1 знака после запятой
+
+    if idx < len(suffixes):
+        suffix = suffixes[idx]
+    else:
+        suffix = f"Dc{idx - len(suffixes) + 2}"
+
+    if val == int(val):
+        return f"{sign}{int(val)}{suffix}"
+    return f"{sign}{val:.1f}{suffix}"
 
 
 def _fmt_reward(ach: dict, lang: str = "ru") -> str:
