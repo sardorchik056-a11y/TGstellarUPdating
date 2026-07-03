@@ -1,8 +1,8 @@
 # ============================================================
 #  achieves.py  —  Система достижений
-#  81 достижение: деньги, уровень, шахта, охота на боссов,
-#  арсенал (мечи), дуэли, кейсы/артефакты, питомцы, клан,
-#  рефералы, донат, вклады, разное.
+#  92 достижения: деньги, уровень, шахта, охота на боссов,
+#  арсенал (мечи), дуэли, кейсы/артефакты, питомцы, клан (15, живые
+#  данные из klan.py), рефералы, донат, вклады, разное.
 # ============================================================
 #
 #  КАК ПОДКЛЮЧИТЬ
@@ -68,8 +68,6 @@
 #  (по одной строке в нужном хендлере, ничего сложного):
 #    stats_boss_hits, stats_boss_kills   — в hunt_strike после успешного удара
 #    ref_count                            — в хендлере обработки /start c реф-ссылкой
-#    clan_created                         — в хендлере создания клана (klan_create)
-#    clan_treasury_deposited              — после успешного deposit_treasury(...)
 #    is_vip / vip_until                   — в месте выдачи VIP/premium статуса
 #    donate_purchases                     — после успешной оплаты доната
 #    deposits_opened, deposits_claimed    — после _cdl_open_deposit / _cdl_claim
@@ -77,6 +75,23 @@
 #    daily_streak                         — уже может считаться в cmd_daily,
 #                                            если нет — прибавляйте +1 при
 #                                            получении бонуса без пропуска дня
+#
+#  🏰 КЛАН — раздел подключён к реальным данным klan.py (15 достижений,
+#  больше не заглушка). Клан хранит своё состояние в СВОЕЙ SQLite-базе
+#  (таблицы clans/clan_members), а не в data, поэтому часть проверок читает
+#  его напрямую через _clan_member(d)/_clan_of(d)/_clan_rank(d) (лениво
+#  импортируют klan.get_member/get_clan по data["id"]) — синхронизировать
+#  ничего не нужно, они всегда живые:
+#    clan_join, clan_rank_2..5            — полностью живые (get_member/get_clan)
+#  Остальное — счётчики за всю игру (не сбрасываются выходом из клана),
+#  которые уже инкрементируются в mainhelp.py прямо в хендлерах klan.py:
+#    clan_created_count      — в хендлере создания клана (create_clan)
+#    clan_treasury_deposited — после успешного deposit_treasury(...)
+#    clan_boss_damage_total  — после add_clan_boss_damage(...) (только если игрок в клане)
+#    clan_mine_contributed   — после add_clan_mine_earnings(...) (только если игрок в клане)
+#    clan_applications_accepted — после accept_application/accept_all_applications
+#    clan_kicks_done          — после успешного kick_member(...)
+#    clan_chat_linked         — после успешного set_clan_chat(...)
 #
 #  Если какое-то поле у вас называется иначе — просто поправьте .get(...)
 #  внутри нужного achievement'а ниже, структура одинаковая везде.
@@ -273,6 +288,37 @@ def _duel_equipped_slots_count(d: dict) -> int:
         GEAR_SLOTS_ORDER = ["helmet", "armor", "gloves", "pants", "boots"]
     equipped = d.get("duel_equipped", {}) or {}
     return sum(1 for slot in GEAR_SLOTS_ORDER if equipped.get(slot))
+
+
+def _clan_member(d: dict) -> dict | None:
+    """
+    Живая (не дублируемая в data) запись игрока в клане — читает
+    напрямую из БД klan.py по id игрока. Клановая система хранит своё
+    состояние в отдельных таблицах (clans/clan_members), поэтому вместо
+    копирования clan_id в data достижения читают его отсюда каждый раз.
+    """
+    try:
+        from klan import get_member
+        uid = d.get("id")
+        return get_member(uid) if uid else None
+    except Exception:
+        return None
+
+
+def _clan_of(d: dict) -> dict | None:
+    """Клан игрока (dict из klan.py: name/treasury/rank/...) или None, если не в клане."""
+    try:
+        from klan import get_clan
+        m = _clan_member(d)
+        return get_clan(m["clan_id"]) if m else None
+    except Exception:
+        return None
+
+
+def _clan_rank(d: dict) -> int:
+    """Текущий ранг клана игрока (1..5), 0 если игрок не в клане."""
+    c = _clan_of(d)
+    return int(c.get("rank", 1)) if c else 0
 
 
 # ─── Вспомогательный конструктор ───
@@ -851,32 +897,118 @@ ACHIEVEMENTS = [
          progress=lambda d: (len(d.get("owned_pets", [])), _pets_total()),
          reward_coins=1_000_000, reward_xp=500),
 
-    # ───────────── 🏰 КЛАН (4) ─────────────
+    # ───────────── 🏰 КЛАН (15) ─────────────
     _ach("clan_join", "🤝", "Часть команды",
          "Вступи в клан",
          "clan",
-         lambda d: bool(d.get("clan_id")),
-         reward_coins=5_000, reward_xp=30),
+         lambda d: _clan_member(d) is not None,
+         reward_coins=5_000, reward_xp=30,
+         name_en="Part of the Team", desc_en="Join a clan"),
 
     _ach("clan_create", "🏰", "Основатель",
          "Создай собственный клан",
          "clan",
-         lambda d: bool(d.get("clan_created")),
-         reward_coins=20_000, reward_xp=80),
+         lambda d: bool(d.get("clan_created")) or d.get("clan_created_count", 0) >= 1,
+         reward_coins=20_000, reward_xp=80,
+         name_en="Founder", desc_en="Create your own clan"),
 
-    _ach("clan_treasury", "💰", "Меценат",
-         "Внеси монеты в казну клана",
+    _ach("clan_treasury_1", "💰", "Меценат",
+         "Внеси в казну клана суммарно 50 000 монет",
          "clan",
-         lambda d: d.get("clan_treasury_deposited", 0) >= 1,
-         progress=lambda d: (d.get("clan_treasury_deposited", 0), 1),
-         reward_coins=5_000, reward_xp=25),
+         lambda d: d.get("clan_treasury_deposited", 0) >= 50_000,
+         progress=lambda d: (d.get("clan_treasury_deposited", 0), 50_000),
+         reward_coins=10_000, reward_xp=40,
+         name_en="Patron", desc_en="Deposit a total of 50,000 coins to the clan treasury"),
 
-    _ach("clan_boss_damage", "🛡", "Клановый воин",
-         "Нанеси урон клановому боссу",
+    _ach("clan_treasury_2", "💸", "Казначей",
+         "Внеси в казну клана суммарно 5 000 000 монет",
          "clan",
-         lambda d: d.get("clan_boss_damage_total", 0) >= 1,
-         progress=lambda d: (d.get("clan_boss_damage_total", 0), 1),
-         reward_coins=10_000, reward_xp=50),
+         lambda d: d.get("clan_treasury_deposited", 0) >= 5_000_000,
+         progress=lambda d: (d.get("clan_treasury_deposited", 0), 5_000_000),
+         reward_coins=150_000, reward_xp=200,
+         name_en="Treasurer", desc_en="Deposit a total of 5,000,000 coins to the clan treasury"),
+
+    _ach("clan_treasury_3", "🏛", "Спонсор Империи",
+         "Внеси в казну клана суммарно 500 000 000 монет",
+         "clan",
+         lambda d: d.get("clan_treasury_deposited", 0) >= 500_000_000,
+         progress=lambda d: (d.get("clan_treasury_deposited", 0), 500_000_000),
+         reward_coins=15_000_000, reward_xp=800,
+         name_en="Empire Sponsor", desc_en="Deposit a total of 500,000,000 coins to the clan treasury"),
+
+    _ach("clan_boss_1", "🛡", "Клановый воин",
+         "Нанеси суммарно 500 000 урона боссам в клановых заданиях",
+         "clan",
+         lambda d: d.get("clan_boss_damage_total", 0) >= 500_000,
+         progress=lambda d: (d.get("clan_boss_damage_total", 0), 500_000),
+         reward_coins=15_000, reward_xp=60,
+         name_en="Clan Warrior", desc_en="Deal a total of 500,000 damage in clan boss quests"),
+
+    _ach("clan_boss_2", "⚔️", "Гроза боссов клана",
+         "Нанеси суммарно 50 000 000 урона боссам в клановых заданиях",
+         "clan",
+         lambda d: d.get("clan_boss_damage_total", 0) >= 50_000_000,
+         progress=lambda d: (d.get("clan_boss_damage_total", 0), 50_000_000),
+         reward_coins=1_000_000, reward_xp=300,
+         name_en="Clan Boss Slayer", desc_en="Deal a total of 50,000,000 damage in clan boss quests"),
+
+    _ach("clan_mine_1", "⛏", "Кормилец клана",
+         "Внеси суммарно 1 000 000 монет с продажи руды в клановые задания",
+         "clan",
+         lambda d: d.get("clan_mine_contributed", 0) >= 1_000_000,
+         progress=lambda d: (d.get("clan_mine_contributed", 0), 1_000_000),
+         reward_coins=20_000, reward_xp=60,
+         name_en="Clan Provider", desc_en="Contribute a total of 1,000,000 coins from ore sales to clan quests"),
+
+    _ach("clan_rank_2", "🥉", "Отряд",
+         "Прокачай клан до ранга «Отряд»",
+         "clan",
+         lambda d: _clan_rank(d) >= 2,
+         reward_coins=30_000, reward_xp=100,
+         name_en="Squad", desc_en="Level up your clan to Squad rank"),
+
+    _ach("clan_rank_3", "🥈", "Легион",
+         "Прокачай клан до ранга «Легион»",
+         "clan",
+         lambda d: _clan_rank(d) >= 3,
+         reward_coins=150_000, reward_xp=250,
+         name_en="Legion", desc_en="Level up your clan to Legion rank"),
+
+    _ach("clan_rank_4", "🥇", "Орден",
+         "Прокачай клан до ранга «Орден»",
+         "clan",
+         lambda d: _clan_rank(d) >= 4,
+         reward_coins=1_000_000, reward_xp=500,
+         name_en="Order", desc_en="Level up your clan to Order rank"),
+
+    _ach("clan_rank_5", "👑", "Империя",
+         "Прокачай клан до максимального ранга «Империя»",
+         "clan",
+         lambda d: _clan_rank(d) >= 5,
+         reward_coins=10_000_000, reward_xp=1000,
+         name_en="Empire", desc_en="Level up your clan to the maximum Empire rank"),
+
+    _ach("clan_recruiter", "📋", "Рекрутер",
+         "Прими 10 заявок в клан",
+         "clan",
+         lambda d: d.get("clan_applications_accepted", 0) >= 10,
+         progress=lambda d: (d.get("clan_applications_accepted", 0), 10),
+         reward_coins=50_000, reward_xp=150,
+         name_en="Recruiter", desc_en="Accept 10 clan applications"),
+
+    _ach("clan_disciplinarian", "🚫", "Дисциплина",
+         "Исключи участника из клана",
+         "clan",
+         lambda d: d.get("clan_kicks_done", 0) >= 1,
+         reward_coins=10_000, reward_xp=40,
+         name_en="Discipline", desc_en="Kick a member from your clan"),
+
+    _ach("clan_hq", "💬", "Штаб-квартира",
+         "Привяжи чат клана",
+         "clan",
+         lambda d: bool(d.get("clan_chat_linked")),
+         reward_coins=15_000, reward_xp=60,
+         name_en="Headquarters", desc_en="Link a chat to your clan"),
 
     # ───────────── 👥 РЕФЕРАЛЫ (4) ─────────────
     _ach("refs_1", "👤", "Пригласил друга",
@@ -964,7 +1096,7 @@ ACHIEVEMENTS = [
          reward_coins=200_000, reward_xp=300),
 ]
 
-assert len(ACHIEVEMENTS) == 81, f"Ожидалось 81 достижение, а получилось {len(ACHIEVEMENTS)}"
+assert len(ACHIEVEMENTS) == 92, f"Ожидалось 92 достижения, а получилось {len(ACHIEVEMENTS)}"
 
 ACHIEVEMENTS_BY_ID = {a["id"]: a for a in ACHIEVEMENTS}
 
