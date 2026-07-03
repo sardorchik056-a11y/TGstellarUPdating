@@ -344,6 +344,8 @@ def apply_donate(data: dict, pkg_key: str) -> tuple[bool, str, int]:
     data["balance"] = data.get("balance", 0) + coins
     data["total_donated_stars"] = data.get("total_donated_stars", 0) + p["stars"]
     data["total_donated_coins"] = data.get("total_donated_coins", 0) + coins
+    data["donate_purchases"] = data.get("donate_purchases", 0) + 1
+    data.setdefault("donate_purchased_keys", []).append(pkg_key)
 
     lang = data.get("lang", "ru")
     name = p["label_en"] if lang == "en" else p["label"]
@@ -401,5 +403,11 @@ def apply_donate(data: dict, pkg_key: str) -> tuple[bool, str, int]:
 #  5. Хендлер successful_payment:
 #       pkg_key = event.successful_payment.invoice_payload
 #       ok, msg, coins = apply_donate(user_data, pkg_key)
+#       # apply_donate() уже сам проставил donate_purchases,
+#       # total_donated_stars, total_donated_coins, donate_purchased_keys —
+#       # ничего доинкрементировать вручную не нужно.
+#       from achieves import check_achievements, notify_new_achievements
+#       newly = check_achievements(user_data)
 #       # сохранить user_data в БД
 #       await bot.send_message(user_id, msg)
+#       await notify_new_achievements(bot, user_id, newly, user_data.get("lang", "ru"))
