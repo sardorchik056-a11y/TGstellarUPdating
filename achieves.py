@@ -588,39 +588,15 @@ def _fmt_reward(ach: dict, lang: str = "ru") -> str:
 def achievement_unlocked_text(ach: dict, lang: str = "ru") -> str:
     name = ach["name_en"] if lang == "en" else ach["name"]
     desc = ach["desc_en"] if lang == "en" else ach["desc"]
-    cat_info = CATEGORIES.get(ach["category"], {})
-    cat_name = cat_info.get("name_en" if lang == "en" else "name", "")
     reward_str = _fmt_reward(ach, lang)
 
-    divider = "✦ ✦ ✦ ✦ ✦ ✦ ✦"
-
-    if lang == "en":
-        lines = [
-            "🏆 <b>ACHIEVEMENT UNLOCKED</b>",
-            divider,
-            f'{ach["emoji"]} <b>{name}</b>',
-            f'<i>{desc}</i>',
-        ]
-        if cat_name:
-            lines.append(f'<code>#{cat_name}</code>')
-        if reward_str:
-            lines += [divider, f'🎁 <b>Reward:</b> {reward_str}']
-        else:
-            lines.append(divider)
-        return "\n".join(lines)
-
+    title = "Новое достижение" if lang == "ru" else "New achievement"
     lines = [
-        "🏆 <b>ДОСТИЖЕНИЕ ПОЛУЧЕНО</b>",
-        divider,
-        f'{ach["emoji"]} <b>{name}</b>',
+        f'🏆 <b>{title}:</b> {ach["emoji"]} <b>{name}</b>',
         f'<i>{desc}</i>',
     ]
-    if cat_name:
-        lines.append(f'<code>#{cat_name}</code>')
     if reward_str:
-        lines += [divider, f'🎁 <b>Награда:</b> {reward_str}']
-    else:
-        lines.append(divider)
+        lines.append(f'🎁 {reward_str}')
     return "\n".join(lines)
 
 
@@ -668,7 +644,9 @@ def achievements_list_text(data: dict, lang: str = "ru", category: str | None = 
         lines.append(f'{cat_info["emoji"]} <b>{cat_name}</b>  ({cat_done}/{len(items)})')
         lines.append("―――――――――――――――――")
 
-        for ach in items:
+        items_sorted = sorted(items, key=lambda a: a["id"] not in unlocked_set)
+
+        for ach in items_sorted:
             done = ach["id"] in unlocked_set
             mark = "✅" if done else "🔒"
             name = ach["name_en"] if lang == "en" else ach["name"]
@@ -704,7 +682,6 @@ def achievements_keyboard(lang: str = "ru"):
     for cat, info in CATEGORIES.items():
         name = info["name_en"] if lang == "en" else info["name"]
         builder.button(text=f'{info["emoji"]} {name}', callback_data=f"ach_cat_{cat}")
-    builder.button(text="Все" if lang == "ru" else "All", callback_data="ach_cat_all")
     builder.adjust(2)
     return builder.as_markup()
 
