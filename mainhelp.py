@@ -1463,6 +1463,28 @@ async def cmd_promo(message: Message):
 
 _GIFT_MIN = 1          # минимум перевода
 _COIN_GIFT = '<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji>'
+_GIFT_WINDOW = 86400   # 24 часа — окно суточного лимита
+
+# Суточный лимит перевода монет в зависимости от уровня игрока.
+# (макс_уровень_включительно, лимит_в_день). После уровня 100 — лимита нет.
+_GIFT_LEVEL_LIMITS = [
+    (5,   10_000),
+    (10,  150_000),
+    (15,  1_000_000),
+    (20,  5_000_000),
+    (30,  50_000_000),
+    (50,  500_000_000),
+    (70,  2_000_000_000),
+    (100, 10_000_000_000),
+]
+
+
+def _gift_daily_limit(level: int) -> int | None:
+    """Возвращает суточный лимит перевода монет для данного уровня, либо None — лимита нет."""
+    for cap, limit in _GIFT_LEVEL_LIMITS:
+        if level <= cap:
+            return limit
+    return None
 
 
 def _parse_amount(s: str) -> int | None:
@@ -1657,6 +1679,37 @@ async def cmd_gift(message: Message):
                     parse_mode="HTML"
                 )
                 return
+
+            # ── Суточный лимит переводов по уровню отправителя ──────────
+            sender_level = sender_data.get("level", 1)
+            daily_limit  = _gift_daily_limit(sender_level)
+            if daily_limit is not None:
+                now_gift = now_ts()
+                window_start = sender_data.get("gift_window_start", 0)
+                if now_gift - window_start >= _GIFT_WINDOW:
+                    sender_data["gift_window_start"] = now_gift
+                    sender_data["gift_sent_today"]   = 0
+                    window_start = now_gift
+
+                sent_today = sender_data.get("gift_sent_today", 0)
+                if sent_today + amount > daily_limit:
+                    remaining  = max(0, daily_limit - sent_today)
+                    reset_left = _GIFT_WINDOW - (now_gift - window_start)
+                    hours      = reset_left // 3600
+                    minutes    = (reset_left % 3600) // 60
+                    await message.reply(
+                        f"❌ Дневной лимит переводов для {sender_level} уровня: "
+                        f"<b>{format_amount(daily_limit)}</b> {_COIN_GIFT}\n\n"
+                        f"<blockquote>"
+                        f"Уже переведено сегодня: <b>{format_amount(sent_today)}</b> {_COIN_GIFT}\n"
+                        f"Доступно ещё: <b>{format_amount(remaining)}</b> {_COIN_GIFT}\n"
+                        f"Сброс лимита через: <b>{hours}ч {minutes}м</b>"
+                        f"</blockquote>",
+                        parse_mode="HTML"
+                    )
+                    return
+
+                sender_data["gift_sent_today"] = sent_today + amount
 
             sender_data["balance"]    = sender_balance - amount
             recipient_data["balance"] = recipient_data.get("balance", 0) + amount
