@@ -683,6 +683,7 @@ async def handle_pending_text_input(message: Message):
                 ok, reason, amount = activate_promo(promo_name, uid)
                 if ok:
                     u["balance"] = u.get("balance", 0) + amount
+                    u["promo_activations"] = u.get("promo_activations", 0) + 1
                     _ach_newly = check_achievements(u)
                     save_user(uid, u)
                     await _notify_ach(uid, u, _ach_newly)
@@ -1259,6 +1260,13 @@ async def cmd_daily(message: Message):
 
         import random as _rnd_daily
         reward = _rnd_daily.randint(1000, 5000)
+        # Стрик: если бонус забран не позже чем через 48ч после предыдущего
+        # (т.е. не пропущен ни один день) — стрик растёт, иначе сбрасывается.
+        _STREAK_GRACE = 48 * 3600
+        if last and elapsed <= _STREAK_GRACE:
+            u["daily_streak"] = u.get("daily_streak", 0) + 1
+        else:
+            u["daily_streak"] = 1
         u["balance"]    = u.get("balance", 0) + reward
         u["last_daily"] = now
         _ach_newly = check_achievements(u)
@@ -1718,6 +1726,7 @@ async def cmd_promo(message: Message):
         ok, reason, amount = activate_promo(promo_name, uid)
         if ok:
             u["balance"] = u.get("balance", 0) + amount
+            u["promo_activations"] = u.get("promo_activations", 0) + 1
             _ach_newly = check_achievements(u)
             save_user(uid, u)
             await _notify_ach(uid, u, _ach_newly)
@@ -2885,6 +2894,7 @@ async def handle_captcha_answer(message: Message):
                         ok, reason, amount = activate_promo(promo_name, uid)
                         if ok:
                             u["balance"] = u.get("balance", 0) + amount
+                            u["promo_activations"] = u.get("promo_activations", 0) + 1
                             _ach_newly = check_achievements(u)
                             save_user(uid, u)
                             await _notify_ach(uid, u, _ach_newly)
