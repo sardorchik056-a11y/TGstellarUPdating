@@ -1680,36 +1680,36 @@ async def cmd_gift(message: Message):
                 )
                 return
 
-            # ── Суточный лимит переводов по уровню отправителя ──────────
-            sender_level = sender_data.get("level", 1)
-            daily_limit  = _gift_daily_limit(sender_level)
+            # ── Суточный лимит переводов по уровню ПОЛУЧАТЕЛЯ (антитвинк) ──
+            recipient_level = recipient_data.get("level", 1)
+            daily_limit      = _gift_daily_limit(recipient_level)
             if daily_limit is not None:
                 now_gift = now_ts()
-                window_start = sender_data.get("gift_window_start", 0)
+                window_start = recipient_data.get("gift_window_start", 0)
                 if now_gift - window_start >= _GIFT_WINDOW:
-                    sender_data["gift_window_start"] = now_gift
-                    sender_data["gift_sent_today"]   = 0
+                    recipient_data["gift_window_start"]  = now_gift
+                    recipient_data["gift_received_today"] = 0
                     window_start = now_gift
 
-                sent_today = sender_data.get("gift_sent_today", 0)
-                if sent_today + amount > daily_limit:
-                    remaining  = max(0, daily_limit - sent_today)
+                received_today = recipient_data.get("gift_received_today", 0)
+                if received_today + amount > daily_limit:
+                    remaining  = max(0, daily_limit - received_today)
                     reset_left = _GIFT_WINDOW - (now_gift - window_start)
                     hours      = reset_left // 3600
                     minutes    = (reset_left % 3600) // 60
                     await message.reply(
-                        f"❌ Дневной лимит переводов для {sender_level} уровня: "
+                        f"❌ Дневной лимит получения монет для {recipient_level} уровня: "
                         f"<b>{format_amount(daily_limit)}</b> {_COIN_GIFT}\n\n"
                         f"<blockquote>"
-                        f"Уже переведено сегодня: <b>{format_amount(sent_today)}</b> {_COIN_GIFT}\n"
-                        f"Доступно ещё: <b>{format_amount(remaining)}</b> {_COIN_GIFT}\n"
+                        f"Получатель уже получил сегодня: <b>{format_amount(received_today)}</b> {_COIN_GIFT}\n"
+                        f"Можно передать ещё: <b>{format_amount(remaining)}</b> {_COIN_GIFT}\n"
                         f"Сброс лимита через: <b>{hours}ч {minutes}м</b>"
                         f"</blockquote>",
                         parse_mode="HTML"
                     )
                     return
 
-                sender_data["gift_sent_today"] = sent_today + amount
+                recipient_data["gift_received_today"] = received_today + amount
 
             sender_data["balance"]    = sender_balance - amount
             recipient_data["balance"] = recipient_data.get("balance", 0) + amount
