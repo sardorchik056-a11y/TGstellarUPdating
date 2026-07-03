@@ -892,9 +892,11 @@ def category_page_count(category: str) -> int:
 
 def achievements_list_text(data: dict, lang: str = "ru", category: str | None = None, page: int = 0) -> str:
     """
-    Текст ОДНОЙ карточки достижения (уровень 1) — подробная информация:
-    статус, описание, прогресс, награда и сколько игроков всего открыли эту
-    ачивку. Листается по одной штуке за раз (см. achievements_keyboard).
+    Текст ОДНОЙ карточки достижения (уровень 1) — компактная карточка:
+    название, описание, статус, прогресс, награда и сколько игроков всего
+    открыли эту ачивку. Листается по одной штуке за раз (см.
+    achievements_keyboard). Без общей шапки/названия раздела — только сама
+    ачивка, минимально и по делу.
 
     По умолчанию (category не передана) берётся DEFAULT_CATEGORY. Выполненные
     достижения всегда идут первыми внутри раздела.
@@ -912,33 +914,20 @@ def achievements_list_text(data: dict, lang: str = "ru", category: str | None = 
     page = max(0, min(page, total_pages - 1))
     ach = items_sorted[page]
 
-    cat_info = CATEGORIES.get(category)
-    cat_done = sum(1 for a in items if a["id"] in unlocked_set)
-    cat_name = cat_info["name_en"] if (cat_info and lang == "en") else (cat_info["name"] if cat_info else ("All" if lang == "en" else "Все разделы"))
-    cat_emoji = cat_info["emoji"] if cat_info else "🗂"
-
     done = ach["id"] in unlocked_set
     name = ach["name_en"] if lang == "en" else ach["name"]
     desc = ach["desc_en"] if lang == "en" else ach["desc"]
-    status_lbl = ("Выполнено" if lang == "ru" else "Unlocked") if done else ("Не выполнено" if lang == "ru" else "Locked")
+    status_lbl = ("выполнено" if lang == "ru" else "unlocked") if done else ("не выполнено" if lang == "ru" else "locked")
     status_emoji = "✅" if done else "🔒"
-
-    players_count = get_achievement_unlock_count(ach["id"])
-    if lang == "ru":
-        players_line = f'👥 <i>Выполнили {_fmt_num(players_count)} {_ru_plural(players_count, "игрок", "игрока", "игроков")}</i>'
-    else:
-        players_line = f'👥 <i>Unlocked by {_fmt_num(players_count)} player{"s" if players_count != 1 else ""}</i>'
+    status_word = "Статус" if lang == "ru" else "Status"
+    reward_word = "Награда" if lang == "ru" else "Reward"
+    opened_word = "Открыли" if lang == "ru" else "Unlocked by"
 
     lines = [
-        achievements_summary_line(data, lang),
-        "",
-        f'{cat_emoji} <b>{cat_name}</b>  <i>({cat_done}/{len(items)})</i>',
-        "――――――――――――――――――――",
-        "",
         f'{ach["emoji"]} <b>{name}</b>',
         f'<i>{desc}</i>',
         "",
-        f'{status_emoji} <b>{status_lbl}</b>',
+        f'{status_word}: {status_emoji} <i>{status_lbl}</i>',
     ]
 
     if not done:
@@ -946,14 +935,24 @@ def achievements_list_text(data: dict, lang: str = "ru", category: str | None = 
         if prog:
             cur, target = prog
             cur_c = min(cur, target)
-            lines.append(f'{_progress_bar(cur_c, target)}  <b>{_fmt_num(cur_c)}/{_fmt_num(target)}</b>')
+            pct = round(100 * cur_c / target) if target else 0
+            lines.append(f'{_progress_bar(cur_c, target)} <b>{_fmt_num(cur_c)}/{_fmt_num(target)}</b> <i>({pct}%)</i>')
 
-    reward_str = _fmt_reward(ach, lang)
-    if reward_str:
-        lines.append(f'🎁 <i>{reward_str}</i>')
+    reward_parts = []
+    if ach["reward_coins"]:
+        reward_parts.append(f'{_fmt_num(ach["reward_coins"])} {"монет" if lang == "ru" else "coins"}')
+    if ach["reward_xp"]:
+        reward_parts.append(f'{ach["reward_xp"]} {"опыта" if lang == "ru" else "XP"}')
+    if reward_parts:
+        lines.append("")
+        lines.append(f'{reward_word}: 🎁 <i>{"/".join(reward_parts)}</i>')
 
-    lines.append("")
-    lines.append(players_line)
+    players_count = get_achievement_unlock_count(ach["id"])
+    if lang == "ru":
+        players_str = f'{_fmt_num(players_count)} {_ru_plural(players_count, "игрок", "игрока", "игроков")}'
+    else:
+        players_str = f'{_fmt_num(players_count)} player{"s" if players_count != 1 else ""}'
+    lines.append(f'{opened_word}: 👥 <i>{players_str}</i>')
 
     return "\n".join(lines).strip()
 
