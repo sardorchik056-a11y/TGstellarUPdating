@@ -888,6 +888,9 @@ def city_main_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=" Повозка", callback_data="city_nav_cart", icon_custom_emoji_id=BTN_EMOJI["cart"]),
         InlineKeyboardButton(text=" Помощь", callback_data="city_nav_help", icon_custom_emoji_id=BTN_EMOJI["help"]),
     )
+    builder.row(
+        InlineKeyboardButton(text=" Топ кристаллов", callback_data="crystop_alltime", icon_custom_emoji_id=BTN_EMOJI["currency"]),
+    )
     return builder.as_markup()
 
 
