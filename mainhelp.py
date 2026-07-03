@@ -4551,6 +4551,11 @@ async def handle_callback(call: CallbackQuery):
             if result.get("error") == "cooldown":
                 await call.answer()
                 return
+            # cleanup_expired_rentals внутри attack_boss мог снять истёкший
+            # арендованный меч с экипировки — сохраняем это, даже если сам
+            # удар не засчитался (например sword_rented_out/no_sword).
+            if result.get("needs_save") and not (result.get("boss_killed") or result.get("hit")):
+                save_user(data["id"], data)
             if result.get("boss_killed") or result.get("hit"):
                 # ── Повышение уровня убийцы ──
                 if result.get("xp", 0) > 0:
