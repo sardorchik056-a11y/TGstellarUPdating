@@ -1566,9 +1566,20 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
         result["stunned_until"] = _peek_until
         return result
 
+    # Актуализируем аренды ПЕРЕД проверкой экипированного меча:
+    # если аренда у арендатора истекла, а он ни разу не открыл арсенал,
+    # меч нужно снять с экипировки прямо тут — иначе им можно бить бесконечно.
+    cleanup_expired_rentals(data)
+    result["needs_save"] = True  # аренда могла измениться выше — просим сохранить data
+
     sword_key = data.get("equipped_sword")
     if not sword_key:
         result["error"] = "no_sword"
+        return result
+
+    # Владелец не может бить мечом, который сейчас сдан в аренду.
+    if sword_is_rented_out(data, sword_key):
+        result["error"] = "sword_rented_out"
         return result
 
     sword = SWORDS_BY_KEY.get(sword_key)
@@ -2866,6 +2877,13 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
             f'{_tg(_E["lock"], "🔒")} <b><i>{"No sword — nothing to attack with!" if lang == "en" else "Нет меча — нечем атаковать!"}</i></b>'
         )
 
+    if result.get("error") == "sword_rented_out":
+        return (
+            f'{_tg(_E["lock"], "🔒")} <b><i>'
+            f'{"This sword is rented out right now — equip another one to attack." if lang == "en" else "Этот меч сейчас сдан в аренду — экипируй другой, чтобы атаковать."}'
+            f'</i></b>'
+        )
+
     if result.get("error") == "boss_dead":
         return (
             f'{_tg(_E["dead"], "💀")} <b><i>{"Boss is already dead! Wait for the next one." if lang == "en" else "Босс уже мёртв! Жди следующего."}</i></b>'
@@ -3379,6 +3397,15 @@ def arsenal_rent_sword(owner_data: dict, renter_data: dict,
         return False, "<b><i>❌ Неверный срок аренды. Пример:</i></b> <code>арн #1 2ч @user</code>"
 
     until = int(_time_mod.time()) + duration_secs
+
+    # Если владелец сейчас держит этот меч экипированным — снять его,
+    # иначе им можно будет бить босса, пока меч формально в аренде.
+    if owner_data.get("equipped_sword") == sword_key:
+        remaining = [
+            s for s in owner_data.get("owned_swords", [])
+            if s != sword_key and not sword_is_rented_out(owner_data, s)
+        ]
+        owner_data["equipped_sword"] = remaining[0] if remaining else None
 
     # Помечаем у владельца
     owner_data.setdefault("arsenal_rented_out", {})[sword_key] = {
