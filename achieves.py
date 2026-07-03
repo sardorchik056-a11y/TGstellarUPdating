@@ -121,6 +121,21 @@ def get_achievement_unlock_count(ach_id: str) -> int:
         return 0
 
 
+def get_total_unlocks_global() -> int:
+    """
+    Суммарное число открытий ВСЕХ достижений ВСЕМИ игроками (не уникальных
+    игроков, а именно открытий — если 100 игроков открыли по 5 ачивок, вернёт
+    500). Используется в короткой общей статке на главном экране достижений.
+    """
+    try:
+        conn = _sqlite3.connect(_ACH_DB_PATH)
+        row = conn.execute("SELECT SUM(unlocked_count) FROM achievement_unlock_counts").fetchone()
+        conn.close()
+        return int(row[0]) if row and row[0] else 0
+    except Exception:
+        return 0
+
+
 def backfill_achievement_counts(all_users_data) -> None:
     """
     Разовая миграция: пересчитывает счётчики с нуля по уже существующим игрокам —
@@ -1060,19 +1075,38 @@ def _ru_plural(n: int, one: str, few: str, many: str) -> str:
 
 def achievements_menu_text(data: dict, lang: str = "ru") -> str:
     """
-    Текст ГЛАВНОГО экрана достижений (уровень 0) — общий прогресс и список
-    разделов с их прогрессом. Отсюда игрок выбирает конкретный раздел.
+    Текст ГЛАВНОГО экрана достижений (уровень 0) — короткая общая статка:
+    личный прогресс (открыто/всего) и общее число открытий достижений всеми
+    игроками сервера. Разбивку по разделам больше не выводит текстом —
+    разделы выбираются кнопками (achievements_menu_keyboard).
     """
-    unlocked_set = set(data.get("achievements_unlocked", []))
+    unlocked = len(data.get("achievements_unlocked", []))
+    total = len(ACHIEVEMENTS)
+    pct = round(100 * unlocked / total) if total else 0
+    bar = _progress_bar(unlocked, total, length=12)
+    global_unlocks = get_total_unlocks_global()
+
+    players_label_emoji = _cemoji("players", "👥")
     prompt = "Выберите раздел" if lang == "ru" else "Choose a category"
 
-    lines = [achievements_summary_line(data, lang), "", f'<b>{prompt}:</b>', ""]
-    for cat, info in CATEGORIES.items():
-        items = _category_items(cat)
-        done = sum(1 for a in items if a["id"] in unlocked_set)
-        name = info["name_en"] if lang == "en" else info["name"]
-        mark = "✅" if done == len(items) else "▫️"
-        lines.append(f'{mark} {info["emoji"]} <b>{name}</b>  <i>{done}/{len(items)}</i>')
+    if lang == "en":
+        lines = [
+            "🏆 <b>Achievements</b>",
+            f'{bar} <b>{unlocked}/{total}</b> <i>({pct}%)</i>',
+            "",
+            f'{players_label_emoji} <b>Unlocked by all players:</b> <i>{_fmt_num(global_unlocks)}</i>',
+            "",
+            f'<b>{prompt}:</b>',
+        ]
+    else:
+        lines = [
+            "🏆 <b>Достижения</b>",
+            f'{bar} <b>{unlocked}/{total}</b> <i>({pct}%)</i>',
+            "",
+            f'{players_label_emoji} <b>Всего выполнено игроками:</b> <i>{_fmt_num(global_unlocks)}</i>',
+            "",
+            f'<b>{prompt}:</b>',
+        ]
 
     return "\n".join(lines).strip()
 
