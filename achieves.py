@@ -863,7 +863,9 @@ def achievements_list_text(data: dict, lang: str = "ru", category: str | None = 
 
 def achievements_keyboard(lang: str = "ru", category: str | None = None, page: int = 0):
     """
-    Инлайн-клавиатура: сверху — выбор раздела, снизу — пагинация (◀ 2/5 ▶),
+    Инлайн-клавиатура: сверху — выбор раздела, снизу — пагинация:
+    стрелки ◀/▶ для пролистывания + кнопки с номерами страниц (1, 2, 3…),
+    чтобы прыгнуть сразу на нужную. Строка навигации появляется, только
     если в разделе больше одной страницы. Требует aiogram (импортируется лениво).
     """
     from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -881,13 +883,19 @@ def achievements_keyboard(lang: str = "ru", category: str | None = None, page: i
     total_pages = category_page_count(category)
     page = max(0, min(page, total_pages - 1))
     if total_pages > 1:
+        # Стрелки + номера страниц: [◀] [1] [2] [3] [▶] — текущая страница выделена скобками.
         nav = []
         if page > 0:
             nav.append(InlineKeyboardButton(text="◀", callback_data=f"ach_page_{category}_{page - 1}"))
-        nav.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop"))
+        for p in range(total_pages):
+            label = f"· {p + 1} ·" if p == page else str(p + 1)
+            nav.append(InlineKeyboardButton(text=label, callback_data=f"ach_page_{category}_{p}"))
         if page < total_pages - 1:
             nav.append(InlineKeyboardButton(text="▶", callback_data=f"ach_page_{category}_{page + 1}"))
-        builder.row(*nav)
+
+        # Не больше 5 кнопок в ряд, чтобы не расползалось на широких клавиатурах
+        for i in range(0, len(nav), 5):
+            builder.row(*nav[i:i + 5])
 
     return builder.as_markup()
 
