@@ -209,6 +209,34 @@ MIN_CLAN_NAME    = 3
 MAX_CLAN_NAME    = 24
 CREATE_COST      = 10_000
 
+# ── Лимиты на вывод из казны по стажу в клане ───────────────
+# Защита от схемы "вступил в клан ради вывода общей казны":
+# чем меньше времени игрок состоит в клане, тем меньше он может
+# вывести. Лимит накопительный — считается сумма всех его заявок
+# со статусом pending/approved за всё время, а не разово на один
+# запрос (иначе лимит легко обойти несколькими заявками подряд).
+_DAY = 86_400
+WITHDRAW_LIMIT_1D = 25_000     # < 1 дня в клане
+WITHDRAW_LIMIT_3D = 150_000    # < 3 дней в клане
+WITHDRAW_LIMIT_7D = 500_000    # < 7 дней в клане
+                                # >= 7 дней — без ограничений
+
+
+def get_membership_withdraw_limit(joined_ts: int) -> int | None:
+    """
+    Лимит на вывод из казны для игрока в зависимости от того, сколько
+    времени он состоит в клане. Возвращает None, если ограничений нет
+    (в клане неделю и больше).
+    """
+    elapsed = int(time.time()) - (joined_ts or 0)
+    if elapsed < _DAY:
+        return WITHDRAW_LIMIT_1D
+    if elapsed < 3 * _DAY:
+        return WITHDRAW_LIMIT_3D
+    if elapsed < 7 * _DAY:
+        return WITHDRAW_LIMIT_7D
+    return None
+
 # ── Ежедневные задания клана ────────────────────────────────
 DAILY_QUEST_DMG_TARGET  = 1_000_000   # сколько урона боссу нужно нанести (суммарно кланом)
 DAILY_QUEST_DMG_REWARD  = 500_000     # награда в казну за выполнение задания на урон
@@ -827,6 +855,27 @@ def request_withdrawal(uid: int, amount: int, reason: str) -> dict:
             clan = c.execute("SELECT treasury FROM clans WHERE id=?", (clan_id,)).fetchone()
             if not clan:
                 return {"ok": False, "error": "not_in_clan"}
+
+            # Лимит на вывод для игроков, недавно вступивших в клан
+            # (защита от схемы "вступил ради вывода казны"). Считаем
+            # накопительно: сколько этот игрок уже вывел/запросил за
+            # всё время, пока действует его текущее ограничение по
+            # стажу — так лимит нельзя обойти серией мелких заявок.
+            limit = get_membership_withdraw_limit(m["joined_ts"])
+            if limit is not None:
+                already = c.execute("""
+                    SELECT COALESCE(SUM(amount), 0) FROM clan_treasury_requests
+                    WHERE uid=? AND status IN ('pending', 'approved')
+                """, (uid,)).fetchone()[0]
+                if already + amount > limit:
+                    return {
+                        "ok": False,
+                        "error": "withdraw_limit_exceeded",
+                        "limit": limit,
+                        "already_used": already,
+                        "remaining": max(0, limit - already),
+                    }
+
             # Учитываем уже ожидающие выводы этого клана, чтобы нельзя
             # было запросить выводов суммарно больше, чем реально есть
             # в казне (даже если по отдельности каждый запрос валиден).
