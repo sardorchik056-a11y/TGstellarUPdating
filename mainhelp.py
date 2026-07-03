@@ -4349,6 +4349,7 @@ async def handle_callback(call: CallbackQuery):
             pay_kb.row(InlineKeyboardButton(
                 text=f'Купить за {p["price_stars"]} ⭐' if lang == "ru" else f'Buy for {p["price_stars"]} ⭐',
                 url=invoice_url,
+                icon_custom_emoji_id="5267500801240092311",
                 style="success"
             ))
             pay_kb.row(InlineKeyboardButton(
