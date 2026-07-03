@@ -144,8 +144,25 @@ def _e(eid: str, fallback: str) -> str:
 
 def _fmt(n) -> str:
     """
-    Сокращённый формат чисел: 1500 -> "1.5к", 100000 -> "100к",
-    2300000 -> "2.3м" и т.д. Единый стиль во всём боте.
+    Сокращённый формат чисел (стандартная короткая шкала, единый стиль
+    с database.py -> format_amount и miner.py -> _fmt_num):
+      999          -> "999"
+      1500         -> "1.5K"
+      100000       -> "100K"
+      2300000      -> "2.3M"
+      100000000    -> "100M"
+      1500000000   -> "1.5B"
+      1_000_000_000_000        -> "1T"
+      1_000_000_000_000_000    -> "1Qa"  (quadrillion)
+      1_000_000_000_000_000_000-> "1Qi"  (quintillion)
+      10**21                   -> "1Sx"  (sextillion)
+      10**24                   -> "1Sp"  (septillion)
+      10**27                   -> "1Oc"  (octillion)
+      10**30                   -> "1No"  (nonillion)
+      10**33                   -> "1Dc"  (decillion)
+    Если число ещё больше — формат не ломается: продолжаем Dc2, Dc3, ...
+    Дробная часть показывается только если она не нулевая (1.5K, но не 1.0K).
+    Знак сохраняется (для отрицательных значений, если вдруг понадобится).
     """
     try:
         n = float(n)
@@ -156,24 +173,29 @@ def _fmt(n) -> str:
     n = abs(n)
 
     if n < 1000:
+        # Целые числа без дробной части выводим как int, иначе с одним знаком
         if n == int(n):
             return f"{sign}{int(n)}"
         return f"{sign}{n:.1f}"
 
-    for div, suffix in [
-        (1_000_000_000_000, "трлн"),
-        (1_000_000_000,     "млрд"),
-        (1_000_000,         "м"),
-        (1_000,             "к"),
-    ]:
-        if n >= div:
-            val = n / div
-            val = int(val * 10) / 10
-            if val == int(val):
-                return f"{sign}{int(val)}{suffix}"
-            return f"{sign}{val:.1f}{suffix}"
+    suffixes = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"]
+    idx = 0
+    val = n
+    while val >= 1000:
+        val /= 1000
+        idx += 1
 
-    return f"{sign}{int(n)}"
+    val = int(val * 10) / 10  # округление вниз до 1 знака после запятой
+
+    if idx < len(suffixes):
+        suffix = suffixes[idx]
+    else:
+        # За пределами "Dc" (10^33) продолжаем нумеровать: Dc2, Dc3, ...
+        suffix = f"Dc{idx - len(suffixes) + 2}"
+
+    if val == int(val):
+        return f"{sign}{int(val)}{suffix}"
+    return f"{sign}{val:.1f}{suffix}"
 
 
 COIN  = _e(_E_COIN,  "🪙")
@@ -216,16 +238,16 @@ DAILY_QUEST_MINE3_REWARD = 5_000_000
 # при убыли участников/трате казны — достигнутое остаётся достигнутым.
 #
 # rank 1 — стартовый, без требований.
-# rank 2 — 5 участников  + 10 000 000 в казне  → задания x2
-# rank 3 — 15 участников + 50 000 000 в казне  → задания x4
-# rank 4 — 30 участников + 200 000 000 в казне → задания x8
-# rank 5 — 50 участников + 1 000 000 000 в казне → задания x16
+# rank 2 — 5 участников  + 10 000 000 в казне   → задания x2
+# rank 3 — 15 участников + 150 000 000 в казне  → задания x4
+# rank 4 — 30 участников + 1 000 000 000 в казне → задания x8
+# rank 5 — 50 участников + 15 000 000 000 в казне → задания x16
 CLAN_RANKS = [
-    {"rank": 1, "name_ru": "Новичок", "name_en": "Novice",  "members_required": 0,  "treasury_required": 0,             "multiplier": 1},
-    {"rank": 2, "name_ru": "Отряд",   "name_en": "Squad",   "members_required": 5,  "treasury_required": 10_000_000,    "multiplier": 2},
-    {"rank": 3, "name_ru": "Легион",  "name_en": "Legion",  "members_required": 15, "treasury_required": 50_000_000,    "multiplier": 4},
-    {"rank": 4, "name_ru": "Орден",   "name_en": "Order",   "members_required": 30, "treasury_required": 200_000_000,   "multiplier": 8},
-    {"rank": 5, "name_ru": "Империя", "name_en": "Empire",  "members_required": 50, "treasury_required": 1_000_000_000, "multiplier": 16},
+    {"rank": 1, "name_ru": "Новичок", "name_en": "Novice",  "members_required": 0,  "treasury_required": 0,              "multiplier": 1},
+    {"rank": 2, "name_ru": "Отряд",   "name_en": "Squad",   "members_required": 5,  "treasury_required": 10_000_000,     "multiplier": 2},
+    {"rank": 3, "name_ru": "Легион",  "name_en": "Legion",  "members_required": 15, "treasury_required": 150_000_000,    "multiplier": 4},
+    {"rank": 4, "name_ru": "Орден",   "name_en": "Order",   "members_required": 30, "treasury_required": 1_000_000_000,  "multiplier": 8},
+    {"rank": 5, "name_ru": "Империя", "name_en": "Empire",  "members_required": 50, "treasury_required": 15_000_000_000, "multiplier": 16},
 ]
 MAX_CLAN_RANK = len(CLAN_RANKS)
 
@@ -1123,6 +1145,14 @@ def _name(r: dict) -> str:
     return _esc(r.get("first_name") or r.get("username") or str(r.get("uid", "?")))
 
 
+def _member_name(r: dict) -> str:
+    """Для списка участников: @username, если есть; иначе — ID участника."""
+    username = r.get("username")
+    if username:
+        return f"@{_esc(username)}"
+    return _esc(str(r.get("uid", "?")))
+
+
 def _progress_bar(current: int, target: int, length: int = 10) -> str:
     if target <= 0:
         return "▱" * length
@@ -1360,7 +1390,7 @@ def klan_members_text(clan: dict, members: list[dict], lang: str = "ru") -> str:
     lines = []
     for m in members:
         icon = e_crown if m["role"] == "creator" else '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji>'
-        lines.append(f'{icon} <b>{_name(m)}</b> — {COIN} <b>{_fmt(m["contributed"])}</b>')
+        lines.append(f'{icon} <b>{_member_name(m)}</b> — {COIN} <b>{_fmt(m["contributed"])}</b>')
     body = "\n".join(lines) if lines else "<i>—</i>"
     name = _esc(clan["name"])
     if lang == "en":
