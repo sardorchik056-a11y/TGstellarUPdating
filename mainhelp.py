@@ -89,6 +89,7 @@ from hunt import (
 from achieves import (
     check_achievements, achievement_unlocked_text,
     achievements_list_text, achievements_keyboard, achievements_summary_line,
+    DEFAULT_CATEGORY,
 )
 
 from stats import init_stats_db, track_user, stats_text, stats_keyboard
@@ -1511,9 +1512,9 @@ async def cmd_achievements(message: Message):
     newly = check_achievements(u)
     save_user(message.from_user.id, u)
     await message.reply(
-        achievements_list_text(u, lang),
+        achievements_list_text(u, lang, category=DEFAULT_CATEGORY, page=0),
         parse_mode="HTML",
-        reply_markup=achievements_keyboard(lang),
+        reply_markup=achievements_keyboard(lang, category=DEFAULT_CATEGORY, page=0),
     )
     for _ach in newly:
         try:
@@ -4536,12 +4537,25 @@ async def handle_callback(call: CallbackQuery):
             await edit(arsenal_main_text(data), arsenal_main_keyboard(data))
             return
 
-        # ===== ДОСТИЖЕНИЯ: фильтр по категории =====
+        # ===== ДОСТИЖЕНИЯ: фильтр по категории (всегда открывает страницу 1) =====
         if cd.startswith("ach_cat_"):
             cat = cd.removeprefix("ach_cat_")
-            cat = None if cat == "all" else cat
             await call.answer()
-            await edit(achievements_list_text(data, lang, category=cat), achievements_keyboard(lang))
+            await edit(
+                achievements_list_text(data, lang, category=cat, page=0),
+                achievements_keyboard(lang, category=cat, page=0),
+            )
+            return
+
+        # ===== ДОСТИЖЕНИЯ: листание страниц внутри раздела =====
+        if cd.startswith("ach_page_"):
+            _cat, _page_str = cd.removeprefix("ach_page_").rsplit("_", 1)
+            page = int(_page_str)
+            await call.answer()
+            await edit(
+                achievements_list_text(data, lang, category=_cat, page=page),
+                achievements_keyboard(lang, category=_cat, page=page),
+            )
             return
 
         # ===== АРСЕНАЛ: меню выбора меча для экипировки =====
