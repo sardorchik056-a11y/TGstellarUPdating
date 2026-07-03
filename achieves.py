@@ -235,6 +235,29 @@ CATEGORIES = {
 }
 
 
+# ─── Премиум-эмодзи (кастомные, через <tg-emoji emoji-id="...">) ───
+# id раздают в @Stickers/через forward кастомного эмодзи боту; тут просто айдишники.
+# Второй символ в _cemoji(...) — обычный emoji-fallback на случай, если tg-emoji
+# по какой-то причине не отрисуется (старый клиент и т.п.).
+
+CUSTOM_EMOJI_IDS = {
+    "mine_icon": "5197371802136892976",   # иконка ВСЕХ достижений раздела "Шахта"
+    "status":    "5262844652964303985",   # перед словом "Статус"
+    "locked":    "5296369303661067030",   # состояние "не выполнено"
+    "unlocked":  "5206607081334906820",   # состояние "выполнено"
+    "reward":    "5222113468051629260",   # перед словом "Награда"
+    "players":   "5258513401784573443",   # перед словом "Выполнили"
+}
+
+
+def _cemoji(key: str, fallback: str) -> str:
+    """Кастомный премиум-эмодзи <tg-emoji>, с обычным emoji как fallback-символ внутри тега."""
+    eid = CUSTOM_EMOJI_IDS.get(key)
+    if not eid:
+        return fallback
+    return f'<tg-emoji emoji-id="{eid}">{fallback}</tg-emoji>'
+
+
 # ============================================================
 #  СПИСОК ДОСТИЖЕНИЙ (50 шт.)
 # ============================================================
@@ -898,6 +921,10 @@ def achievements_list_text(data: dict, lang: str = "ru", category: str | None = 
     achievements_keyboard). Без общей шапки/названия раздела — только сама
     ачивка, минимально и по делу.
 
+    Иконка достижений раздела "Шахта" и лейблы (Статус/Награда/Выполнили,
+    состояния выполнено/не выполнено) — премиум-эмодзи через
+    <tg-emoji emoji-id="...">, всегда СТОЯТ ПЕРЕД текстом.
+
     По умолчанию (category не передана) берётся DEFAULT_CATEGORY. Выполненные
     достижения всегда идут первыми внутри раздела.
     """
@@ -918,16 +945,23 @@ def achievements_list_text(data: dict, lang: str = "ru", category: str | None = 
     name = ach["name_en"] if lang == "en" else ach["name"]
     desc = ach["desc_en"] if lang == "en" else ach["desc"]
     status_lbl = ("выполнено" if lang == "ru" else "unlocked") if done else ("не выполнено" if lang == "ru" else "locked")
-    status_emoji = "✅" if done else "🔒"
     status_word = "Статус" if lang == "ru" else "Status"
     reward_word = "Награда" if lang == "ru" else "Reward"
-    opened_word = "Открыли" if lang == "ru" else "Unlocked by"
+    players_word = "Выполнили" if lang == "ru" else "Completed by"
+
+    # иконка достижения: для раздела "Шахта" — единый премиум-эмодзи на все ачивки раздела
+    icon = _cemoji("mine_icon", ach["emoji"]) if category == "mine" else ach["emoji"]
+
+    state_emoji = _cemoji("unlocked", "✅") if done else _cemoji("locked", "🔒")
+    status_label_emoji = _cemoji("status", "📊")
+    reward_label_emoji = _cemoji("reward", "🎁")
+    players_label_emoji = _cemoji("players", "👥")
 
     lines = [
-        f'{ach["emoji"]} <b>{name}</b>',
+        f'{icon} <b>{name}</b>',
         f'<i>{desc}</i>',
         "",
-        f'{status_word}: {status_emoji} <i>{status_lbl}</i>',
+        f'{status_label_emoji} <b>{status_word}:</b> {state_emoji} <i>{status_lbl}</i>',
     ]
 
     if not done:
@@ -945,14 +979,14 @@ def achievements_list_text(data: dict, lang: str = "ru", category: str | None = 
         reward_parts.append(f'{ach["reward_xp"]} {"опыта" if lang == "ru" else "XP"}')
     if reward_parts:
         lines.append("")
-        lines.append(f'{reward_word}: 🎁 <i>{"/".join(reward_parts)}</i>')
+        lines.append(f'{reward_label_emoji} <b>{reward_word}:</b> <i>{"/".join(reward_parts)}</i>')
 
     players_count = get_achievement_unlock_count(ach["id"])
     if lang == "ru":
         players_str = f'{_fmt_num(players_count)} {_ru_plural(players_count, "игрок", "игрока", "игроков")}'
     else:
         players_str = f'{_fmt_num(players_count)} player{"s" if players_count != 1 else ""}'
-    lines.append(f'{opened_word}: 👥 <i>{players_str}</i>')
+    lines.append(f'{players_label_emoji} <b>{players_word}:</b> <i>{players_str}</i>')
 
     return "\n".join(lines).strip()
 
