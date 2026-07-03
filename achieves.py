@@ -1,0 +1,682 @@
+# ============================================================
+#  achieves.py  —  Система достижений
+#  50 достижений: деньги, уровень, шахта, охота на боссов,
+#  арсенал (мечи), дуэли, кейсы/артефакты, питомцы, клан,
+#  рефералы, донат, вклады, разное.
+# ============================================================
+#
+#  КАК ПОДКЛЮЧИТЬ
+#  ────────────────
+#  1) from achieves import check_achievements, achievement_unlocked_text,
+#         achievements_list_text, achievements_keyboard, achievements_summary_line
+#
+#  2) После ЛЮБОГО действия, которое может выполнить условие ачивки
+#     (собрал добычу, ударил босса, выиграл дуэль, открыл кейс,
+#     вступил в клан, внёс вклад и т.д.) — вызови ПЕРЕД save_user(...):
+#
+#         newly = check_achievements(u)
+#         save_user(uid, u)
+#         for ach in newly:
+#             try:
+#                 await bot.send_message(
+#                     uid, achievement_unlocked_text(ach, lang), parse_mode="HTML"
+#                 )
+#             except Exception:
+#                 pass
+#
+#     check_achievements() сама начисляет награды (монеты/опыт) в переданный
+#     словарь data и возвращает список новых достижений — сохранять базу
+#     после неё обязательно.
+#
+#  3) Готовый хендлер команды /достижения — см. пример в самом низу файла
+#     (закомментирован, просто скопируй в mainhelp.py и поправь импорты).
+#
+#  ПОЛЯ, КОТОРЫЕ ИСПОЛЬЗУЕТ МОДУЛЬ
+#  ────────────────────────────────
+#  Уже существующие в проекте (проверено по вашим файлам) — работают из коробки:
+#    balance, level, mine_campaigns_done, owned_pickaxes, owned_swords,
+#    duel_wins, artifact_cases_opened, owned_pets, clan_id (из get_or_create_user)
+#
+#  НОВЫЕ счётчики, которых в data пока нет — модуль просто вернёт для них
+#  прогресс 0/цель, пока вы не начнёте их инкрементировать в нужных местах
+#  (по одной строке в нужном хендлере, ничего сложного):
+#    stats_boss_hits, stats_boss_kills   — в hunt_strike после успешного удара
+#    ref_count                            — в хендлере обработки /start c реф-ссылкой
+#    clan_created                         — в хендлере создания клана (klan_create)
+#    clan_treasury_deposited              — после успешного deposit_treasury(...)
+#    is_vip / vip_until                   — в месте выдачи VIP/premium статуса
+#    donate_purchases                     — после успешной оплаты доната
+#    deposits_opened, deposits_claimed    — после _cdl_open_deposit / _cdl_claim
+#    promo_activations                    — после успешного activate_promo(...)
+#    daily_streak                         — уже может считаться в cmd_daily,
+#                                            если нет — прибавляйте +1 при
+#                                            получении бонуса без пропуска дня
+#
+#  Если какое-то поле у вас называется иначе — просто поправьте .get(...)
+#  внутри нужного achievement'а ниже, структура одинаковая везде.
+# ============================================================
+
+import time as _time
+
+# ─── Безопасные лениво-импортируемые константы (чтобы не ловить циклический импорт) ───
+
+def _swords_total() -> int:
+    try:
+        from hunt import SWORDS
+        return len(SWORDS)
+    except Exception:
+        return 25  # запасное значение, поправьте если поменяли список мечей
+
+
+def _pickaxes_total() -> int:
+    try:
+        from miner import PICKAXES
+        return len(PICKAXES)
+    except Exception:
+        return 6  # запасное значение — поправьте под свой список кирок
+
+
+def _pets_total() -> int:
+    try:
+        from pets import PETS
+        return len(PETS)
+    except Exception:
+        return 10  # запасное значение — поправьте под свой список питомцев
+
+
+def _max_level() -> int:
+    try:
+        from miner import MAX_LEVEL
+        return MAX_LEVEL
+    except Exception:
+        return 100
+
+
+# ─── Вспомогательный конструктор ───
+
+def _ach(id_, emoji, name, desc, category, check, progress=None,
+         reward_coins=0, reward_xp=0,
+         name_en=None, desc_en=None):
+    return {
+        "id": id_,
+        "emoji": emoji,
+        "name": name,
+        "name_en": name_en or name,
+        "desc": desc,
+        "desc_en": desc_en or desc,
+        "category": category,
+        "check": check,          # data -> bool
+        "progress": progress,    # data -> (current, target) | None
+        "reward_coins": reward_coins,
+        "reward_xp": reward_xp,
+    }
+
+
+# ─── Категории (для группировки в списке) ───
+
+CATEGORIES = {
+    "money":   {"emoji": "💰", "name": "Богатство",     "name_en": "Wealth"},
+    "level":   {"emoji": "⭐", "name": "Прогресс",       "name_en": "Progress"},
+    "mine":    {"emoji": "⛏",  "name": "Шахта",          "name_en": "Mining"},
+    "hunt":    {"emoji": "⚔️", "name": "Охота",          "name_en": "Hunt"},
+    "arsenal": {"emoji": "🗡",  "name": "Арсенал",        "name_en": "Arsenal"},
+    "duel":    {"emoji": "🤺", "name": "Дуэли",          "name_en": "Duels"},
+    "cases":   {"emoji": "🎁", "name": "Кейсы",          "name_en": "Cases"},
+    "pets":    {"emoji": "🐾", "name": "Питомцы",        "name_en": "Pets"},
+    "clan":    {"emoji": "🏰", "name": "Клан",           "name_en": "Clan"},
+    "refs":    {"emoji": "👥", "name": "Рефералы",       "name_en": "Referrals"},
+    "donate":  {"emoji": "💎", "name": "Донат",          "name_en": "Donate"},
+    "deposit": {"emoji": "🏦", "name": "Вклады",         "name_en": "Deposits"},
+    "misc":    {"emoji": "🎯", "name": "Разное",         "name_en": "Misc"},
+}
+
+
+# ============================================================
+#  СПИСОК ДОСТИЖЕНИЙ (50 шт.)
+# ============================================================
+
+ACHIEVEMENTS = [
+
+    # ───────────── 💰 ДЕНЬГИ (5) ─────────────
+    _ach("money_100k", "🪙", "Стартовый капитал",
+         "Накопи 100 000 монет",
+         "money",
+         lambda d: d.get("balance", 0) >= 100_000,
+         progress=lambda d: (d.get("balance", 0), 100_000),
+         reward_coins=10_000, reward_xp=50,
+         name_en="Starting Capital", desc_en="Save up 100,000 coins"),
+
+    _ach("money_1m", "💵", "Миллионер",
+         "Накопи 1 000 000 монет",
+         "money",
+         lambda d: d.get("balance", 0) >= 1_000_000,
+         progress=lambda d: (d.get("balance", 0), 1_000_000),
+         reward_coins=100_000, reward_xp=150,
+         name_en="Millionaire", desc_en="Save up 1,000,000 coins"),
+
+    _ach("money_50m", "🏦", "Магнат",
+         "Накопи 50 000 000 монет",
+         "money",
+         lambda d: d.get("balance", 0) >= 50_000_000,
+         progress=lambda d: (d.get("balance", 0), 50_000_000),
+         reward_coins=2_500_000, reward_xp=400,
+         name_en="Tycoon", desc_en="Save up 50,000,000 coins"),
+
+    _ach("money_1b", "👑", "Олигарх",
+         "Накопи 1 000 000 000 монет",
+         "money",
+         lambda d: d.get("balance", 0) >= 1_000_000_000,
+         progress=lambda d: (d.get("balance", 0), 1_000_000_000),
+         reward_coins=50_000_000, reward_xp=1000,
+         name_en="Oligarch", desc_en="Save up 1,000,000,000 coins"),
+
+    _ach("money_25b", "🌌", "Повелитель Богатства",
+         "Накопи 25 000 000 000 монет",
+         "money",
+         lambda d: d.get("balance", 0) >= 25_000_000_000,
+         progress=lambda d: (d.get("balance", 0), 25_000_000_000),
+         reward_coins=1_000_000_000, reward_xp=3000,
+         name_en="Lord of Wealth", desc_en="Save up 25,000,000,000 coins"),
+
+    # ───────────── ⭐ УРОВЕНЬ (5) ─────────────
+    _ach("level_10", "🔹", "Уверенный старт",
+         "Достигни 10 уровня",
+         "level",
+         lambda d: d.get("level", 1) >= 10,
+         progress=lambda d: (d.get("level", 1), 10),
+         reward_coins=5_000, reward_xp=0),
+
+    _ach("level_25", "🔷", "Опытный игрок",
+         "Достигни 25 уровня",
+         "level",
+         lambda d: d.get("level", 1) >= 25,
+         progress=lambda d: (d.get("level", 1), 25),
+         reward_coins=25_000, reward_xp=0),
+
+    _ach("level_50", "💠", "Ветеран",
+         "Достигни 50 уровня",
+         "level",
+         lambda d: d.get("level", 1) >= 50,
+         progress=lambda d: (d.get("level", 1), 50),
+         reward_coins=100_000, reward_xp=0),
+
+    _ach("level_75", "🔶", "Легенда",
+         "Достигни 75 уровня",
+         "level",
+         lambda d: d.get("level", 1) >= 75,
+         progress=lambda d: (d.get("level", 1), 75),
+         reward_coins=500_000, reward_xp=0),
+
+    _ach("level_max", "🏵", "Живая легенда",
+         "Достигни максимального уровня",
+         "level",
+         lambda d: d.get("level", 1) >= _max_level(),
+         progress=lambda d: (d.get("level", 1), _max_level()),
+         reward_coins=2_000_000, reward_xp=0),
+
+    # ───────────── ⛏ ШАХТА (5) ─────────────
+    _ach("mine_1", "⛏", "Первая вылазка",
+         "Заверши первую экспедицию в шахту",
+         "mine",
+         lambda d: d.get("mine_campaigns_done", 0) >= 1,
+         progress=lambda d: (d.get("mine_campaigns_done", 0), 1),
+         reward_coins=1_000, reward_xp=10),
+
+    _ach("mine_10", "🪨", "Трудяга",
+         "Заверши 10 экспедиций в шахту",
+         "mine",
+         lambda d: d.get("mine_campaigns_done", 0) >= 10,
+         progress=lambda d: (d.get("mine_campaigns_done", 0), 10),
+         reward_coins=5_000, reward_xp=30),
+
+    _ach("mine_100", "⚒️", "Шахтёр по призванию",
+         "Заверши 100 экспедиций в шахту",
+         "mine",
+         lambda d: d.get("mine_campaigns_done", 0) >= 100,
+         progress=lambda d: (d.get("mine_campaigns_done", 0), 100),
+         reward_coins=50_000, reward_xp=150),
+
+    _ach("mine_500", "🏔", "Король забоя",
+         "Заверши 500 экспедиций в шахту",
+         "mine",
+         lambda d: d.get("mine_campaigns_done", 0) >= 500,
+         progress=lambda d: (d.get("mine_campaigns_done", 0), 500),
+         reward_coins=300_000, reward_xp=500),
+
+    _ach("mine_all_pickaxes", "🧰", "Полный арсенал кирок",
+         "Приобрети все кирки",
+         "mine",
+         lambda d: len(d.get("owned_pickaxes", [])) >= _pickaxes_total(),
+         progress=lambda d: (len(d.get("owned_pickaxes", [])), _pickaxes_total()),
+         reward_coins=150_000, reward_xp=200),
+
+    # ───────────── ⚔️ ОХОТА НА БОССОВ (6) ─────────────
+    _ach("hunt_first_hit", "🗡", "Первая кровь",
+         "Нанеси первый удар боссу",
+         "hunt",
+         lambda d: d.get("stats_boss_hits", 0) >= 1,
+         progress=lambda d: (d.get("stats_boss_hits", 0), 1),
+         reward_coins=1_000, reward_xp=10),
+
+    _ach("hunt_first_kill", "💀", "Охотник",
+         "Убей своего первого босса",
+         "hunt",
+         lambda d: d.get("stats_boss_kills", 0) >= 1,
+         progress=lambda d: (d.get("stats_boss_kills", 0), 1),
+         reward_coins=10_000, reward_xp=50),
+
+    _ach("hunt_kills_10", "⚔️", "Опытный охотник",
+         "Убей 10 боссов",
+         "hunt",
+         lambda d: d.get("stats_boss_kills", 0) >= 10,
+         progress=lambda d: (d.get("stats_boss_kills", 0), 10),
+         reward_coins=50_000, reward_xp=150),
+
+    _ach("hunt_kills_100", "☠️", "Гроза боссов",
+         "Убей 100 боссов",
+         "hunt",
+         lambda d: d.get("stats_boss_kills", 0) >= 100,
+         progress=lambda d: (d.get("stats_boss_kills", 0), 100),
+         reward_coins=500_000, reward_xp=600),
+
+    _ach("hunt_first_sword", "🗡", "Вооружён",
+         "Купи свой первый меч",
+         "hunt",
+         lambda d: len(d.get("owned_swords", [])) >= 1,
+         progress=lambda d: (len(d.get("owned_swords", [])), 1),
+         reward_coins=2_000, reward_xp=20),
+
+    _ach("hunt_all_swords", "🏆", "Коллекционер клинков",
+         "Собери все мечи в арсенале",
+         "hunt",
+         lambda d: len(d.get("owned_swords", [])) >= _swords_total(),
+         progress=lambda d: (len(d.get("owned_swords", [])), _swords_total()),
+         reward_coins=5_000_000, reward_xp=1000),
+
+    # ───────────── 🗡 АРСЕНАЛ: подарки/аренда (3) ─────────────
+    _ach("arsenal_gift", "🎁", "Щедрая рука",
+         "Подари или передай меч другому игроку",
+         "arsenal",
+         lambda d: d.get("stats_swords_gifted", 0) >= 1,
+         progress=lambda d: (d.get("stats_swords_gifted", 0), 1),
+         reward_coins=5_000, reward_xp=25),
+
+    _ach("arsenal_rent_out", "📤", "Арендодатель",
+         "Сдай меч в аренду другому игроку",
+         "arsenal",
+         lambda d: d.get("stats_swords_rented_out", 0) >= 1,
+         progress=lambda d: (d.get("stats_swords_rented_out", 0), 1),
+         reward_coins=5_000, reward_xp=25),
+
+    _ach("arsenal_rent_in", "📥", "Арендатор",
+         "Возьми меч в аренду у другого игрока",
+         "arsenal",
+         lambda d: d.get("stats_swords_rented_in", 0) >= 1,
+         progress=lambda d: (d.get("stats_swords_rented_in", 0), 1),
+         reward_coins=5_000, reward_xp=25),
+
+    # ───────────── 🤺 ДУЭЛИ (4) ─────────────
+    _ach("duel_first_win", "🥇", "Первая победа",
+         "Выиграй свою первую дуэль",
+         "duel",
+         lambda d: d.get("duel_wins", 0) >= 1,
+         progress=lambda d: (d.get("duel_wins", 0), 1),
+         reward_coins=5_000, reward_xp=30),
+
+    _ach("duel_wins_10", "🤺", "Дуэлянт",
+         "Выиграй 10 дуэлей",
+         "duel",
+         lambda d: d.get("duel_wins", 0) >= 10,
+         progress=lambda d: (d.get("duel_wins", 0), 10),
+         reward_coins=25_000, reward_xp=100),
+
+    _ach("duel_wins_50", "🗡️", "Мастер клинка",
+         "Выиграй 50 дуэлей",
+         "duel",
+         lambda d: d.get("duel_wins", 0) >= 50,
+         progress=lambda d: (d.get("duel_wins", 0), 50),
+         reward_coins=150_000, reward_xp=350),
+
+    _ach("duel_wins_100", "👊", "Непобедимый",
+         "Выиграй 100 дуэлей",
+         "duel",
+         lambda d: d.get("duel_wins", 0) >= 100,
+         progress=lambda d: (d.get("duel_wins", 0), 100),
+         reward_coins=500_000, reward_xp=800),
+
+    # ───────────── 🎁 КЕЙСЫ / АРТЕФАКТЫ (3) ─────────────
+    _ach("cases_first", "📦", "Искатель удачи",
+         "Открой свой первый кейс артефактов",
+         "cases",
+         lambda d: d.get("artifact_cases_opened", 0) >= 1,
+         progress=lambda d: (d.get("artifact_cases_opened", 0), 1),
+         reward_coins=3_000, reward_xp=20),
+
+    _ach("cases_25", "🎰", "Азартный игрок",
+         "Открой 25 кейсов артефактов",
+         "cases",
+         lambda d: d.get("artifact_cases_opened", 0) >= 25,
+         progress=lambda d: (d.get("artifact_cases_opened", 0), 25),
+         reward_coins=50_000, reward_xp=150),
+
+    _ach("cases_collection", "🏺", "Коллекционер артефактов",
+         "Собери 10 разных артефактов",
+         "cases",
+         lambda d: len(d.get("owned_artifacts", [])) >= 10,
+         progress=lambda d: (len(d.get("owned_artifacts", [])), 10),
+         reward_coins=300_000, reward_xp=400),
+
+    # ───────────── 🐾 ПИТОМЦЫ (3) ─────────────
+    _ach("pets_first", "🐣", "Друг найден",
+         "Получи своего первого питомца",
+         "pets",
+         lambda d: len(d.get("owned_pets", [])) >= 1,
+         progress=lambda d: (len(d.get("owned_pets", [])), 1),
+         reward_coins=3_000, reward_xp=20),
+
+    _ach("pets_5", "🐾", "Зоопарк",
+         "Собери 5 разных питомцев",
+         "pets",
+         lambda d: len(d.get("owned_pets", [])) >= 5,
+         progress=lambda d: (len(d.get("owned_pets", [])), 5),
+         reward_coins=40_000, reward_xp=120),
+
+    _ach("pets_all", "🦄", "Повелитель зверей",
+         "Собери всех питомцев",
+         "pets",
+         lambda d: len(d.get("owned_pets", [])) >= _pets_total(),
+         progress=lambda d: (len(d.get("owned_pets", [])), _pets_total()),
+         reward_coins=1_000_000, reward_xp=500),
+
+    # ───────────── 🏰 КЛАН (4) ─────────────
+    _ach("clan_join", "🤝", "Часть команды",
+         "Вступи в клан",
+         "clan",
+         lambda d: bool(d.get("clan_id")),
+         reward_coins=5_000, reward_xp=30),
+
+    _ach("clan_create", "🏰", "Основатель",
+         "Создай собственный клан",
+         "clan",
+         lambda d: bool(d.get("clan_created")),
+         reward_coins=20_000, reward_xp=80),
+
+    _ach("clan_treasury", "💰", "Меценат",
+         "Внеси монеты в казну клана",
+         "clan",
+         lambda d: d.get("clan_treasury_deposited", 0) >= 1,
+         progress=lambda d: (d.get("clan_treasury_deposited", 0), 1),
+         reward_coins=5_000, reward_xp=25),
+
+    _ach("clan_boss_damage", "🛡", "Клановый воин",
+         "Нанеси урон клановому боссу",
+         "clan",
+         lambda d: d.get("clan_boss_damage_total", 0) >= 1,
+         progress=lambda d: (d.get("clan_boss_damage_total", 0), 1),
+         reward_coins=10_000, reward_xp=50),
+
+    # ───────────── 👥 РЕФЕРАЛЫ (4) ─────────────
+    _ach("refs_1", "👤", "Пригласил друга",
+         "Пригласи 1 реферала",
+         "refs",
+         lambda d: d.get("ref_count", 0) >= 1,
+         progress=lambda d: (d.get("ref_count", 0), 1),
+         reward_coins=5_000, reward_xp=30),
+
+    _ach("refs_5", "👥", "Рекрутер",
+         "Пригласи 5 рефералов",
+         "refs",
+         lambda d: d.get("ref_count", 0) >= 5,
+         progress=lambda d: (d.get("ref_count", 0), 5),
+         reward_coins=25_000, reward_xp=100),
+
+    _ach("refs_25", "📣", "Посол",
+         "Пригласи 25 рефералов",
+         "refs",
+         lambda d: d.get("ref_count", 0) >= 25,
+         progress=lambda d: (d.get("ref_count", 0), 25),
+         reward_coins=150_000, reward_xp=300),
+
+    _ach("refs_100", "🌍", "Легенда рефералки",
+         "Пригласи 100 рефералов",
+         "refs",
+         lambda d: d.get("ref_count", 0) >= 100,
+         progress=lambda d: (d.get("ref_count", 0), 100),
+         reward_coins=1_000_000, reward_xp=800),
+
+    # ───────────── 💎 ДОНАТ (2) ─────────────
+    _ach("donate_first", "💎", "Спонсор",
+         "Соверши первую покупку доната",
+         "donate",
+         lambda d: d.get("donate_purchases", 0) >= 1,
+         progress=lambda d: (d.get("donate_purchases", 0), 1),
+         reward_coins=20_000, reward_xp=50),
+
+    _ach("donate_vip", "👑", "Элита",
+         "Получи VIP-статус",
+         "donate",
+         lambda d: bool(d.get("is_vip")) or d.get("vip_until", 0) > int(_time.time()),
+         reward_coins=50_000, reward_xp=100),
+
+    # ───────────── 🏦 ВКЛАДЫ (2) ─────────────
+    _ach("deposit_first_open", "🏦", "Инвестор",
+         "Открой свой первый вклад",
+         "deposit",
+         lambda d: d.get("deposits_opened", 0) >= 1,
+         progress=lambda d: (d.get("deposits_opened", 0), 1),
+         reward_coins=5_000, reward_xp=25),
+
+    _ach("deposit_first_claim", "💹", "Терпеливый капиталист",
+         "Забери созревший вклад",
+         "deposit",
+         lambda d: d.get("deposits_claimed", 0) >= 1,
+         progress=lambda d: (d.get("deposits_claimed", 0), 1),
+         reward_coins=10_000, reward_xp=40),
+
+    # ───────────── 🎯 РАЗНОЕ (4) ─────────────
+    _ach("misc_onboarded", "🚪", "Добро пожаловать",
+         "Пройди обучение и начни игру",
+         "misc",
+         lambda d: bool(d.get("onboarded")),
+         reward_coins=500, reward_xp=5),
+
+    _ach("misc_promo", "🎟", "Охотник за скидками",
+         "Активируй промокод",
+         "misc",
+         lambda d: d.get("promo_activations", 0) >= 1,
+         progress=lambda d: (d.get("promo_activations", 0), 1),
+         reward_coins=1_000, reward_xp=10),
+
+    _ach("misc_daily_7", "📅", "Верный игрок",
+         "Забирай ежедневный бонус 7 дней подряд",
+         "misc",
+         lambda d: d.get("daily_streak", 0) >= 7,
+         progress=lambda d: (d.get("daily_streak", 0), 7),
+         reward_coins=15_000, reward_xp=60),
+
+    _ach("misc_leaderboard_top10", "🏅", "Топ игрок",
+         "Войди в топ-10 таблицы лидеров",
+         "misc",
+         lambda d: bool(d.get("was_in_top10")),
+         reward_coins=200_000, reward_xp=300),
+]
+
+assert len(ACHIEVEMENTS) == 50, f"Ожидалось 50 достижений, а получилось {len(ACHIEVEMENTS)}"
+
+ACHIEVEMENTS_BY_ID = {a["id"]: a for a in ACHIEVEMENTS}
+
+
+# ============================================================
+#  ЛОГИКА
+# ============================================================
+
+def check_achievements(data: dict) -> list[dict]:
+    """
+    Проверяет ВСЕ ещё не открытые достижения игрока.
+    При выполнении условия: добавляет id в data["achievements_unlocked"],
+    начисляет reward_coins/reward_xp прямо в data и возвращает список
+    только что открытых достижений (dict'ов из ACHIEVEMENTS).
+
+    Вызывать после любого действия, способного продвинуть прогресс,
+    ПЕРЕД save_user(...).
+    """
+    unlocked = data.setdefault("achievements_unlocked", [])
+    unlocked_set = set(unlocked)
+    newly = []
+
+    for ach in ACHIEVEMENTS:
+        if ach["id"] in unlocked_set:
+            continue
+        try:
+            done = bool(ach["check"](data))
+        except Exception:
+            done = False
+        if not done:
+            continue
+
+        unlocked.append(ach["id"])
+        unlocked_set.add(ach["id"])
+
+        if ach["reward_coins"]:
+            data["balance"] = data.get("balance", 0) + ach["reward_coins"]
+        if ach["reward_xp"]:
+            data["xp"] = data.get("xp", 0) + ach["reward_xp"]
+
+        newly.append(ach)
+
+    return newly
+
+
+def get_progress(data: dict, ach: dict) -> tuple[int, int] | None:
+    """Текущий прогресс/цель для достижения, если оно числовое. Иначе None."""
+    if not ach.get("progress"):
+        return None
+    try:
+        cur, target = ach["progress"](data)
+        return int(cur), int(target)
+    except Exception:
+        return None
+
+
+def _progress_bar(cur: int, target: int, length: int = 10) -> str:
+    if target <= 0:
+        return ""
+    pct = max(0.0, min(1.0, cur / target))
+    filled = int(round(pct * length))
+    return "▰" * filled + "▱" * (length - filled)
+
+
+# ============================================================
+#  ТЕКСТЫ / UI
+# ============================================================
+
+def achievement_unlocked_text(ach: dict, lang: str = "ru") -> str:
+    name = ach["name_en"] if lang == "en" else ach["name"]
+    desc = ach["desc_en"] if lang == "en" else ach["desc"]
+    reward_lines = []
+    if ach["reward_coins"]:
+        reward_lines.append(f'+{ach["reward_coins"]:,}'.replace(",", " ") + " монет" if lang == "ru"
+                             else f'+{ach["reward_coins"]:,} coins'.replace(",", ","))
+    if ach["reward_xp"]:
+        reward_lines.append(f'+{ach["reward_xp"]} опыта' if lang == "ru" else f'+{ach["reward_xp"]} XP')
+    reward_str = " · ".join(reward_lines)
+
+    if lang == "en":
+        return (
+            f'🏆 <b><i>ACHIEVEMENT UNLOCKED!</i></b>\n\n'
+            f'{ach["emoji"]} <b><i>{name}</i></b>\n'
+            f'<blockquote>{desc}</blockquote>'
+            + (f'\n<b><i>Reward: {reward_str}</i></b>' if reward_str else "")
+        )
+    return (
+        f'🏆 <b><i>ДОСТИЖЕНИЕ ПОЛУЧЕНО!</i></b>\n\n'
+        f'{ach["emoji"]} <b><i>{name}</i></b>\n'
+        f'<blockquote>{desc}</blockquote>'
+        + (f'\n<b><i>Награда: {reward_str}</i></b>' if reward_str else "")
+    )
+
+
+def achievements_summary_line(data: dict, lang: str = "ru") -> str:
+    unlocked = len(data.get("achievements_unlocked", []))
+    total = len(ACHIEVEMENTS)
+    if lang == "en":
+        return f'🏆 <b><i>Achievements: {unlocked}/{total}</i></b>'
+    return f'🏆 <b><i>Достижения: {unlocked}/{total}</i></b>'
+
+
+def achievements_list_text(data: dict, lang: str = "ru", category: str | None = None) -> str:
+    """
+    Полный текст списка достижений (сгруппирован по категориям).
+    Если category указана — только эта категория.
+    """
+    unlocked_set = set(data.get("achievements_unlocked", []))
+    cats = [category] if category else list(CATEGORIES.keys())
+
+    lines = [achievements_summary_line(data, lang), ""]
+
+    for cat in cats:
+        cat_info = CATEGORIES.get(cat)
+        if not cat_info:
+            continue
+        cat_name = cat_info["name_en"] if lang == "en" else cat_info["name"]
+        items = [a for a in ACHIEVEMENTS if a["category"] == cat]
+        if not items:
+            continue
+        lines.append(f'{cat_info["emoji"]} <b><i>{cat_name}</i></b>')
+        for ach in items:
+            done = ach["id"] in unlocked_set
+            mark = "✅" if done else "🔒"
+            name = ach["name_en"] if lang == "en" else ach["name"]
+            row = f'{mark} {ach["emoji"]} <b><i>{name}</i></b>'
+            if not done:
+                prog = get_progress(data, ach)
+                if prog:
+                    cur, target = prog
+                    cur_c = min(cur, target)
+                    row += f'\n   <i>{_progress_bar(cur_c, target)} {cur_c}/{target}</i>'
+                else:
+                    desc = ach["desc_en"] if lang == "en" else ach["desc"]
+                    row += f'\n   <i>{desc}</i>'
+            lines.append(row)
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+
+def achievements_keyboard(lang: str = "ru"):
+    """Инлайн-клавиатура выбора категории. Требует aiogram (импортируется лениво)."""
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    builder = InlineKeyboardBuilder()
+    for cat, info in CATEGORIES.items():
+        name = info["name_en"] if lang == "en" else info["name"]
+        builder.button(text=f'{info["emoji"]} {name}', callback_data=f"ach_cat_{cat}")
+    builder.button(text="Все" if lang == "ru" else "All", callback_data="ach_cat_all")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+# ============================================================
+#  ПРИМЕР ХЕНДЛЕРА (скопируйте в mainhelp.py и раскомментируйте,
+#  поправив импорты под свой проект)
+# ============================================================
+#
+# from achieves import achievements_list_text, achievements_keyboard
+#
+# @dp.message(Command("достижения", "ачивки", "achievements", "ach"))
+# @dp.message(_text_in("достижения", "ачивки", "achievements", "ach"))
+# async def cmd_achievements(message: Message):
+#     u    = get_or_create_user(message.from_user)
+#     lang = get_lang(u)
+#     track_user(message.from_user.id)
+#     if await _check_onboarded(message, u):
+#         return
+#     await message.reply(
+#         achievements_list_text(u, lang),
+#         parse_mode="HTML",
+#         reply_markup=achievements_keyboard(lang),
+#     )
+#
+# И в handle_callback (mainhelp.py) добавить обработку cd.startswith("ach_cat_")
+# аналогично остальным кнопкам категорий.
