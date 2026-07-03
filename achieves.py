@@ -1082,20 +1082,26 @@ def achievements_menu_keyboard(lang: str = "ru"):
     Клавиатура ГЛАВНОГО экрана достижений (уровень 0): кнопки всех разделов
     + выход в главное меню бота. Требует aiogram (импортируется лениво).
 
-    Кнопка "В меню" несёт кастомный премиум-эмодзи через icon_custom_emoji_id
-    (Bot API 9.4+, работает только если у бота-владельца активен Telegram
-    Premium — иначе Telegram просто покажет кнопку без иконки, обычный
-    текстовый fallback "🔙" в самом тексте кнопки остаётся всегда).
+    Иконки кнопок — только через icon_custom_emoji_id (Bot API 9.4+, нужен
+    Telegram Premium у бота-владельца): у каждого раздела — тот же премиум-
+    эмодзи, что и у его достижений (CATEGORY_ICON_EMOJI), у кнопки "В меню" —
+    btn_menu. Обычных emoji-символов в тексте кнопок больше нет — без Premium
+    иконка просто не покажется, кнопка останется с одним текстом.
     """
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
 
-    menu_lbl = "🔙 Menu" if lang == "en" else "🔙 В меню"
+    menu_lbl = "Menu" if lang == "en" else "В меню"
 
     builder = InlineKeyboardBuilder()
     for cat, info in CATEGORIES.items():
         name = info["name_en"] if lang == "en" else info["name"]
-        builder.button(text=f'{info["emoji"]} {name}', callback_data=f"ach_cat_{cat}")
+        icon_key = CATEGORY_ICON_EMOJI.get(cat)
+        builder.button(
+            text=name,
+            callback_data=f"ach_cat_{cat}",
+            icon_custom_emoji_id=CUSTOM_EMOJI_IDS.get(icon_key) if icon_key else None,
+        )
     builder.adjust(2)
 
     builder.row(InlineKeyboardButton(
@@ -1110,15 +1116,15 @@ def achievements_menu_keyboard(lang: str = "ru"):
 def achievements_keyboard(lang: str = "ru", category: str | None = None, page: int = 0):
     """
     Клавиатура ВНУТРИ РАЗДЕЛА (уровень 1): одна строка пагинации из 3 кнопок —
-    "◀ Назад", "X/Y" (просто индикатор текущей страницы, листание по кругу)
-    и "Вперёд ▶" — и отдельной строкой ниже "🔙 Разделы", которая возвращает
+    "Назад", "X/Y" (просто индикатор текущей страницы, листание по кругу)
+    и "Вперёд" — и отдельной строкой ниже "Разделы", которая возвращает
     в меню достижений (callback "ach_menu"). Кнопки других разделов здесь не
     показываются. Требует aiogram (импортируется лениво).
 
-    Кнопки "Назад"/"Вперёд"/"Разделы" несут кастомные премиум-эмодзи через
-    icon_custom_emoji_id (Bot API 9.4+, нужен Telegram Premium у бота-владельца —
-    без него Telegram просто покажет кнопку без иконки, обычный текстовый
-    fallback ◀/▶/🔙 в тексте кнопки остаётся всегда).
+    Иконки кнопок — только через icon_custom_emoji_id (Bot API 9.4+, нужен
+    Telegram Premium у бота-владельца — без него иконка просто не покажется,
+    кнопка останется с одним текстом). Обычных emoji-символов в тексте
+    кнопок больше нет.
     """
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
@@ -1128,7 +1134,7 @@ def achievements_keyboard(lang: str = "ru", category: str | None = None, page: i
 
     back_lbl = "Назад" if lang == "ru" else "Back"
     fwd_lbl  = "Вперёд" if lang == "ru" else "Next"
-    to_menu_lbl = "🔙 Разделы" if lang == "ru" else "🔙 Categories"
+    to_menu_lbl = "Разделы" if lang == "ru" else "Categories"
 
     total_pages = category_page_count(category)
     page = max(0, min(page, total_pages - 1))
@@ -1140,13 +1146,13 @@ def achievements_keyboard(lang: str = "ru", category: str | None = None, page: i
         next_page = (page + 1) % total_pages
         builder.row(
             InlineKeyboardButton(
-                text=f'◀ {back_lbl}',
+                text=back_lbl,
                 callback_data=f"ach_page_{category}_{prev_page}",
                 icon_custom_emoji_id=CUSTOM_EMOJI_IDS["btn_back"],
             ),
             InlineKeyboardButton(text=f'{page + 1}/{total_pages}', callback_data="ach_noop"),
             InlineKeyboardButton(
-                text=f'{fwd_lbl} ▶',
+                text=fwd_lbl,
                 callback_data=f"ach_page_{category}_{next_page}",
                 icon_custom_emoji_id=CUSTOM_EMOJI_IDS["btn_next"],
             ),
