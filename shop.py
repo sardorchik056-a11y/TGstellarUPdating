@@ -1911,7 +1911,7 @@ def unified_inventory_text(data: dict, lang: str = "ru") -> str:
     lbl_hint = (
         "\n<blockquote><i>"
         "Use: <code>use #N</code> or <code>-use #N</code>\n"
-        "Cancel: <code>/stop #N</code>\n"
+        "Cancel: <code>/boost</code>\n"
         "Sell: <code>/sell #N</code> or <code>/sell #N 5</code>\n"
         "Transfer: <code>отп #N</code> or <code>отп #N 3 @username</code>\n"
         "Open cases: <code>open #1 5</code> or <code>/open #2 10</code>"
@@ -1919,7 +1919,7 @@ def unified_inventory_text(data: dict, lang: str = "ru") -> str:
         if lang == "en" else
         "\n<blockquote><i>"
         "Использовать: <code>исп #N</code> или <code>-use #N</code>\n"
-        "Отменить: <code>/стоп #N</code>\n"
+        "Отменить: <code>/буст </code>\n"
         "Продать: <code>/sell #N</code> или <code>/sell #N 5</code>\n"
         "Передать: <code>отп #N</code> или <code>отп #N 3 @username</code>\n"
         "Открыть кейсы: <code>открыть #1 5</code> или <code>/купить #2 10</code>"
