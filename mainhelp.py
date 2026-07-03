@@ -516,11 +516,6 @@ def main_menu_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=t(lang, "btn_leaders"),  callback_data="leaders",  icon_custom_emoji_id=EMOJI_LEADERS),
         InlineKeyboardButton(text=t(lang, "btn_settings"), callback_data="settings", icon_custom_emoji_id=EMOJI_SETTINGS),
     )
-    builder.row(InlineKeyboardButton(
-        text="💎 Топ кристаллов" if lang == "ru" else "💎 Crystal Top",
-        callback_data="crystop_alltime",
-        icon_custom_emoji_id="5427168083074628963",
-    ))
     return builder.as_markup()
 
 
