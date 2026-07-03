@@ -566,6 +566,21 @@ def _progress_bar(cur: int, target: int, length: int = 10) -> str:
     return "▰" * filled + "▱" * (length - filled)
 
 
+def _fmt_num(n: int) -> str:
+    """1234567 -> '1 234 567' — единый формат чисел во всех текстах модуля."""
+    return f"{n:,}".replace(",", " ")
+
+
+def _fmt_reward(ach: dict, lang: str = "ru") -> str:
+    """Собирает строку награды вида '+10 000 монет · +50 XP' (или пусто, если награды нет)."""
+    parts = []
+    if ach["reward_coins"]:
+        parts.append(f'+{_fmt_num(ach["reward_coins"])} {"монет" if lang == "ru" else "coins"}')
+    if ach["reward_xp"]:
+        parts.append(f'+{ach["reward_xp"]} {"опыта" if lang == "ru" else "XP"}')
+    return " · ".join(parts)
+
+
 # ============================================================
 #  ТЕКСТЫ / UI
 # ============================================================
@@ -573,44 +588,69 @@ def _progress_bar(cur: int, target: int, length: int = 10) -> str:
 def achievement_unlocked_text(ach: dict, lang: str = "ru") -> str:
     name = ach["name_en"] if lang == "en" else ach["name"]
     desc = ach["desc_en"] if lang == "en" else ach["desc"]
-    reward_lines = []
-    if ach["reward_coins"]:
-        reward_lines.append(f'+{ach["reward_coins"]:,}'.replace(",", " ") + " монет" if lang == "ru"
-                             else f'+{ach["reward_coins"]:,} coins'.replace(",", ","))
-    if ach["reward_xp"]:
-        reward_lines.append(f'+{ach["reward_xp"]} опыта' if lang == "ru" else f'+{ach["reward_xp"]} XP')
-    reward_str = " · ".join(reward_lines)
+    cat_info = CATEGORIES.get(ach["category"], {})
+    cat_name = cat_info.get("name_en" if lang == "en" else "name", "")
+    reward_str = _fmt_reward(ach, lang)
+
+    divider = "✦ ✦ ✦ ✦ ✦ ✦ ✦"
 
     if lang == "en":
-        return (
-            f'🏆 <b><i>ACHIEVEMENT UNLOCKED!</i></b>\n\n'
-            f'{ach["emoji"]} <b><i>{name}</i></b>\n'
-            f'<blockquote>{desc}</blockquote>'
-            + (f'\n<b><i>Reward: {reward_str}</i></b>' if reward_str else "")
-        )
-    return (
-        f'🏆 <b><i>ДОСТИЖЕНИЕ ПОЛУЧЕНО!</i></b>\n\n'
-        f'{ach["emoji"]} <b><i>{name}</i></b>\n'
-        f'<blockquote>{desc}</blockquote>'
-        + (f'\n<b><i>Награда: {reward_str}</i></b>' if reward_str else "")
-    )
+        lines = [
+            "🏆 <b>ACHIEVEMENT UNLOCKED</b>",
+            divider,
+            f'{ach["emoji"]} <b>{name}</b>',
+            f'<i>{desc}</i>',
+        ]
+        if cat_name:
+            lines.append(f'<code>#{cat_name}</code>')
+        if reward_str:
+            lines += [divider, f'🎁 <b>Reward:</b> {reward_str}']
+        else:
+            lines.append(divider)
+        return "\n".join(lines)
+
+    lines = [
+        "🏆 <b>ДОСТИЖЕНИЕ ПОЛУЧЕНО</b>",
+        divider,
+        f'{ach["emoji"]} <b>{name}</b>',
+        f'<i>{desc}</i>',
+    ]
+    if cat_name:
+        lines.append(f'<code>#{cat_name}</code>')
+    if reward_str:
+        lines += [divider, f'🎁 <b>Награда:</b> {reward_str}']
+    else:
+        lines.append(divider)
+    return "\n".join(lines)
+
+
+DEFAULT_CATEGORY = "money"  # раздел, который показывается, если пользователь ещё ничего не выбрал
 
 
 def achievements_summary_line(data: dict, lang: str = "ru") -> str:
     unlocked = len(data.get("achievements_unlocked", []))
     total = len(ACHIEVEMENTS)
+    bar = _progress_bar(unlocked, total, length=12)
     if lang == "en":
-        return f'🏆 <b><i>Achievements: {unlocked}/{total}</i></b>'
-    return f'🏆 <b><i>Достижения: {unlocked}/{total}</i></b>'
+        return f'🏆 <b>Achievements — {unlocked}/{total}</b>\n{bar}'
+    return f'🏆 <b>Достижения — {unlocked}/{total}</b>\n{bar}'
 
 
 def achievements_list_text(data: dict, lang: str = "ru", category: str | None = None) -> str:
     """
-    Полный текст списка достижений (сгруппирован по категориям).
-    Если category указана — только эта категория.
+    Текст списка достижений.
+
+    По умолчанию (category не передана) показывается ТОЛЬКО один раздел —
+    DEFAULT_CATEGORY ("money" / "Богатство"), а не все 50 ачивок разом.
+    Чтобы показать конкретный раздел — передайте его id (см. CATEGORIES).
+    Чтобы показать вообще все разделы одним списком — передайте category="all".
     """
+    if category is None:
+        category = DEFAULT_CATEGORY
+
     unlocked_set = set(data.get("achievements_unlocked", []))
-    cats = [category] if category else list(CATEGORIES.keys())
+    show_all = category == "all"
+    cats = list(CATEGORIES.keys()) if show_all else [category]
 
     lines = [achievements_summary_line(data, lang), ""]
 
@@ -618,27 +658,39 @@ def achievements_list_text(data: dict, lang: str = "ru", category: str | None = 
         cat_info = CATEGORIES.get(cat)
         if not cat_info:
             continue
-        cat_name = cat_info["name_en"] if lang == "en" else cat_info["name"]
         items = [a for a in ACHIEVEMENTS if a["category"] == cat]
         if not items:
             continue
-        lines.append(f'{cat_info["emoji"]} <b><i>{cat_name}</i></b>')
+
+        cat_name = cat_info["name_en"] if lang == "en" else cat_info["name"]
+        cat_done = sum(1 for a in items if a["id"] in unlocked_set)
+
+        lines.append(f'{cat_info["emoji"]} <b>{cat_name}</b>  ({cat_done}/{len(items)})')
+        lines.append("―――――――――――――――――")
+
         for ach in items:
             done = ach["id"] in unlocked_set
             mark = "✅" if done else "🔒"
             name = ach["name_en"] if lang == "en" else ach["name"]
-            row = f'{mark} {ach["emoji"]} <b><i>{name}</i></b>'
+            desc = ach["desc_en"] if lang == "en" else ach["desc"]
+
+            lines.append(f'{mark} {ach["emoji"]} <b>{name}</b>')
+            lines.append(f'    <i>{desc}</i>')
+
             if not done:
                 prog = get_progress(data, ach)
                 if prog:
                     cur, target = prog
                     cur_c = min(cur, target)
-                    row += f'\n   <i>{_progress_bar(cur_c, target)} {cur_c}/{target}</i>'
-                else:
-                    desc = ach["desc_en"] if lang == "en" else ach["desc"]
-                    row += f'\n   <i>{desc}</i>'
-            lines.append(row)
-        lines.append("")
+                    lines.append(f'    {_progress_bar(cur_c, target)}  {_fmt_num(cur_c)}/{_fmt_num(target)}')
+                reward_str = _fmt_reward(ach, lang)
+                if reward_str:
+                    lines.append(f'    🎁 {reward_str}')
+
+            lines.append("")
+
+        if show_all:
+            lines.append("")
 
     return "\n".join(lines).strip()
 
