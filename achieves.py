@@ -1,6 +1,6 @@
 # ============================================================
 #  achieves.py  —  Система достижений
-#  50 достижений: деньги, уровень, шахта, охота на боссов,
+#  81 достижение: деньги, уровень, шахта, охота на боссов,
 #  арсенал (мечи), дуэли, кейсы/артефакты, питомцы, клан,
 #  рефералы, донат, вклады, разное.
 # ============================================================
@@ -41,6 +41,27 @@
 #    mine_total_ore_collected, mine_total_sold, mine_lifetime_ore_counts
 #  Ничего доинкрементировать не нужно — collect_mine/sell_all_ores/stop_mine
 #  в miner.py уже обновляют эти поля сами.
+#
+#  🤺 ДУЭЛИ — раздел подключён к реальным полям duel.py (15 достижений,
+#  больше не заглушка). Что уже работает из коробки:
+#    duel_owned_gear, duel_equipped     — ведёт сам duel.py через
+#                                          apply_gear_purchase/apply_gear_equip
+#    duel_owned_skills                  — сам duel.py только рисует кнопку
+#                                          покупки (callback "duel_skill_buy:{key}"),
+#                                          а append в список — в хендлере этого
+#                                          callback у вас в mainhelp.py (его в
+#                                          этом файле нет). Проверьте, что там
+#                                          user_data.setdefault("duel_owned_skills", []).append(skill_key)
+#                                          выполняется после успешной оплаты —
+#                                          get_owned_skills() из duel.py уже
+#                                          учитывает и бесплатные базовые навыки.
+#  Единственное, чего в duel.py нет вообще (это чистый UI/шоп-модуль без движка боя):
+#    duel_wins, duel_losses  — инкрементируйте по +1 там, где резолвится исход
+#                               дуэли (движок боя/хендлер завершения дуэли).
+#                               Пока это не сделано, все 15 duel-ачивок будут
+#                               просто висеть на 0/цель — сам механизм готов
+#                               и заработает сразу, как только счётчики
+#                               начнут расти.
 #
 #  НОВЫЕ счётчики, которых в data пока нет — модуль просто вернёт для них
 #  прогресс 0/цель, пока вы не начнёте их инкрементировать в нужных местах
@@ -211,6 +232,49 @@ def _max_level() -> int:
         return 100
 
 
+def _duel_gear_total() -> int:
+    try:
+        from duel import GEAR_CATALOG
+        return len(GEAR_CATALOG)
+    except Exception:
+        return 125  # запасное значение — 5 слотов × 25 уровней в GEAR_CATALOG
+
+
+def _duel_skills_total() -> int:
+    try:
+        from duel import SKILLS
+        return len(SKILLS)
+    except Exception:
+        return 22  # запасное значение — поправьте под свой список навыков
+
+
+def _duel_gear_slots_total() -> int:
+    try:
+        from duel import GEAR_SLOTS_ORDER
+        return len(GEAR_SLOTS_ORDER)
+    except Exception:
+        return 5  # helmet/armor/gloves/pants/boots
+
+
+def _duel_owned_skills_count(d: dict) -> int:
+    """Сколько навыков реально доступно игроку (базовые бесплатные + купленные)."""
+    try:
+        from duel import get_owned_skills
+        return len(get_owned_skills(d))
+    except Exception:
+        return len(d.get("duel_owned_skills", []))
+
+
+def _duel_equipped_slots_count(d: dict) -> int:
+    """Сколько слотов снаряжения экипировано одновременно (макс. 5)."""
+    try:
+        from duel import GEAR_SLOTS_ORDER
+    except Exception:
+        GEAR_SLOTS_ORDER = ["helmet", "armor", "gloves", "pants", "boots"]
+    equipped = d.get("duel_equipped", {}) or {}
+    return sum(1 for slot in GEAR_SLOTS_ORDER if equipped.get(slot))
+
+
 # ─── Вспомогательный конструктор ───
 
 def _ach(id_, emoji, name, desc, category, check, progress=None,
@@ -313,7 +377,7 @@ def _cemoji(key: str, fallback: str) -> str:
 
 
 # ============================================================
-#  СПИСОК ДОСТИЖЕНИЙ (50 шт.)
+#  СПИСОК ДОСТИЖЕНИЙ (81 шт.)
 # ============================================================
 
 ACHIEVEMENTS = [
@@ -632,7 +696,9 @@ ACHIEVEMENTS = [
          progress=lambda d: (d.get("stats_swords_rented_in", 0), 1),
          reward_coins=5_000, reward_xp=25),
 
-    # ───────────── 🤺 ДУЭЛИ (4) ─────────────
+    # ───────────── 🤺 ДУЭЛИ (15) ─────────────
+
+    # — Победы —
     _ach("duel_first_win", "🥇", "Первая победа",
          "Выиграй свою первую дуэль",
          "duel",
@@ -654,12 +720,92 @@ ACHIEVEMENTS = [
          progress=lambda d: (d.get("duel_wins", 0), 50),
          reward_coins=150_000, reward_xp=350),
 
-    _ach("duel_wins_100", "👊", "Непобедимый",
+    _ach("duel_wins_100", "👊", "Ветеран арены",
          "Выиграй 100 дуэлей",
          "duel",
          lambda d: d.get("duel_wins", 0) >= 100,
          progress=lambda d: (d.get("duel_wins", 0), 100),
          reward_coins=500_000, reward_xp=800),
+
+    _ach("duel_wins_500", "🏟", "Гладиатор",
+         "Выиграй 500 дуэлей",
+         "duel",
+         lambda d: d.get("duel_wins", 0) >= 500,
+         progress=lambda d: (d.get("duel_wins", 0), 500),
+         reward_coins=2_500_000, reward_xp=2000),
+
+    _ach("duel_wins_1000", "🏆", "Легенда арены",
+         "Выиграй 1 000 дуэлей",
+         "duel",
+         lambda d: d.get("duel_wins", 0) >= 1_000,
+         progress=lambda d: (d.get("duel_wins", 0), 1_000),
+         reward_coins=8_000_000, reward_xp=5000),
+
+    _ach("duel_title_max", "👑", "Вечный победитель",
+         "Достигни высшего титула дуэлянта — «Вечный победитель» (700 побед)",
+         "duel",
+         lambda d: d.get("duel_wins", 0) >= 700,
+         progress=lambda d: (d.get("duel_wins", 0), 700),
+         reward_coins=15_000_000, reward_xp=6000),
+
+    # — Опыт (в том числе поражения — это тоже часть пути) —
+    _ach("duel_first_loss", "🩹", "Первый урок",
+         "Проиграй свою первую дуэль — поражения тоже учат",
+         "duel",
+         lambda d: d.get("duel_losses", 0) >= 1,
+         progress=lambda d: (d.get("duel_losses", 0), 1),
+         reward_coins=2_000, reward_xp=15),
+
+    _ach("duel_battles_100", "⚔️", "Ветеран боёв",
+         "Проведи 100 дуэлей (победы + поражения)",
+         "duel",
+         lambda d: d.get("duel_wins", 0) + d.get("duel_losses", 0) >= 100,
+         progress=lambda d: (d.get("duel_wins", 0) + d.get("duel_losses", 0), 100),
+         reward_coins=100_000, reward_xp=250),
+
+    _ach("duel_battles_500", "🎖", "Закалённый боец",
+         "Проведи 500 дуэлей (победы + поражения)",
+         "duel",
+         lambda d: d.get("duel_wins", 0) + d.get("duel_losses", 0) >= 500,
+         progress=lambda d: (d.get("duel_wins", 0) + d.get("duel_losses", 0), 500),
+         reward_coins=1_000_000, reward_xp=1200),
+
+    # — Снаряжение —
+    _ach("duel_gear_first", "🎽", "Первая броня",
+         "Приобрети первый предмет снаряжения для дуэлей",
+         "duel",
+         lambda d: len(d.get("duel_owned_gear", [])) >= 1,
+         progress=lambda d: (len(d.get("duel_owned_gear", [])), 1),
+         reward_coins=3_000, reward_xp=20),
+
+    _ach("duel_gear_full_set", "🛡️", "Полный комплект",
+         "Экипируй все 5 слотов снаряжения одновременно",
+         "duel",
+         lambda d: _duel_equipped_slots_count(d) >= _duel_gear_slots_total(),
+         progress=lambda d: (_duel_equipped_slots_count(d), _duel_gear_slots_total()),
+         reward_coins=50_000, reward_xp=150),
+
+    _ach("duel_gear_collector", "🧰", "Коллекционер снаряжения",
+         "Приобрети всё доступное снаряжение для дуэлей",
+         "duel",
+         lambda d: len(d.get("duel_owned_gear", [])) >= _duel_gear_total(),
+         progress=lambda d: (len(d.get("duel_owned_gear", [])), _duel_gear_total()),
+         reward_coins=5_000_000, reward_xp=2500),
+
+    # — Навыки —
+    _ach("duel_skill_first", "🔮", "Первое заклинание",
+         "Приобрети свой первый боевой навык",
+         "duel",
+         lambda d: len(d.get("duel_owned_skills", [])) >= 1,
+         progress=lambda d: (len(d.get("duel_owned_skills", [])), 1),
+         reward_coins=10_000, reward_xp=40),
+
+    _ach("duel_skills_all", "🧙", "Мастер всех искусств",
+         "Изучи все боевые навыки дуэлей",
+         "duel",
+         lambda d: _duel_owned_skills_count(d) >= _duel_skills_total(),
+         progress=lambda d: (_duel_owned_skills_count(d), _duel_skills_total()),
+         reward_coins=10_000_000, reward_xp=3000),
 
     # ───────────── 🎁 КЕЙСЫ / АРТЕФАКТЫ (3) ─────────────
     _ach("cases_first", "📦", "Искатель удачи",
@@ -818,7 +964,7 @@ ACHIEVEMENTS = [
          reward_coins=200_000, reward_xp=300),
 ]
 
-assert len(ACHIEVEMENTS) == 70, f"Ожидалось 70 достижений, а получилось {len(ACHIEVEMENTS)}"
+assert len(ACHIEVEMENTS) == 81, f"Ожидалось 81 достижение, а получилось {len(ACHIEVEMENTS)}"
 
 ACHIEVEMENTS_BY_ID = {a["id"]: a for a in ACHIEVEMENTS}
 
