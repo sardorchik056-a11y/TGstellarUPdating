@@ -585,6 +585,199 @@ def guide_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+# ════════════════════════════════════════════════════════════
+#  ПРИОРИТЕТНЫЙ ХЕНДЛЕР: состояния "ждём свободный текст от юзера"
+#  (промокод / цель дуэли / сумма вклада / текст кланов / рассылка админа)
+#
+#  ВАЖНО: зарегистрирован ПЕРВЫМ, до всех текстовых алиасов команд ниже.
+#  aiogram проверяет хендлеры в порядке регистрации и останавливается на
+#  первом совпавшем фильтре — значит если бы этот блок стоял в конце (как
+#  было раньше), любой ввод, случайно совпавший с зарезервированным словом
+#  ("клан", "шахта", "профиль" и т.п.), перехватывался бы более ранним
+#  хендлером-алиасом меню, а состояние ожидания ввода оставалось "висеть"
+#  (для кланов — даже в БД, так как _klan_*_pending хранится в самой
+#  записи юзера). Именно это приводило к тому, что часть заявок в клан
+#  не отправлялась: если юзер вводил текст заявки, совпавший с командным
+#  словом, вместо отправки заявки открывалось меню клана.
+# ════════════════════════════════════════════════════════════
+
+_MAIN_MENU_RESERVED_TEXTS = {
+    "🎮 меню", "🎮 menu", "⚔️ клан", "⚔️ clan", "🏙 город", "🏙 city",
+}
+
+
+async def _has_pending_text_input(message: Message) -> bool:
+    """True, если для этого юзера сейчас ожидается свободный текстовый ввод."""
+    if not message.text or message.text.startswith("/"):
+        return False
+    # Кнопки постоянного reply-меню — это однозначная навигация, а не данные
+    # для промокода/заявки/поиска и т.п. Не даём им "провалиться" в pending-ввод.
+    if message.text.strip().lower() in _MAIN_MENU_RESERVED_TEXTS:
+        return False
+    uid = message.from_user.id
+    if uid in ADMIN_IDS and is_in_rass(uid):
+        return True
+    if _promo_pending.get(uid):
+        return True
+    if _challenge_input_pending.get(uid):
+        return True
+    if uid in _cdl_input_pending:
+        return True
+    u = get_or_create_user(message.from_user)
+    if any(k in u for k in _KLAN_PENDING_KEYS):
+        return True
+    return False
+
+
+@dp.message(_has_pending_text_input)
+async def handle_pending_text_input(message: Message):
+    """Единая точка входа для всех состояний 'ждём текст от юзера'."""
+    uid  = message.from_user.id
+    u    = get_or_create_user(message.from_user)
+    lang = get_lang(u)
+
+    # ── Рассылка: FSM-ввод от админа ──
+    if uid in ADMIN_IDS and is_in_rass(uid):
+        if await rass_fsm_message(message, ADMIN_IDS):
+            return
+
+    # ── Ожидание ввода промокода ──
+    if _promo_pending.pop(uid, False):
+        promo_name = (message.text or "").strip()
+        if promo_name and u.get("onboarded", True):
+            lock = await _get_user_lock(uid)
+            async with lock:
+                u = get_or_create_user(message.from_user)
+                ok, reason, amount = activate_promo(promo_name, uid)
+                if ok:
+                    u["balance"] = u.get("balance", 0) + amount
+                    save_user(uid, u)
+                    await message.reply(promo_activate_text(amount, lang), parse_mode="HTML")
+                else:
+                    await message.reply(promo_error_text(reason, lang), parse_mode="HTML")
+        return
+
+    # ── Ожидание ввода цели вызова на дуэль ──
+    if _challenge_input_pending.pop(uid, False):
+        from database import get_user_by_id_or_username as _find_ch
+        target_raw = (message.text or "").strip().lstrip("@")
+        if not target_raw:
+            await message.reply("❌ Укажи ID или @юзернейм.", parse_mode="HTML")
+            return
+        target = _find_ch(target_raw)
+        if not target:
+            await message.reply("❌ Игрок не найден. Он должен хотя бы раз написать боту.", parse_mode="HTML")
+            return
+        if target["id"] == uid:
+            await message.reply("❌ Нельзя вызвать самого себя!", parse_mode="HTML")
+            return
+        if target["id"] in _active_battles:
+            await message.reply("❌ Этот игрок уже находится в бою.", parse_mode="HTML")
+            return
+        target_name = _esc(target.get("first_name") or target.get("username") or str(target["id"]))
+        # Создаём вызов
+        create_challenge(uid, target["id"], target_name)
+        # Уведомляем цель в ЛС
+        try:
+            await bot.send_message(
+                target["id"],
+                challenge_invite_text(u),
+                parse_mode="HTML",
+                reply_markup=challenge_invite_keyboard(uid),
+            )
+        except Exception:
+            await message.reply(
+                f"❌ Не удалось отправить уведомление <b>{target_name}</b> — возможно бот заблокирован.",
+                parse_mode="HTML"
+            )
+            cancel_challenge(uid)
+            return
+        await message.reply(
+            duel_challenge_sent_text(target_name),
+            parse_mode="HTML",
+            reply_markup=duel_challenge_sent_keyboard(),
+        )
+        return
+
+    # ── Ожидание ввода суммы для вклада ──
+    if uid in _cdl_input_pending:
+        dep_key  = _cdl_input_pending.pop(uid)   # сразу сбрасываем — больше не ждём
+        msg_info = _cdl_input_msg.pop(uid, None)
+        raw = (message.text or "").strip().replace(" ", "").replace("_", "")
+
+        async def _cdl_edit(text: str, kb=None):
+            """Редактирует бот-сообщение (окно ввода). НЕ удаляет сообщение юзера."""
+            if msg_info:
+                try:
+                    await bot.edit_message_text(
+                        text, chat_id=msg_info[0], message_id=msg_info[1],
+                        parse_mode="HTML", reply_markup=kb
+                    )
+                    return
+                except Exception as _e:
+                    if "message is not modified" in str(_e).lower():
+                        return
+            # Если окно недоступно — шлём новое
+            await bot.send_message(
+                msg_info[0] if msg_info else message.chat.id,
+                text, parse_mode="HTML", reply_markup=kb
+            )
+
+        if not raw.isdigit():
+            await _cdl_edit(
+                f'❌ <b>Некорректный ввод.</b>\nОткрой вклад снова и введи число.',
+                cdl_input_keyboard(dep_key)
+            )
+            return
+
+        amount = int(raw)
+        dep    = _CDL_DEPOSITS_BY_KEY.get(dep_key)
+        if dep is None:
+            return
+
+        lock = await _get_user_lock(uid)
+        async with lock:
+            u2  = get_or_create_user(message.from_user)
+            bal = u2.get("balance", 0)
+            if amount < dep["min"]:
+                await _cdl_edit(
+                    f'❌ <b>Минимум:</b> {format_amount(dep["min"])}\nОткрой вклад снова и введи сумму.',
+                    cdl_input_keyboard(dep_key)
+                )
+                return
+            if amount > bal:
+                await _cdl_edit(
+                    f'❌ <b>Не хватает монет.</b> Баланс: {format_amount(bal)}\nОткрой вклад снова и введи сумму.',
+                    cdl_input_keyboard(dep_key)
+                )
+                return
+
+        await _cdl_edit(
+            cdl_confirm_text(dep_key, amount),
+            cdl_confirm_keyboard(dep_key, amount)
+        )
+        return
+
+    # ── Ожидающие текстовые вводы для системы кланов (поиск/создание/кик/
+    #    депозит/вывод/заявка/привязка чата) ──
+    if await _handle_klan_text_input(message, u):
+        return
+
+
+def _clear_all_pending_inputs(uid: int, u: dict) -> None:
+    """Сбрасывает все состояния 'ждём текст от юзера' (промокод / цель дуэли /
+    сумма вклада / текстовые вводы кланов). Вызывается при явной навигации
+    через постоянные reply-кнопки (Меню/Клан/Город), чтобы клик по ним не
+    мог быть перепутан с ответом на предыдущий запрос ввода, и чтобы после
+    такого клика pending-флаги не оставались висеть."""
+    _promo_pending.pop(uid, None)
+    _challenge_input_pending.pop(uid, None)
+    _cdl_input_pending.pop(uid, None)
+    _cdl_input_msg.pop(uid, None)
+    if _clear_klan_pending(u):
+        save_user(uid, u)
+
+
 @dp.message(Command("guide", "гайд", "Guide", "Гайд"))
 @dp.message(_text_in("гайд", "guide", "/guide", "/гайд", "как играть", "/как играть"))
 async def cmd_guide(message: Message):
@@ -1171,6 +1364,7 @@ async def reply_btn_menu(message: Message):
     u    = _gou(message.from_user)
     lang = get_lang(u)
     track_user(uid)
+    _clear_all_pending_inputs(uid, u)
 
     # Если онбординг (капча/язык) ещё не пройден — продолжаем его
     if not u.get("onboarded", True):
@@ -1196,6 +1390,7 @@ async def reply_btn_clan(message: Message):
     track_user(uid)
 
     if await _check_onboarded(message, u): return
+    _clear_all_pending_inputs(uid, u)
 
     await message.reply(
         klan_main_text(lang),
@@ -1212,6 +1407,7 @@ async def reply_btn_city(message: Message):
     track_user(uid)
 
     if await _check_onboarded(message, u): return
+    _clear_all_pending_inputs(uid, u)
 
     await cmd_city_profile(message)
 
@@ -2559,27 +2755,6 @@ async def handle_captcha_answer(message: Message):
         await cmd_city_shop(message)
         return
 
-    # ── Рассылка: FSM-ввод от админа ──
-    if uid in ADMIN_IDS and is_in_rass(uid):
-        if await rass_fsm_message(message, ADMIN_IDS):
-            return
-
-    # ── Ожидание ввода промокода ──
-    if _promo_pending.pop(uid, False):
-        promo_name = (message.text or "").strip()
-        if promo_name and u.get("onboarded", True):
-            lock = await _get_user_lock(uid)
-            async with lock:
-                u = get_or_create_user(message.from_user)
-                ok, reason, amount = activate_promo(promo_name, uid)
-                if ok:
-                    u["balance"] = u.get("balance", 0) + amount
-                    save_user(uid, u)
-                    await message.reply(promo_activate_text(amount, lang), parse_mode="HTML")
-                else:
-                    await message.reply(promo_error_text(reason, lang), parse_mode="HTML")
-        return
-
     # ── Текстовые алиасы промокода: «промо stars», «promo stars» ──
     if u.get("onboarded", True):
         _txt = (message.text or "").strip()
@@ -2599,111 +2774,6 @@ async def handle_captcha_answer(message: Message):
                         else:
                             await message.reply(promo_error_text(reason, lang), parse_mode="HTML")
                 return
-
-    # ── Ожидание ввода цели вызова на дуэль ──
-    if _challenge_input_pending.pop(uid, False):
-        from database import get_user_by_id_or_username as _find_ch
-        target_raw = (message.text or "").strip().lstrip("@")
-        if not target_raw:
-            await message.reply("❌ Укажи ID или @юзернейм.", parse_mode="HTML")
-            return
-        target = _find_ch(target_raw)
-        if not target:
-            await message.reply("❌ Игрок не найден. Он должен хотя бы раз написать боту.", parse_mode="HTML")
-            return
-        if target["id"] == uid:
-            await message.reply("❌ Нельзя вызвать самого себя!", parse_mode="HTML")
-            return
-        if target["id"] in _active_battles:
-            await message.reply("❌ Этот игрок уже находится в бою.", parse_mode="HTML")
-            return
-        target_name = _esc(target.get("first_name") or target.get("username") or str(target["id"]))
-        # Создаём вызов
-        create_challenge(uid, target["id"], target_name)
-        # Уведомляем цель в ЛС
-        try:
-            await bot.send_message(
-                target["id"],
-                challenge_invite_text(u),
-                parse_mode="HTML",
-                reply_markup=challenge_invite_keyboard(uid),
-            )
-        except Exception:
-            await message.reply(
-                f"❌ Не удалось отправить уведомление <b>{target_name}</b> — возможно бот заблокирован.",
-                parse_mode="HTML"
-            )
-            cancel_challenge(uid)
-            return
-        await message.reply(
-            duel_challenge_sent_text(target_name),
-            parse_mode="HTML",
-            reply_markup=duel_challenge_sent_keyboard(),
-        )
-        return
-
-    # ── Ожидание ввода суммы для вклада ──
-    if uid in _cdl_input_pending:
-        dep_key  = _cdl_input_pending.pop(uid)   # сразу сбрасываем — больше не ждём
-        msg_info = _cdl_input_msg.pop(uid, None)
-        raw = (message.text or "").strip().replace(" ", "").replace("_", "")
-
-        async def _cdl_edit(text: str, kb=None):
-            """Редактирует бот-сообщение (окно ввода). НЕ удаляет сообщение юзера."""
-            if msg_info:
-                try:
-                    await bot.edit_message_text(
-                        text, chat_id=msg_info[0], message_id=msg_info[1],
-                        parse_mode="HTML", reply_markup=kb
-                    )
-                    return
-                except Exception as _e:
-                    if "message is not modified" in str(_e).lower():
-                        return
-            # Если окно недоступно — шлём новое
-            await bot.send_message(
-                msg_info[0] if msg_info else message.chat.id,
-                text, parse_mode="HTML", reply_markup=kb
-            )
-
-        if not raw.isdigit():
-            await _cdl_edit(
-                f'❌ <b>Некорректный ввод.</b>\nОткрой вклад снова и введи число.',
-                cdl_input_keyboard(dep_key)
-            )
-            return
-
-        amount = int(raw)
-        dep    = _CDL_DEPOSITS_BY_KEY.get(dep_key)
-        if dep is None:
-            return
-
-        lock = await _get_user_lock(uid)
-        async with lock:
-            u2  = get_or_create_user(message.from_user)
-            bal = u2.get("balance", 0)
-            if amount < dep["min"]:
-                await _cdl_edit(
-                    f'❌ <b>Минимум:</b> {format_amount(dep["min"])}\nОткрой вклад снова и введи сумму.',
-                    cdl_input_keyboard(dep_key)
-                )
-                return
-            if amount > bal:
-                await _cdl_edit(
-                    f'❌ <b>Не хватает монет.</b> Баланс: {format_amount(bal)}\nОткрой вклад снова и введи сумму.',
-                    cdl_input_keyboard(dep_key)
-                )
-                return
-
-        await _cdl_edit(
-            cdl_confirm_text(dep_key, amount),
-            cdl_confirm_keyboard(dep_key, amount)
-        )
-        return
-
-    # ── Сначала обрабатываем ожидающие текстовые вводы для системы кланов ──
-    if await _handle_klan_text_input(message, u):
-        return
 
     # ── Команды арсенала: подарить/передать/арн ──
     if u.get("onboarded", True):
