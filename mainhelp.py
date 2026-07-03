@@ -89,6 +89,7 @@ from hunt import (
 from achieves import (
     check_achievements, achievement_unlocked_text,
     achievements_list_text, achievements_keyboard, achievements_summary_line,
+    achievements_menu_text, achievements_menu_keyboard,
     DEFAULT_CATEGORY,
 )
 
@@ -1512,9 +1513,9 @@ async def cmd_achievements(message: Message):
     newly = check_achievements(u)
     save_user(message.from_user.id, u)
     await message.reply(
-        achievements_list_text(u, lang, category=DEFAULT_CATEGORY, page=0),
+        achievements_menu_text(u, lang),
         parse_mode="HTML",
-        reply_markup=achievements_keyboard(lang, category=DEFAULT_CATEGORY, page=0),
+        reply_markup=achievements_menu_keyboard(lang),
     )
     for _ach in newly:
         try:
@@ -4535,6 +4536,15 @@ async def handle_callback(call: CallbackQuery):
             save_user(user.id, data)
             await call.answer()
             await edit(arsenal_main_text(data), arsenal_main_keyboard(data))
+            return
+
+        # ===== ДОСТИЖЕНИЯ: возврат в меню достижений (список разделов) =====
+        if cd == "ach_menu":
+            await call.answer()
+            await edit(
+                achievements_menu_text(data, lang),
+                achievements_menu_keyboard(lang),
+            )
             return
 
         # ===== ДОСТИЖЕНИЯ: фильтр по категории (всегда открывает страницу 1) =====
