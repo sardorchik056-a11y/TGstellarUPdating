@@ -1936,8 +1936,7 @@ def potions_shop_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         builder.row(InlineKeyboardButton(
             text=f'{name} — {p["price_stars"]} ⭐',
             callback_data=f'potion_info_{p["key"]}',
-            icon_custom_emoji_id=p["emoji_id"],
-            style="success"
+            icon_custom_emoji_id=p["emoji_id"]
         ))
     builder.row(InlineKeyboardButton(
         text="Back" if lang == "en" else "Назад",
@@ -1992,8 +1991,7 @@ def potion_detail_keyboard(potion_key: str, lang: str = "ru") -> InlineKeyboardM
         builder.row(InlineKeyboardButton(
             text=f'{"Buy" if lang == "en" else "Купить"} — {p["price_stars"]} ⭐',
             callback_data=f'buy_potion_{potion_key}',
-            icon_custom_emoji_id=p["emoji_id"],
-            style="success"
+            icon_custom_emoji_id=p["emoji_id"]
         ))
     builder.row(InlineKeyboardButton(
         text="Back" if lang == "en" else "Назад",
@@ -2105,8 +2103,7 @@ def my_potions_keyboard(uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
         builder.row(InlineKeyboardButton(
             text=f'{name} ×{count}',
             callback_data=f'potion_use_info_{key}',
-            icon_custom_emoji_id=p["emoji_id"],
-            style="success"
+            icon_custom_emoji_id=p["emoji_id"]
         ))
     builder.row(InlineKeyboardButton(
         text="Back" if lang == "en" else "Назад",
@@ -2152,15 +2149,13 @@ def potion_use_detail_keyboard(potion_key: str, lang: str = "ru") -> InlineKeybo
         builder.row(InlineKeyboardButton(
             text="Use" if lang == "en" else "Использовать",
             callback_data="potion_use_revival_pick_slot",
-            icon_custom_emoji_id=_E["potion"],
-            style="success"
+            icon_custom_emoji_id=_E["potion"]
         ))
     else:
         builder.row(InlineKeyboardButton(
             text="Use" if lang == "en" else "Использовать",
             callback_data=f'use_potion_{potion_key}',
-            icon_custom_emoji_id=_E["potion"],
-            style="success"
+            icon_custom_emoji_id=_E["potion"]
         ))
     builder.row(InlineKeyboardButton(
         text="Back" if lang == "en" else "Назад",
