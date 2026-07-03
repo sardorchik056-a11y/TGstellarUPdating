@@ -1,6 +1,6 @@
 # ============================================================
 #  achieves.py  —  Система достижений
-#  123 достижения: деньги, уровень, шахта, охота на боссов,
+#  126 достижений: деньги, уровень, шахта, охота на боссов,
 #  арсенал (мечи), дуэли, кейсы/артефакты (15, живые данные из shop.py),
 #  питомцы, клан (15, живые данные из klan.py), рефералы, донат,
 #  вклады, разное.
@@ -100,15 +100,25 @@
 #  процентного дохода. Просто вызывайте check_achievements() сразу после
 #  reward_inviter() (и после прохождения капчи) в соответствующих хендлерах.
 #
+#  🐾 ПИТОМЦЫ — раздел подключён к реальным данным pets.py (5 достижений,
+#  больше не заглушка). owned_pets в data — список ключей питомцев, которые
+#  уже пишет pets.buy_pet() сам. Ачивки за редкость (Легендарный/Мифический)
+#  читают её через _pet_owns_rarity(d, rarity), лениво сверяясь с
+#  pets.PETS_BY_KEY — синхронизировать ничего не нужно.
+#
+#  🎯 РАЗНОЕ — раздел подключён к реальным данным (5 достижений, больше не
+#  заглушка). promo_activations теперь инкрементируется в mainhelp.py во
+#  всех 3 местах вызова activate_promo(...) при успехе. daily_streak теперь
+#  считается в cmd_daily: растёт, если бонус забран не позже чем через 48ч
+#  после предыдущего, иначе сбрасывается на 1. misc_leaderboard_top10
+#  читает живой топ-10 по балансу через _is_top10_balance(d) (лениво зовёт
+#  database.get_all_users()) — ничего в data хранить не нужно.
+#
 #  НОВЫЕ счётчики, которых в data пока нет — модуль просто вернёт для них
 #  прогресс 0/цель, пока вы не начнёте их инкрементировать в нужных местах
 #  (по одной строке в нужном хендлере, ничего сложного):
 #    stats_boss_hits, stats_boss_kills   — в hunt_strike после успешного удара
 #    deposits_opened, deposits_claimed    — после _cdl_open_deposit / _cdl_claim
-#    promo_activations                    — после успешного activate_promo(...)
-#    daily_streak                         — уже может считаться в cmd_daily,
-#                                            если нет — прибавляйте +1 при
-#                                            получении бонуса без пропуска дня
 #
 #  🏰 КЛАН — раздел подключён к реальным данным klan.py (15 достижений,
 #  больше не заглушка). Клан хранит своё состояние в СВОЕЙ SQLite-базе
@@ -271,6 +281,22 @@ def _pets_total() -> int:
         return len(PETS)
     except Exception:
         return 10  # запасное значение — поправьте под свой список питомцев
+
+
+def _pet_owns_rarity(d: dict, rarity: str) -> bool:
+    """Есть ли у игрока хотя бы один питомец данной редкости ('Легендарный',
+    'Мифический' и т.д. — значения из pets.PETS_BY_KEY[key]['rarity']).
+    owned_pets в data — список ключей питомцев, которые уже пишет
+    pets.buy_pet() сам, синхронизировать ничего не нужно."""
+    try:
+        from pets import PETS_BY_KEY
+    except Exception:
+        return False
+    for key in d.get("owned_pets", []):
+        pet = PETS_BY_KEY.get(key)
+        if pet and pet.get("rarity") == rarity:
+            return True
+    return False
 
 
 def _max_level() -> int:
@@ -436,6 +462,23 @@ def _ref_was_invited(d: dict) -> bool:
         from refs import get_inviter
         uid = d.get("id")
         return bool(uid) and get_inviter(uid) is not None
+    except Exception:
+        return False
+
+
+def _is_top10_balance(d: dict) -> bool:
+    """True, если игрок сейчас входит в топ-10 пользователей по балансу.
+    Живой рейтинг — считается на лету через database.get_all_users(), та же
+    функция, которую уже использует фоновый _pets_loop() в mainhelp.py.
+    Ничего в data синхронизировать не нужно."""
+    try:
+        from database import get_all_users
+        uid = d.get("id")
+        if not uid:
+            return False
+        users = get_all_users()
+        top10 = sorted(users, key=lambda u: u.get("balance", 0), reverse=True)[:10]
+        return any(u.get("id") == uid for u in top10)
     except Exception:
         return False
 
@@ -1121,7 +1164,7 @@ ACHIEVEMENTS = [
          reward_coins=800_000, reward_xp=400,
          name_en="All-Rounder", desc_en="Own at least one artifact for ore mining, boss damage, and pet income each"),
 
-    # ───────────── 🐾 ПИТОМЦЫ (3) ─────────────
+    # ───────────── 🐾 ПИТОМЦЫ (5) ─────────────
     _ach("pets_first", "🐣", "Друг найден",
          "Получи своего первого питомца",
          "pets",
@@ -1135,6 +1178,20 @@ ACHIEVEMENTS = [
          lambda d: len(d.get("owned_pets", [])) >= 5,
          progress=lambda d: (len(d.get("owned_pets", [])), 5),
          reward_coins=40_000, reward_xp=120),
+
+    _ach("pets_legendary", "🐻", "Легендарный зверинец",
+         "Получи питомца Легендарной редкости",
+         "pets",
+         lambda d: _pet_owns_rarity(d, "Легендарный"),
+         reward_coins=300_000, reward_xp=250,
+         name_en="Legendary menagerie", desc_en="Get a Legendary-rarity pet"),
+
+    _ach("pets_mythic", "💎", "Кристальный друг",
+         "Получи питомца Мифической редкости",
+         "pets",
+         lambda d: _pet_owns_rarity(d, "Мифический"),
+         reward_coins=1_500_000, reward_xp=700,
+         name_en="Crystal friend", desc_en="Get a Mythic-rarity pet"),
 
     _ach("pets_all", "🦄", "Повелитель зверей",
          "Собери всех питомцев",
@@ -1461,7 +1518,7 @@ ACHIEVEMENTS = [
          progress=lambda d: (d.get("deposits_claimed", 0), 1),
          reward_coins=10_000, reward_xp=40),
 
-    # ───────────── 🎯 РАЗНОЕ (4) ─────────────
+    # ───────────── 🎯 РАЗНОЕ (5) ─────────────
     _ach("misc_onboarded", "🚪", "Добро пожаловать",
          "Пройди обучение и начни игру",
          "misc",
@@ -1475,6 +1532,14 @@ ACHIEVEMENTS = [
          progress=lambda d: (d.get("promo_activations", 0), 1),
          reward_coins=1_000, reward_xp=10),
 
+    _ach("misc_promo_10", "🎫", "Коллекционер промокодов",
+         "Активируй 10 промокодов",
+         "misc",
+         lambda d: d.get("promo_activations", 0) >= 10,
+         progress=lambda d: (d.get("promo_activations", 0), 10),
+         reward_coins=25_000, reward_xp=80,
+         name_en="Promo collector", desc_en="Activate 10 promo codes"),
+
     _ach("misc_daily_7", "📅", "Верный игрок",
          "Забирай ежедневный бонус 7 дней подряд",
          "misc",
@@ -1483,13 +1548,13 @@ ACHIEVEMENTS = [
          reward_coins=15_000, reward_xp=60),
 
     _ach("misc_leaderboard_top10", "🏅", "Топ игрок",
-         "Войди в топ-10 таблицы лидеров",
+         "Войди в топ-10 игроков по балансу",
          "misc",
-         lambda d: bool(d.get("was_in_top10")),
+         lambda d: _is_top10_balance(d),
          reward_coins=200_000, reward_xp=300),
 ]
 
-assert len(ACHIEVEMENTS) == 123, f"Ожидалось 123 достижения, а получилось {len(ACHIEVEMENTS)}"
+assert len(ACHIEVEMENTS) == 126, f"Ожидалось 126 достижений, а получилось {len(ACHIEVEMENTS)}"
 
 ACHIEVEMENTS_BY_ID = {a["id"]: a for a in ACHIEVEMENTS}
 
