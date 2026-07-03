@@ -4348,13 +4348,14 @@ async def handle_callback(call: CallbackQuery):
             pay_kb = InlineKeyboardBuilder()
             pay_kb.row(InlineKeyboardButton(
                 text=f'Купить за {p["price_stars"]} ⭐' if lang == "ru" else f'Buy for {p["price_stars"]} ⭐',
-                url=invoice_url
+                url=invoice_url,
+                style="success"
             ))
             pay_kb.row(InlineKeyboardButton(
                 text="Назад" if lang == "ru" else "Back",
                 callback_data="hunt_shop_potions"
             ))
-            await edit(potions_shop_text(lang), pay_kb.as_markup())
+            await edit(potion_detail_text(potion_key, call.from_user.id, lang), pay_kb.as_markup())
             await call.answer()
             return
 
