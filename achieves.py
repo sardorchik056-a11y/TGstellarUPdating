@@ -16,17 +16,15 @@
 #
 #         newly = check_achievements(u)
 #         save_user(uid, u)
-#         for ach in newly:
-#             try:
-#                 await bot.send_message(
-#                     uid, achievement_unlocked_text(ach, lang), parse_mode="HTML"
-#                 )
-#             except Exception:
-#                 pass
+#         await notify_new_achievements(bot, uid, newly, lang)   # шлёт уведомление СРАЗУ
 #
 #     check_achievements() сама начисляет награды (монеты/опыт) в переданный
 #     словарь data и возвращает список новых достижений — сохранять базу
-#     после неё обязательно.
+#     после неё обязательно. notify_new_achievements() шлёт уведомление
+#     мгновенно, в момент выполнения действия — а не когда игрок в следующий
+#     раз откроет /достижения. Важно вызывать check_achievements() (и следом
+#     notify_new_achievements()) буквально в каждом хендлере, где прогресс
+#     мог продвинуться, иначе игрок узнает об ачивке с опозданием.
 #
 #  3) Готовый хендлер команды /достижения — см. пример в самом низу файла
 #     (закомментирован, просто скопируй в mainhelp.py и поправь импорты).
@@ -698,6 +696,29 @@ def check_achievements(data: dict) -> list[dict]:
     return newly
 
 
+async def notify_new_achievements(bot, user_id: int, newly: list[dict], lang: str = "ru") -> None:
+    """
+    Отправляет уведомление о каждом только что открытом достижении СРАЗУ —
+    в момент выполнения действия, а не при следующем открытии /достижения.
+
+    Вызывайте сразу после check_achievements(...) в ЛЮБОМ хендлере, где
+    мог продвинуться прогресс (после сбора шахты, победы в дуэли,
+    открытия кейса и т.д.):
+
+        newly = check_achievements(u)
+        save_user(uid, u)
+        await notify_new_achievements(bot, uid, newly, lang)
+
+    Ошибки отправки (например, если бот заблокирован) молча игнорируются,
+    чтобы одно упавшее уведомление не ломало остальную логику хендлера.
+    """
+    for ach in newly:
+        try:
+            await bot.send_message(user_id, achievement_unlocked_text(ach, lang), parse_mode="HTML")
+        except Exception:
+            pass
+
+
 def get_progress(data: dict, ach: dict) -> tuple[int, int] | None:
     """Текущий прогресс/цель для достижения, если оно числовое. Иначе None."""
     if not ach.get("progress"):
@@ -752,6 +773,7 @@ def achievement_unlocked_text(ach: dict, lang: str = "ru") -> str:
 
 
 DEFAULT_CATEGORY = "money"  # раздел, который показывается, если пользователь ещё ничего не выбрал
+PAGE_SIZE = 5               # сколько достижений показываем на одной странице раздела
 
 
 def achievements_summary_line(data: dict, lang: str = "ru") -> str:
@@ -763,77 +785,110 @@ def achievements_summary_line(data: dict, lang: str = "ru") -> str:
     return f'🏆 <b>Достижения — {unlocked}/{total}</b>\n{bar}'
 
 
-def achievements_list_text(data: dict, lang: str = "ru", category: str | None = None) -> str:
-    """
-    Текст списка достижений.
+def _category_items(category: str) -> list[dict]:
+    if category == "all":
+        return list(ACHIEVEMENTS)
+    return [a for a in ACHIEVEMENTS if a["category"] == category]
 
-    По умолчанию (category не передана) показывается ТОЛЬКО один раздел —
-    DEFAULT_CATEGORY ("money" / "Богатство"), а не все 50 ачивок разом.
-    Чтобы показать конкретный раздел — передайте его id (см. CATEGORIES).
-    Чтобы показать вообще все разделы одним списком — передайте category="all".
+
+def category_page_count(category: str) -> int:
+    """Сколько страниц по PAGE_SIZE штук выходит для раздела."""
+    total = len(_category_items(category))
+    return max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+
+
+def achievements_list_text(data: dict, lang: str = "ru", category: str | None = None, page: int = 0) -> str:
+    """
+    Текст списка достижений — по одному разделу за раз, СТРАНИЦАМИ по
+    PAGE_SIZE (5) штук, чтобы список не расползался на весь экран.
+
+    По умолчанию (category не передана) показывается раздел DEFAULT_CATEGORY
+    ("money" / "Богатство"), страница 0. Чтобы показать конкретный раздел —
+    передайте его id (см. CATEGORIES) и нужную страницу.
+    Выполненные достижения всегда идут первыми на первой странице раздела.
     """
     if category is None:
         category = DEFAULT_CATEGORY
 
     unlocked_set = set(data.get("achievements_unlocked", []))
-    show_all = category == "all"
-    cats = list(CATEGORIES.keys()) if show_all else [category]
+    items = _category_items(category)
+    if not items:
+        return achievements_summary_line(data, lang)
+
+    items_sorted = sorted(items, key=lambda a: a["id"] not in unlocked_set)
+    total_pages = category_page_count(category)
+    page = max(0, min(page, total_pages - 1))
+    page_items = items_sorted[page * PAGE_SIZE: page * PAGE_SIZE + PAGE_SIZE]
+
+    cat_info = CATEGORIES.get(category)
+    cat_done = sum(1 for a in items if a["id"] in unlocked_set)
 
     lines = [achievements_summary_line(data, lang), ""]
 
-    for cat in cats:
-        cat_info = CATEGORIES.get(cat)
-        if not cat_info:
-            continue
-        items = [a for a in ACHIEVEMENTS if a["category"] == cat]
-        if not items:
-            continue
-
+    if cat_info:
         cat_name = cat_info["name_en"] if lang == "en" else cat_info["name"]
-        cat_done = sum(1 for a in items if a["id"] in unlocked_set)
-
         lines.append(f'{cat_info["emoji"]} <b>{cat_name}</b>  ({cat_done}/{len(items)})')
-        lines.append("―――――――――――――――――")
+    else:
+        lines.append(f'🗂 <b>{"All" if lang == "en" else "Все разделы"}</b>  ({cat_done}/{len(items)})')
 
-        items_sorted = sorted(items, key=lambda a: a["id"] not in unlocked_set)
+    if total_pages > 1:
+        page_lbl = f'Страница {page + 1}/{total_pages}' if lang == "ru" else f'Page {page + 1}/{total_pages}'
+        lines.append(f'<i>{page_lbl}</i>')
 
-        for ach in items_sorted:
-            done = ach["id"] in unlocked_set
-            mark = "✅" if done else "🔒"
-            name = ach["name_en"] if lang == "en" else ach["name"]
-            desc = ach["desc_en"] if lang == "en" else ach["desc"]
+    lines.append("―――――――――――――――――")
 
-            lines.append(f'{mark} {ach["emoji"]} <b>{name}</b>')
-            lines.append(f'    <i>{desc}</i>')
+    for ach in page_items:
+        done = ach["id"] in unlocked_set
+        mark = "✅" if done else "🔒"
+        name = ach["name_en"] if lang == "en" else ach["name"]
+        desc = ach["desc_en"] if lang == "en" else ach["desc"]
 
-            if not done:
-                prog = get_progress(data, ach)
-                if prog:
-                    cur, target = prog
-                    cur_c = min(cur, target)
-                    lines.append(f'    {_progress_bar(cur_c, target)}  {_fmt_num(cur_c)}/{_fmt_num(target)}')
-                reward_str = _fmt_reward(ach, lang)
-                if reward_str:
-                    lines.append(f'    🎁 {reward_str}')
+        lines.append(f'{mark} {ach["emoji"]} <b>{name}</b>')
+        lines.append(f'    <i>{desc}</i>')
 
-            lines.append("")
+        if not done:
+            prog = get_progress(data, ach)
+            if prog:
+                cur, target = prog
+                cur_c = min(cur, target)
+                lines.append(f'    {_progress_bar(cur_c, target)}  {_fmt_num(cur_c)}/{_fmt_num(target)}')
+            reward_str = _fmt_reward(ach, lang)
+            if reward_str:
+                lines.append(f'    🎁 {reward_str}')
 
-        if show_all:
-            lines.append("")
+        lines.append("")
 
     return "\n".join(lines).strip()
 
 
-def achievements_keyboard(lang: str = "ru"):
-    """Инлайн-клавиатура выбора категории. Требует aiogram (импортируется лениво)."""
+def achievements_keyboard(lang: str = "ru", category: str | None = None, page: int = 0):
+    """
+    Инлайн-клавиатура: сверху — выбор раздела, снизу — пагинация (◀ 2/5 ▶),
+    если в разделе больше одной страницы. Требует aiogram (импортируется лениво).
+    """
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
+
+    if category is None:
+        category = DEFAULT_CATEGORY
 
     builder = InlineKeyboardBuilder()
     for cat, info in CATEGORIES.items():
         name = info["name_en"] if lang == "en" else info["name"]
         builder.button(text=f'{info["emoji"]} {name}', callback_data=f"ach_cat_{cat}")
     builder.adjust(2)
+
+    total_pages = category_page_count(category)
+    page = max(0, min(page, total_pages - 1))
+    if total_pages > 1:
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton(text="◀", callback_data=f"ach_page_{category}_{page - 1}"))
+        nav.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop"))
+        if page < total_pages - 1:
+            nav.append(InlineKeyboardButton(text="▶", callback_data=f"ach_page_{category}_{page + 1}"))
+        builder.row(*nav)
+
     return builder.as_markup()
 
 
@@ -842,7 +897,7 @@ def achievements_keyboard(lang: str = "ru"):
 #  поправив импорты под свой проект)
 # ============================================================
 #
-# from achieves import achievements_list_text, achievements_keyboard
+# from achieves import achievements_list_text, achievements_keyboard, DEFAULT_CATEGORY
 #
 # @dp.message(Command("достижения", "ачивки", "achievements", "ach"))
 # @dp.message(_text_in("достижения", "ачивки", "achievements", "ach"))
@@ -853,10 +908,36 @@ def achievements_keyboard(lang: str = "ru"):
 #     if await _check_onboarded(message, u):
 #         return
 #     await message.reply(
-#         achievements_list_text(u, lang),
+#         achievements_list_text(u, lang, category=DEFAULT_CATEGORY, page=0),
 #         parse_mode="HTML",
-#         reply_markup=achievements_keyboard(lang),
+#         reply_markup=achievements_keyboard(lang, category=DEFAULT_CATEGORY, page=0),
 #     )
 #
-# И в handle_callback (mainhelp.py) добавить обработку cd.startswith("ach_cat_")
-# аналогично остальным кнопкам категорий.
+# И в handle_callback (mainhelp.py) добавить обработку:
+#   cd.startswith("ach_cat_")   -> переключение раздела, всегда открывает page=0
+#   cd.startswith("ach_page_")  -> пагинация внутри текущего раздела
+#
+# Пример:
+#
+# @dp.callback_query(F.data.startswith("ach_cat_"))
+# async def cb_ach_category(cq: CallbackQuery):
+#     u    = get_or_create_user(cq.from_user)
+#     lang = get_lang(u)
+#     category = cq.data.removeprefix("ach_cat_")
+#     await cq.message.edit_text(
+#         achievements_list_text(u, lang, category=category, page=0),
+#         parse_mode="HTML",
+#         reply_markup=achievements_keyboard(lang, category=category, page=0),
+#     )
+#
+# @dp.callback_query(F.data.startswith("ach_page_"))
+# async def cb_ach_page(cq: CallbackQuery):
+#     u    = get_or_create_user(cq.from_user)
+#     lang = get_lang(u)
+#     category, page_str = cq.data.removeprefix("ach_page_").rsplit("_", 1)
+#     page = int(page_str)
+#     await cq.message.edit_text(
+#         achievements_list_text(u, lang, category=category, page=page),
+#         parse_mode="HTML",
+#         reply_markup=achievements_keyboard(lang, category=category, page=page),
+#     )
