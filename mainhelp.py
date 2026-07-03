@@ -90,6 +90,7 @@ from achieves import (
     check_achievements, achievement_unlocked_text,
     achievements_list_text, achievements_keyboard, achievements_summary_line,
     achievements_menu_text, achievements_menu_keyboard,
+    init_achievements_db,
     DEFAULT_CATEGORY,
 )
 
@@ -4538,6 +4539,11 @@ async def handle_callback(call: CallbackQuery):
             await edit(arsenal_main_text(data), arsenal_main_keyboard(data))
             return
 
+        # ===== ДОСТИЖЕНИЯ: кнопка-индикатор страницы (X/Y) — просто отвечаем, ничего не меняем =====
+        if cd == "ach_noop":
+            await call.answer()
+            return
+
         # ===== ДОСТИЖЕНИЯ: возврат в меню достижений (список разделов) =====
         if cd == "ach_menu":
             await call.answer()
@@ -6255,6 +6261,7 @@ async def run_bot():
     init_checks_db()   # создаёт таблицы чеков и промокодов
     init_cdl_db()      # создаёт таблицу вкладов
     init_city_db()     # создаёт таблицы города (арбитражный трейдинг)
+    init_achievements_db()  # создаёт таблицу счётчиков "сколько игроков открыли ачивку"
 
     # ── Миграция: добавляем поля питомцев для старых пользователей ──
     from database import get_all_users, save_user as _save_mig
