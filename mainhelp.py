@@ -112,6 +112,12 @@ from leaders import (
     PERIODS    as _LEADERS_PERIODS,
 )
 
+from leaders_crystals import (
+    router as leaders_crystals_router,
+    init_crystal_leaders_db,
+    crystal_leaders_main_text, crystal_leaders_main_keyboard,
+)
+
 
 from status import (
     status_main_text, status_main_keyboard,
@@ -338,6 +344,7 @@ def _text_in(*variants: str):
 
 dp  = Dispatcher()
 dp.include_router(city_router)
+dp.include_router(leaders_crystals_router)
 
 # ---------- БЛОКИРОВКИ ПО ПОЛЬЗОВАТЕЛЯМ (защита от race condition / дюпов) ----------
 import asyncio as _asyncio
@@ -509,6 +516,11 @@ def main_menu_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=t(lang, "btn_leaders"),  callback_data="leaders",  icon_custom_emoji_id=EMOJI_LEADERS),
         InlineKeyboardButton(text=t(lang, "btn_settings"), callback_data="settings", icon_custom_emoji_id=EMOJI_SETTINGS),
     )
+    builder.row(InlineKeyboardButton(
+        text="💎 Топ кристаллов" if lang == "ru" else "💎 Crystal Top",
+        callback_data="crystop_alltime",
+        icon_custom_emoji_id="5427168083074628963",
+    ))
     return builder.as_markup()
 
 
@@ -3293,7 +3305,7 @@ async def potion_use_callback(call: CallbackQuery):
 
 # ---------- CALLBACK HANDLER ----------
 
-@dp.callback_query(~F.data.startswith("city_"))
+@dp.callback_query(~F.data.startswith("city_") & ~F.data.startswith("crystop_"))
 async def handle_callback(call: CallbackQuery):
     chat_id    = call.message.chat.id
     message_id = call.message.message_id
@@ -6493,6 +6505,7 @@ async def run_bot():
     init_checks_db()   # создаёт таблицы чеков и промокодов
     init_cdl_db()      # создаёт таблицу вкладов
     init_city_db()     # создаёт таблицы города (арбитражный трейдинг)
+    init_crystal_leaders_db()  # создаёт таблицу событий баланса кристаллов для топа
     init_achievements_db()  # создаёт таблицу счётчиков "сколько игроков открыли ачивку"
 
     # ── Миграция: добавляем поля питомцев для старых пользователей ──
