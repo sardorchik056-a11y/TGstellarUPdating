@@ -142,6 +142,26 @@ def _L(lang: str, ru: str, en: str) -> str:
 
 
 def _fmt_num(n) -> str:
+    """
+    Сокращает число до буквенного вида — та же короткая шкала, что в
+    database.py -> format_amount() / miner.py / achieves.py, единый стиль
+    чисел по всему проекту:
+      999          -> "999"
+      1500         -> "1.5K"
+      100000       -> "100K"
+      2300000      -> "2.3M"
+      1500000000   -> "1.5B"
+      10**12       -> "1T"
+      10**15       -> "1Qa"  (quadrillion)
+      10**18       -> "1Qi"  (quintillion)
+      10**21       -> "1Sx"  (sextillion)
+      10**24       -> "1Sp"  (septillion)
+      10**27       -> "1Oc"  (octillion)
+      10**30       -> "1No"  (nonillion)
+      10**33       -> "1Dc"  (decillion)
+    Если число ещё больше — формат не ломается: продолжаем Dc2, Dc3, ...
+    Дробная часть показывается только если она не нулевая (1.5K, но не 1.0K).
+    """
     try:
         n = float(n)
     except (TypeError, ValueError):
@@ -150,23 +170,30 @@ def _fmt_num(n) -> str:
     n = abs(n)
     if n < 1000:
         return f"{sign}{int(n)}" if n == int(n) else f"{sign}{n:.1f}"
-    for div, suffix in [
-        (1_000_000_000_000, "трлн"),
-        (1_000_000_000,     "млрд"),
-        (1_000_000,         "м"),
-        (1_000,             "к"),
-    ]:
-        if n >= div:
-            val = int(n / div * 10) / 10
-            return f"{sign}{int(val)}{suffix}" if val == int(val) else f"{sign}{val:.1f}{suffix}"
-    return f"{sign}{int(n)}"
+
+    suffixes = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"]
+    idx = 0
+    val = n
+    while val >= 1000:
+        val /= 1000
+        idx += 1
+
+    val = int(val * 10) / 10  # округление вниз до 1 знака после запятой
+
+    if idx < len(suffixes):
+        suffix = suffixes[idx]
+    else:
+        suffix = f"Dc{idx - len(suffixes) + 2}"
+
+    if val == int(val):
+        return f"{sign}{int(val)}{suffix}"
+    return f"{sign}{val:.1f}{suffix}"
 
 
 def _fmt_stars(s: int) -> str:
-    if s >= 1000:
-        val = s / 1000
-        return f"{int(val)}к ⭐" if val == int(val) else f"{val:.1f}к ⭐"
-    return f"{s} ⭐"
+    """Форматирует количество Stars той же буквенной шкалой, что и _fmt_num,
+    чтобы не было разнобоя между «15.0к ⭐» и «1.5M» в одном файле."""
+    return f"{_fmt_num(s)} ⭐"
 
 
 # ============================================================
