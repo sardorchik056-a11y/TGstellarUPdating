@@ -1763,9 +1763,53 @@ _pending_challenges: dict[int, dict] = {}
 # Хранит uid того, кто бросил вызов: uid_target -> uid_challenger
 _incoming_challenge: dict[int, int] = {}
 
+# ── Ограничение частоты вызовов одному и тому же игроку ─────
+CHALLENGE_DAILY_LIMIT = 10          # макс. вызовов одному игроку за 24 часа
+CHALLENGE_LIMIT_WINDOW = 86400      # окно в секундах (24 часа)
+# (challenger_uid, target_uid) -> [timestamp, timestamp, ...]
+_challenge_daily_log: dict[tuple[int, int], list[int]] = {}
 
-def create_challenge(challenger_uid: int, target_uid: int, target_name: str):
-    """Создаёт вызов на дуэль."""
+
+def _clean_challenge_log(key: tuple[int, int]) -> list[int]:
+    """Оставляет в логе только вызовы за последние 24 часа."""
+    now = int(time.time())
+    cutoff = now - CHALLENGE_LIMIT_WINDOW
+    log = [ts for ts in _challenge_daily_log.get(key, []) if ts > cutoff]
+    if log:
+        _challenge_daily_log[key] = log
+    else:
+        _challenge_daily_log.pop(key, None)
+    return log
+
+
+def challenges_sent_today(challenger_uid: int, target_uid: int) -> int:
+    """Сколько раз challenger уже вызывал target за последние 24 часа."""
+    return len(_clean_challenge_log((challenger_uid, target_uid)))
+
+
+def can_challenge_target(challenger_uid: int, target_uid: int) -> bool:
+    """True, если дневной лимит вызовов (10/сутки) этому игроку ещё не исчерпан."""
+    return challenges_sent_today(challenger_uid, target_uid) < CHALLENGE_DAILY_LIMIT
+
+
+def seconds_until_challenge_slot(challenger_uid: int, target_uid: int) -> int:
+    """Через сколько секунд освободится слот вызова (истечёт самый старый вызов из лога)."""
+    log = _clean_challenge_log((challenger_uid, target_uid))
+    if len(log) < CHALLENGE_DAILY_LIMIT:
+        return 0
+    oldest = min(log)
+    return max(0, oldest + CHALLENGE_LIMIT_WINDOW - int(time.time()))
+
+
+def create_challenge(challenger_uid: int, target_uid: int, target_name: str) -> bool:
+    """
+    Создаёт вызов на дуэль.
+    Возвращает False, если превышен дневной лимит вызовов этому игроку
+    (CHALLENGE_DAILY_LIMIT в сутки) — в этом случае вызов НЕ создаётся.
+    """
+    if not can_challenge_target(challenger_uid, target_uid):
+        return False
+
     expires = int(time.time()) + 120  # 2 минуты
     _pending_challenges[challenger_uid] = {
         "target_uid": target_uid,
@@ -1773,6 +1817,10 @@ def create_challenge(challenger_uid: int, target_uid: int, target_name: str):
         "expires_at": expires,
     }
     _incoming_challenge[target_uid] = challenger_uid
+
+    key = (challenger_uid, target_uid)
+    _challenge_daily_log.setdefault(key, []).append(int(time.time()))
+    return True
 
 
 def get_incoming_challenge(uid: int) -> dict | None:
@@ -2948,3 +2996,16 @@ def cmd_invite_in_battle_text() -> str:
 
 def cmd_invite_blocked_text(name: str) -> str:
     return f'❌ Не удалось отправить уведомление <b>{name}</b> — возможно бот заблокирован.'
+
+def cmd_invite_limit_text(target_name: str, secs: int, limit: int = CHALLENGE_DAILY_LIMIT) -> str:
+    hours = secs // 3600
+    mins  = (secs % 3600) // 60
+    if hours > 0:
+        wait = f'{hours} ч {mins} мин'
+    else:
+        wait = f'{mins} мин'
+    return (
+        f'❌ <b>Лимит вызовов исчерпан!</b>\n\n'
+        f'<blockquote>Ты уже вызывал <b>{target_name}</b> {limit} раз(а) за последние 24 часа.\n'
+        f'Попробуй снова через <b>{wait}</b>.</blockquote>'
+    )
