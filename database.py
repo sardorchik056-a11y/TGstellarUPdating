@@ -7,6 +7,8 @@
 
 import sqlite3
 import json
+import asyncio
+from contextlib import contextmanager
 from datetime import date
 from miner import init_mine_data, MAX_LEVEL, xp_for_level, COIN
 
@@ -77,18 +79,44 @@ fmt = format_amount
 # ---------- Инициализация таблицы ----------
 
 def _get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    # timeout=30 -> при занятой БД sqlite сам ждёт до 30 сек вместо
+    # мгновенного "database is locked"
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
+    # WAL: читатели больше не блокируют писателя и наоборот (сильно меньше
+    # шансов на "database is locked" при параллельных запросах бота).
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=30000")
     return conn
+
+
+@contextmanager
+def _conn_ctx():
+    """
+    Правильный контекстный менеджер для соединения.
+    В отличие от голого `with _get_conn() as conn:` (который у sqlite3.Connection
+    управляет ТОЛЬКО транзакцией — commit/rollback — но НЕ закрывает соединение),
+    здесь соединение гарантированно закрывается в finally. Именно отсутствие
+    close() было причиной утечки: десятки открытых fd на tgstellar.db и,
+    как следствие, "database is locked" при старте второго процесса.
+    """
+    conn = _get_conn()
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def init_db():
     """Создаёт таблицу если не существует. Вызвать при старте бота."""
-    with _get_conn() as conn:
+    with _conn_ctx() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 uid       INTEGER PRIMARY KEY,
-                data_json TEXT    NOT NULL
+                data_json TEXT    NOT NULL,
+                username  TEXT
             )
         """)
         # Таблица для дедупликации платежей Stars (сохраняется между перезапусками)
@@ -100,12 +128,33 @@ def init_db():
                 ts        INTEGER NOT NULL
             )
         """)
+
+        # ── Миграция: если таблица users уже существует со старой схемой
+        # (без колонки username) — добавляем колонку и переносим значения
+        # из JSON, чтобы поиск по нику больше не требовал полного скана.
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+        if "username" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN username TEXT")
+            rows = conn.execute("SELECT uid, data_json FROM users").fetchall()
+            for row in rows:
+                try:
+                    uname = json.loads(row["data_json"]).get("username")
+                except Exception:
+                    uname = None
+                conn.execute("UPDATE users SET username=? WHERE uid=?", (uname, row["uid"]))
+
+        # Индекс для быстрого регистронезависимого поиска по нику
+        # (раньше get_user_by_username делал SELECT * FROM users и линейно
+        # перебирал в Python — при росте базы это одна из причин тормозов).
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username COLLATE NOCASE)"
+        )
         conn.commit()
 
 
 def is_charge_processed(charge_id: str) -> bool:
     """Проверяет, был ли этот charge_id уже обработан."""
-    with _get_conn() as conn:
+    with _conn_ctx() as conn:
         row = conn.execute(
             "SELECT 1 FROM processed_charges WHERE charge_id=?", (charge_id,)
         ).fetchone()
@@ -115,7 +164,7 @@ def is_charge_processed(charge_id: str) -> bool:
 def mark_charge_processed(charge_id: str, uid: int, payload: str = ""):
     """Записывает charge_id как обработанный. Вызывать ДО выдачи товара."""
     import time as _time
-    with _get_conn() as conn:
+    with _conn_ctx() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO processed_charges (charge_id, uid, payload, ts) VALUES (?,?,?,?)",
             (charge_id, uid, payload, int(_time.time()))
@@ -126,7 +175,7 @@ def mark_charge_processed(charge_id: str, uid: int, payload: str = ""):
 # ---------- Сохранение / загрузка ----------
 
 def _load_raw(uid: int) -> dict | None:
-    with _get_conn() as conn:
+    with _conn_ctx() as conn:
         row = conn.execute("SELECT data_json FROM users WHERE uid=?", (uid,)).fetchone()
     if row:
         return json.loads(row["data_json"])
@@ -135,11 +184,12 @@ def _load_raw(uid: int) -> dict | None:
 
 def save_user(uid: int, data: dict):
     """Сохранить данные пользователя в БД."""
-    with _get_conn() as conn:
+    username = data.get("username")
+    with _conn_ctx() as conn:
         conn.execute(
-            "INSERT INTO users (uid, data_json) VALUES (?,?) "
-            "ON CONFLICT(uid) DO UPDATE SET data_json=excluded.data_json",
-            (uid, json.dumps(data, ensure_ascii=False))
+            "INSERT INTO users (uid, data_json, username) VALUES (?,?,?) "
+            "ON CONFLICT(uid) DO UPDATE SET data_json=excluded.data_json, username=excluded.username",
+            (uid, json.dumps(data, ensure_ascii=False), username)
         )
         conn.commit()
 
@@ -215,6 +265,138 @@ def get_or_create_user(user) -> dict:
     return data
 
 
+def transfer_coins(sender_uid: int, recipient_uid: int, amount: int,
+                    daily_limit: int | None = None, gift_window: int = 86400,
+                    now_ts: int | None = None) -> dict:
+    """
+    Полностью атомарный перевод монет между двумя игроками — одна
+    SQLite-транзакция (BEGIN IMMEDIATE) на оба блока данных сразу.
+
+    Раньше /gift брал два asyncio.Lock (по одному на каждого игрока), но это
+    защищает только от других хендлеров, которые ТОЖЕ берут этот же лок.
+    Майнер/хант/дуэли/шоп и т.д. лока не брали и просто перезаписывали весь
+    JSON-блоб пользователя (save_user), из-за чего параллельное действие
+    другого хендлера могло затереть уже сохранённый перевод устаревшей
+    копией баланса — отсюда "случайный" остаток вместо ожидаемого.
+
+    Здесь читаем и пишем ОБА блока внутри одной транзакции с write-локом
+    БД на всё время операции — это исключает гонку в принципе, независимо
+    от того, берут ли остальные хендлеры asyncio.Lock или нет.
+
+    Возвращает dict:
+      {"ok": True,  "sender_balance": int, "recipient_balance": int}
+      {"ok": False, "reason": "no_sender" | "no_recipient" |
+                     "insufficient" | "limit", "sender_balance": int,
+                     "daily_limit": int}
+    """
+    import time as _time
+    if now_ts is None:
+        now_ts = int(_time.time())
+
+    conn = _get_conn()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+
+        srow = conn.execute("SELECT data_json FROM users WHERE uid=?", (sender_uid,)).fetchone()
+        if srow is None:
+            conn.rollback()
+            return {"ok": False, "reason": "no_sender"}
+
+        rrow = conn.execute("SELECT data_json FROM users WHERE uid=?", (recipient_uid,)).fetchone()
+        if rrow is None:
+            conn.rollback()
+            return {"ok": False, "reason": "no_recipient"}
+
+        sender = json.loads(srow["data_json"])
+        recipient = json.loads(rrow["data_json"])
+
+        sender_balance = sender.get("balance", 0)
+        if sender_balance < amount:
+            conn.rollback()
+            return {"ok": False, "reason": "insufficient", "sender_balance": sender_balance}
+
+        if daily_limit is not None:
+            window_start = recipient.get("gift_window_start", 0)
+            if now_ts - window_start >= gift_window:
+                recipient["gift_window_start"] = now_ts
+                recipient["gift_received_today"] = 0
+
+            received_today = recipient.get("gift_received_today", 0)
+            if received_today + amount > daily_limit:
+                conn.rollback()
+                return {"ok": False, "reason": "limit", "daily_limit": daily_limit}
+
+            recipient["gift_received_today"] = received_today + amount
+
+        sender["balance"] = sender_balance - amount
+        recipient["balance"] = recipient.get("balance", 0) + amount
+
+        conn.execute(
+            "UPDATE users SET data_json=? WHERE uid=?",
+            (json.dumps(sender, ensure_ascii=False), sender_uid)
+        )
+        conn.execute(
+            "UPDATE users SET data_json=? WHERE uid=?",
+            (json.dumps(recipient, ensure_ascii=False), recipient_uid)
+        )
+        conn.commit()
+
+        return {
+            "ok": True,
+            "sender_balance": sender["balance"],
+            "recipient_balance": recipient["balance"],
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def change_balance(uid: int, delta: int, min_balance: int = 0) -> int | None:
+    """
+    Атомарно меняет data['balance'] на delta прямо на уровне SQLite-транзакции
+    (BEGIN IMMEDIATE держит write-лок базы на всё время чтение->изменение->запись),
+    поэтому НИКАКОЙ другой параллельный save_user() (майнер/хант/дуэли/шоп и т.д.)
+    не может "перетереть" это изменение своей устаревшей копией блоба — именно
+    из-за этой race condition перевод монет мог давать неверный остаток.
+
+    Возвращает новый баланс, либо None если:
+      - юзер не найден
+      - итоговый баланс < min_balance (изменение НЕ применяется, откат)
+
+    ВАЖНО: используй эту функцию (а не data["balance"] = ...; save_user(...))
+    везде, где меняется баланс — /gift, покупки, награды, майнинг и т.д.
+    """
+    conn = _get_conn()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT data_json FROM users WHERE uid=?", (uid,)).fetchone()
+        if row is None:
+            conn.rollback()
+            return None
+
+        data = json.loads(row["data_json"])
+        new_balance = data.get("balance", 0) + delta
+
+        if new_balance < min_balance:
+            conn.rollback()
+            return None
+
+        data["balance"] = new_balance
+        conn.execute(
+            "UPDATE users SET data_json=? WHERE uid=?",
+            (json.dumps(data, ensure_ascii=False), uid)
+        )
+        conn.commit()
+        return new_balance
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def get_user(uid: int) -> dict | None:
     return _load_raw(uid)
 
@@ -222,18 +404,17 @@ def get_user(uid: int) -> dict | None:
 def get_user_by_username(username: str) -> dict | None:
     """
     Поиск пользователя по username (без @, регистронезависимо).
-    Перебирает БД на стороне SQLite через LIKE — не грузит всё в память.
+    Использует индекс idx_users_username — быстрый поиск по одной строке,
+    без загрузки и разбора всей таблицы в память (раньше именно это было
+    одной из причин тормозов при росте базы игроков).
     """
-    uname_lower = username.lower()
-    with _get_conn() as conn:
-        rows = conn.execute("SELECT data_json FROM users").fetchall()
-    for row in rows:
-        try:
-            d = json.loads(row["data_json"])
-            if (d.get("username") or "").lower() == uname_lower:
-                return d
-        except Exception:
-            continue
+    with _conn_ctx() as conn:
+        row = conn.execute(
+            "SELECT data_json FROM users WHERE username = ? COLLATE NOCASE",
+            (username,)
+        ).fetchone()
+    if row:
+        return json.loads(row["data_json"])
     return None
 
 
@@ -257,9 +438,51 @@ def update_user(uid: int, fields: dict):
 
 
 def get_all_users() -> list[dict]:
-    with _get_conn() as conn:
+    with _conn_ctx() as conn:
         rows = conn.execute("SELECT data_json FROM users").fetchall()
     return [json.loads(r["data_json"]) for r in rows]
+
+
+# ---------- Async-обёртки ----------
+# sqlite3 в этом модуле синхронный (блокирующий). Вызов любой из функций
+# выше напрямую из async-хэндлера или фонового цикла останавливает ВЕСЬ
+# event loop бота на время выполнения запроса — то есть в этот момент
+# зависают ВСЕ пользователи одновременно, а не только тот, кто вызвал
+# операцию. Особенно критично для "тяжёлых" функций (get_all_users,
+# любой полный скан) и для фоновых циклов, которые дёргаются каждые
+# несколько секунд/минут.
+#
+# Эти обёртки выполняют исходную функцию в отдельном потоке
+# (asyncio.to_thread), чтобы event loop продолжал обрабатывать остальных
+# пользователей, пока идёт работа с БД. Использовать их из любого async
+# кода вместо прямого вызова синхронных функций выше.
+
+async def aio_get_user(uid: int) -> dict | None:
+    return await asyncio.to_thread(get_user, uid)
+
+
+async def aio_get_or_create_user(user) -> dict:
+    return await asyncio.to_thread(get_or_create_user, user)
+
+
+async def aio_save_user(uid: int, data: dict) -> None:
+    await asyncio.to_thread(save_user, uid, data)
+
+
+async def aio_update_user(uid: int, fields: dict) -> None:
+    await asyncio.to_thread(update_user, uid, fields)
+
+
+async def aio_get_user_by_username(username: str) -> dict | None:
+    return await asyncio.to_thread(get_user_by_username, username)
+
+
+async def aio_get_user_by_id_or_username(target_raw: str) -> dict | None:
+    return await asyncio.to_thread(get_user_by_id_or_username, target_raw)
+
+
+async def aio_get_all_users() -> list[dict]:
+    return await asyncio.to_thread(get_all_users)
 
 
 # ---------- Вспомогательные функции профиля ----------
