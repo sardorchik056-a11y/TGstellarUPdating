@@ -275,6 +275,7 @@ from duel import (
     create_challenge, get_incoming_challenge, cancel_challenge,
     accept_challenge, decline_challenge, start_challenge_battle,
     challenge_invite_text, challenge_invite_keyboard,
+    seconds_until_challenge_slot, cmd_invite_limit_text,
     # Титулы
     get_duel_title, TITLE_REWARDS,
 )
@@ -284,7 +285,7 @@ _active_battles: dict[int, dict] = {}
 # ── Хранилище message_id боевого экрана (uid -> (chat_id, message_id)) ─
 _battle_msgs: dict[int, tuple] = {}
 
-BOT_TOKEN = '8693034024:AAFosgmMZQw3PDzQ-ML7XVM3YKWqMHwy83c'
+BOT_TOKEN = '8947252465:AAHqlauZc6nOfLylBxlc6xt0VvOhSqR8Rc8'
 
 bot = Bot(token=BOT_TOKEN)
 
@@ -381,6 +382,9 @@ _cdl_input_msg: dict[int, tuple] = {}
 
 # Ожидание ввода цели для вызова на дуэль: uid -> True
 _challenge_input_pending: dict[int, bool] = {}
+
+# Ожидание подтверждения полного удаления данных игрока: admin_id -> target_uid
+_pending_delete_bd: dict[int, int] = {}
 
 EMOJI_DEPOSITS = "5427168083074628963"
 
@@ -717,8 +721,11 @@ async def handle_pending_text_input(message: Message):
             await message.reply("❌ Этот игрок уже находится в бою.", parse_mode="HTML")
             return
         target_name = _esc(target.get("first_name") or target.get("username") or str(target["id"]))
-        # Создаём вызов
-        create_challenge(uid, target["id"], target_name)
+        # Создаём вызов (с учётом лимита в 10 вызовов одному игроку за 24 часа)
+        if not create_challenge(uid, target["id"], target_name):
+            secs = seconds_until_challenge_slot(uid, target["id"])
+            await message.reply(cmd_invite_limit_text(target_name, secs), parse_mode="HTML")
+            return
         # Уведомляем цель в ЛС
         try:
             await bot.send_message(
@@ -990,6 +997,282 @@ async def cmd_updamage(message: Message):
         parse_mode="HTML"
     )
 
+
+@dp.message(Command("checkmine"))
+async def cmd_checkmine(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return  # тихо игнорируем
+
+    from miner import PICKAXES, PICKAXES_ORDER, TIER_LABELS, fmt_time, calc_mine_progress
+    from database import get_user, get_user_by_id_or_username
+
+    parts = message.text.strip().split()
+
+    # Определяем целевого пользователя: реплай > @username/id аргумент > себя
+    if message.reply_to_message and message.reply_to_message.from_user:
+        uid  = message.reply_to_message.from_user.id
+        data = get_user(uid)
+    elif len(parts) >= 2:
+        target_raw = parts[1].lstrip("@")
+        data = get_user_by_id_or_username(target_raw)
+        uid  = data["id"] if data else None
+    else:
+        uid  = message.from_user.id
+        data = get_user(uid)
+
+    if not data:
+        await message.reply(
+            "❌ Пользователь не найден в базе.\n"
+            "Использование: <code>/checkmine @username</code> или <code>/checkmine id</code>, "
+            "либо ответом (reply) на сообщение игрока.",
+            parse_mode="HTML",
+        )
+        return
+
+    name    = _esc(data.get("first_name") or data.get("username") or str(uid))
+    owned   = data.get("owned_pickaxes", ["wood_1"])
+    current = data.get("pickaxe", "wood_1")
+
+    # Сортируем открытые кирки в порядке их появления в игре
+    owned_sorted = [k for k in PICKAXES_ORDER if k in owned]
+
+    lines = []
+    for key in owned_sorted:
+        p = PICKAXES.get(key)
+        if not p:
+            continue
+        tier = TIER_LABELS.get(p.get("tier", ""), "")
+        mark = "✅" if key == current else "▫️"
+        lines.append(
+            f"{mark} <b>{_esc(p['name'])}</b> {tier}\n"
+            f"    ⛏ {p['dig_min']}–{p['dig_max']} за удар"
+        )
+    pickaxes_block = "\n".join(lines) if lines else "<i>Нет открытых кирок</i>"
+
+    # Статус текущей добычи
+    if data.get("mine_start"):
+        prog = calc_mine_progress(data)
+        if prog["finished"]:
+            mine_status = "✅ <b>Добыча завершена, ждёт сбора</b>"
+        else:
+            mine_status = f"⏳ <b>Идёт добыча</b> — осталось {fmt_time(prog['time_left'])}"
+    else:
+        mine_status = "⛔️ <b>Шахта не запущена</b>"
+
+    await message.reply(
+        f'⛏ <b>CHECKMINE</b>\n'
+        f'👤 <b>{name}</b> (<code>{uid}</code>)\n\n'
+        f'<blockquote>{mine_status}</blockquote>\n\n'
+        f'<b>Открытые кирки ({len(owned_sorted)}/{len(PICKAXES_ORDER)}):</b>\n'
+        f'<blockquote>{pickaxes_block}</blockquote>',
+        parse_mode="HTML",
+    )
+
+
+@dp.message(Command("deletebd"))
+async def cmd_deletebd(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return  # тихо игнорируем
+
+    from database import get_user, get_user_by_id_or_username
+
+    parts = message.text.strip().split()
+
+    # Определяем целевого пользователя: реплай > @username/id аргумент
+    if message.reply_to_message and message.reply_to_message.from_user:
+        uid  = message.reply_to_message.from_user.id
+        data = get_user(uid)
+    elif len(parts) >= 2:
+        target_raw = parts[1].lstrip("@")
+        data = get_user_by_id_or_username(target_raw)
+        uid  = data["id"] if data else None
+    else:
+        await message.reply(
+            "❌ Не указан игрок.\n"
+            "Использование: <code>/deletebd @username</code> или <code>/deletebd id</code>, "
+            "либо ответом (reply) на сообщение игрока.",
+            parse_mode="HTML",
+        )
+        return
+
+    if not data:
+        await message.reply("❌ Пользователь не найден в базе.", parse_mode="HTML")
+        return
+
+    if uid in ADMIN_IDS:
+        await message.reply("❌ Нельзя удалить данные администратора этой командой.", parse_mode="HTML")
+        return
+
+    name = _esc(data.get("first_name") or data.get("username") or str(uid))
+    _pending_delete_bd[message.from_user.id] = uid
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Да, удалить всё", callback_data=f"delbd_yes:{uid}")
+    kb.button(text="❌ Отмена", callback_data="delbd_no")
+    kb.adjust(1)
+
+    await message.reply(
+        f'⚠️ <b>ВНИМАНИЕ — ПОЛНОЕ УДАЛЕНИЕ ДАННЫХ</b>\n\n'
+        f'<blockquote>Игрок: <b>{name}</b> (<code>{uid}</code>)\n\n'
+        f'Будут стёрты <b>все</b> данные: баланс, шахта, кирки, питомцы, '
+        f'оружие/бои, статус, инвентарь, достижения и весь прогресс.\n'
+        f'Игрок начнёт игру полностью заново, как новый пользователь.\n\n'
+        f'<b>Это действие необратимо!</b></blockquote>',
+        parse_mode="HTML",
+        reply_markup=kb.as_markup(),
+    )
+
+
+@dp.callback_query(F.data.startswith("delbd_yes:"))
+async def cb_deletebd_confirm(call: CallbackQuery):
+    if call.from_user.id not in ADMIN_IDS:
+        await call.answer("Нет доступа.", show_alert=True)
+        return
+
+    target_uid = int(call.data.split(":", 1)[1])
+
+    # Подтверждение должно приходить именно от админа, запустившего команду,
+    # и совпадать с сохранённой целью — защита от гонок/устаревших кнопок
+    if _pending_delete_bd.get(call.from_user.id) != target_uid:
+        await call.answer("Запрос устарел, повтори команду заново.", show_alert=True)
+        return
+    _pending_delete_bd.pop(call.from_user.id, None)
+
+    # Best-effort: аккуратно выходим из клана, чтобы не оставить "мёртвого" участника
+    try:
+        from klan import get_member, leave_clan
+        if get_member(target_uid):
+            leave_clan(target_uid)
+    except Exception as _e:
+        print(f"[deletebd] leave_clan error: {_e}")
+
+    # Полное удаление записи игрока — при следующем /start он создастся заново с нуля
+    import sqlite3 as _sq
+    try:
+        with _sq.connect("tgstellar.db") as _conn:
+            _conn.execute("DELETE FROM users WHERE uid=?", (target_uid,))
+            _conn.commit()
+    except Exception as _e:
+        await call.message.edit_text(f"❌ Ошибка при удалении: {_e}")
+        return
+
+    await call.message.edit_text(
+        f'🗑 <b>Данные игрока <code>{target_uid}</code> полностью удалены.</b>\n\n'
+        f'<blockquote>При следующем /start он начнёт игру с чистого листа.</blockquote>',
+        parse_mode="HTML",
+    )
+    await call.answer("Удалено.")
+
+
+@dp.callback_query(F.data == "delbd_no")
+async def cb_deletebd_cancel(call: CallbackQuery):
+    if call.from_user.id not in ADMIN_IDS:
+        await call.answer()
+        return
+    _pending_delete_bd.pop(call.from_user.id, None)
+    await call.message.edit_text("❌ Удаление отменено.")
+    await call.answer()
+
+
+@dp.message(Command("giveart"))
+async def cmd_giveart(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return  # тихо игнорируем
+
+    from shop import _ARTIFACT_POOL, get_artifact_mine_multiplier, get_artifact_damage_multiplier, get_artifact_pets_multiplier
+    from database import get_user, get_user_by_id_or_username, save_user as _save
+
+    text = message.text.strip()
+
+    # Определяем целевого пользователя и название артефакта:
+    # /giveart @username Название артефакта
+    # /giveart 123456789 Название артефакта
+    # ответом (reply) на игрока: /giveart Название артефакта
+    if message.reply_to_message and message.reply_to_message.from_user:
+        uid  = message.reply_to_message.from_user.id
+        data = get_user(uid)
+        rest = text.split(maxsplit=1)
+        name_query = rest[1] if len(rest) >= 2 else ""
+    else:
+        parts = text.split(maxsplit=2)
+        if len(parts) < 3:
+            await message.reply(
+                "❌ Использование: <code>/giveart @username Название артефакта</code>\n"
+                "или <code>/giveart id Название артефакта</code>,\n"
+                "либо ответом (reply) на игрока: <code>/giveart Название артефакта</code>.",
+                parse_mode="HTML",
+            )
+            return
+        target_raw = parts[1].lstrip("@")
+        data = get_user_by_id_or_username(target_raw)
+        uid  = data["id"] if data else None
+        name_query = parts[2]
+
+    if not data:
+        await message.reply("❌ Пользователь не найден в базе.", parse_mode="HTML")
+        return
+
+    name_query = name_query.strip()
+    if not name_query:
+        await message.reply("❌ Не указано название артефакта.", parse_mode="HTML")
+        return
+
+    # Поиск артефакта: точное совпадение по RU/EN названию или ключу,
+    # затем — частичное совпадение (по подстроке)
+    q = name_query.lower()
+    found = None
+    for a in _ARTIFACT_POOL:
+        if q in (a["name"].lower(), a.get("name_en", "").lower(), a["key"].lower()):
+            found = a
+            break
+    if not found:
+        for a in _ARTIFACT_POOL:
+            if q in a["name"].lower() or q in a.get("name_en", "").lower():
+                found = a
+                break
+
+    if not found:
+        listing = "\n".join(f"• {a['name']} ({a.get('name_en', '')})" for a in _ARTIFACT_POOL)
+        await message.reply(
+            f"❌ Артефакт «{_esc(name_query)}» не найден.\n\n"
+            f"<b>Доступные артефакты:</b>\n{_esc(listing)}",
+            parse_mode="HTML",
+        )
+        return
+
+    artifacts = data.setdefault("artifacts", [])
+    name  = _esc(data.get("first_name") or data.get("username") or str(uid))
+
+    if any(entry["key"] == found["key"] for entry in artifacts):
+        await message.reply(
+            f'⚠️ У игрока <b>{name}</b> (<code>{uid}</code>) артефакт '
+            f'«<b>{_esc(found["name"])}</b>» уже есть. Повторно не выдаю.',
+            parse_mode="HTML",
+        )
+        return
+
+    artifacts.append({"key": found["key"]})
+    data["artifact_cases_opened"] = data.get("artifact_cases_opened", 0) + 1
+    _save(uid, data)
+
+    mine_mult   = get_artifact_mine_multiplier(data)
+    damage_mult = get_artifact_damage_multiplier(data)
+    pets_mult   = get_artifact_pets_multiplier(data)
+
+    art_name_line = f'{found["name"]} ({found.get("name_en", "")}) — {found["multiplier"]}×'
+
+    await message.reply(
+        f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>GIVEART</b>\n'
+        f'👤 <b>{name}</b> (<code>{uid}</code>)\n\n'
+        f'<blockquote><b>✅ Выдан артефакт:</b>\n{_esc(art_name_line)}</blockquote>\n\n'
+        f'<blockquote>'
+        f'<b>Итоговые бонусы:</b>\n'
+        f'<b>⛏ Добыча руды: ×{mine_mult}</b>\n'
+        f'<b>⚔️ Урон по боссу: ×{damage_mult}</b>\n'
+        f'<b>🐾 Добыча питомцов: ×{pets_mult}</b>'
+        f'</blockquote>',
+        parse_mode="HTML",
+    )
 
 
 @dp.message(Command("addalldiamond"))
@@ -1955,67 +2238,45 @@ async def cmd_gift(message: Message):
         await message.reply("❌ Нельзя переводить монеты самому себе.", parse_mode="HTML")
         return
 
-    # ── Атомарный перевод ─────────────────────────────────────────────
-    lock_sender    = await _get_user_lock(uid)
-    lock_recipient = await _get_user_lock(recipient_data["id"])
+    # ── Атомарный перевод (единая SQL-транзакция, см. database.transfer_coins) ──
+    from database import transfer_coins as _transfer_coins
 
-    # Берём оба лока в правильном порядке (меньший id первым) чтобы не было дедлоков
-    first_lock, second_lock = (
-        (lock_sender, lock_recipient)
-        if uid < recipient_data["id"]
-        else (lock_recipient, lock_sender)
-    )
+    recipient_level = recipient_data.get("level", 1)
+    daily_limit      = _gift_daily_limit(recipient_level)
 
-    async with first_lock:
-        async with second_lock:
-            # Перечитываем актуальные данные
-            sender_data    = get_or_create_user(message.from_user)
-            recipient_data = get_user(recipient_data["id"])
+    result = _transfer_coins(uid, recipient_data["id"], amount, daily_limit=daily_limit, gift_window=_GIFT_WINDOW)
 
-            sender_balance = sender_data.get("balance", 0)
-            if sender_balance < amount:
-                await message.reply(
-                    f"❌ Недостаточно монет.\n\n"
-                    f"<blockquote>"
-                    f"Ваш баланс: <b>{_fmt_full(sender_balance)}</b> {_COIN_GIFT}\n"
-                    f"Нужно: <b>{_fmt_full(amount)}</b> {_COIN_GIFT}"
-                    f"</blockquote>",
-                    parse_mode="HTML"
-                )
-                return
+    if not result["ok"]:
+        if result["reason"] == "insufficient":
+            sender_balance = result["sender_balance"]
+            await message.reply(
+                f"❌ Недостаточно монет.\n\n"
+                f"<blockquote>"
+                f"Ваш баланс: <b>{_fmt_full(sender_balance)}</b> {_COIN_GIFT}\n"
+                f"Нужно: <b>{_fmt_full(amount)}</b> {_COIN_GIFT}"
+                f"</blockquote>",
+                parse_mode="HTML"
+            )
+            return
+        if result["reason"] == "limit":
+            recipient_name_err = _esc(
+                recipient_data.get("first_name")
+                or recipient_data.get("username")
+                or str(recipient_data["id"])
+            )
+            await message.reply(
+                f'<tg-emoji emoji-id="5420323339723881652">🌟</tg-emoji><b><i> Игроку <b>{recipient_name_err}</b> можно передать до '
+                f"<b>{_fmt_full(result['daily_limit'])}</b>{_COIN_GIFT} монет в день.</i></b>",
+                parse_mode="HTML"
+            )
+            return
+        # no_sender / no_recipient — на этом этапе уже не должно случаться,
+        # т.к. обоих проверили выше, но на всякий случай не падаем молча
+        await message.reply("❌ Не удалось выполнить перевод. Попробуйте ещё раз.", parse_mode="HTML")
+        return
 
-            # ── Суточный лимит переводов по уровню ПОЛУЧАТЕЛЯ (антитвинк) ──
-            recipient_level = recipient_data.get("level", 1)
-            daily_limit      = _gift_daily_limit(recipient_level)
-            if daily_limit is not None:
-                now_gift = now_ts()
-                window_start = recipient_data.get("gift_window_start", 0)
-                if now_gift - window_start >= _GIFT_WINDOW:
-                    recipient_data["gift_window_start"]  = now_gift
-                    recipient_data["gift_received_today"] = 0
-                    window_start = now_gift
-
-                received_today = recipient_data.get("gift_received_today", 0)
-                if received_today + amount > daily_limit:
-                    recipient_name_err = _esc(
-                        recipient_data.get("first_name")
-                        or recipient_data.get("username")
-                        or str(recipient_data["id"])
-                    )
-                    await message.reply(
-                        f'<tg-emoji emoji-id="5420323339723881652">🌟</tg-emoji><b><i> Игроку <b>{recipient_name_err}</b> можно передать до '
-                        f"<b>{_fmt_full(daily_limit)}</b>{_COIN_GIFT} монет в день.</i></b>",
-                        parse_mode="HTML"
-                    )
-                    return
-
-                recipient_data["gift_received_today"] = received_today + amount
-
-            sender_data["balance"]    = sender_balance - amount
-            recipient_data["balance"] = recipient_data.get("balance", 0) + amount
-
-            _save(uid, sender_data)
-            _save(recipient_data["id"], recipient_data)
+    sender_data = {"balance": result["sender_balance"]}
+    recipient_data["balance"] = result["recipient_balance"]
 
     # ── Уведомления ───────────────────────────────────────────────────
     sender_name    = _esc(message.from_user.first_name or message.from_user.username or str(uid))
@@ -2232,6 +2493,14 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
             if res["ok"]:
                 m    = get_member(uid)
                 clan = get_clan(m["clan_id"])
+                # deposit_treasury() уже списал баланс и сохранил его в БД
+                # своим отдельным save_user(). Наша локальная копия `data`
+                # была загружена ДО этого списания, поэтому перечитываем
+                # актуальные данные — иначе save_user(uid, data) ниже
+                # затрёт баланс обратно на старое значение (деньги как бы
+                # "не списывались").
+                from database import get_user as _gu_klan_dep
+                data = _gu_klan_dep(uid) or data
                 data["clan_treasury_deposited"] = data.get("clan_treasury_deposited", 0) + amount
                 _ach_newly = check_achievements(data)
                 save_user(uid, data)
@@ -2556,7 +2825,10 @@ async def _handle_duel_cmd(message: Message):
                 return
 
             target_name = _esc(target.get("first_name") or target.get("username") or str(target["id"]))
-            create_challenge(uid, target["id"], target_name)
+            if not create_challenge(uid, target["id"], target_name):
+                secs = seconds_until_challenge_slot(uid, target["id"])
+                await message.reply(cmd_invite_limit_text(target_name, secs), parse_mode="HTML")
+                return
             try:
                 await bot.send_message(
                     target["id"],
@@ -5780,10 +6052,18 @@ async def handle_successful_payment(message: Message):
             _lang = data.get("lang", "ru")
             ok, msg, chosen = open_artifact_case(data, _lang)
 
-            # Сохраняем ВСЕГДА — деньги уже списаны, артефакт должен попасть в БД
-            _ach_newly = check_achievements(data)
+            # Сохраняем ВСЕГДА — деньги уже списаны, артефакт должен попасть в БД.
+            # check_achievements оборачиваем отдельно: если он упадёт с ошибкой,
+            # save_user всё равно должен выполниться, иначе оплаченный
+            # артефакт/монеты потеряются (баг: деньги списаны, а в БД пусто).
             save_user(data["id"], data)
-            await _notify_ach(data["id"], data, _ach_newly)
+            try:
+                _ach_newly = check_achievements(data)
+                if _ach_newly:
+                    save_user(data["id"], data)
+                    await _notify_ach(data["id"], data, _ach_newly)
+            except Exception as _ach_e:
+                print(f"[artifact_case] Ошибка check_achievements: {_ach_e!r}")
 
             # 1) Обновляем старое сообщение — убираем ссылку-инвойс
             pending = _pending_artifact_msg.pop(uid, None)
@@ -5801,39 +6081,79 @@ async def handle_successful_payment(message: Message):
                     pass
 
             # 2) Формируем текст результата
-            # chosen всегда есть (open_artifact_case всегда возвращает артефакт)
-            from shop import _get_effect_label as _eff_lbl
-            effect_label = _eff_lbl(chosen["effect"], _lang)
-            art_name = chosen.get("name_en", chosen["name"]) if _lang == "en" else chosen["name"]
-            art_emoji_id = chosen.get("emoji_id", "")
-            art_emoji = f'<tg-emoji emoji-id="{art_emoji_id}">♦️</tg-emoji> ' if art_emoji_id else ""
+            # ВАЖНО: chosen может быть None — это 25%-я ветка, когда вместо
+            # артефакта выдаются монеты (см. open_artifact_case в shop.py).
+            # Раньше здесь считалось, что chosen всегда есть, из-за чего
+            # обращение к chosen["effect"] падало с TypeError и пользователь
+            # не получал вообще никакого ответа от бота (хотя деньги/монеты
+            # уже были начислены и сохранены выше).
+            try:
+                if chosen is None:
+                    # Монеты вместо артефакта — msg уже содержит полный текст результата
+                    if _lang == "en":
+                        success_text = (
+                            f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
+                            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                            f'{msg}'
+                        )
+                    else:
+                        success_text = (
+                            f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
+                            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                            f'{msg}'
+                        )
+                else:
+                    from shop import _get_effect_label as _eff_lbl
+                    effect_label = _eff_lbl(chosen["effect"], _lang)
+                    art_name = chosen.get("name_en", chosen["name"]) if _lang == "en" else chosen["name"]
+                    art_emoji_id = chosen.get("emoji_id", "")
+                    art_emoji = f'<tg-emoji emoji-id="{art_emoji_id}">♦️</tg-emoji> ' if art_emoji_id else ""
 
-            # msg уже содержит правильный текст (новый артефакт или дубликат+компенсация)
-            if _lang == "en":
-                success_text = (
-                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
-                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                    f'<blockquote>'
-                    f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>Artifact Case opened!</b>\n'
-                    f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>Artifact: {art_emoji}{art_name}</b>\n'
-                    f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Bonus: {chosen["multiplier"]}× {effect_label} forever</b>\n'
-                    f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Spent: {ARTIFACT_CASE_COST_STARS} {STAR}</b>'
-                    f'</blockquote>\n\n'
-                    f'{msg}'
+                    # msg уже содержит правильный текст (новый артефакт или дубликат+компенсация)
+                    if _lang == "en":
+                        success_text = (
+                            f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
+                            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                            f'<blockquote>'
+                            f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>Artifact Case opened!</b>\n'
+                            f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>Artifact: {art_emoji}{art_name}</b>\n'
+                            f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Bonus: {chosen["multiplier"]}× {effect_label} forever</b>\n'
+                            f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Spent: {ARTIFACT_CASE_COST_STARS} {STAR}</b>'
+                            f'</blockquote>\n\n'
+                            f'{msg}'
+                        )
+                    else:
+                        success_text = (
+                            f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
+                            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                            f'<blockquote>'
+                            f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>Кейс Артефактов открыт!</b>\n'
+                            f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>Артефакт: {art_emoji}{art_name}</b>\n'
+                            f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Бонус: {chosen["multiplier"]}× {effect_label} навсегда</b>\n'
+                            f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Потрачено: {ARTIFACT_CASE_COST_STARS} {STAR}</b>'
+                            f'</blockquote>\n\n'
+                            f'{msg}'
+                        )
+                await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
+            except Exception as _e:
+                # Деньги/артефакт уже сохранены в БД строкой выше (save_user),
+                # поэтому даже если верстка сообщения упала — игрок не теряет
+                # покупку. Но бот больше не должен "молчать": шлём резервное
+                # уведомление и логируем причину для разбора.
+                print(f"[artifact_case] Ошибка формирования success_text: {_e!r}")
+                fallback = (
+                    "✅ Оплата прошла успешно, кейс открыт! Награда уже зачислена "
+                    "(проверь баланс/коллекцию артефактов). Не удалось красиво "
+                    "оформить сообщение — но покупка не потеряна."
+                    if _lang != "en" else
+                    "✅ Payment successful, case opened! Reward has been credited "
+                    "(check your balance/artifact collection). Couldn't render the "
+                    "fancy message, but your purchase is not lost."
                 )
-            else:
-                success_text = (
-                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
-                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                    f'<blockquote>'
-                    f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>Кейс Артефактов открыт!</b>\n'
-                    f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>Артефакт: {art_emoji}{art_name}</b>\n'
-                    f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Бонус: {chosen["multiplier"]}× {effect_label} навсегда</b>\n'
-                    f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Потрачено: {ARTIFACT_CASE_COST_STARS} {STAR}</b>'
-                    f'</blockquote>\n\n'
-                    f'{msg}'
-                )
-            await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
+                try:
+                    await bot.send_message(message.chat.id, fallback)
+                except Exception:
+                    pass
         return
 
     # ===== ОПЛАТА: Зелье =====
@@ -6295,7 +6615,9 @@ async def _pets_loop():
 
     while True:
         try:
-            for _d in get_all_users():
+            # Как и в poison/hp-циклах: полный скан таблицы уводим в поток,
+            # чтобы не морозить бота для всех пользователей на время чтения БД.
+            for _d in await asyncio.to_thread(get_all_users):
                 owned = _d.get("owned_pets", [])
                 if not owned:
                     continue
@@ -6331,7 +6653,7 @@ async def _pets_loop():
                     await bot.send_message(_d["id"], msg_text, parse_mode="HTML")
                 except Exception:
                     pass
-                _sv(_d["id"], _d)
+                await asyncio.to_thread(_sv, _d["id"], _d)
         except Exception as _e:
             print(f"[pets_loop] {_e}")
         await asyncio.sleep(15 * 60)
@@ -6350,7 +6672,10 @@ async def _poison_loop():
         await asyncio.sleep(60)  # тик каждую минуту
         try:
             from database import get_all_users as _gau
-            for _d in _gau():
+            # Полный скан таблицы (json.loads на каждого юзера) выполняем в
+            # отдельном потоке, чтобы на время чтения БД event loop бота не
+            # замирал для всех игроков одновременно.
+            for _d in await asyncio.to_thread(_gau):
                 poison = get_active_poison_info(_d)
                 if not poison:
                     continue
@@ -6392,7 +6717,7 @@ async def _poison_loop():
                     _d["active_poison"] = None
 
                 _save_boss_state(state)
-                _sv(_d["id"], _d)
+                await asyncio.to_thread(_sv, _d["id"], _d)
 
                 if killed:
                     from hunt import BOSSES_BY_KEY
@@ -6463,20 +6788,25 @@ async def _hp_regen_notify_loop():
     while True:
         await asyncio.sleep(HP_REGEN_INTERVAL)
         try:
-            from database import get_all_users as _gau_regen
+            from database import get_user as _gu_regen
             from duel import _player_hp as _phps, _calc_stats as _cs
-            for _d in _gau_regen():
-                _uid = _d["id"]
+            # Раньше здесь на каждый тик (каждые несколько секунд!) грузилась
+            # и парсилась ВСЯ таблица users — это останавливало весь бот для
+            # всех игроков одновременно. _player_hp — это уже готовый
+            # in-memory словарь тех, кому вообще нужна регенерация, так что
+            # достаточно пройтись по нему, а из БД читать по одному игроку
+            # (да и то только когда реально есть тик) вместо полного скана.
+            for _uid, entry in list(_phps.items()):
                 if _uid in _active_battles:
-                    continue
-                entry = _phps.get(_uid)
-                if entry is None:
                     continue
                 import time as _t
                 now = int(_t.time())
                 elapsed = now - entry["last_regen_at"]
                 ticks   = elapsed // HP_REGEN_INTERVAL
                 if ticks > 0:
+                    _d = await asyncio.to_thread(_gu_regen, _uid)
+                    if _d is None:
+                        continue
                     hp_max = _cs(_d)["hp"]
                     was_below_100 = entry["hp"] < 100
                     entry["hp"] = min(hp_max, entry["hp"] + ticks * HP_REGEN_AMOUNT)
