@@ -377,8 +377,9 @@ CASES = {
 
 def _fmt_num(n) -> str:
     """
-    Сокращённый формат чисел: 1500 -> "1.5к", 100000 -> "100к",
-    2300000 -> "2.3м" и т.д. Единый стиль во всём боте.
+    Сокращённый формат чисел: 1500 -> "1.5K", 100000 -> "100K",
+    2300000 -> "2.3M", 1_500_000_000 -> "1.5B" и т.д.
+    Единый стиль со всем ботом (см. database.py -> format_amount).
     """
     try:
         n = float(n)
@@ -393,20 +394,23 @@ def _fmt_num(n) -> str:
             return f"{sign}{int(n)}"
         return f"{sign}{n:.1f}"
 
-    for div, suffix in [
-        (1_000_000_000_000, "трлн"),
-        (1_000_000_000,     "млрд"),
-        (1_000_000,         "м"),
-        (1_000,             "к"),
-    ]:
-        if n >= div:
-            val = n / div
-            val = int(val * 10) / 10
-            if val == int(val):
-                return f"{sign}{int(val)}{suffix}"
-            return f"{sign}{val:.1f}{suffix}"
+    suffixes = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"]
+    idx = 0
+    val = n
+    while val >= 1000:
+        val /= 1000
+        idx += 1
 
-    return f"{sign}{int(n)}"
+    val = int(val * 10) / 10
+
+    if idx < len(suffixes):
+        suffix = suffixes[idx]
+    else:
+        suffix = f"Dc{idx - len(suffixes) + 2}"
+
+    if val == int(val):
+        return f"{sign}{int(val)}{suffix}"
+    return f"{sign}{val:.1f}{suffix}"
 
 
 def _multiplier_label(mult: float) -> str:
