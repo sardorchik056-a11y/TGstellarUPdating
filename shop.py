@@ -292,7 +292,7 @@ def open_artifact_case(data: dict, lang: str = "ru") -> tuple:
         added_msg = f"{_pe('ok', '✅')} <b><i>{_L(lang, 'Артефакт добавлен в коллекцию!', 'Artifact added to collection!')}</i></b>"
     else:
         # Дубликат — выдаём монеты по множителю артефакта
-        _dup_rewards = {1.3: 5_000_000, 1.5: 8_000_000, 1.8: 15_000_000, 1.4: 50_000_000}
+        _dup_rewards = {1.25: 5_000_000, 1.4: 8_000_000, 1.65: 15_000_000, 1.35: 50_000_000}
         _dup_coins = _dup_rewards.get(chosen["multiplier"], 5_000_000)
         data["balance"] = data.get("balance", 0) + _dup_coins
         added_msg = (
