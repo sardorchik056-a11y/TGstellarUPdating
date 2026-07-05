@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from miner import COIN, EMOJI_BACK
-from database import format_amount as _fmt
 
 _E = {
     "paw":   "5337047059180566409",
@@ -51,6 +50,39 @@ def _btn(eid, label, cb):
     return InlineKeyboardButton(text=label, callback_data=cb, icon_custom_emoji_id=eid)
 def _back_btn(cb, label="Назад"):
     return InlineKeyboardButton(text=label, callback_data=cb, icon_custom_emoji_id=_E["back"])
+
+def _fmt(n) -> str:
+    """
+    Сокращённый формат чисел: 1500 -> "1.5к", 100000 -> "100к",
+    2300000 -> "2.3м" и т.д. Единый стиль во всём боте.
+    """
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return str(n)
+
+    sign = "-" if n < 0 else ""
+    n = abs(n)
+
+    if n < 1000:
+        if n == int(n):
+            return f"{sign}{int(n)}"
+        return f"{sign}{n:.1f}"
+
+    for div, suffix in [
+        (1_000_000_000_000, "трлн"),
+        (1_000_000_000,     "млрд"),
+        (1_000_000,         "м"),
+        (1_000,             "к"),
+    ]:
+        if n >= div:
+            val = n / div
+            val = int(val * 10) / 10
+            if val == int(val):
+                return f"{sign}{int(val)}{suffix}"
+            return f"{sign}{val:.1f}{suffix}"
+
+    return f"{sign}{int(n)}"
 
 def _now_ts(): 
     return int(datetime.now(timezone.utc).timestamp())
