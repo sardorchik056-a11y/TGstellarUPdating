@@ -1798,6 +1798,7 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
     if result["boss_killed"]:
         # Начисляем убийце сразу (остальным — в main.py через damage_rewards)
         data["balance"] = data.get("balance", 0) + result["reward"]
+        data["ref_income"] = data.get("ref_income", 0) + result["reward"]
         data["xp"]      = data.get("xp", 0) + result["xp"]
 
     # ── Статистика для достижений ──
