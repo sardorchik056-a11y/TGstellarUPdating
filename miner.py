@@ -949,6 +949,8 @@ def sell_all_ores(data: dict, lang: str = "ru") -> tuple:
             data["ores"][ore["key"]] = 0
     data["balance"] = data.get("balance", 0) + total
     data["mine_total_sold"] = data.get("mine_total_sold", 0) + total
+    if total:
+        data["ref_income"] = data.get("ref_income", 0) + total
     report = "\n".join(lines) if lines else f"  {t(lang, 'mine_sell_nothing')}"
     return total, report
 
