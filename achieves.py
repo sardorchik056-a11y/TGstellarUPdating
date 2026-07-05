@@ -1588,7 +1588,7 @@ ACHIEVEMENTS = [
          "Войди в топ-10 игроков по балансу",
          "misc",
          lambda d: _is_top10_balance(d),
-         reward_coins=200_000, reward_xp=300),
+         reward_coins=2_000, reward_xp=300),
 ]
 
 assert len(ACHIEVEMENTS) == 129, f"Ожидалось 129 достижений, а получилось {len(ACHIEVEMENTS)}"
