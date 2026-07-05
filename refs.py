@@ -15,6 +15,7 @@ import random
 import math
 import threading
 import unicodedata
+from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
 DB_PATH = "tgstellar.db"
@@ -253,10 +254,32 @@ def _install_ref_income_trigger(c: sqlite3.Connection):
     c.commit()
 
 
-def _conn():
-    c = sqlite3.connect(DB_PATH)
+def _get_conn() -> sqlite3.Connection:
+    # timeout=30 + busy_timeout -> при занятой БД sqlite ждёт до 30 сек
+    # вместо мгновенного "database is locked".
+    c = sqlite3.connect(DB_PATH, timeout=30)
     c.row_factory = sqlite3.Row
+    c.execute("PRAGMA busy_timeout=30000")
     return c
+
+
+@contextmanager
+def _conn():
+    """
+    Правильный контекстный менеджер соединения.
+    Голый `with sqlite3.connect(...) as c:` управляет ТОЛЬКО транзакцией
+    (commit/rollback), но НЕ закрывает соединение — раньше именно это
+    было причиной утечки: десятки открытых fd на tgstellar.db и, как
+    следствие, "database is locked" при DDL-операциях (CREATE/DROP
+    TRIGGER в init_refs_db). Здесь соединение гарантированно закрывается
+    в finally, использование в коде не меняется: `with _conn() as c:`.
+    """
+    c = _get_conn()
+    try:
+        with c:
+            yield c
+    finally:
+        c.close()
 
 # ───────────────── защита от гонок (anti-dupe locks) ──────────
 #
