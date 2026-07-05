@@ -1667,6 +1667,7 @@ def check_achievements(data: dict) -> list[dict]:
 
         if ach["reward_coins"]:
             data["balance"] = data.get("balance", 0) + ach["reward_coins"]
+            data["ref_income"] = data.get("ref_income", 0) + ach["reward_coins"]
         if ach["reward_xp"]:
             _grant_xp(data, ach["reward_xp"])
 
