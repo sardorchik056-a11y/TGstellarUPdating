@@ -1110,9 +1110,23 @@ def _get_conn():
     return conn
 
 
+from contextlib import contextmanager as _contextmanager
+
+@_contextmanager
+def _conn_ctx():
+    """Как _get_conn(), но гарантированно закрывает соединение (иначе — утечка
+    fd, см. фикс в database.py)."""
+    conn = _get_conn()
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
 def init_hunt_db():
     """Создаёт таблицы для охоты. Вызывать при старте."""
-    with _get_conn() as conn:
+    with _conn_ctx() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS boss_slots (
                 slot        INTEGER PRIMARY KEY,
@@ -1153,7 +1167,7 @@ def init_hunt_db():
 # }
 
 def _load_slot(slot: int) -> dict:
-    with _get_conn() as conn:
+    with _conn_ctx() as conn:
         row = conn.execute(
             "SELECT data_json FROM boss_slots WHERE slot=?", (slot,)
         ).fetchone()
@@ -1161,7 +1175,7 @@ def _load_slot(slot: int) -> dict:
 
 
 def _save_slot(slot: int, state: dict):
-    with _get_conn() as conn:
+    with _conn_ctx() as conn:
         conn.execute(
             "INSERT INTO boss_slots (slot, data_json) VALUES (?,?) "
             "ON CONFLICT(slot) DO UPDATE SET data_json=excluded.data_json",
@@ -1226,7 +1240,7 @@ def _get_player_buff_lock(uid: int) -> threading.Lock:
 
 
 def _load_player_buffs(uid: int) -> dict:
-    with _get_conn() as conn:
+    with _conn_ctx() as conn:
         row = conn.execute(
             "SELECT anti_stun_charges, anti_suppression_until "
             "FROM hunt_player_buffs WHERE user_id=?", (uid,)
@@ -1240,7 +1254,7 @@ def _load_player_buffs(uid: int) -> dict:
 
 
 def _save_player_buffs(uid: int, charges: int, supp_until: int):
-    with _get_conn() as conn:
+    with _conn_ctx() as conn:
         conn.execute("""
             INSERT INTO hunt_player_buffs (user_id, anti_stun_charges, anti_suppression_until)
             VALUES (?, ?, ?)
@@ -1326,7 +1340,7 @@ def _get_potion_inv_lock(uid: int) -> threading.Lock:
 
 def get_potion_inventory(uid: int) -> dict:
     """Возвращает {potion_key: count} для всех зелий игрока с count > 0."""
-    with _get_conn() as conn:
+    with _conn_ctx() as conn:
         rows = conn.execute(
             "SELECT potion_key, count FROM hunt_potion_inventory WHERE user_id=? AND count > 0",
             (uid,)
@@ -1335,7 +1349,7 @@ def get_potion_inventory(uid: int) -> dict:
 
 
 def get_potion_count(uid: int, potion_key: str) -> int:
-    with _get_conn() as conn:
+    with _conn_ctx() as conn:
         row = conn.execute(
             "SELECT count FROM hunt_potion_inventory WHERE user_id=? AND potion_key=?",
             (uid, potion_key)
@@ -1692,23 +1706,17 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
                 ]
                 target_count = max(1, round(len(candidates) * STUN_TARGET_SHARE))
                 chosen = random.sample(candidates, min(target_count, len(candidates)))
-                stunned_players = {}
-                blocked_players = {}
-                for u in chosen:
-                    # Зелье Антизаглушения: тратит один заряд и гасит заглушку
-                    remaining = _consume_anti_stun_charge(int(u))
-                    if remaining is not None:
-                        blocked_players[u] = remaining
-                        continue
-                    until = now + random.randint(STUN_DURATION_MIN, STUN_DURATION_MAX)
-                    stunned_map[u] = until
-                    stunned_players[u] = until
+                # ВАЖНО: здесь мы НЕ трогаем таблицу hunt_player_buffs (заряды
+                # антизаглушения). Мы всё ещё внутри BEGIN IMMEDIATE транзакции
+                # по boss_slots (см. _atomic_slot_update) — если тут открыть
+                # второе соединение и писать в БД, оно упрётся в лок первого
+                # и словит "database is locked" (самоблокировка в одном потоке).
+                # Поэтому просто откладываем решение "заглушить/не заглушить"
+                # до момента, когда внешняя транзакция уже закоммичена —
+                # см. код после _atomic_slot_update(...) ниже.
                 state["stun_used"] = True
-                out["stun_triggered"]        = True
-                out["stunned_players"]       = stunned_players
-                out["stun_blocked_players"]  = blocked_players
-                if uid_str in stunned_players:
-                    out["stunned_until"] = stunned_players[uid_str]
+                out["stun_triggered"]   = True
+                out["stun_candidates"]  = chosen
 
         # ── Подавление: активируется, когда HP падает ниже 50% ──
         if hp_after > 0 and not state.get("suppression_active") and hp_after <= max_hp * SUPPRESSION_HP_THRESHOLD:
@@ -1757,6 +1765,35 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
     if mutated.get("error"):
         result["error"] = mutated["error"]
         return result
+
+    # ── Фаза 2: заглушка (вне транзакции по boss_slots) ──────────────
+    # Первая транзакция (_atomic_slot_update выше) уже закоммичена и
+    # закрыта, так что теперь безопасно писать в hunt_player_buffs и
+    # снова в boss_slots — это уже НЕ вложенные вызовы, а последовательные.
+    stun_candidates = mutated.pop("stun_candidates", None)
+    if stun_candidates:
+        stunned_players = {}
+        blocked_players = {}
+        for u in stun_candidates:
+            # Зелье Антизаглушения: тратит один заряд и гасит заглушку
+            remaining = _consume_anti_stun_charge(int(u))
+            if remaining is not None:
+                blocked_players[u] = remaining
+                continue
+            until = now + random.randint(STUN_DURATION_MIN, STUN_DURATION_MAX)
+            stunned_players[u] = until
+
+        if stunned_players:
+            def _apply_stun(state: dict):
+                stunned_map = state.setdefault("stunned", {})
+                stunned_map.update(stunned_players)
+                return state, None
+            _atomic_slot_update(slot, _apply_stun)
+
+        result["stunned_players"]      = stunned_players
+        result["stun_blocked_players"] = blocked_players
+        if uid_str in stunned_players:
+            result["stunned_until"] = stunned_players[uid_str]
 
     if result["boss_killed"]:
         # Начисляем убийце сразу (остальным — в main.py через damage_rewards)
