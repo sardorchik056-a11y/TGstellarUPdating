@@ -184,23 +184,31 @@ def _install_ref_income_trigger(c: sqlite3.Connection):
     """
     ПРОЦЕНТНАЯ РЕФ-СИСТЕМА (10% / 15%).
 
-    Ставим задачу так: "проверять ЛЮБОЕ начисление" пользователю и
-    отдавать % его рефереру — а database.py трогать нельзя, потому что
-    от save_user() зависит куча других файлов проекта.
-
-    Решение: SQL-триггер прямо на таблице users (её создаёт database.py,
-    но триггер вешается отдельным DDL-запросом и не требует правок
-    самого database.py — он будет отрабатывать при КАЖДОМ UPDATE
-    data_json, откуда бы он ни пришёл: из miner.py, shop.py, admin-панели
-    и т.д.).
+    ВАЖНО: с этой версии % начисляется НЕ с любого роста баланса,
+    а только с роста поля data_json->'$.ref_income'. Это отдельный
+    накопительный счётчик "дохода, засчитываемого в реф-систему",
+    который инкрементируют вручную только 5 разрешённых источников:
+      • шахта     — miner.py (sell_all_ores)
+      • ачивки    — achieves.py (check_achievements, reward_coins)
+      • питомцы   — mainhelp.py (фоновый цикл начисления дохода питомцев)
+      • босс      — hunt.py (attack_boss, награда убийце) +
+                     mainhelp.py (_distribute_boss_rewards, награда
+                     соучастникам убийства, и добивание ядом)
+      • город/вклады — mainhelp.py (cdl_claim_all и авто-выплата
+                     вкладов в фоновом цикле)
+    Любые другие начисления (дуэли, подарки, чеки, промокоды, донат,
+    ежедневный бонус и т.д.) НЕ трогают ref_income и поэтому больше
+    не приносят рефереру процент — database.py при этом не менялся.
 
     Как это работает:
-      1. Триггер сравнивает старый и новый JSON-баланс пользователя.
-      2. Если баланс ВЫРОС (delta > 0) и у пользователя есть реферер —
-         реферер получает delta * percent / 100 монет (округление до
-         целого), где percent берётся из refs.percent (10 или 15).
-      3. Если баланс уменьшился (трата, покупка, вывод и т.п.) —
-         триггер не срабатывает, комиссия не начисляется.
+      1. Триггер сравнивает старое и новое значение ref_income.
+      2. Если ref_income ВЫРОС (delta > 0) и у пользователя есть
+         реферер — реферер получает delta * percent / 100 монет
+         (округление до целого), где percent берётся из refs.percent
+         (10 или 15).
+      3. Если ref_income не менялся — триггер не срабатывает вовсе,
+         даже если сам balance при этом изменился (трата, дуэль,
+         подарок и т.п.) — комиссия не начисляется.
       4. Начисление комиссии рефереру — это тоже UPDATE users, но
          SQLite по умолчанию (recursive_triggers = OFF) НЕ запускает
          триггеры из других триггеров. Поэтому комиссия уходит только
@@ -215,8 +223,8 @@ def _install_ref_income_trigger(c: sqlite3.Connection):
         AFTER UPDATE OF data_json ON users
         FOR EACH ROW
         WHEN
-            CAST(json_extract(NEW.data_json, '$.balance') AS REAL)
-              > CAST(json_extract(OLD.data_json, '$.balance') AS REAL)
+            CAST(COALESCE(json_extract(NEW.data_json, '$.ref_income'), 0) AS REAL)
+              > CAST(COALESCE(json_extract(OLD.data_json, '$.ref_income'), 0) AS REAL)
             AND (SELECT inviter_uid FROM refs WHERE uid = NEW.uid) IS NOT NULL
         BEGIN
             UPDATE users
@@ -225,8 +233,8 @@ def _install_ref_income_trigger(c: sqlite3.Connection):
                     CAST(
                         CAST(json_extract(data_json, '$.balance') AS REAL)
                         + ROUND(
-                            (CAST(json_extract(NEW.data_json, '$.balance') AS REAL)
-                             - CAST(json_extract(OLD.data_json, '$.balance') AS REAL))
+                            (CAST(COALESCE(json_extract(NEW.data_json, '$.ref_income'), 0) AS REAL)
+                             - CAST(COALESCE(json_extract(OLD.data_json, '$.ref_income'), 0) AS REAL))
                             * (SELECT COALESCE(percent, {REF_PERCENT_NORMAL}) FROM refs WHERE uid = NEW.uid) / 100.0
                           )
                     AS INTEGER)
@@ -238,15 +246,15 @@ def _install_ref_income_trigger(c: sqlite3.Connection):
                 (SELECT inviter_uid FROM refs WHERE uid = NEW.uid),
                 0, 0,
                 CAST(ROUND(
-                    (CAST(json_extract(NEW.data_json, '$.balance') AS REAL)
-                     - CAST(json_extract(OLD.data_json, '$.balance') AS REAL))
+                    (CAST(COALESCE(json_extract(NEW.data_json, '$.ref_income'), 0) AS REAL)
+                     - CAST(COALESCE(json_extract(OLD.data_json, '$.ref_income'), 0) AS REAL))
                     * (SELECT COALESCE(percent, {REF_PERCENT_NORMAL}) FROM refs WHERE uid = NEW.uid) / 100.0
                 ) AS INTEGER)
             )
             ON CONFLICT(uid) DO UPDATE SET
                 earned_coins = earned_coins + CAST(ROUND(
-                    (CAST(json_extract(NEW.data_json, '$.balance') AS REAL)
-                     - CAST(json_extract(OLD.data_json, '$.balance') AS REAL))
+                    (CAST(COALESCE(json_extract(NEW.data_json, '$.ref_income'), 0) AS REAL)
+                     - CAST(COALESCE(json_extract(OLD.data_json, '$.ref_income'), 0) AS REAL))
                     * (SELECT COALESCE(percent, {REF_PERCENT_NORMAL}) FROM refs WHERE uid = NEW.uid) / 100.0
                 ) AS INTEGER);
         END;
