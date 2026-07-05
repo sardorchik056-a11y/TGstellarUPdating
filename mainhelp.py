@@ -285,7 +285,7 @@ _active_battles: dict[int, dict] = {}
 # ── Хранилище message_id боевого экрана (uid -> (chat_id, message_id)) ─
 _battle_msgs: dict[int, tuple] = {}
 
-BOT_TOKEN = '8693034024:AAFosgmMZQw3PDzQ-ML7XVM3YKWqMHwy83c'
+BOT_TOKEN = '8947252465:AAHqlauZc6nOfLylBxlc6xt0VvOhSqR8Rc8'
 
 bot = Bot(token=BOT_TOKEN)
 
@@ -442,6 +442,7 @@ def _distribute_boss_rewards(killer_uid: int, damage_rewards: dict):
         if not u:
             continue
         u["balance"] = u.get("balance", 0) + coins
+        u["ref_income"] = u.get("ref_income", 0) + coins
         _apply_xp(u, xp)
         _sv(uid, u)
         # Уведомление участнику
@@ -3750,6 +3751,7 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer("Нет готовых вкладов!", show_alert=True)
                 return
             data["balance"] = data.get("balance", 0) + total_payout
+            data["ref_income"] = data.get("ref_income", 0) + total_payout
             data["deposits_claimed"] = data.get("deposits_claimed", 0) + count
             data["deposits_total_profit"] = data.get("deposits_total_profit", 0) + total_profit
             _ach_newly = check_achievements(data)
@@ -6597,6 +6599,7 @@ async def _cdl_payout_loop():
                             continue
                         udata = _js.loads(row["data_json"])
                         udata["balance"] = udata.get("balance", 0) + total_payout
+                        udata["ref_income"] = udata.get("ref_income", 0) + total_payout
                         udata["deposits_claimed"] = udata.get("deposits_claimed", 0) + len(paid_deps)
                         udata["deposits_total_profit"] = udata.get("deposits_total_profit", 0) + total_profit
                         _ach_newly = check_achievements(udata)
@@ -6679,6 +6682,7 @@ async def _pets_loop():
                 except Exception:
                     pass
                 _d["balance"] = _d.get("balance", 0) + amount
+                _d["ref_income"] = _d.get("ref_income", 0) + amount
                 _d["pet_last_group_notify"] = now
 
                 msgs       = __import__("pets")._NOTIFICATIONS.get(pk, [])
@@ -6749,6 +6753,7 @@ async def _poison_loop():
                     state["boss_died_at"]        = died_at
                     state["boss_kill_duration"]  = kill_duration
                     _d["balance"] = _d.get("balance", 0) + BOSS_KILL_REWARD
+                    _d["ref_income"] = _d.get("ref_income", 0) + BOSS_KILL_REWARD
                     _d["active_poison"] = None
 
                 _save_boss_state(state)
