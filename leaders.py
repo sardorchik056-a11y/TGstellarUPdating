@@ -11,7 +11,6 @@ import unicodedata
 from datetime import datetime, timezone, timedelta
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from database import format_amount as _fmt
 
 DB_PATH = "tgstellar.db"
 
@@ -131,6 +130,44 @@ _PDI = "\u2069"
 
 def _tg(eid: str, fb: str = "") -> str:
     return f'<tg-emoji emoji-id="{eid}">{fb}</tg-emoji>'
+
+
+def _fmt(n) -> str:
+    """
+    Сокращённый формат чисел: 1500 -> "1.5K", 100000 -> "100K",
+    2300000 -> "2.3M", 1_500_000_000 -> "1.5B" и т.д.
+    Единый стиль со всем ботом (см. database.py -> format_amount).
+    """
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return str(n)
+
+    sign = "-" if n < 0 else ""
+    n = abs(n)
+
+    if n < 1000:
+        if n == int(n):
+            return f"{sign}{int(n)}"
+        return f"{sign}{n:.1f}"
+
+    suffixes = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"]
+    idx = 0
+    val = n
+    while val >= 1000:
+        val /= 1000
+        idx += 1
+
+    val = int(val * 10) / 10
+
+    if idx < len(suffixes):
+        suffix = suffixes[idx]
+    else:
+        suffix = f"Dc{idx - len(suffixes) + 2}"
+
+    if val == int(val):
+        return f"{sign}{int(val)}{suffix}"
+    return f"{sign}{val:.1f}{suffix}"
 
 
 def _now_ts() -> int:
