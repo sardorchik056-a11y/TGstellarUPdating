@@ -6048,22 +6048,49 @@ async def handle_successful_payment(message: Message):
             if not data:
                 # Пользователь не найден в БД — создаём и пробуем снова
                 data = get_or_create_user(message.from_user)
+            data["id"] = uid  # подстраховка: ключ "id" должен совпадать с uid
 
             _lang = data.get("lang", "ru")
-            ok, msg, chosen = open_artifact_case(data, _lang)
 
-            # Сохраняем ВСЕГДА — деньги уже списаны, артефакт должен попасть в БД.
-            # check_achievements оборачиваем отдельно: если он упадёт с ошибкой,
-            # save_user всё равно должен выполниться, иначе оплаченный
-            # артефакт/монеты потеряются (баг: деньги списаны, а в БД пусто).
-            save_user(data["id"], data)
+            # ВСЁ ниже — в одном try/except. Деньги уже списаны Telegram'ом,
+            # поэтому что бы ни случилось (баг в open_artifact_case, в
+            # check_achievements, в верстке текста) — пользователь должен
+            # получить хотя бы fallback-сообщение, а не тишину, как было
+            # раньше при необработанном исключении в середине блока.
+            chosen = None
+            msg = ""
             try:
-                _ach_newly = check_achievements(data)
-                if _ach_newly:
-                    save_user(data["id"], data)
-                    await _notify_ach(data["id"], data, _ach_newly)
-            except Exception as _ach_e:
-                print(f"[artifact_case] Ошибка check_achievements: {_ach_e!r}")
+                ok, msg, chosen = open_artifact_case(data, _lang)
+
+                # Сохраняем СРАЗУ, используя uid напрямую (не data["id"],
+                # чтобы не зависеть от возможного отсутствия/рассинхрона ключа).
+                save_user(uid, data)
+
+                try:
+                    _ach_newly = check_achievements(data)
+                    if _ach_newly:
+                        save_user(uid, data)
+                        await _notify_ach(uid, data, _ach_newly)
+                except Exception as _ach_e:
+                    import traceback as _tb
+                    print(f"[artifact_case] Ошибка check_achievements: {_ach_e!r}")
+                    _tb.print_exc()
+            except Exception as _grant_e:
+                import traceback as _tb
+                print(f"[artifact_case] КРИТИЧНО: ошибка выдачи награды: {_grant_e!r}")
+                _tb.print_exc()
+                fallback = (
+                    "⚠️ Оплата прошла, но при выдаче награды произошла ошибка. "
+                    "Напиши админу /support — разберёмся и начислим вручную."
+                    if _lang != "en" else
+                    "⚠️ Payment went through, but there was an error granting the reward. "
+                    "Please contact support — we'll credit it manually."
+                )
+                try:
+                    await bot.send_message(message.chat.id, fallback)
+                except Exception:
+                    pass
+                return
 
             # 1) Обновляем старое сообщение — убираем ссылку-инвойс
             pending = _pending_artifact_msg.pop(uid, None)
