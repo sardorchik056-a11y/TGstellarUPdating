@@ -2296,7 +2296,7 @@ async def cmd_gift(message: Message):
             await message.reply(
                 f"❌ Недостаточно монет.\n\n"
                 f"<blockquote>"
-                f"Ваш баланс: <b>{_fmt_full(sender_balance)}</b> {_COIN_GIFT}\n"
+                f"Ваш баланс: <b>{_fmt_num(sender_balance)}</b> {_COIN_GIFT}\n"
                 f"Нужно: <b>{_fmt_full(amount)}</b> {_COIN_GIFT}"
                 f"</blockquote>",
                 parse_mode="HTML"
@@ -2336,7 +2336,7 @@ async def cmd_gift(message: Message):
         f'<blockquote>'
         f'<tg-emoji emoji-id="5452085950022707790">✅</tg-emoji> <i><b>Получатель: {recipient_name}</b></i>\n'
         f'<tg-emoji emoji-id="5224257782013769471">✅</tg-emoji> <i><b>Сумма: {_fmt_full(amount)}{_COIN_GIFT}</b></i>\n'
-        f'<tg-emoji emoji-id="5278467510604160626">✅</tg-emoji> <i><b>Ваш баланс: {_fmt_full(sender_data["balance"])}</b></i>'
+        f'<tg-emoji emoji-id="5278467510604160626">✅</tg-emoji> <i><b>Ваш баланс: {_fmt_num(sender_data["balance"])}</b></i>'
         f'</blockquote>',
         parse_mode="HTML"
     )
@@ -2349,7 +2349,7 @@ async def cmd_gift(message: Message):
             f'<blockquote>'
             f'<tg-emoji emoji-id="5452085950022707790">✅</tg-emoji> <i><b>От: {sender_name}</b></i>\n'
             f'<tg-emoji emoji-id="5224257782013769471">✅</tg-emoji> <i><b>Сумма: {_fmt_full(amount)}{_COIN_GIFT}</b></i>\n'
-            f'<tg-emoji emoji-id="5278467510604160626">✅</tg-emoji> <i><b>Ваш баланс: {_fmt_full(recipient_data["balance"])}</b></i>'
+            f'<tg-emoji emoji-id="5278467510604160626">✅</tg-emoji> <i><b>Ваш баланс: {_fmt_num(recipient_data["balance"])}</b></i>'
             f'</blockquote>',
             parse_mode="HTML"
         )
