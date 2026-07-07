@@ -36,6 +36,8 @@ from miner import (
     buy_pickaxe, select_pickaxe,
     buy_duration, select_duration,
     get_pickaxe_page,
+    calc_mine_progress,
+    mine_finished_notify_text,
     EMOJI_BACK,
 )
 from pets import (
@@ -6718,6 +6720,40 @@ async def _cdl_payout_loop():
             print(f"[cdl_payout_loop] {_e}")
 
 
+async def _mine_notify_loop():
+    """Фоновая задача: уведомляет игрока, когда шахта успешно завершила
+    копание (сессия истекла, но руда ещё не забрана), чтобы не нужно было
+    самому заходить и проверять таймер. Шлётся один раз за сессию —
+    отслеживаем через mine_last_notified_start (сравниваем с текущим
+    mine_start, чтобы новая сессия снова могла получить уведомление)."""
+    from database import get_all_users, save_user as _sv
+
+    while True:
+        try:
+            # Полный скан таблицы — в поток, чтобы не морозить бота
+            # остальным пользователям на время чтения БД (как в pets/poison).
+            for _d in await asyncio.to_thread(get_all_users):
+                if _d.get("mine_start") is None or _d.get("mine_collected"):
+                    continue
+                if _d.get("mine_last_notified_start") == _d["mine_start"]:
+                    continue
+                prog = calc_mine_progress(_d)
+                if not prog["finished"]:
+                    continue
+
+                _lang = _d.get("lang", "ru")
+                msg_text = mine_finished_notify_text(_d, _lang)
+                try:
+                    await bot.send_message(_d["id"], msg_text, parse_mode="HTML")
+                except Exception:
+                    pass
+                _d["mine_last_notified_start"] = _d["mine_start"]
+                await asyncio.to_thread(_sv, _d["id"], _d)
+        except Exception as _e:
+            print(f"[mine_notify_loop] {_e}")
+        await asyncio.sleep(60)
+
+
 async def _pets_loop():
     """Фоновая задача: уведомления и доход питомцев.
     1 питомец  → сообщение каждые 12 ч от него.
@@ -7000,6 +7036,7 @@ async def run_bot():
 
     # ── Запускаем фоновую задачу питомцев ──
     asyncio.create_task(_pets_loop())
+    asyncio.create_task(_mine_notify_loop())
 
     # ── Запускаем фоновую задачу яда ──
     asyncio.create_task(_poison_loop())
