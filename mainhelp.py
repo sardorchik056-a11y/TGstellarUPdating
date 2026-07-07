@@ -2308,9 +2308,10 @@ async def cmd_gift(message: Message):
                 or recipient_data.get("username")
                 or str(recipient_data["id"])
             )
+            remaining = result.get("remaining", result["daily_limit"])
             await message.reply(
-                f'<tg-emoji emoji-id="5420323339723881652">🌟</tg-emoji><b><i> Игроку <b>{recipient_name_err}</b> можно передать до '
-                f"<b>{_fmt_num(result['daily_limit'])}</b>{_COIN_GIFT} монет в день.</i></b>",
+                f'<tg-emoji emoji-id="5420323339723881652">🌟</tg-emoji><b><i> Игроку <b>{recipient_name_err}</b> сегодня можно передать ещё '
+                f"<b>{_fmt_num(remaining)}/{_fmt_num(result['daily_limit'])}</b>{_COIN_GIFT} монет в день.</i></b>",
                 parse_mode="HTML"
             )
             return
