@@ -563,6 +563,9 @@ def get_member_count(clan_id: int) -> int:
 
 # ─────────────────────── ДЕЙСТВИЯ ────────────────────────────
 
+CLAN_CREATE_COOLDOWN = 86400  # 24 часа — создать новый клан можно не чаще раза в сутки
+
+
 def create_clan(uid: int, name: str) -> dict:
     from database import get_user, save_user
     name = name.strip()
@@ -582,6 +585,18 @@ def create_clan(uid: int, name: str) -> dict:
         d = get_user(uid)
         if not d:
             return {"ok": False, "error": "user_not_found"}
+
+        # Лимит на создание клана — раз в сутки. Хранится на самом юзере
+        # (а не в clan_members), поэтому переживает disband_clan — иначе
+        # схему "создал -> распустил -> создал заново" нельзя было бы
+        # ограничить вовсе.
+        now_ts = int(time.time())
+        last_create_ts = d.get("last_clan_create_ts", 0)
+        elapsed = now_ts - last_create_ts
+        if last_create_ts and elapsed < CLAN_CREATE_COOLDOWN:
+            return {"ok": False, "error": "create_cooldown",
+                     "retry_after": CLAN_CREATE_COOLDOWN - elapsed}
+
         if d.get("balance", 0) < CREATE_COST:
             return {"ok": False, "error": "no_coins"}
 
@@ -589,6 +604,7 @@ def create_clan(uid: int, name: str) -> dict:
         # минимизирует окно гонки с другими операциями над балансом
         # этого же uid (они тоже идут через _uid_lock).
         d["balance"] -= CREATE_COST
+        d["last_clan_create_ts"] = now_ts
         save_user(uid, d)
 
         try:
@@ -611,10 +627,11 @@ def create_clan(uid: int, name: str) -> dict:
                     VALUES (?, ?, 'creator', ?, 0)
                 """, (uid, clan_id, int(time.time())))
         except (sqlite3.IntegrityError, _AlreadyInClan, _NameTaken) as e:
-            # Откатываем списание, т.к. клан не создан
+            # Откатываем списание и штамп времени создания, т.к. клан не создан
             d2 = get_user(uid)
             if d2:
                 d2["balance"] = d2.get("balance", 0) + CREATE_COST
+                d2["last_clan_create_ts"] = last_create_ts
                 save_user(uid, d2)
             if isinstance(e, _AlreadyInClan):
                 return {"ok": False, "error": "already_in_clan"}
