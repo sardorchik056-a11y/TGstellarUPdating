@@ -2049,6 +2049,49 @@ def _fmt_full(n) -> str:
     return f"{sign}{abs(n):,}".replace(",", " ")
 
 
+def _fmt_num(n) -> str:
+    """
+    Сокращённая запись числа буквенными суффиксами — единый стиль со всем
+    проектом (database.py -> format_amount/fmt, miner.py -> _fmt_num):
+      999 -> "999", 1500 -> "1.5K", 100000 -> "100K", 2300000 -> "2.3M",
+      1500000000 -> "1.5B", 10**12 -> "1T", 10**15 -> "1Qa", 10**18 -> "1Qi", ...
+    В отличие от _fmt_full (точная сумма с пробелами, используется для самого
+    факта перевода/баланса), применяется там, где нужна быстрочитаемая
+    приблизительная величина — например, суточный лимит перевода.
+    Локальная копия во избежание циклического импорта с database.py.
+    """
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return str(n)
+
+    sign = "-" if n < 0 else ""
+    n = abs(n)
+
+    if n < 1000:
+        if n == int(n):
+            return f"{sign}{int(n)}"
+        return f"{sign}{n:.1f}"
+
+    suffixes = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"]
+    idx = 0
+    val = n
+    while val >= 1000:
+        val /= 1000
+        idx += 1
+
+    val = int(val * 10) / 10
+
+    if idx < len(suffixes):
+        suffix = suffixes[idx]
+    else:
+        suffix = f"Dc{idx - len(suffixes) + 2}"
+
+    if val == int(val):
+        return f"{sign}{int(val)}{suffix}"
+    return f"{sign}{val:.1f}{suffix}"
+
+
 _GIFT_MIN = 1          # минимум перевода
 _COIN_GIFT = '<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji>'
 _GIFT_WINDOW = 86400   # 24 часа — окно суточного лимита
@@ -2267,7 +2310,7 @@ async def cmd_gift(message: Message):
             )
             await message.reply(
                 f'<tg-emoji emoji-id="5420323339723881652">🌟</tg-emoji><b><i> Игроку <b>{recipient_name_err}</b> можно передать до '
-                f"<b>{_fmt_full(result['daily_limit'])}</b>{_COIN_GIFT} монет в день.</i></b>",
+                f"<b>{_fmt_num(result['daily_limit'])}</b>{_COIN_GIFT} монет в день.</i></b>",
                 parse_mode="HTML"
             )
             return
