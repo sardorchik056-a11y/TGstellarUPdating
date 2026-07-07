@@ -2459,6 +2459,20 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
                     "no_coins":        f"❌ Not enough coins. Need {format_amount(CREATE_COST)} {_COIN}.",
                     "name_taken":      "❌ A clan with that name already exists.",
                 }
+                if res["error"] == "create_cooldown":
+                    retry_after = res.get("retry_after", 0)
+                    hrs, rem = divmod(max(retry_after, 0), 3600)
+                    mins = rem // 60
+                    time_str = f"{hrs}ч {mins}м" if lang == "ru" else f"{hrs}h {mins}m"
+                    err = (
+                        f"❌ Клан можно создавать не чаще одного раза в сутки.\n\n"
+                        f"<blockquote>Попробуй снова через <b>{time_str}</b></blockquote>"
+                        if lang == "ru" else
+                        f"❌ You can only create a clan once per day.\n\n"
+                        f"<blockquote>Try again in <b>{time_str}</b></blockquote>"
+                    )
+                    await message.answer(err, parse_mode="HTML")
+                    return True
                 errs = errs_en if lang == "en" else errs_ru
                 hint = (
                     "\n\nНажми «➕ Создать клан» ещё раз, чтобы попробовать снова."
@@ -2625,6 +2639,18 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
                     "not_enough_treasury": "❌ Not enough coins in the clan treasury.",
                     "already_pending":     "❌ You already have a pending withdrawal request.",
                 }
+                if res["error"] == "withdraw_limit_exceeded":
+                    remaining = res.get("remaining", 0)
+                    limit     = res.get("limit", 0)
+                    err_text = (
+                        f"❌ Лимит на вывод для новых участников клана.\n\n"
+                        f"<blockquote>Тебе доступно ещё <b>{format_amount(remaining)}/{format_amount(limit)}</b> {_COIN}</blockquote>"
+                        if lang == "ru" else
+                        f"❌ Withdrawal limit for new clan members.\n\n"
+                        f"<blockquote>You still have <b>{format_amount(remaining)}/{format_amount(limit)}</b> {_COIN} available</blockquote>"
+                    )
+                    await message.answer(err_text, parse_mode="HTML")
+                    return True
                 errs = errs_en if lang == "en" else errs_ru
                 await message.answer(errs.get(res["error"], f"❌ {res['error']}"), parse_mode="HTML")
             return True
