@@ -1143,6 +1143,32 @@ def get_pickaxe_page(pick_key: str) -> int:
     return idx // WORKSHOP_PAGE_SIZE
 
 
+def mine_finished_notify_text(data: dict, lang: str = "ru") -> str:
+    """
+    Текст push-уведомления, когда шахта успешно завершила копание
+    (сессия закончилась, но игрок ещё не забрал руду). Отправляется
+    один раз фоновым циклом — см. _mine_notify_loop в mainhelp.py.
+    """
+    prog = calc_mine_progress(data)
+    if lang == "en":
+        return (
+            f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <b>Mining session finished!</b>\n\n'
+            f'<blockquote>'
+            f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <i><b>Campaigns: {prog["campaigns_done"]}/{prog["total_campaigns"]}</b></i>\n\n'
+            f'{ore_inventory_text(data, short=True, lang=lang)}'
+            f'</blockquote>\n\n'
+            f'<i><b>Open the mine and collect your ore!</b></i>'
+        )
+    return (
+        f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <b>Шахта завершила копание!</b>\n\n'
+        f'<blockquote>'
+        f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <i><b>Кампаний: {prog["campaigns_done"]}/{prog["total_campaigns"]}</b></i>\n\n'
+        f'{ore_inventory_text(data, short=True, lang=lang)}'
+        f'</blockquote>\n\n'
+        f'<i><b>Зайди в шахту и забери добытую руду!</b></i>'
+    )
+
+
 def init_mine_data() -> dict:
     return {
         "ores":                     {o["key"]: 0 for o in ORES},
@@ -1153,6 +1179,7 @@ def init_mine_data() -> dict:
         "mine_start":               None,
         "mine_campaigns_done":      0,
         "mine_collected":           False,
+        "mine_last_notified_start": None,  # чтобы не слать уведомление о завершении дважды за одну сессию
         # ── Счётчики для достижений (никогда не сбрасываются продажей/остановкой) ──
         "mine_lifetime_campaigns":  0,   # всего кампаний добычи за всю игру
         "mine_sessions_completed":  0,   # всего полностью завершённых сессий шахты
