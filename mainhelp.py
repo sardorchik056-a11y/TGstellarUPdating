@@ -2432,6 +2432,14 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
                 m    = get_member(uid)
                 clan = get_clan(m["clan_id"])
                 cnt  = get_member_count(m["clan_id"])
+                # ВАЖНО: create_clan уже сделал свой get_user/save_user внутри
+                # (списал баланс, записал last_clan_create_ts). Локальный `data`
+                # был загружен ДО этого и не знает о тех изменениях — если
+                # сохранить его как есть, это затрёт и списание монет, и штамп
+                # кулдауна на создание клана (баг: клан создавался бесплатно
+                # и без ограничения раз в сутки). Поэтому перечитываем свежие
+                # данные из базы и вносим только новые флаги поверх них.
+                data = get_or_create_user(message.from_user)
                 data["clan_created"] = True
                 data["clan_created_count"] = data.get("clan_created_count", 0) + 1
                 _ach_newly = check_achievements(data)
