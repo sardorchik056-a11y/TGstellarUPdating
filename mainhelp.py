@@ -2240,7 +2240,7 @@ async def cmd_gift(message: Message):
 
     if amount is None or amount < _GIFT_MIN:
         await message.reply(
-            f"❌ Минимальная сумма перевода: <b>{_fmt_full(_GIFT_MIN)}</b> {_COIN_GIFT}",
+            f"❌ Минимальная сумма перевода: <b>{_fmt_num(_GIFT_MIN)}</b> {_COIN_GIFT}",
             parse_mode="HTML"
         )
         return
@@ -2297,7 +2297,7 @@ async def cmd_gift(message: Message):
                 f"❌ Недостаточно монет.\n\n"
                 f"<blockquote>"
                 f"Ваш баланс: <b>{_fmt_num(sender_balance)}</b> {_COIN_GIFT}\n"
-                f"Нужно: <b>{_fmt_full(amount)}</b> {_COIN_GIFT}"
+                f"Нужно: <b>{_fmt_num(amount)}</b> {_COIN_GIFT}"
                 f"</blockquote>",
                 parse_mode="HTML"
             )
@@ -2335,7 +2335,7 @@ async def cmd_gift(message: Message):
         f'<tg-emoji emoji-id="5201691993775818138">✅</tg-emoji> <b>Перевод выполнен!</b>\n\n'
         f'<blockquote>'
         f'<tg-emoji emoji-id="5452085950022707790">✅</tg-emoji> <i><b>Получатель: {recipient_name}</b></i>\n'
-        f'<tg-emoji emoji-id="5224257782013769471">✅</tg-emoji> <i><b>Сумма: {_fmt_full(amount)}{_COIN_GIFT}</b></i>\n'
+        f'<tg-emoji emoji-id="5224257782013769471">✅</tg-emoji> <i><b>Сумма: {_fmt_num(amount)}{_COIN_GIFT}</b></i>\n'
         f'<tg-emoji emoji-id="5278467510604160626">✅</tg-emoji> <i><b>Ваш баланс: {_fmt_num(sender_data["balance"])}</b></i>'
         f'</blockquote>',
         parse_mode="HTML"
@@ -2348,7 +2348,7 @@ async def cmd_gift(message: Message):
             f'<tg-emoji emoji-id="5222113468051629260">🎁</tg-emoji> <b>Вам перевели монеты!</b>\n\n'
             f'<blockquote>'
             f'<tg-emoji emoji-id="5452085950022707790">✅</tg-emoji> <i><b>От: {sender_name}</b></i>\n'
-            f'<tg-emoji emoji-id="5224257782013769471">✅</tg-emoji> <i><b>Сумма: {_fmt_full(amount)}{_COIN_GIFT}</b></i>\n'
+            f'<tg-emoji emoji-id="5224257782013769471">✅</tg-emoji> <i><b>Сумма: {_fmt_num(amount)}{_COIN_GIFT}</b></i>\n'
             f'<tg-emoji emoji-id="5278467510604160626">✅</tg-emoji> <i><b>Ваш баланс: {_fmt_num(recipient_data["balance"])}</b></i>'
             f'</blockquote>',
             parse_mode="HTML"
