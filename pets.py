@@ -53,8 +53,17 @@ def _back_btn(cb, label="Назад"):
 
 def _fmt(n) -> str:
     """
-    Сокращённый формат чисел: 1500 -> "1.5к", 100000 -> "100к",
-    2300000 -> "2.3м" и т.д. Единый стиль во всём боте.
+    Сокращённый формат чисел (стандартная короткая шкала, единый стиль
+    с database.py -> format_amount, miner.py -> _fmt_num, klan.py -> _fmt):
+      999          -> "999"
+      1500         -> "1.5K"
+      100000       -> "100K"
+      2300000      -> "2.3M"
+      1500000000   -> "1.5B"
+      1_000_000_000_000        -> "1T"
+      1_000_000_000_000_000    -> "1Qa"  (quadrillion)
+      1_000_000_000_000_000_000-> "1Qi"  (quintillion)
+    Если число ещё больше — формат не ломается: продолжаем Sx/Sp/Oc/No/Dc, Dc2, ...
     """
     try:
         n = float(n)
@@ -69,20 +78,23 @@ def _fmt(n) -> str:
             return f"{sign}{int(n)}"
         return f"{sign}{n:.1f}"
 
-    for div, suffix in [
-        (1_000_000_000_000, "трлн"),
-        (1_000_000_000,     "млрд"),
-        (1_000_000,         "м"),
-        (1_000,             "к"),
-    ]:
-        if n >= div:
-            val = n / div
-            val = int(val * 10) / 10
-            if val == int(val):
-                return f"{sign}{int(val)}{suffix}"
-            return f"{sign}{val:.1f}{suffix}"
+    suffixes = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"]
+    idx = 0
+    val = n
+    while val >= 1000:
+        val /= 1000
+        idx += 1
 
-    return f"{sign}{int(n)}"
+    val = int(val * 10) / 10
+
+    if idx < len(suffixes):
+        suffix = suffixes[idx]
+    else:
+        suffix = f"Dc{idx - len(suffixes) + 2}"
+
+    if val == int(val):
+        return f"{sign}{int(val)}{suffix}"
+    return f"{sign}{val:.1f}{suffix}"
 
 def _now_ts(): 
     return int(datetime.now(timezone.utc).timestamp())
