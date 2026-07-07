@@ -287,7 +287,7 @@ def transfer_coins(sender_uid: int, recipient_uid: int, amount: int,
       {"ok": True,  "sender_balance": int, "recipient_balance": int}
       {"ok": False, "reason": "no_sender" | "no_recipient" |
                      "insufficient" | "limit", "sender_balance": int,
-                     "daily_limit": int}
+                     "daily_limit": int, "received_today": int, "remaining": int}
     """
     import time as _time
     if now_ts is None:
@@ -324,7 +324,9 @@ def transfer_coins(sender_uid: int, recipient_uid: int, amount: int,
             received_today = recipient.get("gift_received_today", 0)
             if received_today + amount > daily_limit:
                 conn.rollback()
-                return {"ok": False, "reason": "limit", "daily_limit": daily_limit}
+                remaining = max(daily_limit - received_today, 0)
+                return {"ok": False, "reason": "limit", "daily_limit": daily_limit,
+                        "received_today": received_today, "remaining": remaining}
 
             recipient["gift_received_today"] = received_today + amount
 
