@@ -5548,7 +5548,7 @@ async def handle_callback(call: CallbackQuery):
         if cd.startswith("duel_equip_slot:"):
             slot_key = cd.split(":", 1)[1]
             await call.answer()
-            await edit(duel_equip_slot_text(slot_key, data, 0), duel_equip_slot_keyboard(slot_key, data, 0))
+            await edit(duel_equip_slot_text(slot_key, data, 0, lang), duel_equip_slot_keyboard(slot_key, data, 0, lang))
             return
 
         # ===== ДУЭЛИ: пагинация уровней слота =====
@@ -5557,7 +5557,7 @@ async def handle_callback(call: CallbackQuery):
             slot_key = parts[1]
             page     = int(parts[2])
             await call.answer()
-            await edit(duel_equip_slot_text(slot_key, data, page), duel_equip_slot_keyboard(slot_key, data, page))
+            await edit(duel_equip_slot_text(slot_key, data, page, lang), duel_equip_slot_keyboard(slot_key, data, page, lang))
             return
 
         # ===== ДУЭЛИ: карточка предмета (отдельное окно) =====
@@ -5566,7 +5566,7 @@ async def handle_callback(call: CallbackQuery):
             item_key = parts[1]
             page     = int(parts[2]) if len(parts) > 2 else 0
             await call.answer()
-            await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data, page))
+            await edit(duel_item_card_text(item_key, data, lang), duel_item_card_keyboard(item_key, data, page, lang))
             return
 
         # ===== ДУЭЛИ: купить предмет =====
@@ -5576,13 +5576,15 @@ async def handle_callback(call: CallbackQuery):
             page     = int(parts[2]) if len(parts) > 2 else 0
             item     = GEAR_CATALOG.get(item_key)
             if not item:
-                await call.answer("Неизвестный предмет.", show_alert=True)
+                await call.answer(t(lang, "duel_alert_unknown_item"), show_alert=True)
                 return
             price   = item["price"]
             balance = data.get("balance", 0)
             if balance < price:
                 await call.answer(
-                    f"Недостаточно монет!\nНужно: {price:,} | У вас: {balance:,}".replace(",", " "),
+                    t(lang, "duel_alert_not_enough_coins_full").format(
+                        price=f"{price:,}".replace(",", " "), balance=f"{balance:,}".replace(",", " ")
+                    ),
                     show_alert=True,
                 )
                 return
@@ -5591,13 +5593,13 @@ async def handle_callback(call: CallbackQuery):
             _ach_newly = check_achievements(data)
             save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
-            await call.answer(f"✅ Куплено: {item['name']}!", show_alert=True)
-            await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data, page))
+            await call.answer(t(lang, "duel_alert_bought_item").format(name=item['name']), show_alert=True)
+            await edit(duel_item_card_text(item_key, data, lang), duel_item_card_keyboard(item_key, data, page, lang))
             return
 
         # ===== ДУЭЛИ: недостаточно монет (заглушка кнопки) =====
         if cd == "duel_gear_nofunds":
-            await call.answer("💸 Недостаточно монет для покупки!", show_alert=True)
+            await call.answer(t(lang, "duel_alert_no_funds_buy"), show_alert=True)
             return
 
         # ===== ДУЭЛИ: карточка навыка (подробное окно) =====
@@ -5700,14 +5702,14 @@ async def handle_callback(call: CallbackQuery):
             item     = GEAR_CATALOG.get(item_key)
             owned    = data.get("duel_owned_gear", [])
             if item_key not in owned:
-                await call.answer("Сначала купи предмет.", show_alert=True)
+                await call.answer(t(lang, "duel_alert_equip_buy_first"), show_alert=True)
                 return
             apply_gear_equip(item_key, data)
             _ach_newly = check_achievements(data)
             save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
-            await call.answer(f"✅ Надето: {item['name']}!", show_alert=True)
-            await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data, page))
+            await call.answer(t(lang, "duel_alert_equipped_item").format(name=item['name']), show_alert=True)
+            await edit(duel_item_card_text(item_key, data, lang), duel_item_card_keyboard(item_key, data, page, lang))
             return
 
         # ===== ДУЭЛИ: снять предмет =====
@@ -5720,8 +5722,8 @@ async def handle_callback(call: CallbackQuery):
             _ach_newly = check_achievements(data)
             save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
-            await call.answer(f"❌ Снято: {item['name']}.", show_alert=True)
-            await edit(duel_item_card_text(item_key, data), duel_item_card_keyboard(item_key, data, page))
+            await call.answer(t(lang, "duel_alert_unequipped_item").format(name=item['name']), show_alert=True)
+            await edit(duel_item_card_text(item_key, data, lang), duel_item_card_keyboard(item_key, data, page, lang))
             return
 
         # ===== ДУЭЛИ: поиск — сразу начинаем поиск =====
