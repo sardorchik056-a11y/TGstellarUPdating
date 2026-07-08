@@ -529,3 +529,54 @@ _STRINGS.update({
     "duel_hours_short": {"ru": "ч", "en": "h"},
     "duel_mins_short":  {"ru": "мин", "en": "min"},
 })
+
+# ── Дуэли — экран слота экипировки и карточка предмета ──
+_STRINGS.update({
+    "duel_equip_slot_header": {"ru": "СНАРЯЖЕНИЕ — {label}", "en": "GEAR — {label}"},
+    "duel_equip_slot_page": {
+        "ru": "Страница {page}/{total} · уровни {start}–{end}",
+        "en": "Page {page}/{total} · levels {start}–{end}",
+    },
+    "duel_equip_slot_hint": {"ru": "Нажми на предмет, чтобы узнать подробности", "en": "Tap an item to see details"},
+    "duel_state_worn":         {"ru": "надето",       "en": "equipped"},
+    "duel_state_in_inventory": {"ru": "в инвентаре",  "en": "in inventory"},
+    "duel_coins_suffix":       {"ru": "монет",        "en": "coins"},
+
+    "duel_item_status_worn":      {"ru": "✅ <b>Надето прямо сейчас</b>", "en": "✅ <b>Currently equipped</b>"},
+    "duel_item_status_inventory": {"ru": "📦 <b>Есть в инвентаре</b> — не надето", "en": "📦 <b>In inventory</b> — not equipped"},
+    "duel_item_price_line": {
+        "ru": '<tg-emoji emoji-id="5278467510604160626">🎒</tg-emoji> <b>Цена: {price} <tg-emoji emoji-id="5199552030615558774">🎒</tg-emoji></b>',
+        "en": '<tg-emoji emoji-id="5278467510604160626">🎒</tg-emoji> <b>Price: {price} <tg-emoji emoji-id="5199552030615558774">🎒</tg-emoji></b>',
+    },
+    "duel_item_deficit": {"ru": "⚠️ <i>Не хватает {deficit} монет</i>", "en": "⚠️ <i>Missing {deficit} coins</i>"},
+
+    "duel_rarity_common":    {"ru": "⬜ Обычный",     "en": "⬜ Common"},
+    "duel_rarity_uncommon":  {"ru": "🟩 Необычный",   "en": "🟩 Uncommon"},
+    "duel_rarity_rare":      {"ru": "🟦 Редкий",      "en": "🟦 Rare"},
+    "duel_rarity_epic":      {"ru": "🟪 Эпический",   "en": "🟪 Epic"},
+    "duel_rarity_legendary": {"ru": "🟧 Легендарный", "en": "🟧 Legendary"},
+    "duel_rarity_mythic":    {"ru": "🟥 Мифический",  "en": "🟥 Mythic"},
+    "duel_rarity_ancient":   {"ru": "🔶 Древний",     "en": "🔶 Ancient"},
+    "duel_rarity_relic":     {"ru": "💠 Реликвийный", "en": "💠 Relic"},
+    "duel_rarity_absolute":  {"ru": "👑 Абсолютный",  "en": "👑 Absolute"},
+
+    "duel_item_bonus_title": {"ru": "Боевые бонусы (защита и HP):", "en": "Combat bonuses (defense and HP):"},
+    "duel_item_dmg_note":    {"ru": "💡 Урон в дуэли даётся навыками, а не снаряжением!", "en": "💡 Duel damage comes from skills, not gear!"},
+
+    "duel_btn_unequip":          {"ru": "Снять",  "en": "Unequip"},
+    "duel_btn_equip_item":       {"ru": "Надеть", "en": "Equip"},
+    "duel_btn_buy_item":         {"ru": "Купить — {price} монет", "en": "Buy — {price} coins"},
+    "duel_btn_not_enough_coins": {"ru": "Недостаточно монет", "en": "Not enough coins"},
+
+    # Алерты (call.answer) для экипировки
+    "duel_alert_unknown_item": {"ru": "Неизвестный предмет.", "en": "Unknown item."},
+    "duel_alert_not_enough_coins_full": {
+        "ru": "Недостаточно монет!\nНужно: {price} | У вас: {balance}",
+        "en": "Not enough coins!\nNeed: {price} | You have: {balance}",
+    },
+    "duel_alert_no_funds_buy":     {"ru": "💸 Недостаточно монет для покупки!", "en": "💸 Not enough coins to buy!"},
+    "duel_alert_bought_item":      {"ru": "✅ Куплено: {name}!", "en": "✅ Bought: {name}!"},
+    "duel_alert_equip_buy_first":  {"ru": "Сначала купи предмет.", "en": "Buy the item first."},
+    "duel_alert_equipped_item":    {"ru": "✅ Надето: {name}!", "en": "✅ Equipped: {name}!"},
+    "duel_alert_unequipped_item":  {"ru": "❌ Снято: {name}.", "en": "❌ Unequipped: {name}."},
+})
