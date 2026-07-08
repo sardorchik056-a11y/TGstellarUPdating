@@ -51,6 +51,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "btn_leaders":  {"ru": "Лидеры",     "en": "Leaders"},
     "btn_settings": {"ru": "Настройки",  "en": "Settings"},
     "btn_back":     {"ru": "Назад",      "en": "Back"},
+    "btn_forward":  {"ru": "Вперёд",     "en": "Forward"},
     "btn_inventory":{"ru": "Инвентарь",  "en": "Inventory"},
 
     # ── Настройки ──
@@ -387,4 +388,144 @@ _STRINGS.update({
     "reftop_not_in_top":      {"ru": "Тебя нет в топ-{size}",     "en": "You are not in the top {size}"},
     "reftop_not_in_top_hint": {"ru": "Приглашай друзей — и попадёшь в список!", "en": "Invite friends — and you'll make the list!"},
     "reftop_your_rank":       {"ru": "Твоё место",                "en": "Your rank"},
+})
+
+# ── Дуэли (интерфейс) ──
+_STRINGS.update({
+    # Титулы
+    "duel_title_weak":            {"ru": "Слабак",              "en": "Weakling"},
+    "duel_title_training":        {"ru": "Тренирующийся",       "en": "Trainee"},
+    "duel_title_strong":          {"ru": "Сильный",              "en": "Strong"},
+    "duel_title_hero":            {"ru": "Герой",                "en": "Hero"},
+    "duel_title_invincible":      {"ru": "Непобедимый",          "en": "Invincible"},
+    "duel_title_incomparable":    {"ru": "Бесподобный",          "en": "Peerless"},
+    "duel_title_death_bringer":   {"ru": "Приносящий гибель",    "en": "Death Bringer"},
+    "duel_title_eternal_champion":{"ru": "Вечный победитель",    "en": "Eternal Champion"},
+
+    # Слоты снаряжения
+    "duel_slot_helmet": {"ru": "Шлем",      "en": "Helmet"},
+    "duel_slot_armor":  {"ru": "Броня",     "en": "Armor"},
+    "duel_slot_gloves": {"ru": "Перчатки",  "en": "Gloves"},
+    "duel_slot_pants":  {"ru": "Штаны",     "en": "Pants"},
+    "duel_slot_boots":  {"ru": "Сапоги",    "en": "Boots"},
+
+    # Главное меню дуэлей
+    "duel_main_title":    {"ru": "ДУЭЛИ", "en": "DUELS"},
+    "duel_main_title_line": {
+        "ru": "Титул — <b>{title}</b>",
+        "en": "Title — <b>{title}</b>",
+    },
+    "duel_main_wl_line": {
+        "ru": "Победы: <b>{wins}</b>  Поражения: <b>{losses}</b>",
+        "en": "Wins: <b>{wins}</b>  Losses: <b>{losses}</b>",
+    },
+    "duel_main_desc": {
+        "ru": "Испытай себя в бою один на один.\nСобери снаряжение для защиты, купи навыки для урона\nи докажи, кто сильнейший в TGStellar!",
+        "en": "Test yourself in one-on-one combat.\nGather gear for defense, buy skills for damage,\nand prove who's the strongest in TGStellar!",
+    },
+    "duel_btn_search":    {"ru": " Поиск противника", "en": " Find opponent"},
+    "duel_btn_challenge": {"ru": " Бросить вызов",     "en": " Send challenge"},
+    "duel_btn_equip":     {"ru": " Снаряжение",        "en": " Gear"},
+    "duel_btn_skills":    {"ru": " Навыки",            "en": " Skills"},
+    "duel_btn_charstats": {"ru": " Характеристики",    "en": " Stats"},
+
+    # Снаряжение — обзор
+    "duel_equip_title":   {"ru": "СНАРЯЖЕНИЕ", "en": "GEAR"},
+    "duel_equip_hint":    {"ru": "Снаряжение даёт HP и защиту — урон даётся навыками!", "en": "Gear gives HP and defense — damage comes from skills!"},
+    "duel_equip_empty":   {"ru": "пусто", "en": "empty"},
+    "duel_equip_not_worn":{"ru": "(не надето)", "en": "(not equipped)"},
+
+    # Характеристики
+    "duel_stats_title":     {"ru": "ХАРАКТЕРИСТИКИ", "en": "STATS"},
+    "duel_stats_hp":        {"ru": "Здоровье",       "en": "Health"},
+    "duel_stats_regen":     {"ru": "Регенерация",    "en": "Regeneration"},
+    "duel_stats_phys_def":  {"ru": "Физ. защита",    "en": "Phys. defense"},
+    "duel_stats_mag_def":   {"ru": "Маг. защита",    "en": "Magic defense"},
+    "duel_stats_stamina":   {"ru": "Стойкость",      "en": "Stamina"},
+    "duel_stats_hp_per_turn":{"ru": "HP/ход",         "en": "HP/turn"},
+    "duel_stats_hp_regen_note": {
+        "ru": "⚠️ <b>HP восстанавливается</b> (+{amount} каждые {interval} сек.)\nСледующий тик через <b>{secs} сек.</b>\n<i>Нельзя начать бой пока HP &lt; 100</i>",
+        "en": "⚠️ <b>HP is regenerating</b> (+{amount} every {interval} sec.)\nNext tick in <b>{secs} sec.</b>\n<i>You can't start a fight while HP &lt; 100</i>",
+    },
+    "duel_stats_gear_worn":  {"ru": "надето {count}/5 предм.", "en": "{count}/5 items equipped"},
+    "duel_stats_gear_none":  {"ru": "снаряжение не надето",    "en": "no gear equipped"},
+    "duel_stats_gear_line":  {"ru": "🎽 <i>Снаряжение: {gear}</i>", "en": "🎽 <i>Gear: {gear}</i>"},
+    "duel_stats_skills_line":{"ru": "⚔️ <i>Навыков куплено: {count} шт.</i>", "en": "⚔️ <i>Skills bought: {count}</i>"},
+    "duel_stats_footer":     {"ru": "💡 Урон в дуэли зависит от купленных навыков,\nа не от снаряжения!", "en": "💡 Duel damage depends on the skills you've bought,\nnot on your gear!"},
+
+    # Навыки — обзор
+    "duel_skills_title":   {"ru": "БОЕВЫЕ НАВЫКИ", "en": "COMBAT SKILLS"},
+    "duel_skills_equipped_label": {"ru": "Экипировано:", "en": "Equipped:"},
+    "duel_skills_empty_slot":     {"ru": "пусто",        "en": "empty"},
+    "duel_skills_hint": {
+        "ru": "Экипируй до {max} навыков — только они доступны в бою!",
+        "en": "Equip up to {max} skills — only those are usable in battle!",
+    },
+    "duel_btn_skills_shop": {"ru": "📖 Изучение навыков", "en": "📖 Learn skills"},
+
+    # Магазин навыков
+    "duel_shop_title":  {"ru": "Изучение Навыков", "en": "Learn Skills"},
+    "duel_shop_page":   {"ru": "Страница {page}/{total} · ⚔️ в бою: {eq}/{max}", "en": "Page {page}/{total} · ⚔️ equipped: {eq}/{max}"},
+    "duel_shop_balance":{"ru": "Баланс: <b>{balance}</b>", "en": "Balance: <b>{balance}</b>"},
+    "duel_shop_footer": {"ru": "Нажми навык — купи или экипируй в бой", "en": "Tap a skill — buy it or equip it for battle"},
+
+    # Поиск
+    "duel_search_title": {"ru": "ПОИСК ПРОТИВНИКА", "en": "FIND OPPONENT"},
+    "duel_search_wait": {
+        "ru": "⏳ <b>Ищем соперника...</b>\n\nОжидай — как только найдётся противник,\nбой начнётся автоматически.\n\n<i>Нажми «Проверить» чтобы обновить статус.</i>",
+        "en": "⏳ <b>Looking for an opponent...</b>\n\nHang tight — as soon as an opponent is found,\nthe fight will start automatically.\n\n<i>Tap “Check” to refresh the status.</i>",
+    },
+    "duel_search_idle": {
+        "ru": "Нажми <b>«Найти бой»</b> для поиска соперника.\n\nВ бою тебе доступны твои навыки из магазина.\nУрон зависит <b>только от навыков</b> — прокачивай их!\n🔵 Маг. навыки снижаются магической защитой\n💥 Физ. навыки снижаются физической защитой\n🛡️ Щитовые навыки поглощают входящий урон",
+        "en": "Tap <b>“Find fight”</b> to look for an opponent.\n\nIn battle you can use the skills you've bought.\nDamage depends <b>only on skills</b> — level them up!\n🔵 Magic skills are reduced by magic defense\n💥 Physical skills are reduced by physical defense\n🛡️ Shield skills absorb incoming damage",
+    },
+    "duel_btn_search_check": {"ru": "🔄 Проверить",      "en": "🔄 Check"},
+    "duel_btn_search_cancel":{"ru": "❌ Отменить поиск", "en": "❌ Cancel search"},
+    "duel_btn_search_start": {"ru": "⚔️ Найти бой",      "en": "⚔️ Find fight"},
+
+    # Вызов
+    "duel_challenge_title": {"ru": "БРОСИТЬ ВЫЗОВ", "en": "SEND CHALLENGE"},
+    "duel_challenge_body": {
+        "ru": "Отправь <b>ID</b> или <b>@юзернейм</b> игрока которого хочешь вызвать на дуэль.\n\nПримеры:\n<code>123456789</code>\n<code>@username</code>\n\n⏳ <i>Вызов действует 2 минуты — если противник не ответит, он истечёт.</i>",
+        "en": "Send the <b>ID</b> or <b>@username</b> of the player you want to challenge to a duel.\n\nExamples:\n<code>123456789</code>\n<code>@username</code>\n\n⏳ <i>The challenge is valid for 2 minutes — if the opponent doesn't respond, it expires.</i>",
+    },
+    "duel_challenge_sent_title": {"ru": "⚔️ <b>Вызов отправлен!</b>", "en": "⚔️ <b>Challenge sent!</b>"},
+    "duel_challenge_sent_body": {
+        "ru": "👤 <b>{name}</b> получил твой вызов.\n⏳ Ожидай ответа — у него есть 2 минуты.",
+        "en": "👤 <b>{name}</b> received your challenge.\n⏳ Waiting for a response — they have 2 minutes.",
+    },
+    "duel_btn_challenge_cancel": {"ru": "❌ Отменить вызов", "en": "❌ Cancel challenge"},
+
+    # Статус HP
+    "duel_hp_status": {
+        "ru": "⚠️ <b>Твоё HP: {hp}/{hp_max}</b>\nВосстановление: +{amount} HP каждые {interval} сек.\nСледующий тик через <b>{secs} сек.</b>\n<i>Нельзя начать бой пока HP &lt; 100!</i>",
+        "en": "⚠️ <b>Your HP: {hp}/{hp_max}</b>\nRegeneration: +{amount} HP every {interval} sec.\nNext tick in <b>{secs} sec.</b>\n<i>You can't start a fight while HP &lt; 100!</i>",
+    },
+
+    # Раздел в разработке
+    "duel_soon_search":  {"ru": "Поиск противника",         "en": "Find opponent"},
+    "duel_soon_invite":  {"ru": "Пригласить на поединок",    "en": "Invite to duel"},
+    "duel_soon_skills":  {"ru": "Навыки",                    "en": "Skills"},
+    "duel_soon_body":    {"ru": "🚧 Раздел в разработке.\nСкоро будет доступен!", "en": "🚧 This section is under development.\nComing soon!"},
+
+    # Быстрые команды — ошибки
+    "duel_cmd_no_hp": {
+        "ru": "⚠️ <b>HP слишком низкий!</b>\n\nТвоё HP: <b>{hp}/100</b>\nВосстановится через <b>{secs} сек.</b>\n<i>Нельзя начать бой пока HP &lt; 100</i>",
+        "en": "⚠️ <b>HP too low!</b>\n\nYour HP: <b>{hp}/100</b>\nWill recover in <b>{secs} sec.</b>\n<i>You can't start a fight while HP &lt; 100</i>",
+    },
+    "duel_cmd_already_in_battle": {"ru": "⚔️ <b>Ты уже находишься в бою!</b>", "en": "⚔️ <b>You're already in a battle!</b>"},
+    "duel_cmd_invite_usage": {
+        "ru": "Ответь на сообщение игрока командой <b>вз</b> (или <b>challenge</b>),\nчтобы бросить ему вызов.\n\nИли напиши: <code>вз @username</code> / <code>вз 123456789</code>\n\n⏳ <i>Вызов действует 2 минуты.</i>",
+        "en": "Reply to a player's message with the command <b>challenge</b> (or <b>вз</b>)\nto challenge them.\n\nOr type: <code>challenge @username</code> / <code>challenge 123456789</code>\n\n⏳ <i>The challenge is valid for 2 minutes.</i>",
+    },
+    "duel_cmd_invite_self":       {"ru": "❌ <b>Нельзя вызвать самого себя!</b>", "en": "❌ <b>You can't challenge yourself!</b>"},
+    "duel_cmd_invite_not_found": {"ru": "❌ <b>Игрок не найден.</b> Он должен хотя бы раз написать боту.", "en": "❌ <b>Player not found.</b> They must have messaged the bot at least once."},
+    "duel_cmd_invite_in_battle":  {"ru": "❌ <b>Этот игрок уже находится в бою.</b>", "en": "❌ <b>This player is already in a battle.</b>"},
+    "duel_cmd_invite_blocked":    {"ru": "❌ Не удалось отправить уведомление <b>{name}</b> — возможно бот заблокирован.", "en": "❌ Couldn't send a notification to <b>{name}</b> — the bot may be blocked."},
+    "duel_cmd_invite_limit": {
+        "ru": "❌ <b>Лимит вызовов исчерпан!</b>\n\nТы уже вызывал <b>{name}</b> {limit} раз(а) за последние 24 часа.\nПопробуй снова через <b>{wait}</b>.",
+        "en": "❌ <b>Challenge limit reached!</b>\n\nYou've already challenged <b>{name}</b> {limit} time(s) in the last 24 hours.\nTry again in <b>{wait}</b>.",
+    },
+    "duel_hours_short": {"ru": "ч", "en": "h"},
+    "duel_mins_short":  {"ru": "мин", "en": "min"},
 })
