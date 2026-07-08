@@ -2550,11 +2550,11 @@ def duel_equip_keyboard(user_data: dict = None, lang: str = "ru") -> InlineKeybo
 
 _SLOT_PAGE_SIZE = 5   # уровней на странице
 
-def duel_equip_slot_text(slot: str, user_data: dict, page: int = 0) -> str:
+def duel_equip_slot_text(slot: str, user_data: dict, page: int = 0, lang: str = "ru") -> str:
     owned_lvls = owned_levels_set(slot, user_data)
     eq_lvl     = equipped_level(slot, user_data)
     emoji      = slot_emoji(slot)
-    label      = slot_label(slot)
+    label      = slot_label(slot, lang)
 
     total_pages = (25 + _SLOT_PAGE_SIZE - 1) // _SLOT_PAGE_SIZE
     page = max(0, min(page, total_pages - 1))
@@ -2566,25 +2566,26 @@ def duel_equip_slot_text(slot: str, user_data: dict, page: int = 0) -> str:
         item = GEAR_CATALOG[f"{slot}-lvl{lvl}"]
         if lvl == eq_lvl:
             marker = "✅"
-            state  = "<i>надето</i>"
+            state  = f'<i>{t(lang, "duel_state_worn")}</i>'
         elif lvl in owned_lvls:
             marker = "📦"
-            state  = "<i>в инвентаре</i>"
+            state  = f'<i>{t(lang, "duel_state_in_inventory")}</i>'
         else:
             marker = "🔒"
-            state  = f"<i>{_fmt(item['price'])} монет</i>"
+            state  = f'<i>{_fmt(item["price"], lang)} {t(lang, "duel_coins_suffix")}</i>'
         lines.append(f"{marker} <b>[{item['name']}]</b> — {item['ru_name']} · {state}")
 
     block = "\n".join(lines)
+    header = t(lang, "duel_equip_slot_header").format(label=label.upper())
     return (
-        f'{emoji} <b>СНАРЯЖЕНИЕ — {label.upper()}</b>\n'
+        f'{emoji} <b>{header}</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━\n'
-        f'<i>Страница {page + 1}/{total_pages} · уровни {lvl_start}–{lvl_end}</i>\n\n'
+        f'<i>{t(lang, "duel_equip_slot_page").format(page=page + 1, total=total_pages, start=lvl_start, end=lvl_end)}</i>\n\n'
         f'<blockquote>{block}</blockquote>\n\n'
-        '<i>Нажми на предмет, чтобы узнать подробности</i>'
+        f'<i>{t(lang, "duel_equip_slot_hint")}</i>'
     )
 
-def duel_equip_slot_keyboard(slot: str, user_data: dict, page: int = 0) -> InlineKeyboardMarkup:
+def duel_equip_slot_keyboard(slot: str, user_data: dict, page: int = 0, lang: str = "ru") -> InlineKeyboardMarkup:
     owned_lvls = owned_levels_set(slot, user_data)
     eq_lvl     = equipped_level(slot, user_data)
     total_pages = (25 + _SLOT_PAGE_SIZE - 1) // _SLOT_PAGE_SIZE
@@ -2612,7 +2613,7 @@ def duel_equip_slot_keyboard(slot: str, user_data: dict, page: int = 0) -> Inlin
                 style="success",
             ))
         else:
-            btn_text = f"{item['name']} | {_fmt(item['price'])}"
+            btn_text = f"{item['name']} | {_fmt(item['price'], lang)}"
             builder.row(InlineKeyboardButton(
                 text=btn_text,
                 callback_data=f"duel_item_card:{item_key}:{page}",
@@ -2622,13 +2623,13 @@ def duel_equip_slot_keyboard(slot: str, user_data: dict, page: int = 0) -> Inlin
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton(
-            text="Назад",
+            text=t(lang, "btn_back"),
             callback_data=f"duel_slot_page:{slot}:{page - 1}",
             icon_custom_emoji_id="5255703720078879038",
         ))
     if page < total_pages - 1:
         nav.append(InlineKeyboardButton(
-            text="Вперёд",
+            text=t(lang, "btn_forward"),
             callback_data=f"duel_slot_page:{slot}:{page + 1}",
             icon_custom_emoji_id="5253767677670862169",
         ))
@@ -2636,13 +2637,13 @@ def duel_equip_slot_keyboard(slot: str, user_data: dict, page: int = 0) -> Inlin
         builder.row(*nav)
 
     builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_equip",
+        text=t(lang, "btn_back"), callback_data="duel_equip",
         icon_custom_emoji_id=EMOJI_BACK,
     ))
     return builder.as_markup()
 
 
-def duel_item_card_text(item_key: str, user_data: dict) -> str:
+def duel_item_card_text(item_key: str, user_data: dict, lang: str = "ru") -> str:
     item   = GEAR_CATALOG[item_key]
     slot   = item["slot"]
     owned_lvls = owned_levels_set(slot, user_data)
@@ -2651,53 +2652,54 @@ def duel_item_card_text(item_key: str, user_data: dict) -> str:
     balance = user_data.get("balance", 0)
 
     if lvl == eq_lvl:
-        status_line = '✅ <b>Надето прямо сейчас</b>'
+        status_line = t(lang, "duel_item_status_worn")
     elif lvl in owned_lvls:
-        status_line = '📦 <b>Есть в инвентаре</b> — не надето'
+        status_line = t(lang, "duel_item_status_inventory")
     else:
-        status_line = f'<tg-emoji emoji-id="5278467510604160626">🎒</tg-emoji> <b>Цена: {_fmt(item["price"])} <tg-emoji emoji-id="5199552030615558774">🎒</tg-emoji></b>'
+        status_line = t(lang, "duel_item_price_line").format(price=_fmt(item["price"], lang))
         if balance < item["price"]:
             deficit = item["price"] - balance
-            status_line += f'\n⚠️ <i>Не хватает {_fmt(deficit)} монет</i>'
+            status_line += "\n" + t(lang, "duel_item_deficit").format(deficit=_fmt(deficit, lang))
 
     bonus_lines = []
     for stat, val in item["bonus"].items():
         if stat == "dmg":
             continue
-        emoji_s, ru, unit = STAT_META.get(stat, ("▫️", stat, ""))
-        bonus_lines.append(f'  {emoji_s} <b>+{val}</b> {ru} <i>({unit})</i>')
+        emoji_s, _ru, unit = STAT_META.get(stat, ("▫️", stat, ""))
+        stat_name = t(lang, f"duel_stats_{stat}")
+        bonus_lines.append(f'  {emoji_s} <b>+{val}</b> {stat_name} <i>({unit})</i>')
     bonus_block = "\n".join(bonus_lines)
 
     if lvl <= 3:
-        rarity = "⬜ Обычный"
+        rarity = t(lang, "duel_rarity_common")
     elif lvl <= 6:
-        rarity = "🟩 Необычный"
+        rarity = t(lang, "duel_rarity_uncommon")
     elif lvl <= 10:
-        rarity = "🟦 Редкий"
+        rarity = t(lang, "duel_rarity_rare")
     elif lvl <= 14:
-        rarity = "🟪 Эпический"
+        rarity = t(lang, "duel_rarity_epic")
     elif lvl <= 18:
-        rarity = "🟧 Легендарный"
+        rarity = t(lang, "duel_rarity_legendary")
     elif lvl <= 21:
-        rarity = "🟥 Мифический"
+        rarity = t(lang, "duel_rarity_mythic")
     elif lvl <= 23:
-        rarity = "🔶 Древний"
+        rarity = t(lang, "duel_rarity_ancient")
     elif lvl <= 24:
-        rarity = "💠 Реликвийный"
+        rarity = t(lang, "duel_rarity_relic")
     else:
-        rarity = "👑 Абсолютный"
+        rarity = t(lang, "duel_rarity_absolute")
 
     return (
         f'<tg-emoji emoji-id="{item["emoji_id"]}">{item["emoji_char"]}</tg-emoji> <b>{item["name"]}</b>\n'
         f'<i>{item["ru_name"]}</i>  {rarity}\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>{item["description"]}</blockquote>\n\n'
-        f'<b>Боевые бонусы (защита и HP):</b>\n{bonus_block}\n\n'
-        f'<i>💡 Урон в дуэли даётся навыками, а не снаряжением!</i>\n\n'
+        f'<b>{t(lang, "duel_item_bonus_title")}</b>\n{bonus_block}\n\n'
+        f'<i>{t(lang, "duel_item_dmg_note")}</i>\n\n'
         f'{status_line}'
     )
 
-def duel_item_card_keyboard(item_key: str, user_data: dict, page: int = 0) -> InlineKeyboardMarkup:
+def duel_item_card_keyboard(item_key: str, user_data: dict, page: int = 0, lang: str = "ru") -> InlineKeyboardMarkup:
     item   = GEAR_CATALOG[item_key]
     slot   = item["slot"]
     owned_lvls = owned_levels_set(slot, user_data)
@@ -2708,28 +2710,28 @@ def duel_item_card_keyboard(item_key: str, user_data: dict, page: int = 0) -> In
 
     if lvl == eq_lvl:
         builder.row(InlineKeyboardButton(
-            text="Снять",
+            text=t(lang, "duel_btn_unequip"),
             callback_data=f"duel_gear_unequip:{item_key}:{page}",
         ))
     elif lvl in owned_lvls:
         builder.row(InlineKeyboardButton(
-            text="Надеть",
+            text=t(lang, "duel_btn_equip_item"),
             callback_data=f"duel_gear_equip:{item_key}:{page}",
         ))
     else:
         if balance >= item["price"]:
             builder.row(InlineKeyboardButton(
-                text=f"Купить — {_fmt(item['price'])} монет",
+                text=t(lang, "duel_btn_buy_item").format(price=_fmt(item["price"], lang)),
                 callback_data=f"duel_gear_buy:{item_key}:{page}",
             ))
         else:
             builder.row(InlineKeyboardButton(
-                text=f"Недостаточно монет",
+                text=t(lang, "duel_btn_not_enough_coins"),
                 callback_data="duel_gear_nofunds",
             ))
 
     builder.row(InlineKeyboardButton(
-        text="Назад", callback_data=f"duel_slot_page:{slot}:{page}",
+        text=t(lang, "btn_back"), callback_data=f"duel_slot_page:{slot}:{page}",
         icon_custom_emoji_id=EMOJI_BACK,
     ))
     return builder.as_markup()
