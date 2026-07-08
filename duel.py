@@ -6,6 +6,7 @@ import random
 import time
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from lang import t
 
 # ── Эмодзи ──────────────────────────────────────────────────
 EMOJI_BACK         = "5252272671669706296"
@@ -35,16 +36,18 @@ STAT_META = {
 }
 
 # ── Система титулов ──────────────────────────────────────────
-# (wins, title_name)  — первый диапазон где wins < порога
+# (wins, title_name, lang_key)  — первый диапазон где wins < порога
+# title_name — канонический (RU) идентификатор, используется как ключ в TITLE_REWARDS
+# и НЕ должен переводиться — для отображения игроку используй get_duel_title_display().
 _TITLES = [
-    (10,   "Слабак"),
-    (25,   "Тренирующийся"),
-    (60,   "Сильный"),
-    (120,  "Герой"),
-    (200,  "Непобедимый"),
-    (350,  "Бесподобный"),
-    (700,  "Приносящий гибель"),
-    (None, "Вечный победитель"),
+    (10,   "Слабак",             "weak"),
+    (25,   "Тренирующийся",      "training"),
+    (60,   "Сильный",            "strong"),
+    (120,  "Герой",              "hero"),
+    (200,  "Непобедимый",        "invincible"),
+    (350,  "Бесподобный",        "incomparable"),
+    (700,  "Приносящий гибель",  "death_bringer"),
+    (None, "Вечный победитель",  "eternal_champion"),
 ]
 
 # Награда за победу над игроком с данным титулом
@@ -60,11 +63,23 @@ TITLE_REWARDS: dict[str, int] = {
 }
 
 def get_duel_title(wins: int) -> str:
-    """Возвращает титул по количеству побед."""
-    for threshold, name in _TITLES:
+    """Возвращает канонический (RU) титул по количеству побед.
+
+    Используется как внутренний ключ (например, в TITLE_REWARDS) —
+    для показа игроку используй get_duel_title_display().
+    """
+    for threshold, name, _key in _TITLES:
         if threshold is None or wins < threshold:
             return name
     return "Вечный победитель"
+
+
+def get_duel_title_display(wins: int, lang: str = "ru") -> str:
+    """Возвращает титул для показа игроку на нужном языке."""
+    for threshold, _name, key in _TITLES:
+        if threshold is None or wins < threshold:
+            return t(lang, f"duel_title_{key}")
+    return t(lang, "duel_title_eternal_champion")
 
 # ── Каталог снаряжения: 5 слотов × 25 уровней ────────────────
 # ВАЖНО: снаряжение даёт только HP, защиту, регенерацию, стойкость — НЕ урон!
@@ -1086,8 +1101,8 @@ GEAR_SLOTS_ORDER = ["helmet", "armor", "gloves", "pants", "boots"]
 def slot_levels(slot: str) -> list:
     return [f"{slot}-lvl{i}" for i in range(1, 26)]
 
-def slot_label(slot: str) -> str:
-    return GEAR_CATALOG[f"{slot}-lvl1"]["slot_label"]
+def slot_label(slot: str, lang: str = "ru") -> str:
+    return t(lang, f"duel_slot_{slot}")
 
 def slot_emoji(slot: str) -> str:
     return GEAR_CATALOG[f"{slot}-lvl1"]["emoji_char"]
@@ -1115,8 +1130,23 @@ def equipped_level(slot: str, user_data: dict) -> int:
     item = current_slot_item(slot, user_data)
     return item["level"] if item else 0
 
-def _fmt(n) -> str:
-    """Сокращает число как format_amount в database.py: 1500->1.5к, 2.3м, 1.5млрд."""
+_FMT_SUFFIXES = {
+    "ru": [
+        (1_000_000_000_000, "трлн"),
+        (1_000_000_000,     "млрд"),
+        (1_000_000,         "м"),
+        (1_000,             "к"),
+    ],
+    "en": [
+        (1_000_000_000_000, "T"),
+        (1_000_000_000,     "B"),
+        (1_000_000,         "M"),
+        (1_000,             "K"),
+    ],
+}
+
+def _fmt(n, lang: str = "ru") -> str:
+    """Сокращает число как format_amount в database.py: 1500->1.5к/1.5K, 2.3м/2.3M, 1.5млрд/1.5B."""
     try:
         n = float(n)
     except (TypeError, ValueError):
@@ -1125,12 +1155,7 @@ def _fmt(n) -> str:
     n = abs(n)
     if n < 1000:
         return f"{sign}{int(n)}" if n == int(n) else f"{sign}{n:.1f}"
-    for threshold, suffix in [
-        (1_000_000_000_000, "трлн"),
-        (1_000_000_000,     "млрд"),
-        (1_000_000,         "м"),
-        (1_000,             "к"),
-    ]:
+    for threshold, suffix in _FMT_SUFFIXES.get(lang, _FMT_SUFFIXES["ru"]):
         if n >= threshold:
             value = int(n / threshold * 10) / 10
             if value == int(value):
@@ -2298,7 +2323,7 @@ _DUEL_SHOP_QUOTES = [
 ]
 
 
-def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
+def duel_skills_shop_text(user_data: dict, page: int = 0, lang: str = "ru") -> str:
     items, total = _skill_page_items(page)
     total_pages = (total + SKILLS_SHOP_PAGE_SIZE - 1) // SKILLS_SHOP_PAGE_SIZE
     equipped_skills = get_equipped_skills(user_data)
@@ -2306,16 +2331,16 @@ def duel_skills_shop_text(user_data: dict, page: int = 0) -> str:
     eq_count = len(equipped_skills)
     quote = _random.choice(_DUEL_SHOP_QUOTES)
     return (
-        f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>Изучение Навыков</b>\n'
+        f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>{t(lang, "duel_shop_title")}</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━\n'
-        f'<i>Страница {page+1}/{total_pages} · ⚔️ в бою: {eq_count}/{MAX_EQUIPPED_SKILLS}</i>\n\n'
+        f'<i>{t(lang, "duel_shop_page").format(page=page+1, total=total_pages, eq=eq_count, max=MAX_EQUIPPED_SKILLS)}</i>\n\n'
         f'<blockquote expandable><b><i>{quote}</i></b></blockquote>\n\n'
-        f'<tg-emoji emoji-id="5278467510604160626">✨</tg-emoji> Баланс: <b>{_fmt(balance)}</b> <tg-emoji emoji-id="5199552030615558774">✨</tg-emoji>\n'
-        f'<i>Нажми навык — купи или экипируй в бой</i>'
+        f'<tg-emoji emoji-id="5278467510604160626">✨</tg-emoji> {t(lang, "duel_shop_balance").format(balance=_fmt(balance, lang))} <tg-emoji emoji-id="5199552030615558774">✨</tg-emoji>\n'
+        f'<i>{t(lang, "duel_shop_footer")}</i>'
     )
 
 
-def duel_skills_shop_keyboard(user_data: dict, page: int = 0) -> InlineKeyboardMarkup:
+def duel_skills_shop_keyboard(user_data: dict, page: int = 0, lang: str = "ru") -> InlineKeyboardMarkup:
     items, total = _skill_page_items(page)
     total_pages = (total + SKILLS_SHOP_PAGE_SIZE - 1) // SKILLS_SHOP_PAGE_SIZE
     owned_skills    = get_owned_skills(user_data)
@@ -2365,13 +2390,13 @@ def duel_skills_shop_keyboard(user_data: dict, page: int = 0) -> InlineKeyboardM
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton(
-            text="Назад",
+            text=t(lang, "btn_back"),
             callback_data=f"duel_skills_shop_page:{page-1}",
             icon_custom_emoji_id="5255703720078879038",
         ))
     if page < total_pages - 1:
         nav.append(InlineKeyboardButton(
-            text="Вперёд",
+            text=t(lang, "btn_forward"),
             callback_data=f"duel_skills_shop_page:{page+1}",
             icon_custom_emoji_id="5253767677670862169",
         ))
@@ -2379,7 +2404,7 @@ def duel_skills_shop_keyboard(user_data: dict, page: int = 0) -> InlineKeyboardM
         builder.row(*nav)
 
     builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_skills",
+        text=t(lang, "btn_back"), callback_data="duel_skills",
         icon_custom_emoji_id=EMOJI_BACK,
     ))
     return builder.as_markup()
@@ -2389,43 +2414,30 @@ def duel_skills_shop_keyboard(user_data: dict, page: int = 0) -> InlineKeyboardM
 #  ЭКРАН ПОИСКА
 # ════════════════════════════════════════════════════════════
 
-def duel_search_text(in_queue_flag: bool = False) -> str:
-    if in_queue_flag:
-        return (
-            f'<tg-emoji emoji-id="{EMOJI_SEARCH}">🔍</tg-emoji> <b>ПОИСК ПРОТИВНИКА</b>\n'
-            '━━━━━━━━━━━━━━━━━━━━\n\n'
-            '<blockquote>⏳ <b>Ищем соперника...</b>\n\n'
-            'Ожидай — как только найдётся противник,\n'
-            'бой начнётся автоматически.\n\n'
-            '<i>Нажми «Проверить» чтобы обновить статус.</i></blockquote>'
-        )
+def duel_search_text(in_queue_flag: bool = False, lang: str = "ru") -> str:
+    body = t(lang, "duel_search_wait") if in_queue_flag else t(lang, "duel_search_idle")
     return (
-        f'<tg-emoji emoji-id="{EMOJI_SEARCH}">🔍</tg-emoji> <b>ПОИСК ПРОТИВНИКА</b>\n'
+        f'<tg-emoji emoji-id="{EMOJI_SEARCH}">🔍</tg-emoji> <b>{t(lang, "duel_search_title")}</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
-        '<blockquote>Нажми <b>«Найти бой»</b> для поиска соперника.\n\n'
-        'В бою тебе доступны твои навыки из магазина.\n'
-        'Урон зависит <b>только от навыков</b> — прокачивай их!\n'
-        '🔵 Маг. навыки снижаются магической защитой\n'
-        '💥 Физ. навыки снижаются физической защитой\n'
-        '🛡️ Щитовые навыки поглощают входящий урон</blockquote>'
+        f'<blockquote>{body}</blockquote>'
     )
 
 
-def duel_search_keyboard(in_queue_flag: bool = False) -> InlineKeyboardMarkup:
+def duel_search_keyboard(in_queue_flag: bool = False, lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if in_queue_flag:
         builder.row(InlineKeyboardButton(
-            text="🔄 Проверить", callback_data="duel_search_check"
+            text=t(lang, "duel_btn_search_check"), callback_data="duel_search_check"
         ))
         builder.row(InlineKeyboardButton(
-            text="❌ Отменить поиск", callback_data="duel_search_cancel"
+            text=t(lang, "duel_btn_search_cancel"), callback_data="duel_search_cancel"
         ))
     else:
         builder.row(InlineKeyboardButton(
-            text="⚔️ Найти бой", callback_data="duel_search_start"
+            text=t(lang, "duel_btn_search_start"), callback_data="duel_search_start"
         ))
     builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_main",
+        text=t(lang, "btn_back"), callback_data="duel_main",
         icon_custom_emoji_id=EMOJI_BACK,
     ))
     return builder.as_markup()
@@ -2435,55 +2447,53 @@ def duel_search_keyboard(in_queue_flag: bool = False) -> InlineKeyboardMarkup:
 #  ОРИГИНАЛЬНЫЕ ЭКРАНЫ
 # ════════════════════════════════════════════════════════════
 
-def duel_main_text(user_data: dict = None) -> str:
+def duel_main_text(user_data: dict = None, lang: str = "ru") -> str:
     wins   = (user_data or {}).get("duel_wins", 0)
     losses = (user_data or {}).get("duel_losses", 0)
-    title  = get_duel_title(wins)
+    title  = get_duel_title_display(wins, lang)
     return (
-        '<tg-emoji emoji-id="5424972470023104089">⚔️</tg-emoji> <b>ДУЭЛИ</b>\n'
+        f'<tg-emoji emoji-id="5424972470023104089">⚔️</tg-emoji> <b>{t(lang, "duel_main_title")}</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         '<blockquote>'
-        f'<tg-emoji emoji-id="5848400681416793625">⚔️</tg-emoji> Титул — <b>{title}</b>\n'
-        f'<tg-emoji emoji-id="5413566144986503832">⚔️</tg-emoji> Победы: <b>{wins}</b>  <tg-emoji emoji-id="5206523956537865948">⚔️</tg-emoji> Поражения: <b>{losses}</b>\n\n'
-        '<b><i>Испытай себя в бою один на один.\n'
-        'Собери снаряжение для защиты, купи навыки для урона\n'
-        'и докажи, кто сильнейший в TGStellar!</i></b>\n\n'
+        f'<tg-emoji emoji-id="5848400681416793625">⚔️</tg-emoji> {t(lang, "duel_main_title_line").format(title=title)}\n'
+        f'<tg-emoji emoji-id="5413566144986503832">⚔️</tg-emoji> {t(lang, "duel_main_wl_line").format(wins=wins, losses=losses)}\n\n'
+        f'<b><i>{t(lang, "duel_main_desc")}</i></b>\n\n'
         '</blockquote>'
     )
 
-def duel_main_keyboard() -> InlineKeyboardMarkup:
+def duel_main_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
-        text=" Поиск противника", callback_data="duel_search",
+        text=t(lang, "duel_btn_search"), callback_data="duel_search",
         icon_custom_emoji_id=EMOJI_SEARCH,
     ))
     builder.row(InlineKeyboardButton(
-        text=" Бросить вызов", callback_data="duel_challenge_start",
+        text=t(lang, "duel_btn_challenge"), callback_data="duel_challenge_start",
         icon_custom_emoji_id=EMOJI_INVITE,
     ))
     builder.row(
-        InlineKeyboardButton(text=" Снаряжение", callback_data="duel_equip",
+        InlineKeyboardButton(text=t(lang, "duel_btn_equip"), callback_data="duel_equip",
                              icon_custom_emoji_id=EMOJI_EQUIP),
-        InlineKeyboardButton(text=" Навыки", callback_data="duel_skills",
+        InlineKeyboardButton(text=t(lang, "duel_btn_skills"), callback_data="duel_skills",
                              icon_custom_emoji_id=EMOJI_SKILLS),
     )
     builder.row(InlineKeyboardButton(
-        text=" Характеристики", callback_data="duel_charstats",
+        text=t(lang, "duel_btn_charstats"), callback_data="duel_charstats",
         icon_custom_emoji_id=EMOJI_STATS_DUEL,
     ))
     builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="back_to_menu",
+        text=t(lang, "btn_back"), callback_data="back_to_menu",
         icon_custom_emoji_id=EMOJI_BACK,
     ))
     return builder.as_markup()
 
 
-def duel_equip_text(user_data: dict) -> str:
+def duel_equip_text(user_data: dict, lang: str = "ru") -> str:
     lines = []
     for slot in GEAR_SLOTS_ORDER:
         eid    = _SLOT_EMOJI_IDS.get(slot, "")
         char   = slot_emoji(slot)
-        label  = slot_label(slot)
+        label  = slot_label(slot, lang)
         eq_lvl = equipped_level(slot, user_data)
         ow_lvl = owned_level(slot, user_data)
         slot_tg = f'<tg-emoji emoji-id="{eid}">{char}</tg-emoji>'
@@ -2492,17 +2502,17 @@ def duel_equip_text(user_data: dict) -> str:
             item   = current_slot_item(slot, user_data)
             status = f'<b>{item["name"]}</b> ✅'
         elif ow_lvl:
-            status = f'<b>{slot}-lvl{ow_lvl}</b> 📦 <i>(не надето)</i>'
+            status = f'<b>{slot}-lvl{ow_lvl}</b> 📦 <i>{t(lang, "duel_equip_not_worn")}</i>'
         else:
-            status = '<i>пусто</i>'
+            status = f'<i>{t(lang, "duel_equip_empty")}</i>'
 
         lines.append(f'{slot_tg} <b>{label}:</b> {status}')
 
     return (
-        '<tg-emoji emoji-id="5454168390685965478">🎒</tg-emoji> <b>СНАРЯЖЕНИЕ</b>\n'
+        f'<tg-emoji emoji-id="5454168390685965478">🎒</tg-emoji> <b>{t(lang, "duel_equip_title")}</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>{chr(10).join(lines)}</blockquote>\n\n'
-        '<i>Снаряжение даёт HP и защиту — урон даётся навыками!</i>'
+        f'<i>{t(lang, "duel_equip_hint")}</i>'
     )
 
 _SLOT_EMOJI_IDS = {
@@ -2513,13 +2523,13 @@ _SLOT_EMOJI_IDS = {
     "gloves": "5404591969735308062",
 }
 
-def duel_equip_keyboard(user_data: dict = None) -> InlineKeyboardMarkup:
+def duel_equip_keyboard(user_data: dict = None, lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     row_buf = []
     for slot in GEAR_SLOTS_ORDER:
         is_owned = user_data and owned_level(slot, user_data) > 0
         kw = dict(
-            text=f"{slot_label(slot)}",
+            text=f"{slot_label(slot, lang)}",
             callback_data=f"duel_equip_slot:{slot}",
             icon_custom_emoji_id=_SLOT_EMOJI_IDS.get(slot),
         )
@@ -2532,7 +2542,7 @@ def duel_equip_keyboard(user_data: dict = None) -> InlineKeyboardMarkup:
     if row_buf:
         builder.row(*row_buf)
     builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_main",
+        text=t(lang, "btn_back"), callback_data="duel_main",
         icon_custom_emoji_id=EMOJI_BACK,
     ))
     return builder.as_markup()
@@ -2747,11 +2757,12 @@ def apply_gear_unequip(item_key: str, user_data: dict) -> dict:
     return user_data
 
 
-def duel_charstats_text(user_data: dict, uid: int = None) -> str:
+def duel_charstats_text(user_data: dict, uid: int = None, lang: str = "ru") -> str:
     s          = _calc_stats(user_data)
     equipped   = user_data.get("duel_equipped", {})
     gear_count = len(equipped)
-    gear_line  = f"надето {gear_count}/5 предм." if gear_count else "снаряжение не надето"
+    gear_line  = (t(lang, "duel_stats_gear_worn").format(count=gear_count) if gear_count
+                  else t(lang, "duel_stats_gear_none"))
     owned_sk   = get_owned_skills(user_data)
     sk_count   = len(owned_sk)
 
@@ -2763,39 +2774,37 @@ def duel_charstats_text(user_data: dict, uid: int = None) -> str:
         hp_regen_note = ""
         if current_hp < 100:
             secs = player_hp_regen_seconds(uid, user_data)
-            hp_regen_note = (
-                f'\n⚠️ <b>HP восстанавливается</b> (+{HP_REGEN_AMOUNT} каждые {HP_REGEN_INTERVAL} сек.)\n'
-                f'Следующий тик через <b>{secs} сек.</b>\n'
-                f'<i>Нельзя начать бой пока HP &lt; 100</i>\n'
-            )
+            hp_regen_note = "\n" + t(lang, "duel_stats_hp_regen_note").format(
+                amount=HP_REGEN_AMOUNT, interval=HP_REGEN_INTERVAL, secs=secs
+            ) + "\n"
     else:
         hp_display    = str(s["hp"])
         hp_regen_note = ""
 
     return (
-        f'<tg-emoji emoji-id="{EMOJI_STATS_DUEL}">📊</tg-emoji> <b>ХАРАКТЕРИСТИКИ</b>\n'
+        f'<tg-emoji emoji-id="{EMOJI_STATS_DUEL}">📊</tg-emoji> <b>{t(lang, "duel_stats_title")}</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         '<blockquote>'
-        f'<tg-emoji emoji-id="{EMOJI_HP}">❤️</tg-emoji> <b>Здоровье</b> — <b>{hp_display}</b> HP\n\n'
-        f'<tg-emoji emoji-id="{EMOJI_REGEN}">💚</tg-emoji> <b>Регенерация</b> — <b>{s["regen"]}</b> HP/ход\n\n'
-        f'<tg-emoji emoji-id="{EMOJI_PHYS_DEF}">🛡️</tg-emoji> <b>Физ. защита</b> — <b>{s["phys_def"]}</b> DEF\n\n'
-        f'<tg-emoji emoji-id="{EMOJI_MAG_DEF}">🔮</tg-emoji> <b>Маг. защита</b> — <b>{s["mag_def"]}</b> MDEF\n\n'
-        f'<tg-emoji emoji-id="{EMOJI_STAMINA}">⚙️</tg-emoji> <b>Стойкость</b> — <b>{s["stamina"]}</b> STM'
+        f'<tg-emoji emoji-id="{EMOJI_HP}">❤️</tg-emoji> <b>{t(lang, "duel_stats_hp")}</b> — <b>{hp_display}</b> HP\n\n'
+        f'<tg-emoji emoji-id="{EMOJI_REGEN}">💚</tg-emoji> <b>{t(lang, "duel_stats_regen")}</b> — <b>{s["regen"]}</b> {t(lang, "duel_stats_hp_per_turn")}\n\n'
+        f'<tg-emoji emoji-id="{EMOJI_PHYS_DEF}">🛡️</tg-emoji> <b>{t(lang, "duel_stats_phys_def")}</b> — <b>{s["phys_def"]}</b> DEF\n\n'
+        f'<tg-emoji emoji-id="{EMOJI_MAG_DEF}">🔮</tg-emoji> <b>{t(lang, "duel_stats_mag_def")}</b> — <b>{s["mag_def"]}</b> MDEF\n\n'
+        f'<tg-emoji emoji-id="{EMOJI_STAMINA}">⚙️</tg-emoji> <b>{t(lang, "duel_stats_stamina")}</b> — <b>{s["stamina"]}</b> STM'
         '</blockquote>\n'
         f'{hp_regen_note}\n'
-        f'🎽 <i>Снаряжение: {gear_line}</i>\n'
-        f'⚔️ <i>Навыков куплено: {sk_count} шт.</i>\n\n'
-        f'<i>💡 Урон в дуэли зависит от купленных навыков,\nа не от снаряжения!</i>'
+        f'{t(lang, "duel_stats_gear_line").format(gear=gear_line)}\n'
+        f'{t(lang, "duel_stats_skills_line").format(count=sk_count)}\n\n'
+        f'<i>{t(lang, "duel_stats_footer")}</i>'
     )
 
-def duel_charstats_keyboard() -> InlineKeyboardMarkup:
+def duel_charstats_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
-        text="Снаряжение", callback_data="duel_equip",
+        text=t(lang, "duel_btn_equip").strip(), callback_data="duel_equip",
         icon_custom_emoji_id=EMOJI_EQUIP,
     ))
     builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_main",
+        text=t(lang, "btn_back"), callback_data="duel_main",
         icon_custom_emoji_id=EMOJI_BACK,
     ))
     return builder.as_markup()
@@ -2803,11 +2812,12 @@ def duel_charstats_keyboard() -> InlineKeyboardMarkup:
 
 # ── Экран навыков (обзор + ссылка в магазин) ─────────────────
 
-def duel_skills_text(user_data: dict = None) -> str:
+def duel_skills_text(user_data: dict = None, lang: str = "ru") -> str:
     quote = _random.choice(_DUEL_SHOP_QUOTES)
 
     # Формируем строки слотов экипировки (всегда 5 слотов)
     equipped = get_equipped_skills(user_data) if user_data else []
+    empty_line = f'▫️ <i>{t(lang, "duel_skills_empty_slot")}</i>\n'
     slot_lines = ""
     for i in range(MAX_EQUIPPED_SKILLS):
         if i < len(equipped):
@@ -2816,107 +2826,96 @@ def duel_skills_text(user_data: dict = None) -> str:
                 skill = SKILLS[k]
                 slot_lines += f"{_skill_emoji(skill)} <b>{skill['name']}</b>\n"
             else:
-                slot_lines += f"▫️ <i>пусто</i>\n"
+                slot_lines += empty_line
         else:
-            slot_lines += f"▫️ <i>пусто</i>\n"
+            slot_lines += empty_line
 
     return (
-        f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>БОЕВЫЕ НАВЫКИ</b>\n'
+        f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>{t(lang, "duel_skills_title")}</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote expandable><b><i>{quote}</i></b></blockquote>\n\n'
-        f'<blockquote><b>Экипировано:</b>\n'
+        f'<blockquote><b>{t(lang, "duel_skills_equipped_label")}</b>\n'
         f'{slot_lines}</blockquote>\n'
-        f'<i><tg-emoji emoji-id="5334544901428229844">✨</tg-emoji> Экипируй до {MAX_EQUIPPED_SKILLS} навыков — только они доступны в бою!</i>'
+        f'<i><tg-emoji emoji-id="5334544901428229844">✨</tg-emoji> {t(lang, "duel_skills_hint").format(max=MAX_EQUIPPED_SKILLS)}</i>'
     )
 
-def duel_skills_keyboard() -> InlineKeyboardMarkup:
+def duel_skills_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
-        text="📖 Изучение навыков", callback_data="duel_skills_shop",
+        text=t(lang, "duel_btn_skills_shop"), callback_data="duel_skills_shop",
     ))
     builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_main",
+        text=t(lang, "btn_back"), callback_data="duel_main",
         icon_custom_emoji_id=EMOJI_BACK,
     ))
     return builder.as_markup()
 
 
-def duel_challenge_screen_text() -> str:
+def duel_challenge_screen_text(lang: str = "ru") -> str:
     return (
-        f'<tg-emoji emoji-id="{EMOJI_INVITE}">⚔️</tg-emoji> <b>БРОСИТЬ ВЫЗОВ</b>\n'
+        f'<tg-emoji emoji-id="{EMOJI_INVITE}">⚔️</tg-emoji> <b>{t(lang, "duel_challenge_title")}</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
-        '<blockquote>'
-        'Отправь <b>ID</b> или <b>@юзернейм</b> игрока которого хочешь вызвать на дуэль.\n\n'
-        'Примеры:\n'
-        '<code>123456789</code>\n'
-        '<code>@username</code>\n\n'
-        '⏳ <i>Вызов действует 2 минуты — если противник не ответит, он истечёт.</i>'
-        '</blockquote>'
+        f'<blockquote>{t(lang, "duel_challenge_body")}</blockquote>'
     )
 
 
-def duel_challenge_screen_keyboard() -> InlineKeyboardMarkup:
+def duel_challenge_screen_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_main",
+        text=t(lang, "btn_back"), callback_data="duel_main",
         icon_custom_emoji_id=EMOJI_BACK,
     ))
     return builder.as_markup()
 
 
-def duel_challenge_sent_text(target_name: str) -> str:
+def duel_challenge_sent_text(target_name: str, lang: str = "ru") -> str:
     return (
-        f'⚔️ <b>Вызов отправлен!</b>\n\n'
-        f'<blockquote>👤 <b>{target_name}</b> получил твой вызов.\n'
-        f'⏳ Ожидай ответа — у него есть 2 минуты.</blockquote>'
+        f'{t(lang, "duel_challenge_sent_title")}\n\n'
+        f'<blockquote>{t(lang, "duel_challenge_sent_body").format(name=target_name)}</blockquote>'
     )
 
 
-def duel_challenge_sent_keyboard() -> InlineKeyboardMarkup:
+def duel_challenge_sent_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
-        text="❌ Отменить вызов", callback_data="duel_challenge_cancel",
+        text=t(lang, "duel_btn_challenge_cancel"), callback_data="duel_challenge_cancel",
     ))
     builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_main",
+        text=t(lang, "btn_back"), callback_data="duel_main",
         icon_custom_emoji_id=EMOJI_BACK,
     ))
     return builder.as_markup()
 
 
-def duel_hp_status_text(uid: int, user_data: dict) -> str:
+def duel_hp_status_text(uid: int, user_data: dict, lang: str = "ru") -> str:
     """Текст статуса HP для отображения в поиске/вызове."""
     hp     = get_player_hp(uid, user_data)
     hp_max = _calc_stats(user_data)["hp"]
     if hp >= 100:
         return ""
     secs = player_hp_regen_seconds(uid, user_data)
-    return (
-        f'\n\n<blockquote>'
-        f'⚠️ <b>Твоё HP: {hp}/{hp_max}</b>\n'
-        f'Восстановление: +{HP_REGEN_AMOUNT} HP каждые {HP_REGEN_INTERVAL} сек.\n'
-        f'Следующий тик через <b>{secs} сек.</b>\n'
-        f'<i>Нельзя начать бой пока HP &lt; 100!</i>'
-        f'</blockquote>'
+    body = t(lang, "duel_hp_status").format(
+        hp=hp, hp_max=hp_max, amount=HP_REGEN_AMOUNT, interval=HP_REGEN_INTERVAL, secs=secs
     )
+    return f'\n\n<blockquote>{body}</blockquote>'
 
 
-def duel_soon_text(section: str) -> str:
+def duel_soon_text(section: str, lang: str = "ru") -> str:
     labels = {
-        "search": "Поиск противника",
-        "invite": "Пригласить на поединок",
-        "skills": "Навыки",
+        "search": t(lang, "duel_soon_search"),
+        "invite": t(lang, "duel_soon_invite"),
+        "skills": t(lang, "duel_soon_skills"),
     }
     name = labels.get(section, section)
     return (
         f'<tg-emoji emoji-id="{EMOJI_DUEL_MAIN}">⚔️</tg-emoji> <b>{name}</b>\n\n'
-        '<blockquote>🚧 Раздел в разработке.\nСкоро будет доступен!</blockquote>'
+        f'<blockquote>{t(lang, "duel_soon_body")}</blockquote>'
     )
 
-def duel_back_keyboard() -> InlineKeyboardMarkup:
+def duel_back_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
-        text="Назад", callback_data="duel_main",
+        text=t(lang, "btn_back"), callback_data="duel_main",
         icon_custom_emoji_id=EMOJI_BACK,
     ))
     return builder.as_markup()
@@ -2962,50 +2961,38 @@ def is_any_duel_cmd(text: str) -> bool:
 
 # ── Тексты ошибок/помощи ────────────────────────────────────
 
-def cmd_no_hp_text(hp_now: int, secs: int) -> str:
-    return (
-        f'⚠️ <b>HP слишком низкий!</b>\n\n'
-        f'<blockquote>Твоё HP: <b>{hp_now}/100</b>\n'
-        f'Восстановится через <b>{secs} сек.</b>\n'
-        f'<i>Нельзя начать бой пока HP &lt; 100</i></blockquote>'
-    )
+def cmd_no_hp_text(hp_now: int, secs: int, lang: str = "ru") -> str:
+    return t(lang, "duel_cmd_no_hp").format(hp=hp_now, secs=secs)
 
-def cmd_already_in_battle_text() -> str:
-    return '⚔️ <b>Ты уже находишься в бою!</b>'
+def cmd_already_in_battle_text(lang: str = "ru") -> str:
+    return t(lang, "duel_cmd_already_in_battle")
 
-def cmd_invite_usage_text() -> str:
+def cmd_invite_usage_text(lang: str = "ru") -> str:
     return (
-        f'<tg-emoji emoji-id="{EMOJI_INVITE}">⚔️</tg-emoji> <b>БРОСИТЬ ВЫЗОВ</b>\n'
+        f'<tg-emoji emoji-id="{EMOJI_INVITE}">⚔️</tg-emoji> <b>{t(lang, "duel_challenge_title")}</b>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
-        '<blockquote>'
-        'Ответь на сообщение игрока командой <b>вз</b> (или <b>challenge</b>),\n'
-        'чтобы бросить ему вызов.\n\n'
-        'Или напиши: <code>вз @username</code> / <code>вз 123456789</code>\n\n'
-        '⏳ <i>Вызов действует 2 минуты.</i>'
-        '</blockquote>'
+        f'<blockquote>{t(lang, "duel_cmd_invite_usage")}</blockquote>'
     )
 
-def cmd_invite_self_text() -> str:
-    return '❌ <b>Нельзя вызвать самого себя!</b>'
+def cmd_invite_self_text(lang: str = "ru") -> str:
+    return t(lang, "duel_cmd_invite_self")
 
-def cmd_invite_not_found_text() -> str:
-    return '❌ <b>Игрок не найден.</b> Он должен хотя бы раз написать боту.'
+def cmd_invite_not_found_text(lang: str = "ru") -> str:
+    return t(lang, "duel_cmd_invite_not_found")
 
-def cmd_invite_in_battle_text() -> str:
-    return '❌ <b>Этот игрок уже находится в бою.</b>'
+def cmd_invite_in_battle_text(lang: str = "ru") -> str:
+    return t(lang, "duel_cmd_invite_in_battle")
 
-def cmd_invite_blocked_text(name: str) -> str:
-    return f'❌ Не удалось отправить уведомление <b>{name}</b> — возможно бот заблокирован.'
+def cmd_invite_blocked_text(name: str, lang: str = "ru") -> str:
+    return t(lang, "duel_cmd_invite_blocked").format(name=name)
 
-def cmd_invite_limit_text(target_name: str, secs: int, limit: int = CHALLENGE_DAILY_LIMIT) -> str:
+def cmd_invite_limit_text(target_name: str, secs: int, limit: int = CHALLENGE_DAILY_LIMIT, lang: str = "ru") -> str:
     hours = secs // 3600
     mins  = (secs % 3600) // 60
+    h_lbl = t(lang, "duel_hours_short")
+    m_lbl = t(lang, "duel_mins_short")
     if hours > 0:
-        wait = f'{hours} ч {mins} мин'
+        wait = f'{hours} {h_lbl} {mins} {m_lbl}'
     else:
-        wait = f'{mins} мин'
-    return (
-        f'❌ <b>Лимит вызовов исчерпан!</b>\n\n'
-        f'<blockquote>Ты уже вызывал <b>{target_name}</b> {limit} раз(а) за последние 24 часа.\n'
-        f'Попробуй снова через <b>{wait}</b>.</blockquote>'
-    )
+        wait = f'{mins} {m_lbl}'
+    return t(lang, "duel_cmd_invite_limit").format(name=target_name, limit=limit, wait=wait)
