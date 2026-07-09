@@ -8,6 +8,15 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from lang import t
 
+
+def _desc(entry: dict, lang: str = "ru") -> str:
+    """Возвращает описание предмета/навыка на нужном языке.
+    Если для 'en' нет перевода (description_en), используется русский текст."""
+    if lang == "en":
+        return entry.get("description_en") or entry.get("description", "")
+    return entry.get("description", "")
+
+
 # ── Эмодзи ──────────────────────────────────────────────────
 EMOJI_BACK         = "5252272671669706296"
 EMOJI_DUEL_MAIN    = "5424972470023104089"
@@ -1737,10 +1746,10 @@ def unequip_skill(skill_key: str, user_data: dict) -> tuple:
 
 # ── Карточка навыка (подробное окно, как у снаряжения) ────────────────────
 
-def duel_skill_card_text(skill_key: str, user_data: dict) -> str:
+def duel_skill_card_text(skill_key: str, user_data: dict, lang: str = "ru") -> str:
     sk      = SKILLS.get(skill_key)
     if not sk:
-        return "❌ Навык не найден."
+        return t(lang, "duel_alert_unknown_item") if lang == "en" else "❌ Навык не найден."
     owned    = get_owned_skills(user_data)
     equipped = get_equipped_skills(user_data)
     balance  = user_data.get("balance", 0)
@@ -1748,38 +1757,67 @@ def duel_skill_card_text(skill_key: str, user_data: dict) -> str:
     is_equip = skill_key in equipped
 
     # Тип навыка
-    type_labels = {"magic": "🔮 Магический", "physical": "⚔️ Физический", "shield": "🛡️ Защитный"}
+    if lang == "en":
+        type_labels = {"magic": "🔮 Magic", "physical": "⚔️ Physical", "shield": "🛡️ Defensive"}
+    else:
+        type_labels = {"magic": "🔮 Магический", "physical": "⚔️ Физический", "shield": "🛡️ Защитный"}
     type_label  = type_labels.get(sk["type"], sk["type"])
 
     # Характеристики
-    if sk["type"] == "shield":
-        power_line = f'<tg-emoji emoji-id="5465154440287757794">✨</tg-emoji> <b>Поглощает:</b> {sk["shield_amount"][0]}–{sk["shield_amount"][1]} HP'
+    if lang == "en":
+        if sk["type"] == "shield":
+            power_line = f'<tg-emoji emoji-id="5465154440287757794">✨</tg-emoji> <b>Absorbs:</b> {sk["shield_amount"][0]}–{sk["shield_amount"][1]} HP'
+        else:
+            power_line = f'<tg-emoji emoji-id="5454014806950429357">✨</tg-emoji> <b>Damage:</b> {sk["base_dmg"][0]}–{sk["base_dmg"][1]}'
     else:
-        power_line = f'<tg-emoji emoji-id="5454014806950429357">✨</tg-emoji> <b>Урон:</b> {sk["base_dmg"][0]}–{sk["base_dmg"][1]}'
+        if sk["type"] == "shield":
+            power_line = f'<tg-emoji emoji-id="5465154440287757794">✨</tg-emoji> <b>Поглощает:</b> {sk["shield_amount"][0]}–{sk["shield_amount"][1]} HP'
+        else:
+            power_line = f'<tg-emoji emoji-id="5454014806950429357">✨</tg-emoji> <b>Урон:</b> {sk["base_dmg"][0]}–{sk["base_dmg"][1]}'
 
     # Статус
-    if is_equip:
-        status_line = '✅ <b>Экипирован в бой</b>'
-    elif is_owned:
-        status_line = '📦 <b>Куплен</b> — не экипирован в бой'
+    if lang == "en":
+        if is_equip:
+            status_line = '✅ <b>Equipped for battle</b>'
+        elif is_owned:
+            status_line = '📦 <b>Purchased</b> — not equipped'
+        else:
+            status_line = f'<tg-emoji emoji-id="5427168083074628963">✨</tg-emoji> <b>Price: {_fmt(sk["price"])} <tg-emoji emoji-id="5199552030615558774">✨</tg-emoji></b>'
+            if balance < sk["price"]:
+                deficit = sk["price"] - balance
+                status_line += f'\n⚠️ <i>Missing {_fmt(deficit)} coins</i>'
     else:
-        status_line = f'<tg-emoji emoji-id="5427168083074628963">✨</tg-emoji> <b>Цена: {_fmt(sk["price"])} <tg-emoji emoji-id="5199552030615558774">✨</tg-emoji></b>'
-        if balance < sk["price"]:
-            deficit = sk["price"] - balance
-            status_line += f'\n⚠️ <i>Не хватает {_fmt(deficit)} монет</i>'
+        if is_equip:
+            status_line = '✅ <b>Экипирован в бой</b>'
+        elif is_owned:
+            status_line = '📦 <b>Куплен</b> — не экипирован в бой'
+        else:
+            status_line = f'<tg-emoji emoji-id="5427168083074628963">✨</tg-emoji> <b>Цена: {_fmt(sk["price"])} <tg-emoji emoji-id="5199552030615558774">✨</tg-emoji></b>'
+            if balance < sk["price"]:
+                deficit = sk["price"] - balance
+                status_line += f'\n⚠️ <i>Не хватает {_fmt(deficit)} монет</i>'
 
     # Слоты
-    slot_info = f'{len(equipped)}/{MAX_EQUIPPED_SKILLS} навыков экипировано'
+    if lang == "en":
+        slot_info = f'{len(equipped)}/{MAX_EQUIPPED_SKILLS} skills equipped'
+    else:
+        slot_info = f'{len(equipped)}/{MAX_EQUIPPED_SKILLS} навыков экипировано'
+
+    cooldown_label = "Cooldown" if lang == "en" else "Перезарядка"
+    stats_title = "Stats" if lang == "en" else "Характеристики"
+    cooldown_label2 = "Cooldown" if lang == "en" else "Кулдаун"
+    slots_label = "Battle slots" if lang == "en" else "Слоты в бою"
+    sec_label = "sec." if lang == "en" else "сек."
 
     return (
         f'{_skill_emoji(sk)} <b>{sk["name"]}</b>\n'
-        f'<i>{type_label} · <tg-emoji emoji-id="5440621591387980068">✨</tg-emoji> Перезарядка: {sk["cooldown"]} сек.</i>\n'
+        f'<i>{type_label} · <tg-emoji emoji-id="5440621591387980068">✨</tg-emoji> {cooldown_label}: {sk["cooldown"]} {sec_label}</i>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote><b><i>{sk["description"]}</i></b></blockquote>\n\n'
-        f'<b><tg-emoji emoji-id="5463277406435422003">✨</tg-emoji>Характеристики:</b>\n'
+        f'<blockquote><b><i>{_desc(sk, lang)}</i></b></blockquote>\n\n'
+        f'<b><tg-emoji emoji-id="5463277406435422003">✨</tg-emoji>{stats_title}:</b>\n'
         f'{power_line}\n'
-        f'<tg-emoji emoji-id="5440621591387980068">✨</tg-emoji> <b>Кулдаун:</b> {sk["cooldown"]} сек.\n\n'
-        f'<i>Слоты в бою: {slot_info}</i>\n\n'
+        f'<tg-emoji emoji-id="5440621591387980068">✨</tg-emoji> <b>{cooldown_label2}:</b> {sk["cooldown"]} {sec_label}\n\n'
+        f'<i>{slots_label}: {slot_info}</i>\n\n'
         f'{status_line}'
     )
 
@@ -2848,7 +2886,7 @@ def duel_item_card_text(item_key: str, user_data: dict, lang: str = "ru") -> str
         f'<tg-emoji emoji-id="{item["emoji_id"]}">{item["emoji_char"]}</tg-emoji> <b>{item["name"]}</b>\n'
         f'<i>{item["ru_name"]}</i>  {rarity}\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
-        f'<blockquote>{item["description"]}</blockquote>\n\n'
+        f'<blockquote>{_desc(item, lang)}</blockquote>\n\n'
         f'<b>{t(lang, "duel_item_bonus_title")}</b>\n{bonus_block}\n\n'
         f'<i>{t(lang, "duel_item_dmg_note")}</i>\n\n'
         f'{status_line}'
