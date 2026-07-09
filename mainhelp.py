@@ -5608,7 +5608,7 @@ async def handle_callback(call: CallbackQuery):
             sk_key   = parts[1]
             from_page = int(parts[2]) if len(parts) > 2 else 0
             await call.answer()
-            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data, from_page))
+            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data, from_page))
             return
 
         # ===== ДУЭЛИ: экипировать навык в бой =====
@@ -5621,7 +5621,7 @@ async def handle_callback(call: CallbackQuery):
                 save_user(user.id, data)
                 await _notify_ach(user.id, data, _ach_newly)
             # Возвращаемся на карточку
-            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
+            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data))
             return
 
         # ===== ДУЭЛИ: снять навык из боя =====
@@ -5633,7 +5633,7 @@ async def handle_callback(call: CallbackQuery):
                 _ach_newly = check_achievements(data)
                 save_user(user.id, data)
                 await _notify_ach(user.id, data, _ach_newly)
-            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
+            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data))
             return
 
         # ===== ДУЭЛИ: все слоты заняты =====
@@ -5670,7 +5670,7 @@ async def handle_callback(call: CallbackQuery):
             owned_sk = data.setdefault("duel_owned_skills", [])
             if sk_key in owned_sk:
                 await call.answer("Навык уже куплен!", show_alert=True)
-                await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
+                await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data))
                 return
             data["balance"] -= price
             owned_sk.append(sk_key)
@@ -5679,14 +5679,14 @@ async def handle_callback(call: CallbackQuery):
             await _notify_ach(user.id, data, _ach_newly)
             await call.answer(f"✅ Куплен навык: {sk['name']}!", show_alert=True)
             # Открываем карточку навыка — теперь можно экипировать
-            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
+            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data))
             return
 
         # ===== ДУЭЛИ: навык уже куплен (заглушка) =====
         if cd.startswith("duel_skill_owned:"):
             sk_key = cd.split(":", 1)[1]
             await call.answer()
-            await edit(duel_skill_card_text(sk_key, data), duel_skill_card_keyboard(sk_key, data))
+            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data))
             return
 
         # ===== ДУЭЛИ: недостаточно монет (навык) =====
