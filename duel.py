@@ -818,6 +818,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 1_100_000,
         "description": "Потёртые поножи с историей. Прошли сотни сражений.",
+        "description_en": "Weathered greaves with a history. They've survived hundreds of battles.",
         "bonus": {"hp": 242, "stamina": 36, "phys_def": 50, "regen": 8},
     },
     "pants-lvl7": {
@@ -826,6 +827,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 2_000_000,
         "description": "Латные штаны чемпиона. Выдерживают удары двуручного оружия.",
+        "description_en": "Champion's plate leggings. They withstand blows from two-handed weapons.",
         "bonus": {"hp": 289, "stamina": 43, "phys_def": 60, "regen": 10},
     },
     "pants-lvl8": {
@@ -834,6 +836,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 3_700_000,
         "description": "Освящённые поножи паладина. Ускоряют восстановление сил.",
+        "description_en": "Blessed paladin's greaves. They speed up stamina recovery.",
         "bonus": {"hp": 345, "stamina": 51, "phys_def": 72, "regen": 12},
     },
     "pants-lvl9": {
@@ -842,6 +845,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 6_900_000,
         "description": "Тяжёлые поножи воителя. Стабильность в любом бою.",
+        "description_en": "Heavy warlord's greaves. Stability in any fight.",
         "bonus": {"hp": 412, "stamina": 61, "phys_def": 86, "regen": 15},
     },
     "pants-lvl10": {
@@ -850,6 +854,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 13_000_000,
         "description": "Поножи победителя. Никакой удар не заставит упасть.",
+        "description_en": "The victor's greaves. No blow can bring you to your knees.",
         "bonus": {"hp": 492, "stamina": 72, "phys_def": 103, "regen": 18},
     },
     "pants-lvl11": {
@@ -858,6 +863,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 24_000_000,
         "description": "Безумные штаны берсерка с рунами выносливости.",
+        "description_en": "Berserker's frenzied leggings inscribed with runes of endurance.",
         "bonus": {"hp": 587, "stamina": 86, "phys_def": 124, "regen": 22},
     },
     "pants-lvl12": {
@@ -866,6 +872,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 44_000_000,
         "description": "Монолитные поножи темпляров. Прочнее стального блока.",
+        "description_en": "Monolithic templar greaves. Sturdier than a steel block.",
         "bonus": {"hp": 701, "stamina": 103, "phys_def": 149, "regen": 27},
     },
     "pants-lvl13": {
@@ -874,6 +881,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 81_000_000,
         "description": "Тёмные поножи убийцы. Лёгкие, но невероятно прочные.",
+        "description_en": "Dark assassin's greaves. Light, yet incredibly durable.",
         "bonus": {"hp": 837, "stamina": 122, "phys_def": 179, "regen": 32},
     },
     "pants-lvl14": {
@@ -882,6 +890,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 150_000_000,
         "description": "Золочёные поножи Повелителя с рунами регенерации.",
+        "description_en": "Gilded greaves of the Overlord, etched with runes of regeneration.",
         "bonus": {"hp": 999, "stamina": 146, "phys_def": 215, "regen": 40},
     },
     "pants-lvl15": {
@@ -890,6 +899,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 280_000_000,
         "description": "Поножи завоевателя. Прошли миллион шагов по полям сражений.",
+        "description_en": "The conqueror's greaves. They've marched a million steps across battlefields.",
         "bonus": {"hp": 1192, "stamina": 174, "phys_def": 258, "regen": 48},
     },
     "pants-lvl16": {
@@ -898,6 +908,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 510_000_000,
         "description": "Чешуя Дракона защищает ноги лучше любой стали.",
+        "description_en": "Dragon scales guard the legs better than any steel.",
         "bonus": {"hp": 1423, "stamina": 207, "phys_def": 309, "regen": 59},
     },
     "pants-lvl17": {
@@ -906,6 +917,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 950_000_000,
         "description": "Аркановые поножи хранят энергию каждого шага.",
+        "description_en": "Arcane greaves that store energy with every step.",
         "bonus": {"hp": 1698, "stamina": 247, "phys_def": 371, "regen": 72},
     },
     "pants-lvl18": {
@@ -914,6 +926,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 1_700_000_000,
         "description": "Нестареющие поножи, переживавшие тысячелетия.",
+        "description_en": "Ageless greaves that have endured for millennia.",
         "bonus": {"hp": 2027, "stamina": 294, "phys_def": 446, "regen": 87},
     },
     "pants-lvl19": {
@@ -922,6 +935,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 3_200_000_000,
         "description": "Парадные поножи монарха со скрытым зачарованием.",
+        "description_en": "The monarch's ceremonial greaves, hiding a subtle enchantment.",
         "bonus": {"hp": 2420, "stamina": 350, "phys_def": 535, "regen": 106},
     },
     "pants-lvl20": {
@@ -930,6 +944,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 6_000_000_000,
         "description": "Небесные поножи избранного. Ноги не устают никогда.",
+        "description_en": "Heavenly greaves of the chosen one. The legs never tire.",
         "bonus": {"hp": 2889, "stamina": 417, "phys_def": 642, "regen": 130},
     },
     "pants-lvl21": {
@@ -938,6 +953,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 11_000_000_000,
         "description": "Кость Первородного Титана — крепче любой горной породы.",
+        "description_en": "Bone of the Primordial Titan - tougher than any mountain rock.",
         "bonus": {"hp": 3448, "stamina": 497, "phys_def": 771, "regen": 158},
     },
     "pants-lvl22": {
@@ -946,6 +962,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 21_000_000_000,
         "description": "Астральные поножи вне времени и пространства.",
+        "description_en": "Astral greaves that exist beyond time and space.",
         "bonus": {"hp": 4116, "stamina": 592, "phys_def": 925, "regen": 193},
     },
     "pants-lvl23": {
@@ -954,6 +971,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 38_000_000_000,
         "description": "Поножи Первородного: выдержали всю мощь мироздания.",
+        "description_en": "Greaves of the Firstborn: they withstood the full force of creation.",
         "bonus": {"hp": 4913, "stamina": 705, "phys_def": 1111, "regen": 235},
     },
     "pants-lvl24": {
@@ -962,6 +980,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 70_000_000_000,
         "description": "Поножи Богоборца не знают усталости.",
+        "description_en": "The Godslayer's greaves know no fatigue.",
         "bonus": {"hp": 5864, "stamina": 839, "phys_def": 1333, "regen": 287},
     },
     "pants-lvl25": {
@@ -970,6 +989,7 @@ GEAR_CATALOG = {
         "slot_label": "Штаны", "emoji_char": "👖", "emoji_id": "4952249553173613188",
         "price": 130_000_000_000,
         "description": "Абсолютные поножи. Совершенная выносливость.",
+        "description_en": "Absolute greaves. Perfect endurance.",
         "bonus": {"hp": 7000, "stamina": 1000, "phys_def": 1600, "regen": 350},
     },
 
@@ -980,6 +1000,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 25_000,
         "description": "Добротные кожаные сапоги. Мягкая подошва гасит шум шагов.",
+        "description_en": "Sturdy leather boots. A soft sole muffles the sound of footsteps.",
         "bonus": {"phys_def": 8},
     },
     "boots-lvl2": {
@@ -988,6 +1009,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 47_000,
         "description": "Лёгкие сапоги из кожи ночной пантеры. Почти бесшумны.",
+        "description_en": "Lightweight boots made from night panther hide. Nearly silent.",
         "bonus": {"regen": 4, "stamina": 12, "phys_def": 10},
     },
     "boots-lvl3": {
@@ -996,6 +1018,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 87_000,
         "description": "Сапоги из кожи горного дракона, пропитанные эликсиром скорости.",
+        "description_en": "Boots of mountain dragon hide, soaked in a speed elixir.",
         "bonus": {"regen": 5, "stamina": 15, "phys_def": 12},
     },
     "boots-lvl4": {
@@ -1004,6 +1027,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 160_000,
         "description": "Зачарованные сапоги разведчиков. Молниеносное перемещение.",
+        "description_en": "Enchanted scout boots. Lightning-fast movement.",
         "bonus": {"regen": 6, "stamina": 18, "phys_def": 14},
     },
     "boots-lvl5": {
@@ -1012,6 +1036,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 300_000,
         "description": "Реликвийные сапоги Громового Бога. Надевший их — неудержим.",
+        "description_en": "Relic boots of the Thunder God. Whoever wears them is unstoppable.",
         "bonus": {"regen": 7, "stamina": 21, "phys_def": 17},
     },
     "boots-lvl6": {
@@ -1020,6 +1045,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 570_000,
         "description": "Потрёпанные сапоги с историей. Прошли тысячи лиг.",
+        "description_en": "Worn boots with a history. They've marched thousands of leagues.",
         "bonus": {"regen": 9, "stamina": 26, "phys_def": 21},
     },
     "boots-lvl7": {
@@ -1028,6 +1054,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 1_100_000,
         "description": "Прочные сапоги чемпиона. Держат позицию в любом бою.",
+        "description_en": "Sturdy champion's boots. Hold their ground in any fight.",
         "bonus": {"regen": 11, "stamina": 31, "phys_def": 25},
     },
     "boots-lvl8": {
@@ -1036,6 +1063,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 2_000_000,
         "description": "Освящённые сапоги паладина. Восстанавливают силы на марше.",
+        "description_en": "Blessed paladin's boots. They restore strength on the march.",
         "bonus": {"regen": 13, "stamina": 37, "phys_def": 31},
     },
     "boots-lvl9": {
@@ -1044,6 +1072,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 3_700_000,
         "description": "Тяжёлые сапоги воителя. Устойчивость как у скалы.",
+        "description_en": "Heavy warlord's boots. Stability like solid rock.",
         "bonus": {"regen": 17, "stamina": 45, "phys_def": 37},
     },
     "boots-lvl10": {
@@ -1052,6 +1081,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 6_900_000,
         "description": "Сапоги победителя. Ни разу не сделали шаг назад.",
+        "description_en": "The victor's boots. Never once took a step back.",
         "bonus": {"regen": 20, "stamina": 54, "phys_def": 45},
     },
     "boots-lvl11": {
@@ -1060,6 +1090,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 13_000_000,
         "description": "Безумные сапоги берсерка с рунами скорости и ярости.",
+        "description_en": "Berserker's frenzied boots inscribed with runes of speed and rage.",
         "bonus": {"regen": 25, "stamina": 65, "phys_def": 55},
     },
     "boots-lvl12": {
@@ -1068,6 +1099,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 24_000_000,
         "description": "Монолитные сапоги темпляров. Не скользят даже на льду.",
+        "description_en": "Monolithic templar boots. They never slip, even on ice.",
         "bonus": {"regen": 31, "stamina": 79, "phys_def": 66},
     },
     "boots-lvl13": {
@@ -1076,6 +1108,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 45_000_000,
         "description": "Тёмные сапоги убийцы. Беззвучны как ночь.",
+        "description_en": "Dark tracker's boots. Silent as the night.",
         "bonus": {"regen": 39, "stamina": 95, "phys_def": 80},
     },
     "boots-lvl14": {
@@ -1084,6 +1117,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 83_000_000,
         "description": "Золочёные сапоги Повелителя с рунами восстановления.",
+        "description_en": "Gilded boots of the Overlord, etched with runes of recovery.",
         "bonus": {"regen": 48, "stamina": 114, "phys_def": 97},
     },
     "boots-lvl15": {
@@ -1092,6 +1126,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 160_000_000,
         "description": "Сапоги завоевателя. Прошли все земли этого мира.",
+        "description_en": "The conqueror's boots. They've crossed every land in this world.",
         "bonus": {"regen": 59, "stamina": 138, "phys_def": 117},
     },
     "boots-lvl16": {
@@ -1100,6 +1135,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 290_000_000,
         "description": "Чешуя Дракона защищает стопы лучше любой кожи.",
+        "description_en": "Dragon scales protect the feet better than any leather.",
         "bonus": {"regen": 73, "stamina": 166, "phys_def": 142},
     },
     "boots-lvl17": {
@@ -1108,6 +1144,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 540_000_000,
         "description": "Арканические сапоги заряжаются от каждого шага.",
+        "description_en": "Arcane boots that charge with every step.",
         "bonus": {"regen": 91, "stamina": 201, "phys_def": 172},
     },
     "boots-lvl18": {
@@ -1116,6 +1153,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 1_000_000_000,
         "description": "Нестареющие сапоги, переживавшие тысячелетия.",
+        "description_en": "Ageless boots that have endured for millennia.",
         "bonus": {"regen": 112, "stamina": 242, "phys_def": 209},
     },
     "boots-lvl19": {
@@ -1124,6 +1162,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 1_900_000_000,
         "description": "Парадные сапоги монарха со скрытым зачарованием скорости.",
+        "description_en": "The monarch's ceremonial boots, hiding a subtle speed enchantment.",
         "bonus": {"regen": 139, "stamina": 292, "phys_def": 253},
     },
     "boots-lvl20": {
@@ -1132,6 +1171,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 3_500_000_000,
         "description": "Небесные сапоги избранного. Усталость им незнакома.",
+        "description_en": "Heavenly boots of the chosen one. Fatigue is unknown to them.",
         "bonus": {"regen": 172, "stamina": 352, "phys_def": 306},
     },
     "boots-lvl21": {
@@ -1140,6 +1180,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 6_600_000_000,
         "description": "Кость Первородного Титана — даже вес их сокрушителен.",
+        "description_en": "Bone of the Primordial Titan - even their weight is crushing.",
         "bonus": {"regen": 213, "stamina": 425, "phys_def": 371},
     },
     "boots-lvl22": {
@@ -1148,6 +1189,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 12_000_000_000,
         "description": "Астральные сапоги, шагающие сквозь пространство.",
+        "description_en": "Astral boots that stride through space itself.",
         "bonus": {"regen": 264, "stamina": 513, "phys_def": 450},
     },
     "boots-lvl23": {
@@ -1156,6 +1198,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 23_000_000_000,
         "description": "Сапоги Первородного: ступали по мирозданию ещё до его рождения.",
+        "description_en": "Boots of the Firstborn: they walked the cosmos before it was born.",
         "bonus": {"regen": 326, "stamina": 619, "phys_def": 545},
     },
     "boots-lvl24": {
@@ -1164,6 +1207,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 43_000_000_000,
         "description": "Сапоги Богоборца несут следы битв с богами.",
+        "description_en": "The Godslayer's boots bear the scars of battles against gods.",
         "bonus": {"regen": 404, "stamina": 746, "phys_def": 660},
     },
     "boots-lvl25": {
@@ -1172,6 +1216,7 @@ GEAR_CATALOG = {
         "slot_label": "Сапоги", "emoji_char": "👢", "emoji_id": "5776192535890235363",
         "price": 80_000_000_000,
         "description": "Абсолютные сапоги. Вершина скорости и регенерации.",
+        "description_en": "Absolute boots. The pinnacle of speed and regeneration.",
         "bonus": {"regen": 500, "stamina": 900, "phys_def": 800},
     },
 
@@ -1260,6 +1305,7 @@ SKILLS = {
         "cooldown": 8,
         "base_dmg": (18, 28),
         "description": "Сгусток хаотичной маг. энергии. Быстрый и доступный — твой первый шаг к победе.",
+        "description_en": "A clump of chaotic magic energy. Fast and accessible - your first step to victory.",
         "price": 0,
     },
     "explosion": {
@@ -1271,6 +1317,7 @@ SKILLS = {
         "cooldown": 10,
         "base_dmg": (22, 35),
         "description": "Удар с вложением всей физической мощи. Простой, надёжный, смертоносный.",
+        "description_en": "A strike backed by full physical force. Simple, reliable, deadly.",
         "price": 0,
     },
     "shield": {
@@ -1282,6 +1329,7 @@ SKILLS = {
         "cooldown": 25,
         "shield_amount": (20, 35),
         "description": "Магический барьер, сотканный из чистой воли бойца. Поглощает следующий удар.",
+        "description_en": "A magic barrier woven from the fighter's pure will. Absorbs the next hit.",
         "price": 0,
     },
 
@@ -1295,6 +1343,7 @@ SKILLS = {
         "cooldown": 8,
         "base_dmg": (25, 35),
         "description": "Удар голой рукой — но с такой силой, что броня крошится как глина.",
+        "description_en": "A bare-handed punch - but with such force that armor crumbles like clay.",
         "price": 500_000,
     },
     "mag_block": {
@@ -1306,6 +1355,7 @@ SKILLS = {
         "cooldown": 9,
         "base_dmg": (29, 40),
         "description": "Концентрированный пучок маг. силы, пробивающий защиту насквозь.",
+        "description_en": "A concentrated beam of magic energy that pierces straight through defense.",
         "price": 840_000,
     },
     "arcane_surge": {
@@ -1317,6 +1367,7 @@ SKILLS = {
         "cooldown": 10,
         "base_dmg": (33, 46),
         "description": "Выброс чистой аркановой энергии — быстро, метко, без промаха.",
+        "description_en": "A burst of pure arcane energy - fast, precise, never misses.",
         "price": 1_400_000,
     },
     "shadow_strike": {
@@ -1328,6 +1379,7 @@ SKILLS = {
         "cooldown": 11,
         "base_dmg": (38, 53),
         "description": "Удар рождается в тени и настигает раньше, чем враг успевает моргнуть.",
+        "description_en": "A strike born in shadow that lands before the enemy can blink.",
         "price": 2_400_000,
     },
     "poison_dart": {
@@ -1339,6 +1391,7 @@ SKILLS = {
         "cooldown": 11,
         "base_dmg": (44, 61),
         "description": "Игла, пропитанная редчайшим ядом. Проникает сквозь магическую защиту.",
+        "description_en": "A needle soaked in the rarest poison. Pierces right through magic defense.",
         "price": 4_000_000,
     },
     "thunder": {
@@ -1350,6 +1403,7 @@ SKILLS = {
         "cooldown": 12,
         "base_dmg": (51, 70),
         "description": "Молния бьёт из раскрытой ладони. Часть маг. защиты просто испаряется.",
+        "description_en": "Lightning strikes from an open palm. Part of the magic defense simply evaporates.",
         "price": 6_700_000,
     },
     "chain_lightning": {
@@ -1361,6 +1415,7 @@ SKILLS = {
         "cooldown": 13,
         "base_dmg": (59, 80),
         "description": "Разряд прыгает по противнику снова и снова — стабильный и безжалостный.",
+        "description_en": "A charge that keeps leaping across the enemy - steady and merciless.",
         "price": 11_000_000,
     },
     "blade_storm": {
@@ -1372,6 +1427,7 @@ SKILLS = {
         "cooldown": 14,
         "base_dmg": (67, 92),
         "description": "Сотни невидимых клинков обрушиваются на врага в вихре стали.",
+        "description_en": "Hundreds of invisible blades crash down on the enemy in a whirlwind of steel.",
         "price": 19_000_000,
     },
     "inferno": {
@@ -1383,6 +1439,7 @@ SKILLS = {
         "cooldown": 15,
         "base_dmg": (78, 105),
         "description": "Огонь из глубин преисподней — жжёт, не оставляя следов магической защиты.",
+        "description_en": "Fire from the depths of hell - it burns, leaving no trace of magic defense.",
         "price": 31_000_000,
     },
     "war_cry": {
@@ -1394,6 +1451,7 @@ SKILLS = {
         "cooldown": 16,
         "base_dmg": (90, 121),
         "description": "Боевой клич, от которого кровь стынет в жилах. Мощнейший физический выброс.",
+        "description_en": "A war cry that freezes the blood. The mightiest physical burst there is.",
         "price": 53_000_000,
     },
     "freeze": {
@@ -1406,6 +1464,7 @@ SKILLS = {
         "base_dmg": (103, 138),
         "freeze_turns": 1,
         "description": "Враг покрывается льдом и теряет ход. Урон невелик — зато время на твоей стороне.",
+        "description_en": "The enemy is coated in ice and loses their turn. Damage is small - but time is on your side.",
         "price": 89_000_000,
     },
     "earthquake": {
@@ -1417,6 +1476,7 @@ SKILLS = {
         "cooldown": 17,
         "base_dmg": (119, 159),
         "description": "Земля раскалывается под врагом. Сила удара — как горный обвал.",
+        "description_en": "The ground splits open beneath the enemy. The force hits like a landslide.",
         "price": 150_000_000,
     },
     "berserker": {
@@ -1428,6 +1488,7 @@ SKILLS = {
         "cooldown": 18,
         "base_dmg": (137, 182),
         "description": "Разум выключается — остаётся только ярость. Один из самых разрушительных физ. ударов.",
+        "description_en": "The mind shuts off - only rage remains. One of the most devastating physical strikes.",
         "price": 250_000_000,
     },
     "mega_shield": {
@@ -1439,6 +1500,7 @@ SKILLS = {
         "cooldown": 40,
         "shield_amount": (350, 600),
         "description": "Колоссальный щит из сжатой магии. Способен поглотить удар любой силы.",
+        "description_en": "A colossal shield of compressed magic. Able to absorb a blow of any strength.",
         "price": 420_000_000,
     },
     "soul_drain": {
@@ -1451,6 +1513,7 @@ SKILLS = {
         "base_dmg": (158, 209),
         "drain_regen": 15,
         "description": "Вытягивает жизненную силу врага прямо в тебя. Часть урона возвращается как HP.",
+        "description_en": "Draws the enemy's life force straight into you. Part of the damage returns as HP.",
         "price": 700_000_000,
     },
     "void_blast": {
@@ -1462,6 +1525,7 @@ SKILLS = {
         "cooldown": 21,
         "base_dmg": (182, 240),
         "description": "Открывает брешь в ткани мироздания прямо под ногами врага. Боль неизбежна.",
+        "description_en": "Tears open a breach in the fabric of creation right under the enemy's feet. Pain is inevitable.",
         "price": 1_200_000_000,
     },
     "titan_slam": {
@@ -1473,6 +1537,7 @@ SKILLS = {
         "cooldown": 22,
         "base_dmg": (210, 275),
         "description": "Удар, от которого трескается камень под ногами. Мощь первородных существ.",
+        "description_en": "A blow that cracks the stone underfoot. The might of primordial beings.",
         "price": 2_000_000_000,
     },
     "meteor": {
@@ -1484,6 +1549,7 @@ SKILLS = {
         "cooldown": 22,
         "base_dmg": (242, 316),
         "description": "С небес обрушивается раскалённый камень. Враг не успевает даже вскрикнуть.",
+        "description_en": "A blazing rock crashes down from the sky. The enemy doesn't even have time to scream.",
         "price": 3_300_000_000,
     },
     "dark_nova": {
@@ -1495,6 +1561,7 @@ SKILLS = {
         "cooldown": 23,
         "base_dmg": (279, 363),
         "description": "Взрыв тёмной материи поглощает всё вокруг. Один из разрушительнейших ударов.",
+        "description_en": "An explosion of dark matter swallows everything around it. One of the most devastating strikes.",
         "price": 5_600_000_000,
     },
     "divine_wrath": {
@@ -1506,6 +1573,7 @@ SKILLS = {
         "cooldown": 24,
         "base_dmg": (321, 416),
         "description": "Священный огонь нисходит с небес. Абсолютное уничтожение — без исключений.",
+        "description_en": "Sacred fire descends from the heavens. Absolute annihilation - no exceptions.",
         "price": 9_300_000_000,
     },
 
@@ -1520,6 +1588,7 @@ SKILLS = {
         "base_dmg": (370, 477),
         "drain_regen": 10,
         "description": "Атака, пропитанная животным инстинктом. Часть нанесённого урона возвращается как HP.",
+        "description_en": "An attack fueled by animal instinct. Part of the damage dealt returns as HP.",
         "price": 16_000_000_000,
     },
     "storm_eye": {
@@ -1531,6 +1600,7 @@ SKILLS = {
         "cooldown": 26,
         "base_dmg": (427, 548),
         "description": "В центре шторма — абсолютная тишина. А потом — волна, сметающая всё.",
+        "description_en": "At the center of the storm - absolute silence. Then a wave that sweeps away everything.",
         "price": 26_000_000_000,
     },
     "obsidian_edge": {
@@ -1542,6 +1612,7 @@ SKILLS = {
         "cooldown": 27,
         "base_dmg": (492, 628),
         "description": "Клинок из вулканического стекла — острее любой стали. Молниеносный и точный.",
+        "description_en": "A blade of volcanic glass - sharper than any steel. Lightning-fast and precise.",
         "price": 44_000_000_000,
     },
     "echo_blast": {
@@ -1553,6 +1624,7 @@ SKILLS = {
         "cooldown": 27,
         "base_dmg": (567, 721),
         "description": "Ударная волна, отражающаяся от каждой поверхности и бьющая снова и снова.",
+        "description_en": "A shockwave that bounces off every surface, striking again and again.",
         "price": 74_000_000_000,
     },
     "abyss_call": {
@@ -1565,6 +1637,7 @@ SKILLS = {
         "base_dmg": (653, 827),
         "freeze_turns": 1,
         "description": "Из пустоты тянутся щупальца тьмы. Враг получает урон и теряет ход от ужаса.",
+        "description_en": "Tendrils of darkness reach out of the void. The enemy takes damage and loses their turn from terror.",
         "price": 120_000_000_000,
     },
     "runic_fortress": {
@@ -1576,6 +1649,7 @@ SKILLS = {
         "cooldown": 55,
         "shield_amount": (800, 1500),
         "description": "Древние руны складываются в неприступную стену. Поглощает даже самые мощные удары.",
+        "description_en": "Ancient runes form an impregnable wall. Absorbs even the mightiest blows.",
         "price": 210_000_000_000,
     },
     "solar_lance": {
@@ -1587,6 +1661,7 @@ SKILLS = {
         "cooldown": 30,
         "base_dmg": (753, 949),
         "description": "Луч солнечного света, сжатый до точки и выпущенный как копьё. Жжёт и слепит.",
+        "description_en": "A beam of sunlight compressed to a point and launched like a spear. It burns and blinds.",
         "price": 350_000_000_000,
     },
 }
