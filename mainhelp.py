@@ -15,6 +15,7 @@ from database import (
     init_db, get_or_create_user, save_user,
     profile_text, format_amount,
     is_charge_processed, mark_charge_processed,
+    aio_get_or_create_user, aio_save_user,
 )
 from miner import (
     ORES, PICKAXES, PICKAXES_ORDER,
@@ -296,13 +297,13 @@ bot = Bot(token=BOT_TOKEN)
 async def _notify_ach(uid: int, data: dict, newly: list) -> None:
     """
     Шлёт уведомления о только что открытых достижениях СРАЗУ, в момент
-    выполнения действия. Вызывается ПОСЛЕ save_user(...), сразу следом за
+    выполнения действия. Вызывается ПОСЛЕ await aio_save_user(...), сразу следом за
     check_achievements(...) (который нужно вызывать ДО save_user, чтобы
     награды монет/опыта тоже попали в сохранённые данные).
 
     Использование:
         _ach_newly = check_achievements(u)
-        save_user(uid, u)
+        await aio_save_user(uid, u)
         await _notify_ach(uid, u, _ach_newly)
     """
     if not newly:
@@ -670,7 +671,7 @@ async def _has_pending_text_input(message: Message) -> bool:
         return True
     if uid in _cdl_input_pending:
         return True
-    u = get_or_create_user(message.from_user)
+    u = await aio_get_or_create_user(message.from_user)
     if any(k in u for k in _KLAN_PENDING_KEYS):
         return True
     return False
@@ -680,7 +681,7 @@ async def _has_pending_text_input(message: Message) -> bool:
 async def handle_pending_text_input(message: Message):
     """Единая точка входа для всех состояний 'ждём текст от юзера'."""
     uid  = message.from_user.id
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
 
     # ── Рассылка: FSM-ввод от админа ──
@@ -694,13 +695,13 @@ async def handle_pending_text_input(message: Message):
         if promo_name and u.get("onboarded", True):
             lock = await _get_user_lock(uid)
             async with lock:
-                u = get_or_create_user(message.from_user)
+                u = await aio_get_or_create_user(message.from_user)
                 ok, reason, amount = activate_promo(promo_name, uid)
                 if ok:
                     u["balance"] = u.get("balance", 0) + amount
                     u["promo_activations"] = u.get("promo_activations", 0) + 1
                     _ach_newly = check_achievements(u)
-                    save_user(uid, u)
+                    await aio_save_user(uid, u)
                     await _notify_ach(uid, u, _ach_newly)
                     await message.reply(promo_activate_text(amount, lang), parse_mode="HTML")
                 else:
@@ -709,12 +710,12 @@ async def handle_pending_text_input(message: Message):
 
     # ── Ожидание ввода цели вызова на дуэль ──
     if _challenge_input_pending.pop(uid, False):
-        from database import get_user_by_id_or_username as _find_ch
+        from database import aio_get_user_by_id_or_username as _find_ch
         target_raw = (message.text or "").strip().lstrip("@")
         if not target_raw:
             await message.reply(cmd_invite_usage_text(lang), parse_mode="HTML")
             return
-        target = _find_ch(target_raw)
+        target = await _find_ch(target_raw)
         if not target:
             await message.reply(cmd_invite_not_found_text(lang), parse_mode="HTML")
             return
@@ -791,7 +792,7 @@ async def handle_pending_text_input(message: Message):
 
         lock = await _get_user_lock(uid)
         async with lock:
-            u2  = get_or_create_user(message.from_user)
+            u2  = await aio_get_or_create_user(message.from_user)
             bal = u2.get("balance", 0)
             if amount < dep["min"]:
                 await _cdl_edit(
@@ -867,8 +868,8 @@ async def cmd_add_balance(message: Message):
         return
 
     # Поиск пользователя в БД
-    from database import get_user_by_id_or_username, save_user as _save
-    found = get_user_by_id_or_username(target_raw)
+    from database import aio_get_user_by_id_or_username, aio_save_user as _save
+    found = await get_user_by_id_or_username(target_raw)
 
     if not found:
         await message.reply(
@@ -883,7 +884,7 @@ async def cmd_add_balance(message: Message):
         new_balance = 0  # не уходим в минус
 
     found["balance"] = new_balance
-    _save(found["id"], found)
+    await _save(found["id"], found)
 
     name   = _esc(found.get("first_name") or found.get("username") or str(found["id"]))
     action = "➕ Выдано" if amount >= 0 else "➖ Снято"
@@ -904,7 +905,7 @@ async def cmd_getallart(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return
     from shop import _ARTIFACT_POOL, ARTIFACT_POOL_BY_KEY, get_artifact_mine_multiplier, get_artifact_damage_multiplier, get_artifact_pets_multiplier
-    from database import get_user, get_user_by_id_or_username, save_user as _save
+    from database import aio_get_user, aio_get_user_by_id_or_username, aio_save_user as _save
 
     parts = message.text.strip().split()
 
@@ -912,7 +913,7 @@ async def cmd_getallart(message: Message):
     if len(parts) >= 2:
         # /getallart @username  или  /getallart 123456789
         target_raw = parts[1].lstrip("@")
-        data = get_user_by_id_or_username(target_raw)
+        data = await get_user_by_id_or_username(target_raw)
         if not data:
             await message.reply(
                 f"❌ Пользователь <code>{target_raw}</code> не найден в базе.",
@@ -923,7 +924,7 @@ async def cmd_getallart(message: Message):
     else:
         # без аргумента — выдаём себе
         uid  = message.from_user.id
-        data = get_user(uid)
+        data = await get_user(uid)
         if not data:
             await message.reply(
                 "❌ Пользователь не найден в БД. Напиши /start сначала.",
@@ -939,7 +940,7 @@ async def cmd_getallart(message: Message):
             artifacts.append({"key": a["key"]})
             added.append(a)
     data["artifact_cases_opened"] = data.get("artifact_cases_opened", 0) + len(added)
-    _save(uid, data)
+    await _save(uid, data)
 
     mine_mult   = get_artifact_mine_multiplier(data)
     damage_mult = get_artifact_damage_multiplier(data)
@@ -980,8 +981,8 @@ async def cmd_updamage(message: Message):
         return
 
     target_raw = parts[1].lstrip("@")
-    from database import get_user_by_id_or_username, save_user as _save
-    found = get_user_by_id_or_username(target_raw)
+    from database import aio_get_user_by_id_or_username, aio_save_user as _save
+    found = await get_user_by_id_or_username(target_raw)
 
     if not found:
         await message.reply(
@@ -992,7 +993,7 @@ async def cmd_updamage(message: Message):
 
     current = found.get("infinite_dmg", False)
     found["infinite_dmg"] = not current
-    _save(found["id"], found)
+    await _save(found["id"], found)
 
     name = _esc(found.get("first_name") or found.get("username") or str(found["id"]))
     status = "✅ <b>Включён</b>" if found["infinite_dmg"] else "❌ <b>Выключен</b>"
@@ -1009,21 +1010,21 @@ async def cmd_checkmine(message: Message):
         return  # тихо игнорируем
 
     from miner import PICKAXES, PICKAXES_ORDER, TIER_LABELS, fmt_time, calc_mine_progress
-    from database import get_user, get_user_by_id_or_username
+    from database import aio_get_user, aio_get_user_by_id_or_username
 
     parts = message.text.strip().split()
 
     # Определяем целевого пользователя: реплай > @username/id аргумент > себя
     if message.reply_to_message and message.reply_to_message.from_user:
         uid  = message.reply_to_message.from_user.id
-        data = get_user(uid)
+        data = await get_user(uid)
     elif len(parts) >= 2:
         target_raw = parts[1].lstrip("@")
-        data = get_user_by_id_or_username(target_raw)
+        data = await get_user_by_id_or_username(target_raw)
         uid  = data["id"] if data else None
     else:
         uid  = message.from_user.id
-        data = get_user(uid)
+        data = await get_user(uid)
 
     if not data:
         await message.reply(
@@ -1079,17 +1080,17 @@ async def cmd_deletebd(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return  # тихо игнорируем
 
-    from database import get_user, get_user_by_id_or_username
+    from database import aio_get_user, aio_get_user_by_id_or_username
 
     parts = message.text.strip().split()
 
     # Определяем целевого пользователя: реплай > @username/id аргумент
     if message.reply_to_message and message.reply_to_message.from_user:
         uid  = message.reply_to_message.from_user.id
-        data = get_user(uid)
+        data = await get_user(uid)
     elif len(parts) >= 2:
         target_raw = parts[1].lstrip("@")
-        data = get_user_by_id_or_username(target_raw)
+        data = await get_user_by_id_or_username(target_raw)
         uid  = data["id"] if data else None
     else:
         await message.reply(
@@ -1185,7 +1186,7 @@ async def cmd_giveart(message: Message):
         return  # тихо игнорируем
 
     from shop import _ARTIFACT_POOL, get_artifact_mine_multiplier, get_artifact_damage_multiplier, get_artifact_pets_multiplier
-    from database import get_user, get_user_by_id_or_username, save_user as _save
+    from database import aio_get_user, aio_get_user_by_id_or_username, aio_save_user as _save
 
     text = message.text.strip()
 
@@ -1195,7 +1196,7 @@ async def cmd_giveart(message: Message):
     # ответом (reply) на игрока: /giveart Название артефакта
     if message.reply_to_message and message.reply_to_message.from_user:
         uid  = message.reply_to_message.from_user.id
-        data = get_user(uid)
+        data = await get_user(uid)
         rest = text.split(maxsplit=1)
         name_query = rest[1] if len(rest) >= 2 else ""
     else:
@@ -1209,7 +1210,7 @@ async def cmd_giveart(message: Message):
             )
             return
         target_raw = parts[1].lstrip("@")
-        data = get_user_by_id_or_username(target_raw)
+        data = await get_user_by_id_or_username(target_raw)
         uid  = data["id"] if data else None
         name_query = parts[2]
 
@@ -1258,7 +1259,7 @@ async def cmd_giveart(message: Message):
 
     artifacts.append({"key": found["key"]})
     data["artifact_cases_opened"] = data.get("artifact_cases_opened", 0) + 1
-    _save(uid, data)
+    await _save(uid, data)
 
     mine_mult   = get_artifact_mine_multiplier(data)
     damage_mult = get_artifact_damage_multiplier(data)
@@ -1328,8 +1329,8 @@ async def cmd_getstatus(message: Message):
     tier_arg   = parts[2].lower()
     tier       = "premium" if tier_arg in ("pr", "premium") else "vip"
 
-    from database import get_user_by_id_or_username, save_user as _save
-    found = get_user_by_id_or_username(target_raw)
+    from database import aio_get_user_by_id_or_username, aio_save_user as _save
+    found = await get_user_by_id_or_username(target_raw)
 
     if not found:
         await message.reply(
@@ -1340,7 +1341,7 @@ async def cmd_getstatus(message: Message):
 
     ok, msg = activate_status(found, tier)
     if ok:
-        _save(found["id"], found)
+        await _save(found["id"], found)
 
     name  = _esc(found.get("first_name") or found.get("username") or str(found["id"]))
     label = "VIP" if tier == "vip" else "Premium"
@@ -1524,7 +1525,7 @@ async def cmd_daily(message: Message):
     uid  = message.from_user.id
     lock = await _get_user_lock(uid)
     async with lock:
-        u = get_or_create_user(message.from_user)
+        u = await aio_get_or_create_user(message.from_user)
 
         if not u.get("onboarded", True):
             return  # онбординг ещё не пройден — молча игнорируем
@@ -1565,7 +1566,7 @@ async def cmd_daily(message: Message):
         u["balance"]    = u.get("balance", 0) + reward
         u["last_daily"] = now
         _ach_newly = check_achievements(u)
-        save_user(uid, u)
+        await aio_save_user(uid, u)
         await _notify_ach(uid, u, _ach_newly)
 
         lang = get_lang(u)
@@ -1646,7 +1647,7 @@ async def send_welcome(message: Message):
             pass
 
     # Создаём/получаем пользователя в БД бота
-    u = get_or_create_user(message.from_user)
+    u = await aio_get_or_create_user(message.from_user)
     track_user(uid)
 
     # Регистрируем в реф. таблице — только для совсем новых пользователей,
@@ -1663,12 +1664,12 @@ async def send_welcome(message: Message):
         check_code = args[1][6:]
         lock = await _get_user_lock(uid)
         async with lock:
-            u = get_or_create_user(message.from_user)
+            u = await aio_get_or_create_user(message.from_user)
             ok, reason, amount = activate_check(check_code, uid)
             if ok:
                 u["balance"] = u.get("balance", 0) + amount
                 _ach_newly = check_achievements(u)
-                save_user(uid, u)
+                await aio_save_user(uid, u)
                 await _notify_ach(uid, u, _ach_newly)
                 await message.answer(check_activate_text(amount, lang), parse_mode="HTML")
             else:
@@ -1703,9 +1704,9 @@ async def send_welcome(message: Message):
 
 @dp.message(_text_in("🎮 Меню", "🎮 Menu"), F.chat.type == "private")
 async def reply_btn_menu(message: Message):
-    from database import get_or_create_user as _gou
+    from database import aio_get_or_create_user as _gou
     uid  = message.from_user.id
-    u    = _gou(message.from_user)
+    u    = await _gou(message.from_user)
     lang = get_lang(u)
     track_user(uid)
     _clear_all_pending_inputs(uid, u)
@@ -1727,9 +1728,9 @@ async def reply_btn_menu(message: Message):
 @dp.message(Command("klan", "клан"))
 @dp.message(_text_in("клан", "клан-", "klan", "klan-"))
 async def reply_btn_clan(message: Message):
-    from database import get_or_create_user as _gou
+    from database import aio_get_or_create_user as _gou
     uid  = message.from_user.id
-    u    = _gou(message.from_user)
+    u    = await _gou(message.from_user)
     lang = get_lang(u)
     track_user(uid)
 
@@ -1745,9 +1746,9 @@ async def reply_btn_clan(message: Message):
 
 @dp.message(_text_in("🏙 Город", "🏙 City"), F.chat.type == "private")
 async def reply_btn_city(message: Message):
-    from database import get_or_create_user as _gou
+    from database import aio_get_or_create_user as _gou
     uid  = message.from_user.id
-    u    = _gou(message.from_user)
+    u    = await _gou(message.from_user)
     track_user(uid)
 
     if await _check_onboarded(message, u): return
@@ -1758,9 +1759,9 @@ async def reply_btn_city(message: Message):
 
 @dp.message(_text_in("🏆 Достижения", "🏆 Achievements"), F.chat.type == "private")
 async def reply_btn_achievements(message: Message):
-    from database import get_or_create_user as _gou
+    from database import aio_get_or_create_user as _gou
     uid = message.from_user.id
-    u   = _gou(message.from_user)
+    u   = await _gou(message.from_user)
     track_user(uid)
 
     if await _check_onboarded(message, u): return
@@ -1784,7 +1785,7 @@ async def _check_onboarded(message: Message, u: dict) -> bool:
 @dp.message(Command("mine", "шахта", "добыча", "mining"))
 @dp.message(_text_in("шахта", "mine", "добыча", "mining"))
 async def cmd_mine(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
@@ -1798,7 +1799,7 @@ async def cmd_mine(message: Message):
 @dp.message(Command("profile", "профиль", "prof", "я"))
 @dp.message(_text_in("профиль", "profile", "prof", "я"))
 async def cmd_profile(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
@@ -1812,7 +1813,7 @@ async def cmd_profile(message: Message):
 @dp.message(Command("донат", "донаты", "donate", "donates"))
 @dp.message(_text_in("донат", "донаты", "donate", "donates"))
 async def cmd_donate(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
@@ -1826,7 +1827,7 @@ async def cmd_donate(message: Message):
 @dp.message(Command("hunt", "охота", "boss", "босс"))
 @dp.message(_text_in("охота", "hunt", "boss", "босс"))
 async def cmd_hunt(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
@@ -1840,12 +1841,12 @@ async def cmd_hunt(message: Message):
 @dp.message(Command("арс", "арсенал", "arsenal", "ars"))
 @dp.message(_text_in("арс", "арсенал", "arsenal", "ars"))
 async def cmd_arsenal(message: Message):
-    u   = get_or_create_user(message.from_user)
+    u   = await aio_get_or_create_user(message.from_user)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
     cleanup_expired_rentals(u)
     _ach_newly = check_achievements(u)
-    save_user(message.from_user.id, u)
+    await aio_save_user(message.from_user.id, u)
     await message.reply(
         arsenal_main_text(u),
         parse_mode="HTML",
@@ -1857,13 +1858,13 @@ async def cmd_arsenal(message: Message):
 @dp.message(Command("достижения", "ачивки", "achievements", "ach", "ач", "достижени", "дс"))
 @dp.message(_text_in("достижения", "ачивки", "achievements", "ach", "ач", "достижени", "дс"))
 async def cmd_achievements(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u):
         return
     _ach_newly = check_achievements(u)
-    save_user(message.from_user.id, u)
+    await aio_save_user(message.from_user.id, u)
     await message.reply(
         achievements_menu_text(u, lang),
         parse_mode="HTML",
@@ -1876,7 +1877,7 @@ async def cmd_achievements(message: Message):
 @dp.message(Command("pets", "питомцы", "pet", "питомец"))
 @dp.message(_text_in("питомцы", "pets", "питомец", "pet"))
 async def cmd_pets(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
@@ -1890,7 +1891,7 @@ async def cmd_pets(message: Message):
 @dp.message(Command("cases", "кейсы", "case", "кейс", "shop"))
 @dp.message(_text_in("кейсы", "cases", "кейс", "case", "shop"))
 async def cmd_cases(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
@@ -1904,7 +1905,7 @@ async def cmd_cases(message: Message):
 @dp.message(Command("ref", "реф", "рефералы", "refs", "friends", "друзья", "invite", "пригласить"))
 @dp.message(_text_in("реф", "ref", "рефералы", "refs", "friends", "друзья", "invite", "пригласить"))
 async def cmd_refs(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
@@ -1919,7 +1920,7 @@ async def cmd_refs(message: Message):
 @dp.message(Command("reftop", "topref", "топреф", "рефтоп"))
 @dp.message(_text_in("reftop", "topref", "топреф", "рефтоп"))
 async def cmd_reftop(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
@@ -1933,7 +1934,7 @@ async def cmd_reftop(message: Message):
 @dp.message(Command("stats", "статы", "статистика", "stat", "онлайн"))
 @dp.message(_text_in("статистика", "статы", "stats", "stat", "онлайн"))
 async def cmd_stats(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
@@ -1947,7 +1948,7 @@ async def cmd_stats(message: Message):
 @dp.message(Command("leaders", "лидеры", "top", "топ", "leaderboard"))
 @dp.message(_text_in("лидеры", "leaders", "top", "топ", "leaderboard"))
 async def cmd_leaders(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
@@ -1961,7 +1962,7 @@ async def cmd_leaders(message: Message):
 @dp.message(Command("status", "статус", "vip", "premium"))
 @dp.message(_text_in("статус", "status", "vip", "premium"))
 async def cmd_status(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
@@ -1975,7 +1976,7 @@ async def cmd_status(message: Message):
 @dp.message(Command("settings", "настройки", "lang", "язык", "language"))
 @dp.message(_text_in("настройки", "settings", "lang", "язык", "language"))
 async def cmd_settings(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
@@ -1989,7 +1990,7 @@ async def cmd_settings(message: Message):
 @dp.message(Command("cdl", "вклад", "вклады", "deposit", "deposits", "vklad", "vklady"))
 @dp.message(_text_in("вклад", "вклады", "cdl", "deposit", "deposits", "vklad", "vklady"))
 async def cmd_cdl(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
@@ -2003,7 +2004,7 @@ async def cmd_cdl(message: Message):
 @dp.message(Command("promo", "промо"))
 async def cmd_promo(message: Message):
     """/promo <название> или /промо <название>"""
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     uid  = message.from_user.id
     if await _check_onboarded(message, u): return
@@ -2017,13 +2018,13 @@ async def cmd_promo(message: Message):
     promo_name = parts[1].strip()
     lock = await _get_user_lock(uid)
     async with lock:
-        u = get_or_create_user(message.from_user)
+        u = await aio_get_or_create_user(message.from_user)
         ok, reason, amount = activate_promo(promo_name, uid)
         if ok:
             u["balance"] = u.get("balance", 0) + amount
             u["promo_activations"] = u.get("promo_activations", 0) + 1
             _ach_newly = check_achievements(u)
-            save_user(uid, u)
+            await aio_save_user(uid, u)
             await _notify_ach(uid, u, _ach_newly)
             await message.reply(promo_activate_text(amount, lang), parse_mode="HTML")
         else:
@@ -2193,10 +2194,10 @@ def _parse_gift_args(message: Message):
 @dp.message(F.text.regexp(r'^[/]?(gift|дать|пер|transfer|give|дарю)(\s+[@\d]\S*(\s+\S+)?\s*|\s*$)', flags=_re.IGNORECASE))
 async def cmd_gift(message: Message):
     """Перевод монет другому игроку."""
-    from database import save_user as _save, get_user
+    from database import save_user as _save, aio_get_user
 
     uid  = message.from_user.id
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(uid)
 
@@ -2254,8 +2255,8 @@ async def cmd_gift(message: Message):
 
     if target_raw:
         # Явно указан @username или id
-        from database import get_user_by_id_or_username as _find_user
-        recipient_data = _find_user(target_raw)
+        from database import aio_get_user_by_id_or_username as _find_user
+        recipient_data = await _find_user(target_raw)
     else:
         # Цель берётся из ответа на сообщение
         if not message.reply_to_message:
@@ -2273,7 +2274,7 @@ async def cmd_gift(message: Message):
             return
 
         target_uid = message.reply_to_message.from_user.id
-        recipient_data = get_user(target_uid)
+        recipient_data = await get_user(target_uid)
 
     if not recipient_data:
         await message.reply(
@@ -2287,12 +2288,12 @@ async def cmd_gift(message: Message):
         return
 
     # ── Атомарный перевод (единая SQL-транзакция, см. database.transfer_coins) ──
-    from database import transfer_coins as _transfer_coins
+    from database import aio_transfer_coins as _transfer_coins
 
     recipient_level = recipient_data.get("level", 1)
     daily_limit      = _gift_daily_limit(recipient_level)
 
-    result = _transfer_coins(uid, recipient_data["id"], amount, daily_limit=daily_limit, gift_window=_GIFT_WINDOW)
+    result = await _transfer_coins(uid, recipient_data["id"], amount, daily_limit=daily_limit, gift_window=_GIFT_WINDOW)
 
     if not result["ok"]:
         if result["reason"] == "insufficient":
@@ -2395,7 +2396,7 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
     lock = await _get_user_lock(uid)
     async with lock:
         # Перечитываем актуальные данные на случай гонки с callback-хендлером
-        data = get_or_create_user(message.from_user)
+        data = await aio_get_or_create_user(message.from_user)
         lang = get_lang(data)
         text = (message.text or "").strip()
 
@@ -2406,7 +2407,7 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
         if "_klan_search_pending" in data:
             _clear_klan_pending(data)
             _ach_newly = check_achievements(data)
-            save_user(uid, data)
+            await aio_save_user(uid, data)
             await _notify_ach(uid, data, _ach_newly)
             results, total = search_clans(text, page=0)
             await message.answer(
@@ -2420,7 +2421,7 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
         if "_klan_create_pending" in data:
             _clear_klan_pending(data)
             _ach_newly = check_achievements(data)
-            save_user(uid, data)
+            await aio_save_user(uid, data)
             await _notify_ach(uid, data, _ach_newly)
             name = text.strip()
             if not name:
@@ -2443,11 +2444,11 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
                 # кулдауна на создание клана (баг: клан создавался бесплатно
                 # и без ограничения раз в сутки). Поэтому перечитываем свежие
                 # данные из базы и вносим только новые флаги поверх них.
-                data = get_or_create_user(message.from_user)
+                data = await aio_get_or_create_user(message.from_user)
                 data["clan_created"] = True
                 data["clan_created_count"] = data.get("clan_created_count", 0) + 1
                 _ach_newly = check_achievements(data)
-                save_user(uid, data)
+                await aio_save_user(uid, data)
                 await _notify_ach(uid, data, _ach_newly)
                 ok_text = "✅ <b>Клан создан!</b>" if lang == "ru" else "✅ <b>Clan created!</b>"
                 await message.answer(ok_text, parse_mode="HTML")
@@ -2498,7 +2499,7 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
         if "_klan_kick_pending" in data:
             _clear_klan_pending(data)
             _ach_newly = check_achievements(data)
-            save_user(uid, data)
+            await aio_save_user(uid, data)
             await _notify_ach(uid, data, _ach_newly)
             m = get_member(uid)
             if not m or m["role"] != "creator":
@@ -2529,7 +2530,7 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
                     pass
                 data["clan_kicks_done"] = data.get("clan_kicks_done", 0) + 1
                 _ach_newly = check_achievements(data)
-                save_user(uid, data)
+                await aio_save_user(uid, data)
                 await _notify_ach(uid, data, _ach_newly)
                 ok_text = "✅ Участник исключён из клана." if lang == "ru" else "✅ Member kicked from the clan."
                 await message.answer(ok_text, parse_mode="HTML")
@@ -2552,7 +2553,7 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
         if "_klan_deposit_pending" in data:
             _clear_klan_pending(data)
             _ach_newly = check_achievements(data)
-            save_user(uid, data)
+            await aio_save_user(uid, data)
             await _notify_ach(uid, data, _ach_newly)
             cleaned = text.replace(" ", "").replace(",", "").replace("_", "")
             if not cleaned.isdigit() or int(cleaned) <= 0:
@@ -2570,11 +2571,11 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
                 # актуальные данные — иначе save_user(uid, data) ниже
                 # затрёт баланс обратно на старое значение (деньги как бы
                 # "не списывались").
-                from database import get_user as _gu_klan_dep
-                data = _gu_klan_dep(uid) or data
+                from database import aio_get_user as _gu_klan_dep
+                data = await _gu_klan_dep(uid) or data
                 data["clan_treasury_deposited"] = data.get("clan_treasury_deposited", 0) + amount
                 _ach_newly = check_achievements(data)
-                save_user(uid, data)
+                await aio_save_user(uid, data)
                 await _notify_ach(uid, data, _ach_newly)
                 ok_text = (f"✅ В казну клана внесено <b>{format_amount(amount)}</b> {_COIN}." if lang == "ru"
                            else f"✅ Deposited <b>{format_amount(amount)}</b> {_COIN} to the clan treasury.")
@@ -2603,7 +2604,7 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
         if "_klan_withdraw_pending" in data:
             _clear_klan_pending(data)
             _ach_newly = check_achievements(data)
-            save_user(uid, data)
+            await aio_save_user(uid, data)
             await _notify_ach(uid, data, _ach_newly)
             raw_parts  = text.split("|", 1)
             amount_str = raw_parts[0].strip().replace(" ", "").replace(",", "").replace("_", "")
@@ -2626,8 +2627,8 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
                     clan = get_clan(m["clan_id"])
                     if clan:
                         try:
-                            from database import get_user as _gu
-                            _cd    = _gu(clan["creator_uid"])
+                            from database import aio_get_user as _gu
+                            _cd    = await _gu(clan["creator_uid"])
                             _clang = get_lang(_cd) if _cd else "ru"
                             name   = _esc(data.get("first_name") or data.get("username") or str(uid))
                             ntf = (
@@ -2672,7 +2673,7 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
             clan_id = data.get("_klan_apply_pending")
             _clear_klan_pending(data)
             _ach_newly = check_achievements(data)
-            save_user(uid, data)
+            await aio_save_user(uid, data)
             await _notify_ach(uid, data, _ach_newly)
             app_msg = "" if text in ("—", "-", "") else text[:200]
             res     = apply_to_clan(uid, clan_id, app_msg)
@@ -2686,8 +2687,8 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
                     _clan_info = get_clan(clan_id)
                     if _clan_info:
                         _creator_uid = _clan_info["creator_uid"]
-                        from database import get_user as _get_user_db
-                        _creator_data = _get_user_db(_creator_uid)
+                        from database import aio_get_user as _get_user_db
+                        _creator_data = await _get_user_db(_creator_uid)
                         _creator_lang = _creator_data.get("lang", "ru") if _creator_data else "ru"
                         _applicant_name = _esc(
                             data.get("first_name") or
@@ -2733,7 +2734,7 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
         if "_klan_chat_pending" in data:
             _clear_klan_pending(data)
             _ach_newly = check_achievements(data)
-            save_user(uid, data)
+            await aio_save_user(uid, data)
             await _notify_ach(uid, data, _ach_newly)
             m = get_member(uid)
             if not m or m["role"] != "creator":
@@ -2798,7 +2799,7 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
             set_clan_chat(clan_id, chat_obj.id, chat_username, chat_title)
             data["clan_chat_linked"] = True
             _ach_newly = check_achievements(data)
-            save_user(uid, data)
+            await aio_save_user(uid, data)
             await _notify_ach(uid, data, _ach_newly)
 
             clan = get_clan(clan_id)
@@ -2827,7 +2828,7 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
 async def _handle_duel_cmd(message: Message):
     """Общий обработчик быстрых команд дуэли. Вызывается из slash и text хендлеров."""
     uid  = message.from_user.id
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     text = (message.text or "").strip()
     # Сбрасываем ожидание ввода цели вызова — команда дуэли сама управляет флагом
@@ -2895,8 +2896,8 @@ async def _handle_duel_cmd(message: Message):
                 await message.reply(cmd_invite_usage_text(lang), parse_mode="HTML")
                 return
 
-            from database import get_user_by_id_or_username as _find_duel_target
-            target = _find_duel_target(target_raw)
+            from database import aio_get_user_by_id_or_username as _find_duel_target
+            target = await _find_duel_target(target_raw)
 
             if not target:
                 await message.reply(cmd_invite_not_found_text(lang), parse_mode="HTML")
@@ -2973,7 +2974,7 @@ import re as _re_inv
 @dp.message(Command("inv", "инв", "инвентарь", "inventory"))
 @dp.message(F.text.regexp(r'^/?(инв|inv|инвентарь|inventory)\s*$', flags=_re_inv.IGNORECASE))
 async def cmd_inv(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     uid  = message.from_user.id
     track_user(uid)
@@ -2984,7 +2985,7 @@ async def cmd_inv(message: Message):
 @dp.message(Command("sell"))
 @dp.message(F.text.regexp(r'^/sell\s+#(\d+)(?:\s+(\d+))?\s*$', flags=_re_inv.IGNORECASE))
 async def cmd_sell(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     uid  = message.from_user.id
     track_user(uid)
@@ -3003,9 +3004,9 @@ async def cmd_sell(message: Message):
     qty     = int(m.group(2)) if m.group(2) else 1
     ok, msg = sell_item_by_slot_id(u, slot_id, qty, lang)
     if ok:
-        from database import save_user
+        from database import aio_save_user
         _ach_newly = check_achievements(u)
-        save_user(uid, u)
+        await aio_save_user(uid, u)
         await _notify_ach(uid, u, _ach_newly)
     await message.reply(msg, parse_mode="HTML")
 
@@ -3033,10 +3034,10 @@ _TRANSFER_RE = _re_inv.compile(
 ))
 async def cmd_transfer_item(message: Message):
     """Передача предмета из инвентаря другому игроку."""
-    from database import save_user as _save, get_user
+    from database import aio_save_user as _save, aio_get_user
 
     uid  = message.from_user.id
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     track_user(uid)
     if await _check_onboarded(message, u):
@@ -3069,8 +3070,8 @@ async def cmd_transfer_item(message: Message):
     recipient_data = None
 
     if target_raw:
-        from database import get_user_by_id_or_username as _find_transfer
-        recipient_data = _find_transfer(target_raw.lstrip("@"))
+        from database import aio_get_user_by_id_or_username as _find_transfer
+        recipient_data = await _find_transfer(target_raw.lstrip("@"))
     else:
         if not message.reply_to_message:
             hint = (
@@ -3086,7 +3087,7 @@ async def cmd_transfer_item(message: Message):
             await message.reply(hint, parse_mode="HTML")
             return
         target_uid     = message.reply_to_message.from_user.id
-        recipient_data = get_user(target_uid)
+        recipient_data = await get_user(target_uid)
 
     if not recipient_data:
         await message.reply(
@@ -3111,15 +3112,15 @@ async def cmd_transfer_item(message: Message):
 
     async with first_lock:
         async with second_lock:
-            sender_data    = get_or_create_user(message.from_user)
-            recipient_data = get_user(recipient_data["id"])
+            sender_data    = await aio_get_or_create_user(message.from_user)
+            recipient_data = await get_user(recipient_data["id"])
 
             ok, sender_msg, recip_msg = transfer_item_by_slot_id(
                 sender_data, recipient_data, slot_id, qty, lang
             )
             if ok:
-                _save(uid, sender_data)
-                _save(recipient_data["id"], recipient_data)
+                await _save(uid, sender_data)
+                await _save(recipient_data["id"], recipient_data)
 
     await message.reply(sender_msg if ok else sender_msg, parse_mode="HTML")
 
@@ -3133,7 +3134,7 @@ async def cmd_transfer_item(message: Message):
 @dp.message(Command("boost", "буст", "бусты", "boosts"))
 @dp.message(F.text.regexp(r'^/?(boost|буст|бусты|boosts)\s*$', flags=_re_inv.IGNORECASE))
 async def cmd_boost_status(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     uid  = message.from_user.id
     track_user(uid)
@@ -3143,7 +3144,7 @@ async def cmd_boost_status(message: Message):
 
 @dp.message(F.text.regexp(r'^(?:исп|use|-use)\s+#(\d+)\s*$', flags=_re_inv.IGNORECASE))
 async def cmd_use_item(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     uid  = message.from_user.id
     track_user(uid)
@@ -3156,11 +3157,11 @@ async def cmd_use_item(message: Message):
 
     lock = await _get_user_lock(uid)
     async with lock:
-        u = get_or_create_user(message.from_user)
+        u = await aio_get_or_create_user(message.from_user)
         ok, msg = use_item_by_slot_id(u, slot_id, lang)
         if ok:
             _ach_newly = check_achievements(u)
-            save_user(uid, u)
+            await aio_save_user(uid, u)
             await _notify_ach(uid, u, _ach_newly)
         await message.reply(msg, parse_mode="HTML")
 
@@ -3181,7 +3182,7 @@ _OPEN_CASE_RE = _re_inv.compile(
     flags=_re_inv.IGNORECASE,
 ))
 async def cmd_open_case_multi(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     uid  = message.from_user.id
     track_user(uid)
@@ -3195,11 +3196,11 @@ async def cmd_open_case_multi(message: Message):
 
     lock = await _get_user_lock(uid)
     async with lock:
-        u = get_or_create_user(message.from_user)
+        u = await aio_get_or_create_user(message.from_user)
         ok, msg = open_case_multi(u, case_num, qty, lang)
         if ok:
             _ach_newly = check_achievements(u)
-            save_user(uid, u)
+            await aio_save_user(uid, u)
             await _notify_ach(uid, u, _ach_newly)
         await message.reply(msg, parse_mode="HTML")
 
@@ -3217,7 +3218,7 @@ _STOP_PATTERNS = {
     flags=_re_inv.IGNORECASE
 ))
 async def cmd_stop_boost(message: Message):
-    u    = get_or_create_user(message.from_user)
+    u    = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
     uid  = message.from_user.id
     track_user(uid)
@@ -3234,11 +3235,11 @@ async def cmd_stop_boost(message: Message):
 
     lock = await _get_user_lock(uid)
     async with lock:
-        u = get_or_create_user(message.from_user)
+        u = await aio_get_or_create_user(message.from_user)
         ok, msg = cancel_active_by_type(u, boost_type, lang)
         if ok:
             _ach_newly = check_achievements(u)
-            save_user(uid, u)
+            await aio_save_user(uid, u)
             await _notify_ach(uid, u, _ach_newly)
         await message.reply(msg, parse_mode="HTML")
 
@@ -3247,7 +3248,7 @@ async def cmd_stop_boost(message: Message):
 async def handle_captcha_answer(message: Message):
     """Перехватчик текстовых сообщений для прохождения капчи при онбординге."""
     uid = message.from_user.id
-    u   = get_or_create_user(message.from_user)
+    u   = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
 
     # ── Текстовые алиасы раздела города (без слеша): тор/торговля/город/рынок ──
@@ -3269,13 +3270,13 @@ async def handle_captcha_answer(message: Message):
                 if promo_name:
                     lock = await _get_user_lock(uid)
                     async with lock:
-                        u = get_or_create_user(message.from_user)
+                        u = await aio_get_or_create_user(message.from_user)
                         ok, reason, amount = activate_promo(promo_name, uid)
                         if ok:
                             u["balance"] = u.get("balance", 0) + amount
                             u["promo_activations"] = u.get("promo_activations", 0) + 1
                             _ach_newly = check_achievements(u)
-                            save_user(uid, u)
+                            await aio_save_user(uid, u)
                             await _notify_ach(uid, u, _ach_newly)
                             await message.reply(promo_activate_text(amount, lang), parse_mode="HTML")
                         else:
@@ -3286,7 +3287,7 @@ async def handle_captcha_answer(message: Message):
     if u.get("onboarded", True):
         _ars_parsed = parse_arsenal_cmd((message.text or "").strip())
         if _ars_parsed:
-            from database import get_user_by_id_or_username as _find_ars, get_user as _gu_ars, save_user as _su_ars
+            from database import aio_get_user_by_id_or_username as _find_ars, aio_get_user as _gu_ars, aio_save_user as _su_ars
             action       = _ars_parsed["action"]
             sword_idx    = _ars_parsed["index"]
             target_raw   = _ars_parsed["target"].lstrip("@")
@@ -3303,7 +3304,7 @@ async def handle_captcha_answer(message: Message):
                 return
 
             # Ищем получателя
-            recipient_data = _find_ars(target_raw)
+            recipient_data = await _find_ars(target_raw)
             if not recipient_data:
                 await message.reply(
                     arsenal_error_text("❌ Игрок не найден. Он должен хотя бы раз написать боту."),
@@ -3326,8 +3327,8 @@ async def handle_captcha_answer(message: Message):
 
             async with first_lock:
                 async with second_lock:
-                    u_fresh   = get_or_create_user(message.from_user)
-                    r_fresh   = _gu_ars(recipient_data["id"]) or recipient_data
+                    u_fresh   = await aio_get_or_create_user(message.from_user)
+                    r_fresh   = await _gu_ars(recipient_data["id"]) or recipient_data
                     cleanup_expired_rentals(u_fresh)
 
                     if action == "gift":
@@ -3352,8 +3353,8 @@ async def handle_captcha_answer(message: Message):
                     if ok:
                         _new_ach_sender    = check_achievements(u_fresh)
                         _new_ach_recipient = check_achievements(r_fresh)
-                        _su_ars(uid, u_fresh)
-                        _su_ars(recipient_data["id"], r_fresh)
+                        await _su_ars(uid, u_fresh)
+                        await _su_ars(recipient_data["id"], r_fresh)
                         await message.reply(confirm_text, parse_mode="HTML", reply_markup=arsenal_back_keyboard())
                         # Уведомление получателю
                         try:
@@ -3440,8 +3441,8 @@ async def handle_captcha_answer(message: Message):
         if rewarded:
             inv_uid = get_inviter(uid)
             if inv_uid:
-                from database import get_user as _get_inv
-                _inv_data = _get_inv(inv_uid)
+                from database import aio_get_user as _get_inv
+                _inv_data = await _get_inv(inv_uid)
                 _inv_lang = get_lang(_inv_data) if _inv_data else "ru"
                 name = _esc(message.from_user.first_name or message.from_user.username or "Новый игрок")
                 try:
@@ -3524,7 +3525,7 @@ async def handle_rass_media(message: Message):
 
 @dp.callback_query(F.data == "hunt_potions_menu")
 async def potion_menu_callback(call: CallbackQuery):
-    data = get_or_create_user(call.from_user)
+    data = await aio_get_or_create_user(call.from_user)
     lang = get_lang(data)
     text = potions_menu_text(lang)
     keyboard = potions_menu_keyboard(lang)
@@ -3533,7 +3534,7 @@ async def potion_menu_callback(call: CallbackQuery):
 
 @dp.callback_query(F.data == "hunt_shop_potions")
 async def potion_shop_callback(call: CallbackQuery):
-    data = get_or_create_user(call.from_user)
+    data = await aio_get_or_create_user(call.from_user)
     lang = get_lang(data)
     text = potions_shop_text(lang)
     keyboard = potions_shop_keyboard(lang)
@@ -3543,7 +3544,7 @@ async def potion_shop_callback(call: CallbackQuery):
 @dp.callback_query(F.data == "hunt_my_potions")
 async def potion_my_callback(call: CallbackQuery):
     uid = call.from_user.id
-    data = get_or_create_user(call.from_user)
+    data = await aio_get_or_create_user(call.from_user)
     lang = get_lang(data)
     text = my_potions_text(uid, lang)
     keyboard = my_potions_keyboard(uid, lang)
@@ -3554,7 +3555,7 @@ async def potion_my_callback(call: CallbackQuery):
 async def potion_info_callback(call: CallbackQuery):
     potion_key = call.data.replace("potion_info_", "")
     uid = call.from_user.id
-    data = get_or_create_user(call.from_user)
+    data = await aio_get_or_create_user(call.from_user)
     lang = get_lang(data)
     text = potion_detail_text(potion_key, uid, lang)
     keyboard = potion_detail_keyboard(potion_key, lang)
@@ -3565,7 +3566,7 @@ async def potion_info_callback(call: CallbackQuery):
 async def potion_use_info_callback(call: CallbackQuery):
     potion_key = call.data.replace("potion_use_info_", "")
     uid = call.from_user.id
-    data = get_or_create_user(call.from_user)
+    data = await aio_get_or_create_user(call.from_user)
     lang = get_lang(data)
 
     if potion_key == "revival":
@@ -3594,7 +3595,7 @@ async def potion_use_info_callback(call: CallbackQuery):
 
 @dp.callback_query(F.data == "potion_use_revival_pick_slot")
 async def potion_use_revival_pick_callback(call: CallbackQuery):
-    data = get_or_create_user(call.from_user)
+    data = await aio_get_or_create_user(call.from_user)
     lang = get_lang(data)
     text = revival_pick_slot_text(lang)
     keyboard = revival_pick_slot_keyboard(lang)
@@ -3605,14 +3606,14 @@ async def potion_use_revival_pick_callback(call: CallbackQuery):
 async def potion_use_revival_confirm_callback(call: CallbackQuery):
     slot = int(call.data.replace("use_potion_revival_", ""))
     uid = call.from_user.id
-    data = get_or_create_user(call.from_user)
+    data = await aio_get_or_create_user(call.from_user)
     lang = get_lang(data)
 
     ok, msg = use_potion("revival", uid, slot, lang)
 
     if ok:
         _ach_newly = check_achievements(data)
-        save_user(uid, data)
+        await aio_save_user(uid, data)
         await _notify_ach(uid, data, _ach_newly)
         text = hunt_main_text(data, lang)
         keyboard = hunt_main_keyboard(data, lang)
@@ -3633,14 +3634,14 @@ async def potion_use_revival_confirm_callback(call: CallbackQuery):
 async def potion_use_callback(call: CallbackQuery):
     potion_key = call.data.replace("use_potion_", "")
     uid = call.from_user.id
-    data = get_or_create_user(call.from_user)
+    data = await aio_get_or_create_user(call.from_user)
     lang = get_lang(data)
 
     ok, msg = use_potion(potion_key, uid, None, lang)
 
     if ok:
         _ach_newly = check_achievements(data)
-        save_user(uid, data)
+        await aio_save_user(uid, data)
         await _notify_ach(uid, data, _ach_newly)
         text = my_potions_text(uid, lang)
         keyboard = my_potions_keyboard(uid, lang)
@@ -3666,7 +3667,7 @@ async def handle_callback(call: CallbackQuery):
     # ── Берём персональный Lock и держим его на всё время обработки ──
     lock = await _get_user_lock(user.id)
     async with lock:
-        data = get_or_create_user(user)
+        data = await aio_get_or_create_user(user)
         track_user(user.id)
         lang = get_lang(data)
 
@@ -3714,7 +3715,7 @@ async def handle_callback(call: CallbackQuery):
         if cd not in _KLAN_INPUT_CALLBACKS and not cd.startswith("klan_apply_"):
             if _clear_klan_pending(data):
                 _ach_newly = check_achievements(data)
-                save_user(user.id, data)
+                await aio_save_user(user.id, data)
                 await _notify_ach(user.id, data, _ach_newly)
 
         # Сбрасываем ожидание ввода цели вызова при любом callback,
@@ -3810,7 +3811,7 @@ async def handle_callback(call: CallbackQuery):
             if dep_key not in _dep_types:
                 _dep_types.append(dep_key)
             _ach_newly = check_achievements(data)
-            save_user(user.id, data)
+            await aio_save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
             _cdl_open_deposit(user.id, dep_key, amount)
             await edit(cdl_opened_text(dep_key, amount), cdl_main_keyboard(user.id))
@@ -3839,7 +3840,7 @@ async def handle_callback(call: CallbackQuery):
             data["deposits_claimed"] = data.get("deposits_claimed", 0) + count
             data["deposits_total_profit"] = data.get("deposits_total_profit", 0) + total_profit
             _ach_newly = check_achievements(data)
-            save_user(user.id, data)
+            await aio_save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
             await edit(cdl_claim_text(total_payout, total_profit, count), cdl_main_keyboard(user.id))
             await call.answer(f"💰 +{format_amount(total_payout)} монет!")
@@ -3979,7 +3980,7 @@ async def handle_callback(call: CallbackQuery):
             await edit(prompt, klan_back_keyboard("klan_main", lang))
             data["_klan_create_pending"] = True
             _ach_newly = check_achievements(data)
-            save_user(user.id, data)
+            await aio_save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             return
@@ -4124,7 +4125,7 @@ async def handle_callback(call: CallbackQuery):
                 return
             res = disband_clan(user.id)
             if res["ok"]:
-                data = get_or_create_user(user)  # обновляем баланс в data
+                data = await aio_get_or_create_user(user)  # обновляем баланс в data
                 if lang == "ru":
                     success_text = (
                         f'<tg-emoji emoji-id="5325547803936572038">💥</tg-emoji> <b>Клан расформирован</b>\n'
@@ -4166,7 +4167,7 @@ async def handle_callback(call: CallbackQuery):
             await edit(prompt, klan_back_keyboard("klan_my", lang))
             data["_klan_kick_pending"] = True
             _ach_newly = check_achievements(data)
-            save_user(user.id, data)
+            await aio_save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             return
@@ -4187,7 +4188,7 @@ async def handle_callback(call: CallbackQuery):
             await edit(prompt, klan_back_keyboard("klan_treasury", lang))
             data["_klan_deposit_pending"] = True
             _ach_newly = check_achievements(data)
-            save_user(user.id, data)
+            await aio_save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             return
@@ -4212,7 +4213,7 @@ async def handle_callback(call: CallbackQuery):
             await edit(prompt, klan_back_keyboard("klan_treasury", lang))
             data["_klan_withdraw_pending"] = True
             _ach_newly = check_achievements(data)
-            save_user(user.id, data)
+            await aio_save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             return
@@ -4229,7 +4230,7 @@ async def handle_callback(call: CallbackQuery):
             await edit(prompt, klan_back_keyboard("klan_search", lang))
             data["_klan_search_pending"] = True
             _ach_newly = check_achievements(data)
-            save_user(user.id, data)
+            await aio_save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             return
@@ -4262,7 +4263,7 @@ async def handle_callback(call: CallbackQuery):
             await edit(prompt, klan_back_keyboard("klan_my", lang))
             data["_klan_chat_pending"] = True
             _ach_newly = check_achievements(data)
-            save_user(user.id, data)
+            await aio_save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             return
@@ -4322,7 +4323,7 @@ async def handle_callback(call: CallbackQuery):
             await edit(prompt, klan_back_keyboard(f"klan_view_{clan_id}", lang))
             data["_klan_apply_pending"] = clan_id
             _ach_newly = check_achievements(data)
-            save_user(user.id, data)
+            await aio_save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             return
@@ -4341,7 +4342,7 @@ async def handle_callback(call: CallbackQuery):
                     pass
                 data["clan_applications_accepted"] = data.get("clan_applications_accepted", 0) + 1
                 _ach_newly = check_achievements(data)
-                save_user(user.id, data)
+                await aio_save_user(user.id, data)
                 await _notify_ach(user.id, data, _ach_newly)
                 await call.answer("✅ Принят!" if lang == "ru" else "✅ Accepted!", show_alert=True)
             else:
@@ -4384,7 +4385,7 @@ async def handle_callback(call: CallbackQuery):
                     (f'✅ Accepted: {res["accepted"]}' + (f', skipped: {res["skipped"]}' if res["skipped"] else ''))
                 data["clan_applications_accepted"] = data.get("clan_applications_accepted", 0) + res["accepted"]
                 _ach_newly = check_achievements(data)
-                save_user(user.id, data)
+                await aio_save_user(user.id, data)
                 await _notify_ach(user.id, data, _ach_newly)
                 await call.answer(msg, show_alert=True)
             clan = get_clan(m["clan_id"])
@@ -4446,7 +4447,7 @@ async def handle_callback(call: CallbackQuery):
                     pass
                 data["clan_withdrawals_approved"] = data.get("clan_withdrawals_approved", 0) + 1
                 _ach_newly = check_achievements(data)
-                save_user(user.id, data)
+                await aio_save_user(user.id, data)
                 await _notify_ach(user.id, data, _ach_newly)
                 await call.answer("✅ Одобрено!" if lang == "ru" else "✅ Approved!", show_alert=True)
             else:
@@ -4524,7 +4525,7 @@ async def handle_callback(call: CallbackQuery):
             ok, msg, instance = open_case(data, case_key, lang)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
                 await edit(msg, cases_shop_keyboard(lang))
             else:
@@ -4591,7 +4592,7 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = activate_booster(data, instance_id, lang=lang)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
                 await call.answer("⚡ Ускоритель активирован!" if lang == "ru" else "⚡ Booster activated!", show_alert=True)
                 await edit(boosters_inventory_text(data, lang), boosters_inventory_keyboard(data, lang))
@@ -4608,7 +4609,7 @@ async def handle_callback(call: CallbackQuery):
             await call.answer(("⚡ Ускоритель заменён!" if lang == "ru" else "⚡ Booster replaced!") if ok else msg, show_alert=True)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             await edit(boosters_inventory_text(data, lang), boosters_inventory_keyboard(data, lang))
             return
@@ -4620,7 +4621,7 @@ async def handle_callback(call: CallbackQuery):
             await call.answer(f"💸 {'Продано' if lang == 'ru' else 'Sold'} {format_amount(price)}!" if ok else msg, show_alert=True)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             await edit(boosters_inventory_text(data, lang), boosters_inventory_keyboard(data, lang))
             return
@@ -4643,7 +4644,7 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = use_xp_item(data, instance_id, lang=lang)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
                 await call.answer("✅ Применено!" if lang == "ru" else "✅ Applied!", show_alert=True)
                 await edit(xp_inventory_text(data, lang), xp_inventory_keyboard(data, lang))
@@ -4660,7 +4661,7 @@ async def handle_callback(call: CallbackQuery):
             await call.answer(("✅ XP-ускоритель заменён!" if lang == "ru" else "✅ XP booster replaced!") if ok else msg, show_alert=True)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             await edit(xp_inventory_text(data, lang), xp_inventory_keyboard(data, lang))
             return
@@ -4672,7 +4673,7 @@ async def handle_callback(call: CallbackQuery):
             await call.answer(f"💸 {'Продано' if lang == 'ru' else 'Sold'} {format_amount(price)}!" if ok else msg, show_alert=True)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             await edit(xp_inventory_text(data, lang), xp_inventory_keyboard(data, lang))
             return
@@ -4699,7 +4700,7 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = use_poison(data, instance_id, lang=lang)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
                 await call.answer("☠️ Яд применён!" if lang == "ru" else "☠️ Poison applied!", show_alert=True)
                 await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
@@ -4715,7 +4716,7 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = activate_enh_boost(data, instance_id, lang=lang)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
                 await call.answer("⚡ Усилитель активирован!" if lang == "ru" else "⚡ Booster activated!", show_alert=True)
                 await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
@@ -4732,7 +4733,7 @@ async def handle_callback(call: CallbackQuery):
             await call.answer(("☠️ Яд заменён!" if lang == "ru" else "☠️ Poison replaced!") if ok else msg, show_alert=True)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
             return
@@ -4744,7 +4745,7 @@ async def handle_callback(call: CallbackQuery):
             await call.answer(("⚡ Усилитель заменён!" if lang == "ru" else "⚡ Booster replaced!") if ok else msg, show_alert=True)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
             return
@@ -4756,7 +4757,7 @@ async def handle_callback(call: CallbackQuery):
             await call.answer(f"💸 {'Продано' if lang == 'ru' else 'Sold'} {format_amount(price)}!" if ok else msg, show_alert=True)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             await edit(enh_inventory_text(data, lang), enh_inventory_keyboard(data, lang))
             return
@@ -4777,7 +4778,7 @@ async def handle_callback(call: CallbackQuery):
             await call.answer(_plain(msg), show_alert=True)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             page = get_pickaxe_page(pick_key)
             await edit(pickaxe_detail_text(data, pick_key, lang), pickaxe_detail_keyboard(data, pick_key, page, lang))
@@ -4822,7 +4823,7 @@ async def handle_callback(call: CallbackQuery):
             await call.answer(_plain(msg), show_alert=True)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             page = get_pickaxe_page(pick_key)
             await edit(pickaxe_detail_text(data, pick_key, lang), pickaxe_detail_keyboard(data, pick_key, page, lang))
@@ -4841,7 +4842,7 @@ async def handle_callback(call: CallbackQuery):
             await call.answer(_plain(msg), show_alert=True)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             await edit(duration_detail_text(data, dur_key, lang), duration_detail_keyboard(data, dur_key, lang))
             return
@@ -4853,7 +4854,7 @@ async def handle_callback(call: CallbackQuery):
             await call.answer(_plain(msg), show_alert=True)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             await edit(duration_detail_text(data, dur_key, lang), duration_detail_keyboard(data, dur_key, lang))
             return
@@ -4871,7 +4872,7 @@ async def handle_callback(call: CallbackQuery):
             data["mine_campaigns_done"] = 0
             data["mine_collected"]      = False
             _ach_newly = check_achievements(data)
-            save_user(data["id"], data)
+            await aio_save_user(data["id"], data)
             await _notify_ach(data["id"], data, _ach_newly)
             await edit(mine_text(data, lang), mine_keyboard(data, lang))
             return
@@ -4889,7 +4890,7 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer(t(lang, "mine_no_campaigns"), show_alert=True)
                 return
             _ach_newly = check_achievements(data)
-            save_user(data["id"], data)
+            await aio_save_user(data["id"], data)
             await _notify_ach(data["id"], data, _ach_newly)
             await edit(result_text, mine_keyboard(data, lang))
             return
@@ -4904,7 +4905,7 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer(_plain(result_text), show_alert=True)
                 return
             _ach_newly = check_achievements(data)
-            save_user(data["id"], data)
+            await aio_save_user(data["id"], data)
             await _notify_ach(data["id"], data, _ach_newly)
             await edit(result_text, mine_keyboard(data, lang))
             return
@@ -4921,7 +4922,7 @@ async def handle_callback(call: CallbackQuery):
             if get_member(user.id):
                 data["clan_mine_contributed"] = data.get("clan_mine_contributed", 0) + total
             _ach_newly = check_achievements(data)
-            save_user(data["id"], data)
+            await aio_save_user(data["id"], data)
             await _notify_ach(data["id"], data, _ach_newly)
             try:
                 add_clan_mine_earnings(user.id, total)
@@ -5000,7 +5001,7 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = buy_pet(data, pk, lang)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
                 await call.answer("✅", show_alert=False)
             else:
@@ -5098,7 +5099,7 @@ async def handle_callback(call: CallbackQuery):
         if cd == "hunt_arsenal":
             cleanup_expired_rentals(data)
             _ach_newly = check_achievements(data)
-            save_user(user.id, data)
+            await aio_save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
             await call.answer()
             await edit(arsenal_main_text(data), arsenal_main_keyboard(data))
@@ -5157,7 +5158,7 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = buy_sword(data, sk, lang)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
                 await call.answer(_plain(msg), show_alert=False)
             else:
@@ -5173,7 +5174,7 @@ async def handle_callback(call: CallbackQuery):
             ok, msg = equip_sword(data, sk, lang)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
                 await call.answer(_plain(msg), show_alert=False)
             await edit(my_swords_text(data, lang), my_swords_keyboard(data, lang))
@@ -5207,7 +5208,7 @@ async def handle_callback(call: CallbackQuery):
             # удар не засчитался (например sword_rented_out/no_sword).
             if result.get("needs_save") and not (result.get("boss_killed") or result.get("hit")):
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             if result.get("boss_killed") or result.get("hit"):
                 # ── Повышение уровня убийцы ──
@@ -5216,7 +5217,7 @@ async def handle_callback(call: CallbackQuery):
                 if result.get("dmg", 0) > 0 and get_member(user.id):
                     data["clan_boss_damage_total"] = data.get("clan_boss_damage_total", 0) + result["dmg"]
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
                 # ── Запись статистики для лидерборда ──
                 try:
@@ -5507,7 +5508,7 @@ async def handle_callback(call: CallbackQuery):
             new_lang = "ru" if cd == "set_lang_ru" else "en"
             data["lang"] = new_lang
             _ach_newly = check_achievements(data)
-            save_user(data["id"], data)
+            await aio_save_user(data["id"], data)
             await _notify_ach(data["id"], data, _ach_newly)
             alert = "🇷🇺 Язык установлен: Русский" if new_lang == "ru" else "🇬🇧 Language set: English"
             await call.answer(alert, show_alert=True)
@@ -5520,7 +5521,7 @@ async def handle_callback(call: CallbackQuery):
             data["lang"] = new_lang
             data["onboarded"] = True
             _ach_newly = check_achievements(data)
-            save_user(data["id"], data)
+            await aio_save_user(data["id"], data)
             await _notify_ach(data["id"], data, _ach_newly)
             await call.message.answer(
                 "🎮",
@@ -5594,7 +5595,7 @@ async def handle_callback(call: CallbackQuery):
             data["balance"] -= price
             apply_gear_purchase(item_key, data)
             _ach_newly = check_achievements(data)
-            save_user(user.id, data)
+            await aio_save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
             await call.answer(t(lang, "duel_alert_bought_item").format(name=item['name']), show_alert=True)
             await edit(duel_item_card_text(item_key, data, lang), duel_item_card_keyboard(item_key, data, page, lang))
@@ -5621,7 +5622,7 @@ async def handle_callback(call: CallbackQuery):
             await call.answer(msg, show_alert=not ok)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(user.id, data)
+                await aio_save_user(user.id, data)
                 await _notify_ach(user.id, data, _ach_newly)
             # Возвращаемся на карточку
             await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data, lang=lang))
@@ -5634,7 +5635,7 @@ async def handle_callback(call: CallbackQuery):
             await call.answer(msg, show_alert=not ok)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(user.id, data)
+                await aio_save_user(user.id, data)
                 await _notify_ach(user.id, data, _ach_newly)
             await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data, lang=lang))
             return
@@ -5678,7 +5679,7 @@ async def handle_callback(call: CallbackQuery):
             data["balance"] -= price
             owned_sk.append(sk_key)
             _ach_newly = check_achievements(data)
-            save_user(user.id, data)
+            await aio_save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
             await call.answer(t(lang, "duel_skill_bought_alert").format(name=duel_skill_name(sk, lang)), show_alert=True)
             # Открываем карточку навыка — теперь можно экипировать
@@ -5709,7 +5710,7 @@ async def handle_callback(call: CallbackQuery):
                 return
             apply_gear_equip(item_key, data)
             _ach_newly = check_achievements(data)
-            save_user(user.id, data)
+            await aio_save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
             await call.answer(t(lang, "duel_alert_equipped_item").format(name=item['name']), show_alert=True)
             await edit(duel_item_card_text(item_key, data, lang), duel_item_card_keyboard(item_key, data, page, lang))
@@ -5723,7 +5724,7 @@ async def handle_callback(call: CallbackQuery):
             item     = GEAR_CATALOG.get(item_key)
             apply_gear_unequip(item_key, data)
             _ach_newly = check_achievements(data)
-            save_user(user.id, data)
+            await aio_save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
             await call.answer(t(lang, "duel_alert_unequipped_item").format(name=item['name']), show_alert=True)
             await edit(duel_item_card_text(item_key, data, lang), duel_item_card_keyboard(item_key, data, page, lang))
@@ -5750,9 +5751,9 @@ async def handle_callback(call: CallbackQuery):
             if battle:
                 p1_uid = battle["p1_uid"]
                 p2_uid = battle["p2_uid"]
-                from database import get_user as _gu_battle
-                _d1 = _gu_battle(p1_uid) or {}
-                _d2 = _gu_battle(p2_uid) or {}
+                from database import aio_get_user as _gu_battle
+                _d1 = await _gu_battle(p1_uid) or {}
+                _d2 = await _gu_battle(p2_uid) or {}
                 battle["p1_skills"] = get_equipped_skills(_d1) or get_owned_skills(_d1)
                 battle["p2_skills"] = get_equipped_skills(_d2) or get_owned_skills(_d2)
                 _active_battles[p1_uid] = battle
@@ -5806,9 +5807,9 @@ async def handle_callback(call: CallbackQuery):
                 p1_uid = battle["p1_uid"]
                 p2_uid = battle["p2_uid"]
                 # Сохраняем список навыков каждого игрока в бой
-                from database import get_user as _gu_battle
-                _d1 = _gu_battle(p1_uid) or {}
-                _d2 = _gu_battle(p2_uid) or {}
+                from database import aio_get_user as _gu_battle
+                _d1 = await _gu_battle(p1_uid) or {}
+                _d2 = await _gu_battle(p2_uid) or {}
                 battle["p1_skills"] = get_equipped_skills(_d1) or get_owned_skills(_d1)
                 battle["p2_skills"] = get_equipped_skills(_d2) or get_owned_skills(_d2)
                 _active_battles[p1_uid] = battle
@@ -5877,16 +5878,16 @@ async def handle_callback(call: CallbackQuery):
             # Если бой завершён — сначала считаем награду и пишем в battle,
             # потом уже рендерим battle_text (чтобы reward отобразился)
             if battle.get("finished"):
-                from database import get_user as _gu_hp, save_user as _su_hp
-                _d1 = _gu_hp(battle["p1_uid"]) or {}
-                _d2 = _gu_hp(battle["p2_uid"]) or {}
+                from database import aio_get_user as _gu_hp, aio_save_user as _su_hp
+                _d1 = await _gu_hp(battle["p1_uid"]) or {}
+                _d2 = await _gu_hp(battle["p2_uid"]) or {}
                 set_player_hp(battle["p1_uid"], battle["p1_hp"], _d1)
                 set_player_hp(battle["p2_uid"], battle["p2_hp"], _d2)
                 winner_uid = battle.get("winner_uid")
                 if winner_uid is not None:
                     loser_uid = battle["p2_uid"] if winner_uid == battle["p1_uid"] else battle["p1_uid"]
-                    _dw = _gu_hp(winner_uid) or {}
-                    _dl = _gu_hp(loser_uid)  or {}
+                    _dw = await _gu_hp(winner_uid) or {}
+                    _dl = await _gu_hp(loser_uid)  or {}
                     loser_wins  = _dl.get("duel_wins", 0)
                     loser_title = get_duel_title(loser_wins)
                     reward      = TITLE_REWARDS.get(loser_title, 0)
@@ -5894,9 +5895,9 @@ async def handle_callback(call: CallbackQuery):
                     battle["loser_title"] = loser_title
                     _dw["duel_wins"]    = _dw.get("duel_wins", 0) + 1
                     _dw["balance"]      = _dw.get("balance", 0) + reward
-                    _su_hp(winner_uid, _dw)
+                    await _su_hp(winner_uid, _dw)
                     _dl["duel_losses"]  = _dl.get("duel_losses", 0) + 1
-                    _su_hp(loser_uid, _dl)
+                    await _su_hp(loser_uid, _dl)
                 _active_battles.pop(user.id, None)
                 _active_battles.pop(foe_uid, None)
                 _battle_msgs.pop(user.id, None)
@@ -5933,14 +5934,14 @@ async def handle_callback(call: CallbackQuery):
                 battle["winner_uid"] = foe_uid
                 battle["log"].append({"kind": "surrender", "actor": me_prefix})
                 # Считаем награду ДО рендера battle_text
-                from database import get_user as _gu_sr, save_user as _su_sr
-                _d1 = _gu_sr(battle["p1_uid"]) or {}
-                _d2 = _gu_sr(battle["p2_uid"]) or {}
+                from database import aio_get_user as _gu_sr, aio_save_user as _su_sr
+                _d1 = await _gu_sr(battle["p1_uid"]) or {}
+                _d2 = await _gu_sr(battle["p2_uid"]) or {}
                 set_player_hp(battle["p1_uid"], battle["p1_hp"], _d1)
                 set_player_hp(battle["p2_uid"], battle["p2_hp"], _d2)
                 loser_uid2   = battle["p2_uid"] if foe_uid == battle["p1_uid"] else battle["p1_uid"]
-                _dw2 = _gu_sr(foe_uid) or {}
-                _dl2 = _gu_sr(loser_uid2) or {}
+                _dw2 = await _gu_sr(foe_uid) or {}
+                _dl2 = await _gu_sr(loser_uid2) or {}
                 loser_wins2  = _dl2.get("duel_wins", 0)
                 loser_title2 = get_duel_title(loser_wins2)
                 reward2      = TITLE_REWARDS.get(loser_title2, 0)
@@ -5948,9 +5949,9 @@ async def handle_callback(call: CallbackQuery):
                 battle["loser_title"] = loser_title2
                 _dw2["duel_wins"]   = _dw2.get("duel_wins", 0) + 1
                 _dw2["balance"]     = _dw2.get("balance", 0) + reward2
-                _su_sr(foe_uid, _dw2)
+                await _su_sr(foe_uid, _dw2)
                 _dl2["duel_losses"] = _dl2.get("duel_losses", 0) + 1
-                _su_sr(loser_uid2, _dl2)
+                await _su_sr(loser_uid2, _dl2)
                 foe_msg = _battle_msgs.get(foe_uid)
                 if foe_msg:
                     try:
@@ -6026,8 +6027,8 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer(t(lang, "duel_challenger_in_battle"), show_alert=True)
                 await edit(duel_main_text(data, lang), duel_main_keyboard(lang))
                 return
-            from database import get_user as _gu_ch
-            challenger_data = _gu_ch(challenger_uid)
+            from database import aio_get_user as _gu_ch
+            challenger_data = await _gu_ch(challenger_uid)
             if not challenger_data:
                 await call.answer(t(lang, "duel_challenger_not_found"), show_alert=True)
                 return
@@ -6119,7 +6120,7 @@ async def handle_successful_payment(message: Message):
     # ===== ОПЛАТА: Кейс Артефактов =====
     if payload == "artifact_case":
         from miner import STAR
-        from database import get_user, save_user
+        from database import aio_get_user, aio_save_user
 
         # Проверяем сумму оплаты — защита от подмены инвойса
         paid_amount = message.successful_payment.total_amount
@@ -6144,10 +6145,10 @@ async def handle_successful_payment(message: Message):
         # исключения, без лога, без сообщения игроку. Именно так выглядит
         # "деньги списаны, а бот молчит". Убираю лок, выдаём напрямую —
         # ровно как /giveart.
-        data = get_user(uid)
+        data = await get_user(uid)
         if not data:
             # Пользователь не найден в БД — создаём и пробуем снова
-            data = get_or_create_user(message.from_user)
+            data = await aio_get_or_create_user(message.from_user)
         data["id"] = uid  # подстраховка: ключ "id" должен совпадать с uid
 
         _lang = data.get("lang", "ru")
@@ -6164,12 +6165,12 @@ async def handle_successful_payment(message: Message):
 
             # Сохраняем СРАЗУ, используя uid напрямую (не data["id"],
             # чтобы не зависеть от возможного отсутствия/рассинхрона ключа).
-            save_user(uid, data)
+            await aio_save_user(uid, data)
 
             try:
                 _ach_newly = check_achievements(data)
                 if _ach_newly:
-                    save_user(uid, data)
+                    await aio_save_user(uid, data)
                     await _notify_ach(uid, data, _ach_newly)
             except Exception as _ach_e:
                 import traceback as _tb
@@ -6286,7 +6287,7 @@ async def handle_successful_payment(message: Message):
     # ===== ОПЛАТА: Зелье =====
     if payload.startswith("potion_"):
         potion_key = payload.removeprefix("potion_")
-        from database import get_user, save_user
+        from database import aio_get_user, aio_save_user
         from hunt import confirm_potion_purchase as _confirm_potion
 
         p = POTIONS_BY_KEY.get(potion_key)
@@ -6304,9 +6305,9 @@ async def handle_successful_payment(message: Message):
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
-            data = get_user(uid)
+            data = await get_user(uid)
             if not data:
-                data = get_or_create_user(message.from_user)
+                data = await aio_get_or_create_user(message.from_user)
             _lang = data.get("lang", "ru")
 
             ok, msg = confirm_potion_purchase(potion_key, uid, _lang)
@@ -6335,7 +6336,7 @@ async def handle_successful_payment(message: Message):
             grant_premium_pickaxe, pickaxe_detail_text, pickaxe_detail_keyboard,
             get_pickaxe_page, PICKAXES, TIER_LABELS, STAR
         )
-        from database import get_user, save_user
+        from database import aio_get_user, aio_save_user
 
         # Проверяем сумму: должна совпадать с ценой кирки в Stars
         from miner import PICKAXES as _PX
@@ -6354,13 +6355,13 @@ async def handle_successful_payment(message: Message):
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
-            data = get_user(uid)
+            data = await get_user(uid)
             if not data:
                 return
             ok, _ = grant_premium_pickaxe(data, pick_key)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             p    = PICKAXES[pick_key]
             tier = TIER_LABELS.get(p.get("tier", ""), "")
@@ -6401,7 +6402,7 @@ async def handle_successful_payment(message: Message):
 
     # ===== ОПЛАТА: Статус VIP =====
     if payload == "status_vip":
-        from database import get_user, save_user
+        from database import aio_get_user, aio_save_user
         paid_amount = message.successful_payment.total_amount
         if paid_amount != VIP_COST_STARS:
             await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
@@ -6413,14 +6414,14 @@ async def handle_successful_payment(message: Message):
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
-            data = get_user(uid)
+            data = await get_user(uid)
             if not data:
                 return
             _lang = data.get("lang", "ru")
             ok, msg = activate_status(data, "vip", _lang)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             # Обновляем старое сообщение
             pending = _pending_status_msg.pop(uid, None)
@@ -6461,7 +6462,7 @@ async def handle_successful_payment(message: Message):
 
     # ===== ОПЛАТА: Статус Premium =====
     if payload == "status_premium":
-        from database import get_user, save_user
+        from database import aio_get_user, aio_save_user
         paid_amount = message.successful_payment.total_amount
         if paid_amount != PREMIUM_COST_STARS:
             await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
@@ -6473,14 +6474,14 @@ async def handle_successful_payment(message: Message):
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
-            data = get_user(uid)
+            data = await get_user(uid)
             if not data:
                 return
             _lang = data.get("lang", "ru")
             ok, msg = activate_status(data, "premium", _lang)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             pending = _pending_status_msg.pop(uid, None)
             if pending:
@@ -6520,7 +6521,7 @@ async def handle_successful_payment(message: Message):
 
     # ===== ОПЛАТА: Донат (пакет монет) =====
     if payload.startswith("donate:"):
-        from database import get_user, save_user
+        from database import aio_get_user, aio_save_user
         pkg_key    = payload.split(":", 1)[1]
         pkg        = DONATE_BY_KEY.get(pkg_key)
         if not pkg:
@@ -6540,15 +6541,15 @@ async def handle_successful_payment(message: Message):
         uid  = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
-            data = get_user(uid)
+            data = await get_user(uid)
             if not data:
-                data = get_or_create_user(message.from_user)
+                data = await aio_get_or_create_user(message.from_user)
 
             _lang = data.get("lang", "ru")
             ok, msg, coins = apply_donate(data, pkg_key)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
 
             # Обновляем старое сообщение — убираем кнопку-инвойс
@@ -6587,7 +6588,7 @@ async def handle_successful_payment(message: Message):
         return
 
     if payload == "status_upgrade_premium":
-        from database import get_user, save_user
+        from database import aio_get_user, aio_save_user
         paid_amount = message.successful_payment.total_amount
         if paid_amount != UPGRADE_COST_STARS:
             await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
@@ -6599,14 +6600,14 @@ async def handle_successful_payment(message: Message):
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
-            data = get_user(uid)
+            data = await get_user(uid)
             if not data:
                 return
             _lang = data.get("lang", "ru")
             ok, msg = activate_status(data, "premium", _lang)
             if ok:
                 _ach_newly = check_achievements(data)
-                save_user(data["id"], data)
+                await aio_save_user(data["id"], data)
                 await _notify_ach(data["id"], data, _ach_newly)
             pending = _pending_status_msg.pop(uid, None)
             if pending:
@@ -7020,8 +7021,8 @@ async def run_bot():
     init_achievements_db()  # создаёт таблицу счётчиков "сколько игроков открыли ачивку"
 
     # ── Миграция: добавляем поля питомцев для старых пользователей ──
-    from database import get_all_users, save_user as _save_mig
-    for _u in get_all_users():
+    from database import aio_get_all_users, aio_save_user as _save_mig
+    for _u in await get_all_users():
         _changed = False
         if "owned_pets" not in _u:
             _u["owned_pets"] = []
@@ -7049,7 +7050,7 @@ async def run_bot():
             _u["last_boss_hit"] = 0
             _changed = True
         if _changed:
-            _save_mig(_u["id"], _u)
+            await _save_mig(_u["id"], _u)
 
     # ── Запускаем фоновую задачу вкладов (авто-выплаты) ──
     asyncio.create_task(_cdl_payout_loop())
