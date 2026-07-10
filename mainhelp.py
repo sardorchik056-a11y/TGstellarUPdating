@@ -2363,6 +2363,99 @@ async def cmd_gift(message: Message):
         pass
 
 
+def _parse_limit_target(message: Message) -> str | None:
+    """Извлекает опциональный @username/id из текста команды 'лимит'.
+    Без аргумента и без reply — цель не указана (None)."""
+    text = (message.text or "").strip()
+    import re as _r
+    text = _r.sub(
+        r'^[/]?(лимит|лим|limit|lim)\s*',
+        '', text, count=1, flags=_r.IGNORECASE
+    ).strip()
+    if not text:
+        return None
+    return text.split()[0].lstrip("@")
+
+
+@dp.message(Command("лимит", "лим", "limit", "lim", ignore_case=True))
+@dp.message(_text_in("лимит", "лим", "limit", "lim"))
+async def cmd_limit(message: Message):
+    """Показывает суточный лимит на перевод монет (свой или указанного игрока)."""
+    u    = await aio_get_or_create_user(message.from_user)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+
+    target_raw = _parse_limit_target(message)
+
+    target_data = None
+    if target_raw:
+        from database import aio_get_user_by_id_or_username as _find_limit_target
+        target_data = await _find_limit_target(target_raw)
+        if not target_data:
+            await message.reply(
+                "❌ Игрок не найден в базе. Он должен хотя бы раз написать боту.",
+                parse_mode="HTML"
+            )
+            return
+    elif message.reply_to_message:
+        from database import aio_get_user as _gu_limit
+        target_data = await _gu_limit(message.reply_to_message.from_user.id)
+
+    is_self = False
+    if target_data is None:
+        target_data = u
+        is_self = True
+
+    level       = target_data.get("level", 1)
+    daily_limit = _gift_daily_limit(level)
+
+    import time as _time_limit
+    now            = int(_time_limit.time())
+    window_start   = target_data.get("gift_window_start", 0)
+    received_today = target_data.get("gift_received_today", 0)
+    if now - window_start >= _GIFT_WINDOW:
+        received_today = 0
+
+    if is_self:
+        title = "Ваш лимит на получение монет"
+    else:
+        name  = _esc(target_data.get("first_name") or target_data.get("username") or str(target_data["id"]))
+        title = f"Лимит игрока <b>{name}</b> на получение монет"
+
+    if daily_limit is None:
+        text = (
+            f'<tg-emoji emoji-id="5420323339723881652">🌟</tg-emoji> <b>{title}: без ограничений</b>\n\n'
+            f'<blockquote>Уровень: <b>{level}</b></blockquote>'
+        )
+    else:
+        remaining = max(daily_limit - received_today, 0)
+        text = (
+            f'<tg-emoji emoji-id="5420323339723881652">🌟</tg-emoji> <b>{title}:</b>\n\n'
+            f'<blockquote>'
+            f'Уровень: <b>{level}</b>\n'
+            f'Можно получить сегодня: <b>{_fmt_num(remaining)}/{_fmt_num(daily_limit)}</b>{_COIN_GIFT}'
+            f'</blockquote>'
+        )
+
+    await message.reply(text, parse_mode="HTML")
+
+
+@dp.message(Command("баланс", "бал", "balance", "bal", "б", "b", ignore_case=True))
+@dp.message(_text_in("баланс", "бал", "balance", "bal", "б", "b"))
+async def cmd_balance(message: Message):
+    """Показывает только баланс монет (без остального профиля)."""
+    u = await aio_get_or_create_user(message.from_user)
+    track_user(message.from_user.id)
+    if await _check_onboarded(message, u): return
+
+    await message.reply(
+        f'<blockquote>'
+        f'<tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <b>Баланс — {format_amount(u.get("balance", 0))}</b>{_COIN_GIFT}'
+        f'</blockquote>',
+        parse_mode="HTML"
+    )
+
+
 _KLAN_PENDING_KEYS = (
     "_klan_search_pending", "_klan_create_pending", "_klan_kick_pending",
     "_klan_deposit_pending", "_klan_withdraw_pending", "_klan_apply_pending",
