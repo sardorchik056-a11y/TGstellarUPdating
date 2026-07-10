@@ -463,6 +463,98 @@ _STRINGS.update({
     },
     "duel_btn_skills_shop": {"ru": "📖 Изучение навыков", "en": "📖 Learn skills"},
 
+    # Карточка навыка — кнопки
+    "duel_skill_btn_unequip": {"ru": "Снять из боя", "en": "Unequip from battle"},
+    "duel_skill_btn_equip":   {"ru": "Экипировать в бой", "en": "Equip for battle"},
+    "duel_skill_btn_slots_full": {
+        "ru": "⚠️ Все {max} слотов заняты",
+        "en": "⚠️ All {max} slots are full",
+    },
+    "duel_skill_btn_learn":   {"ru": "📖 Изучить — {price} монет", "en": "📖 Learn — {price} coins"},
+    "duel_skill_btn_nofunds": {"ru": "💸 Недостаточно монет", "en": "💸 Not enough coins"},
+
+    # Тосты экипировки/снятия навыка
+    "duel_skill_msg_not_owned":         {"ru": "❌ Навык не куплен!", "en": "❌ Skill not purchased!"},
+    "duel_skill_msg_already_equipped":  {"ru": "❌ Навык уже экипирован!", "en": "❌ Skill already equipped!"},
+    "duel_skill_msg_max_equipped":      {"ru": "❌ Максимум {max} навыков в бою!", "en": "❌ Maximum of {max} skills in battle!"},
+    "duel_skill_msg_equipped":          {"ru": "✅ Навык экипирован!", "en": "✅ Skill equipped!"},
+    "duel_skill_msg_not_equipped":      {"ru": "❌ Навык не экипирован!", "en": "❌ Skill not equipped!"},
+    "duel_skill_msg_unequipped":        {"ru": "✅ Навык снят!", "en": "✅ Skill unequipped!"},
+
+    # Магазин навыков — тосты
+    "duel_skill_slots_full_alert": {
+        "ru": "⚠️ Все {max} слотов в бою заняты! Сначала снимите один навык.",
+        "en": "⚠️ All {max} battle slots are full! Unequip a skill first.",
+    },
+    "duel_skill_unknown":        {"ru": "Неизвестный навык.", "en": "Unknown skill."},
+    "duel_skill_not_enough":     {"ru": "Недостаточно монет! Нужно: {need} | У вас: {have}", "en": "Not enough coins! Needed: {need} | You have: {have}"},
+    "duel_skill_already_bought": {"ru": "Навык уже куплен!", "en": "Skill already purchased!"},
+    "duel_skill_bought_alert":   {"ru": "✅ Куплен навык: {name}!", "en": "✅ Skill purchased: {name}!"},
+    "duel_skill_nofunds_alert":  {"ru": "💸 Недостаточно монет для покупки навыка!", "en": "💸 Not enough coins to buy this skill!"},
+
+    # Приглашение на дуэль (входящий вызов)
+    "duel_invite_title":      {"ru": "⚔️ <b>Вызов на дуэль!</b>", "en": "⚔️ <b>Duel challenge!</b>"},
+    "duel_invite_player_default": {"ru": "Игрок", "en": "Player"},
+    "duel_invite_body":       {
+        "ru": "👤 <b>{name}</b> (уровень {lvl}) бросает тебе вызов!\n\n📊 <b>Характеристики противника:</b>",
+        "en": "👤 <b>{name}</b> (level {lvl}) is challenging you!\n\n📊 <b>Opponent's stats:</b>",
+    },
+    "duel_invite_regen_suffix": {"ru": "HP/ход", "en": "HP/turn"},
+    "duel_invite_skills_line": {"ru": "⚔️ Навыки: <i>{names}</i>", "en": "⚔️ Skills: <i>{names}</i>"},
+    "duel_invite_skills_none": {"ru": "нет", "en": "none"},
+    "duel_invite_expiry":     {"ru": "⏳ <i>Вызов действителен 2 минуты</i>", "en": "⏳ <i>Challenge is valid for 2 minutes</i>"},
+    "duel_invite_btn_accept": {"ru": "✅ Принять", "en": "✅ Accept"},
+    "duel_invite_btn_decline":{"ru": "❌ Отказаться", "en": "❌ Decline"},
+
+    # ── Бой ──
+    "duel_battle_already_over":  {"ru": "Бой уже завершён.", "en": "The battle is already over."},
+    "duel_battle_you_frozen":    {"ru": "❄️ Ты заморожен и пропускаешь ход!", "en": "❄️ You're frozen and skip this turn!"},
+    "duel_battle_on_cooldown":   {"ru": "⏳ Навык на перезарядке ещё {left}с.", "en": "⏳ Skill still on cooldown for {left}s."},
+    "duel_battle_title":         {"ru": "БОЙ", "en": "BATTLE"},
+    "duel_battle_finished_title":{"ru": "БОЙ ЗАВЕРШЁН", "en": "BATTLE OVER"},
+    "duel_battle_draw":          {"ru": "⚔️ <b>Ничья!</b>", "en": "⚔️ <b>Draw!</b>"},
+    "duel_battle_you_won":       {"ru": "<b>Ты победил!</b>", "en": "<b>You won!</b>"},
+    "duel_battle_you_lost":      {"ru": "💀 <b>Ты проиграл!</b>", "en": "💀 <b>You lost!</b>"},
+    "duel_battle_reward_line":   {
+        "ru": "\n\n<tg-emoji emoji-id=\"5397916757333654639\">❤️</tg-emoji> <b>+{amount} <tg-emoji emoji-id=\"5199552030615558774\">❤️</tg-emoji></b> <i>(титул врага: {title})</i>",
+        "en": "\n\n<tg-emoji emoji-id=\"5397916757333654639\">❤️</tg-emoji> <b>+{amount} <tg-emoji emoji-id=\"5199552030615558774\">❤️</tg-emoji></b> <i>(opponent's title: {title})</i>",
+    },
+    "duel_battle_your_shield":   {"ru": "🛡️ Твой щит: <b>{hp} HP</b>", "en": "🛡️ Your shield: <b>{hp} HP</b>"},
+    "duel_battle_foe_shield":    {"ru": "🛡️ Щит врага: <b>{hp} HP</b>", "en": "🛡️ Enemy's shield: <b>{hp} HP</b>"},
+    "duel_battle_you_frozen_note": {"ru": "❄️ <b>Ты заморожен! Следующий ход пропущен.</b>", "en": "❄️ <b>You're frozen! Next turn is skipped.</b>"},
+    "duel_battle_foe_frozen_note": {"ru": "❄️ <b>{name} заморожен!</b>", "en": "❄️ <b>{name} is frozen!</b>"},
+    "duel_battle_choose_skill":  {"ru": "Выбери навык для атаки:", "en": "Choose a skill to attack:"},
+    "duel_battle_surrendered_log": {"ru": "🏳️ {name} сдался.", "en": "🏳️ {name} surrendered."},
+    "duel_battle_you_surrendered": {"ru": "Ты сдался.", "en": "You surrendered."},
+    "duel_battle_not_in_battle": {"ru": "Ты не в бою!", "en": "You're not in a battle!"},
+
+    # ── Строки лога боя ──
+    "duel_log_shield_line":   {"ru": "{name}: {emoji} {skill} → 🛡️ Щит {amount} HP", "en": "{name}: {emoji} {skill} → 🛡️ Shield {amount} HP"},
+    "duel_log_damage_line":   {"ru": "{name}: {emoji} {skill} → -{dmg} HP{effect}", "en": "{name}: {emoji} {skill} → -{dmg} HP{effect}"},
+    "duel_log_absorbed_suffix": {"ru": " (щит -{n})", "en": " (shield -{n})"},
+    "duel_log_frozen_suffix":   {"ru": " ❄️ заморозка!", "en": " ❄️ frozen!"},
+
+    # ── Кнопки боя ──
+    "duel_battle_btn_new_search": {"ru": "🔄 Новый поиск", "en": "🔄 New search"},
+    "duel_battle_btn_to_menu":    {"ru": "🏠 В меню дуэлей", "en": "🏠 Duel menu"},
+    "duel_battle_btn_surrender":  {"ru": "🏳️ Сдаться", "en": "🏳️ Surrender"},
+    "duel_battle_sec_short":      {"ru": "с", "en": "s"},
+
+    "duel_hp_too_low_regen":   {"ru": "HP слишком низкий ({hp}/100)! Восстановится через {secs} сек.", "en": "HP too low ({hp}/100)! Will recover in {secs} sec."},
+    "duel_hp_too_low_tick":    {"ru": "HP слишком низкий ({hp}/100)! Следующий тик через {secs} сек.", "en": "HP too low ({hp}/100)! Next tick in {secs} sec."},
+    "duel_hp_too_low_recover_first": {"ru": "HP слишком низкий ({hp}/100)! Сначала восстановись.", "en": "HP too low ({hp}/100)! Recover first."},
+    "duel_search_cancelled_toast": {"ru": "Поиск отменён.", "en": "Search cancelled."},
+
+    "duel_already_in_battle_toast": {"ru": "Ты уже в бою!", "en": "You're already in a battle!"},
+    "duel_challenger_in_battle":    {"ru": "❌ Вызывающий уже в другом бою. Вызов отменён.", "en": "❌ The challenger is already in another battle. Challenge cancelled."},
+    "duel_challenger_not_found":    {"ru": "❌ Вызывающий не найден.", "en": "❌ Challenger not found."},
+    "duel_challenge_expired":       {"ru": "❌ Вызов истёк или уже не действителен.", "en": "❌ The challenge has expired or is no longer valid."},
+    "duel_challenger_in_battle_2":  {"ru": "❌ Вызывающий уже в другом бою.", "en": "❌ The challenger is already in another battle."},
+    "duel_accepted_battle_started": {"ru": "✅ <b>{name} принял вызов! Бой начался!</b>\n\n", "en": "✅ <b>{name} accepted the challenge! The battle has begun!</b>\n\n"},
+    "duel_challenge_cancelled_toast": {"ru": "Вызов отменён.", "en": "Challenge cancelled."},
+    "duel_challenge_declined_toast":  {"ru": "Вызов отклонён.", "en": "Challenge declined."},
+    "duel_challenge_declined_notify": {"ru": "❌ <b>{name} отклонил твой вызов на дуэль.</b>", "en": "❌ <b>{name} declined your duel challenge.</b>"},
+
     # Магазин навыков
     "duel_shop_title":  {"ru": "Изучение Навыков", "en": "Learn Skills"},
     "duel_shop_page":   {"ru": "Страница {page}/{total} · ⚔️ в бою: {eq}/{max}", "en": "Page {page}/{total} · ⚔️ equipped: {eq}/{max}"},
