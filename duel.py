@@ -2832,7 +2832,8 @@ def duel_equip_slot_text(slot: str, user_data: dict, page: int = 0, lang: str = 
         else:
             marker = "🔒"
             state  = f'<i>{_fmt(item["price"], lang)} {t(lang, "duel_coins_suffix")}</i>'
-        lines.append(f"{marker} <b>[{item['name']}]</b> — {item['ru_name']} · {state}")
+        flavor = f" — {item['ru_name']}" if lang != "en" else ""
+        lines.append(f"{marker} <b>[{item['name']}]</b>{flavor} · {state}")
 
     block = "\n".join(lines)
     header = t(lang, "duel_equip_slot_header").format(label=label.upper())
@@ -2948,9 +2949,10 @@ def duel_item_card_text(item_key: str, user_data: dict, lang: str = "ru") -> str
     else:
         rarity = t(lang, "duel_rarity_absolute")
 
+    _flavor_line = f'<i>{item["ru_name"]}</i>  {rarity}\n' if lang != "en" else f'<i>{rarity}</i>\n'
     return (
         f'<tg-emoji emoji-id="{item["emoji_id"]}">{item["emoji_char"]}</tg-emoji> <b>{item["name"]}</b>\n'
-        f'<i>{item["ru_name"]}</i>  {rarity}\n'
+        f'{_flavor_line}'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>{_desc(item, lang)}</blockquote>\n\n'
         f'<b>{t(lang, "duel_item_bonus_title")}</b>\n{bonus_block}\n\n'
@@ -3085,7 +3087,7 @@ def duel_skills_text(user_data: dict = None, lang: str = "ru") -> str:
             k = equipped[i]
             if k in SKILLS:
                 skill = SKILLS[k]
-                slot_lines += f"{_skill_emoji(skill)} <b>{skill['name']}</b>\n"
+                slot_lines += f"{_skill_emoji(skill)} <b>{_name(skill, lang)}</b>\n"
             else:
                 slot_lines += empty_line
         else:
