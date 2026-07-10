@@ -17,6 +17,14 @@ def _desc(entry: dict, lang: str = "ru") -> str:
     return entry.get("description", "")
 
 
+def _name(entry: dict, lang: str = "ru") -> str:
+    """Возвращает имя навыка на нужном языке.
+    Если для 'en' нет перевода (name_en), используется русское имя."""
+    if lang == "en":
+        return entry.get("name_en") or entry.get("name", "")
+    return entry.get("name", "")
+
+
 # ── Эмодзи ──────────────────────────────────────────────────
 EMOJI_BACK         = "5252272671669706296"
 EMOJI_DUEL_MAIN    = "5424972470023104089"
@@ -1307,7 +1315,7 @@ SKILLS = {
     # ── Базовые (бесплатные) ──────────────────────────────────
     "mag_ball": {
         "key": "mag_ball",
-        "name": "Искра Хаоса",
+        "name": "Искра Хаоса", "name_en": "Chaos Spark",
         "emoji": "🔵",
         "emoji_id": "5222108309795908493",
         "type": "magic",
@@ -1319,7 +1327,7 @@ SKILLS = {
     },
     "explosion": {
         "key": "explosion",
-        "name": "Удар",
+        "name": "Удар", "name_en": "Strike",
         "emoji": "💥",
         "emoji_id": "5231406626228948265",
         "type": "physical",
@@ -1331,7 +1339,7 @@ SKILLS = {
     },
     "shield": {
         "key": "shield",
-        "name": "Барьер",
+        "name": "Барьер", "name_en": "Barrier",
         "emoji": "🛡️",
         "emoji_id": "5465154440287757794",
         "type": "shield",
@@ -1345,7 +1353,7 @@ SKILLS = {
     # ── Покупаемые навыки ────────────────────────────────────
     "iron_fist": {
         "key": "iron_fist",
-        "name": "Стальной Кулак",
+        "name": "Стальной Кулак", "name_en": "Iron Fist",
         "emoji": "✊",
         "emoji_id": "5458465612839792700",
         "type": "physical",
@@ -1357,7 +1365,7 @@ SKILLS = {
     },
     "mag_block": {
         "key": "mag_block",
-        "name": "Астральный Удар",
+        "name": "Астральный Удар", "name_en": "Astral Strike",
         "emoji": "🟣",
         "emoji_id": "5226893221191237996",
         "type": "magic",
@@ -1369,7 +1377,7 @@ SKILLS = {
     },
     "arcane_surge": {
         "key": "arcane_surge",
-        "name": "Арканный Удар",
+        "name": "Арканный Удар", "name_en": "Arcane Surge",
         "emoji": "✨",
         "emoji_id": "5337037846475720165",
         "type": "magic",
@@ -1381,7 +1389,7 @@ SKILLS = {
     },
     "shadow_strike": {
         "key": "shadow_strike",
-        "name": "Тьма",
+        "name": "Тьма", "name_en": "Darkness",
         "emoji": "🌑",
         "emoji_id": "5335072469441078225",
         "type": "physical",
@@ -1393,7 +1401,7 @@ SKILLS = {
     },
     "poison_dart": {
         "key": "poison_dart",
-        "name": "Яд",
+        "name": "Яд", "name_en": "Poison",
         "emoji": "🧪",
         "emoji_id": "5899831875404304784",
         "type": "magic",
@@ -1405,7 +1413,7 @@ SKILLS = {
     },
     "thunder": {
         "key": "thunder",
-        "name": "Гром",
+        "name": "Гром", "name_en": "Thunder",
         "emoji": "⚡",
         "emoji_id": "5307493878843059915",
         "type": "magic",
@@ -1417,7 +1425,7 @@ SKILLS = {
     },
     "chain_lightning": {
         "key": "chain_lightning",
-        "name": "Молния",
+        "name": "Молния", "name_en": "Lightning",
         "emoji": "🌩️",
         "emoji_id": "5438571934210082705",
         "type": "magic",
@@ -1429,7 +1437,7 @@ SKILLS = {
     },
     "blade_storm": {
         "key": "blade_storm",
-        "name": "Вихрь",
+        "name": "Вихрь", "name_en": "Whirlwind",
         "emoji": "🌪️",
         "emoji_id": "5220181540222291016",
         "type": "physical",
@@ -1441,7 +1449,7 @@ SKILLS = {
     },
     "inferno": {
         "key": "inferno",
-        "name": "Инферно",
+        "name": "Инферно", "name_en": "Inferno",
         "emoji": "🔥",
         "emoji_id": "5256047523620995497",
         "type": "magic",
@@ -1453,7 +1461,7 @@ SKILLS = {
     },
     "war_cry": {
         "key": "war_cry",
-        "name": "Боевой Клич",
+        "name": "Боевой Клич", "name_en": "War Cry",
         "emoji": "📣",
         "emoji_id": "5462921117423384478",
         "type": "physical",
@@ -1465,7 +1473,7 @@ SKILLS = {
     },
     "freeze": {
         "key": "freeze",
-        "name": "Заморозка",
+        "name": "Заморозка", "name_en": "Freeze",
         "emoji": "❄️",
         "emoji_id": "5449449325434266744",
         "type": "magic",
@@ -1478,7 +1486,7 @@ SKILLS = {
     },
     "earthquake": {
         "key": "earthquake",
-        "name": "Землетрясение",
+        "name": "Землетрясение", "name_en": "Earthquake",
         "emoji": "🌍",
         "emoji_id": "5361662921208254475",
         "type": "physical",
@@ -1490,7 +1498,7 @@ SKILLS = {
     },
     "berserker": {
         "key": "berserker",
-        "name": "Берсерк",
+        "name": "Берсерк", "name_en": "Berserker",
         "emoji": "🔴",
         "emoji_id": "5463335865235288297",
         "type": "physical",
@@ -1502,7 +1510,7 @@ SKILLS = {
     },
     "mega_shield": {
         "key": "mega_shield",
-        "name": "Щит Цитадели",
+        "name": "Щит Цитадели", "name_en": "Citadel Shield",
         "emoji": "🔰",
         "emoji_id": "5251203410396458957",
         "type": "shield",
@@ -1514,7 +1522,7 @@ SKILLS = {
     },
     "soul_drain": {
         "key": "soul_drain",
-        "name": "Жизнекрад",
+        "name": "Жизнекрад", "name_en": "Soul Drain",
         "emoji": "💜",
         "emoji_id": "5343545593807521643",
         "type": "magic",
@@ -1527,7 +1535,7 @@ SKILLS = {
     },
     "void_blast": {
         "key": "void_blast",
-        "name": "Разрыв Бездны",
+        "name": "Разрыв Бездны", "name_en": "Void Rupture",
         "emoji": "🌀",
         "emoji_id": "5267114941378209946",
         "type": "magic",
@@ -1539,7 +1547,7 @@ SKILLS = {
     },
     "titan_slam": {
         "key": "titan_slam",
-        "name": "Титан",
+        "name": "Титан", "name_en": "Titan",
         "emoji": "⚒️",
         "emoji_id": "5235917510120861097",
         "type": "physical",
@@ -1551,7 +1559,7 @@ SKILLS = {
     },
     "meteor": {
         "key": "meteor",
-        "name": "Метеор",
+        "name": "Метеор", "name_en": "Meteor",
         "emoji": "☄️",
         "emoji_id": "6001590126071779800",
         "type": "magic",
@@ -1563,7 +1571,7 @@ SKILLS = {
     },
     "dark_nova": {
         "key": "dark_nova",
-        "name": "Тёмный Взрыв",
+        "name": "Тёмный Взрыв", "name_en": "Dark Nova",
         "emoji": "🖤",
         "emoji_id": "5204470073112146941",
         "type": "magic",
@@ -1575,7 +1583,7 @@ SKILLS = {
     },
     "divine_wrath": {
         "key": "divine_wrath",
-        "name": "Небесная Кара",
+        "name": "Небесная Кара", "name_en": "Divine Wrath",
         "emoji": "⚜️",
         "emoji_id": "6332360083116132292",
         "type": "magic",
@@ -1589,7 +1597,7 @@ SKILLS = {
     # ── Новые навыки ─────────────────────────────────────────
     "bloodlust": {
         "key": "bloodlust",
-        "name": "Жажда Крови",
+        "name": "Жажда Крови", "name_en": "Bloodlust",
         "emoji": "🩸",
         "emoji_id": "5269535069550162819",
         "type": "physical",
@@ -1602,7 +1610,7 @@ SKILLS = {
     },
     "storm_eye": {
         "key": "storm_eye",
-        "name": "Око Бури",
+        "name": "Око Бури", "name_en": "Eye of the Storm",
         "emoji": "🌊",
         "emoji_id": "5249454534073276043",
         "type": "magic",
@@ -1614,7 +1622,7 @@ SKILLS = {
     },
     "obsidian_edge": {
         "key": "obsidian_edge",
-        "name": "Тёмный Клинок",
+        "name": "Тёмный Клинок", "name_en": "Obsidian Blade",
         "emoji": "🗡️",
         "emoji_id": "5449883370534238228",
         "type": "physical",
@@ -1626,7 +1634,7 @@ SKILLS = {
     },
     "echo_blast": {
         "key": "echo_blast",
-        "name": "Ударная Волна",
+        "name": "Ударная Волна", "name_en": "Echo Blast",
         "emoji": "🔊",
         "emoji_id": "5818973781707722673",
         "type": "physical",
@@ -1638,7 +1646,7 @@ SKILLS = {
     },
     "abyss_call": {
         "key": "abyss_call",
-        "name": "Зов Бездны",
+        "name": "Зов Бездны", "name_en": "Call of the Abyss",
         "emoji": "🕳️",
         "emoji_id": "5206523956537865948",
         "type": "magic",
@@ -1651,7 +1659,7 @@ SKILLS = {
     },
     "runic_fortress": {
         "key": "runic_fortress",
-        "name": "Рунический Щит",
+        "name": "Рунический Щит", "name_en": "Runic Fortress",
         "emoji": "🏰",
         "emoji_id": "6111804548869787620",
         "type": "shield",
@@ -1663,7 +1671,7 @@ SKILLS = {
     },
     "solar_lance": {
         "key": "solar_lance",
-        "name": "Солнечное Копьё",
+        "name": "Солнечное Копьё", "name_en": "Solar Lance",
         "emoji": "☀️",
         "emoji_id": "5402477260982731644",
         "type": "magic",
@@ -1719,29 +1727,29 @@ def get_equipped_skills(user_data: dict) -> list:
     return [k for k in stored if k in owned]
 
 
-def equip_skill(skill_key: str, user_data: dict) -> tuple:
+def equip_skill(skill_key: str, user_data: dict, lang: str = "ru") -> tuple:
     """Экипировать навык в бой. Возвращает (ok, msg)."""
     owned = get_owned_skills(user_data)
     if skill_key not in owned:
-        return False, "❌ Навык не куплен!"
+        return False, t(lang, "duel_skill_msg_not_owned")
     equipped = get_equipped_skills(user_data)  # инициализирует список базовыми при первом входе
     if skill_key in equipped:
-        return False, "❌ Навык уже экипирован!"
+        return False, t(lang, "duel_skill_msg_already_equipped")
     if len(equipped) >= MAX_EQUIPPED_SKILLS:
-        return False, f"❌ Максимум {MAX_EQUIPPED_SKILLS} навыков в бою!"
+        return False, t(lang, "duel_skill_msg_max_equipped").format(max=MAX_EQUIPPED_SKILLS)
     stored = user_data.setdefault("duel_equipped_skills", [])
     stored.append(skill_key)
-    return True, "✅ Навык экипирован!"
+    return True, t(lang, "duel_skill_msg_equipped")
 
 
-def unequip_skill(skill_key: str, user_data: dict) -> tuple:
+def unequip_skill(skill_key: str, user_data: dict, lang: str = "ru") -> tuple:
     """Снять навык с экипировки. Возвращает (ok, msg)."""
     get_equipped_skills(user_data)  # инициализирует список базовыми при первом входе
     stored = user_data.setdefault("duel_equipped_skills", [])
     if skill_key not in stored:
-        return False, "❌ Навык не экипирован!"
+        return False, t(lang, "duel_skill_msg_not_equipped")
     stored.remove(skill_key)
-    return True, "✅ Навык снят!"
+    return True, t(lang, "duel_skill_msg_unequipped")
 
 
 # ── Карточка навыка (подробное окно, как у снаряжения) ────────────────────
@@ -1810,7 +1818,7 @@ def duel_skill_card_text(skill_key: str, user_data: dict, lang: str = "ru") -> s
     sec_label = "sec." if lang == "en" else "сек."
 
     return (
-        f'{_skill_emoji(sk)} <b>{sk["name"]}</b>\n'
+        f'{_skill_emoji(sk)} <b>{_name(sk, lang)}</b>\n'
         f'<i>{type_label} · <tg-emoji emoji-id="5440621591387980068">✨</tg-emoji> {cooldown_label}: {sk["cooldown"]} {sec_label}</i>\n'
         '━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote><b><i>{_desc(sk, lang)}</i></b></blockquote>\n\n'
@@ -1822,7 +1830,7 @@ def duel_skill_card_text(skill_key: str, user_data: dict, lang: str = "ru") -> s
     )
 
 
-def duel_skill_card_keyboard(skill_key: str, user_data: dict, from_page: int = 0) -> InlineKeyboardMarkup:
+def duel_skill_card_keyboard(skill_key: str, user_data: dict, from_page: int = 0, lang: str = "ru") -> InlineKeyboardMarkup:
     sk      = SKILLS.get(skill_key)
     owned   = get_owned_skills(user_data)
     equipped = get_equipped_skills(user_data)
@@ -1833,36 +1841,36 @@ def duel_skill_card_keyboard(skill_key: str, user_data: dict, from_page: int = 0
 
     if is_equip:
         builder.row(InlineKeyboardButton(
-            text="Снять из боя",
+            text=t(lang, "duel_skill_btn_unequip"),
             callback_data=f"duel_skill_unequip:{skill_key}",
             style="danger",
         ))
     elif is_owned:
         if len(equipped) < MAX_EQUIPPED_SKILLS:
             builder.row(InlineKeyboardButton(
-                text="Экипировать в бой",
+                text=t(lang, "duel_skill_btn_equip"),
                 callback_data=f"duel_skill_equip:{skill_key}",
                 style="primary",
             ))
         else:
             builder.row(InlineKeyboardButton(
-                text=f"⚠️ Все {MAX_EQUIPPED_SKILLS} слотов заняты",
+                text=t(lang, "duel_skill_btn_slots_full").format(max=MAX_EQUIPPED_SKILLS),
                 callback_data="duel_skill_slots_full",
             ))
     else:
         if sk and balance >= sk["price"]:
             builder.row(InlineKeyboardButton(
-                text=f"📖 Изучить — {_fmt(sk['price'])} монет",
+                text=t(lang, "duel_skill_btn_learn").format(price=_fmt(sk['price'])),
                 callback_data=f"duel_skill_buy:{skill_key}",
             ))
         elif sk:
             builder.row(InlineKeyboardButton(
-                text=f"💸 Недостаточно монет",
+                text=t(lang, "duel_skill_btn_nofunds"),
                 callback_data="duel_skill_nofunds",
             ))
 
     builder.row(InlineKeyboardButton(
-        text="Назад",
+        text=t(lang, "btn_back"),
         callback_data=f"duel_skills_shop_page:{from_page}",
         icon_custom_emoji_id=EMOJI_BACK,
     ))
@@ -2095,40 +2103,39 @@ def start_challenge_battle(challenger_uid: int, challenger_data: dict,
     return battle
 
 
-def challenge_invite_text(challenger_data: dict) -> str:
+def challenge_invite_text(challenger_data: dict, lang: str = "ru") -> str:
     """Текст уведомления о вызове для цели. Показывает хар-ки вызывающего."""
     stats  = _calc_stats(challenger_data)
-    name   = challenger_data.get("first_name") or challenger_data.get("username") or "Игрок"
+    name   = challenger_data.get("first_name") or challenger_data.get("username") or t(lang, "duel_invite_player_default")
     lvl    = challenger_data.get("level", 1)
     skills = get_equipped_skills(challenger_data) or get_owned_skills(challenger_data)
-    sk_names = ", ".join(SKILLS[k]["name"] for k in skills[:5] if k in SKILLS) or "нет"
+    sk_names = ", ".join(_name(SKILLS[k], lang) for k in skills[:5] if k in SKILLS) or t(lang, "duel_invite_skills_none")
     return (
-        f'⚔️ <b>Вызов на дуэль!</b>\n'
+        f'{t(lang, "duel_invite_title")}\n'
         f'━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>'
-        f'👤 <b>{name}</b> (уровень {lvl}) бросает тебе вызов!\n\n'
-        f'📊 <b>Характеристики противника:</b>\n'
+        f'{t(lang, "duel_invite_body").format(name=name, lvl=lvl)}\n'
         f'<tg-emoji emoji-id="5337080053119336309">❤️</tg-emoji> HP: <b>{stats["hp"]}</b>\n'
-        f'<tg-emoji emoji-id="5465154440287757794">🛡️</tg-emoji> Физ. защита: <b>{stats["phys_def"]}</b>\n'
-        f'<tg-emoji emoji-id="5321022334335724730">🔮</tg-emoji> Маг. защита: <b>{stats["mag_def"]}</b>\n'
-        f'<tg-emoji emoji-id="5438224604499819092">💚</tg-emoji> Регенерация: <b>{stats["regen"]}</b> HP/ход\n'
-        f'<tg-emoji emoji-id="5251281810729480172">⚙️</tg-emoji> Стойкость: <b>{stats["stamina"]}</b>\n\n'
-        f'⚔️ Навыки: <i>{sk_names}</i>\n\n'
-        f'⏳ <i>Вызов действителен 2 минуты</i>'
+        f'<tg-emoji emoji-id="5465154440287757794">🛡️</tg-emoji> {t(lang, "duel_stats_phys_def")}: <b>{stats["phys_def"]}</b>\n'
+        f'<tg-emoji emoji-id="5321022334335724730">🔮</tg-emoji> {t(lang, "duel_stats_mag_def")}: <b>{stats["mag_def"]}</b>\n'
+        f'<tg-emoji emoji-id="5438224604499819092">💚</tg-emoji> {t(lang, "duel_stats_regen")}: <b>{stats["regen"]}</b> {t(lang, "duel_invite_regen_suffix")}\n'
+        f'<tg-emoji emoji-id="5251281810729480172">⚙️</tg-emoji> {t(lang, "duel_stats_stamina")}: <b>{stats["stamina"]}</b>\n\n'
+        f'{t(lang, "duel_invite_skills_line").format(names=sk_names)}\n\n'
+        f'{t(lang, "duel_invite_expiry")}'
         f'</blockquote>'
     )
 
 
-def challenge_invite_keyboard(challenger_uid: int) -> InlineKeyboardMarkup:
+def challenge_invite_keyboard(challenger_uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
     """Кнопки Принять / Отказаться для цели вызова."""
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
-            text="✅ Принять",
+            text=t(lang, "duel_invite_btn_accept"),
             callback_data=f"duel_challenge_accept:{challenger_uid}",
         ),
         InlineKeyboardButton(
-            text="❌ Отказаться",
+            text=t(lang, "duel_invite_btn_decline"),
             callback_data=f"duel_challenge_decline:{challenger_uid}",
         ),
     )
@@ -2254,28 +2261,28 @@ def _get_enemy_prefix(battle: dict, uid: int) -> str:
     return "p2" if battle["p1_uid"] == uid else "p1"
 
 
-def battle_use_skill(battle: dict, uid: int, skill_key: str) -> tuple:
+def battle_use_skill(battle: dict, uid: int, skill_key: str, lang: str = "ru") -> tuple:
     now = int(time.time())
 
     if battle.get("finished"):
-        return battle, {"ok": False, "msg": "Бой уже завершён."}
+        return battle, {"ok": False, "msg": t(lang, "duel_battle_already_over")}
 
     me  = _get_player_prefix(battle, uid)
     foe = _get_enemy_prefix(battle, uid)
 
     if battle.get(f"{me}_frozen"):
         battle[f"{me}_frozen"] = False
-        return battle, {"ok": False, "msg": "❄️ Ты заморожен и пропускаешь ход!"}
+        return battle, {"ok": False, "msg": t(lang, "duel_battle_you_frozen")}
 
     cooldowns = battle.get(f"{me}_cooldowns", {})
     ready_at  = cooldowns.get(skill_key, 0)
     if now < ready_at:
         left = ready_at - now
-        return battle, {"ok": False, "msg": f"⏳ Навык на перезарядке ещё {left}с."}
+        return battle, {"ok": False, "msg": t(lang, "duel_battle_on_cooldown").format(left=left)}
 
     sk = SKILLS.get(skill_key)
     if not sk:
-        return battle, {"ok": False, "msg": "Неизвестный навык."}
+        return battle, {"ok": False, "msg": t(lang, "duel_skill_unknown")}
 
     cooldowns[skill_key] = now + sk["cooldown"]
     battle[f"{me}_cooldowns"] = cooldowns
@@ -2284,41 +2291,42 @@ def battle_use_skill(battle: dict, uid: int, skill_key: str) -> tuple:
     foe_stats = battle[f"{foe}_stats"]
 
     result = _calc_skill_damage(skill_key, my_stats, foe_stats)
-    effect_msg = ""
 
-    sk_emoji = _skill_emoji(sk)
+    log_entry = {"actor": me, "skill_key": skill_key}
+
     if sk["type"] == "shield":
         sh = result["shield"]
         battle[f"{me}_shield"] = sh
-        effect_msg = f"🛡️ Щит {sh} HP"
-        log_entry = f"{battle[f'{me}_name']}: {sk_emoji} {sk['name']} → {effect_msg}"
+        log_entry["kind"] = "shield"
+        log_entry["shield"] = sh
     else:
         raw_dmg = result["dmg"]
         foe_shield = battle.get(f"{foe}_shield", 0)
+        absorbed = 0
         if foe_shield > 0:
             absorbed = min(foe_shield, raw_dmg)
             raw_dmg -= absorbed
             battle[f"{foe}_shield"] = foe_shield - absorbed
-            effect_msg += f" (щит -{absorbed})"
 
         battle[f"{foe}_hp"] = max(0, battle[f"{foe}_hp"] - raw_dmg)
         result["dmg"] = raw_dmg
 
+        froze = False
         if result.get("freeze"):
             battle[f"{foe}_frozen"] = True
-            effect_msg += " ❄️ заморозка!"
+            froze = True
 
-        # Soul drain — восстановить HP атакующему
+        drain = 0
         if result.get("drain_regen"):
             drain = result["drain_regen"]
             hp_max = battle[f"{me}_hp_max"]
             battle[f"{me}_hp"] = min(hp_max, battle[f"{me}_hp"] + drain)
-            effect_msg += f" 💜+{drain}HP"
 
-        log_entry = (
-            f"{battle[f'{me}_name']}: {sk_emoji} {sk['name']} "
-            f"→ -{raw_dmg} HP{effect_msg}"
-        )
+        log_entry["kind"] = "damage"
+        log_entry["dmg"] = raw_dmg
+        log_entry["absorbed"] = absorbed
+        log_entry["froze"] = froze
+        log_entry["drain"] = drain
 
     # Регенерация
     regen = my_stats.get("regen", 0)
@@ -2357,7 +2365,40 @@ def _hp_bar(hp: int, hp_max: int, length: int = 10) -> str:
 
 # ── Боевой экран (текст) ─────────────────────────────────────
 
-def battle_text(battle: dict, uid: int) -> str:
+def _render_log_entry(battle: dict, entry, lang: str = "ru") -> str:
+    """Рендерит одну строку лога боя на нужном языке.
+    Поддерживает старые (строковые) записи лога для обратной совместимости."""
+    if isinstance(entry, str):
+        return entry  # legacy plain-text entry (сохранён до обновления кода)
+
+    if entry.get("kind") == "surrender":
+        name = battle.get(f"{entry['actor']}_name", "")
+        return t(lang, "duel_battle_surrendered_log").format(name=name)
+
+    name = battle.get(f"{entry['actor']}_name", "")
+    sk = SKILLS.get(entry.get("skill_key"), {})
+    emoji = _skill_emoji(sk) if sk else ""
+    skill_name = _name(sk, lang) if sk else ""
+
+    if entry.get("kind") == "shield":
+        return t(lang, "duel_log_shield_line").format(
+            name=name, emoji=emoji, skill=skill_name, amount=entry.get("shield", 0)
+        )
+
+    effect = ""
+    if entry.get("absorbed"):
+        effect += t(lang, "duel_log_absorbed_suffix").format(n=entry["absorbed"])
+    if entry.get("froze"):
+        effect += t(lang, "duel_log_frozen_suffix")
+    if entry.get("drain"):
+        effect += f" 💜+{entry['drain']}HP"
+
+    return t(lang, "duel_log_damage_line").format(
+        name=name, emoji=emoji, skill=skill_name, dmg=entry.get("dmg", 0), effect=effect
+    )
+
+
+def battle_text(battle: dict, uid: int, lang: str = "ru") -> str:
     me  = _get_player_prefix(battle, uid)
     foe = _get_enemy_prefix(battle, uid)
 
@@ -2373,39 +2414,40 @@ def battle_text(battle: dict, uid: int) -> str:
 
     shields = ""
     if battle.get(f"{me}_shield", 0) > 0:
-        shields += f"\n🛡️ Твой щит: <b>{battle[f'{me}_shield']} HP</b>"
+        shields += "\n" + t(lang, "duel_battle_your_shield").format(hp=battle[f"{me}_shield"])
     if battle.get(f"{foe}_shield", 0) > 0:
-        shields += f"\n🛡️ Щит врага: <b>{battle[f'{foe}_shield']} HP</b>"
+        shields += "\n" + t(lang, "duel_battle_foe_shield").format(hp=battle[f"{foe}_shield"])
 
     frozen_note = ""
     if battle.get(f"{me}_frozen"):
-        frozen_note = "\n❄️ <b>Ты заморожен! Следующий ход пропущен.</b>"
+        frozen_note = "\n" + t(lang, "duel_battle_you_frozen_note")
     if battle.get(f"{foe}_frozen"):
-        frozen_note += f"\n❄️ <b>{foe_name} заморожен!</b>"
+        frozen_note += "\n" + t(lang, "duel_battle_foe_frozen_note").format(name=foe_name)
 
     log_lines = battle.get("log", [])
     log_block = ""
     if log_lines:
-        log_block = "\n\n<blockquote>" + "\n".join(log_lines[-4:]) + "</blockquote>"
+        rendered = [_render_log_entry(battle, e, lang) for e in log_lines[-4:]]
+        log_block = "\n\n<blockquote>" + "\n".join(rendered) + "</blockquote>"
 
     if battle.get("finished"):
         winner = battle.get("winner_uid")
         reward = battle.get("reward", 0)
         loser_title = battle.get("loser_title", "")
         if winner is None:
-            result_line = "⚔️ <b>Ничья!</b>"
+            result_line = t(lang, "duel_battle_draw")
             reward_line = ""
         elif winner == uid:
-            result_line = '<tg-emoji emoji-id="5413566144986503832">❤️</tg-emoji> <b>Ты победил!</b>'
+            result_line = '<tg-emoji emoji-id="5413566144986503832">❤️</tg-emoji> ' + t(lang, "duel_battle_you_won")
             if reward:
-                reward_line = f'\n\n<tg-emoji emoji-id="5397916757333654639">❤️</tg-emoji> <b>+{_fmt(reward)} <tg-emoji emoji-id="5199552030615558774">❤️</tg-emoji></b> <i>(титул врага: {loser_title})</i>'
+                reward_line = t(lang, "duel_battle_reward_line").format(amount=_fmt(reward, lang), title=loser_title)
             else:
                 reward_line = ""
         else:
-            result_line = "💀 <b>Ты проиграл!</b>"
+            result_line = t(lang, "duel_battle_you_lost")
             reward_line = ""
         return (
-            f'⚔️ <b>БОЙ ЗАВЕРШЁН</b>\n'
+            f'⚔️ <b>{t(lang, "duel_battle_finished_title")}</b>\n'
             f'━━━━━━━━━━━━━━━━━━━━\n\n'
             f'{result_line}{reward_line}\n\n'
             f'<blockquote>'
@@ -2418,7 +2460,7 @@ def battle_text(battle: dict, uid: int) -> str:
         )
 
     return (
-        f'⚔️ <b>БОЙ</b>\n'
+        f'⚔️ <b>{t(lang, "duel_battle_title")}</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>'
         f'<tg-emoji emoji-id="5452085950022707790">❤️</tg-emoji> <b>{my_name}</b>\n'
@@ -2429,13 +2471,13 @@ def battle_text(battle: dict, uid: int) -> str:
         f'<tg-emoji emoji-id="5337080053119336309">❤️</tg-emoji> {foe_bar}'
         f'</blockquote>'
         f'{log_block}\n\n'
-        f'<i>Выбери навык для атаки:</i>'
+        f'<i>{t(lang, "duel_battle_choose_skill")}</i>'
     )
 
 
 # ── Боевая клавиатура (навыки с кулдаунами, таймер обновляется) ──────────
 
-def battle_keyboard(battle: dict, uid: int) -> InlineKeyboardMarkup:
+def battle_keyboard(battle: dict, uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
     me  = _get_player_prefix(battle, uid)
     now = int(time.time())
     cooldowns = battle.get(f"{me}_cooldowns", {})
@@ -2447,10 +2489,10 @@ def battle_keyboard(battle: dict, uid: int) -> InlineKeyboardMarkup:
 
     if battle.get("finished"):
         builder.row(InlineKeyboardButton(
-            text="🔄 Новый поиск", callback_data="duel_search"
+            text=t(lang, "duel_battle_btn_new_search"), callback_data="duel_search"
         ))
         builder.row(InlineKeyboardButton(
-            text="🏠 В меню дуэлей", callback_data="duel_main"
+            text=t(lang, "duel_battle_btn_to_menu"), callback_data="duel_main"
         ))
         return builder.as_markup()
 
@@ -2463,8 +2505,10 @@ def battle_keyboard(battle: dict, uid: int) -> InlineKeyboardMarkup:
         left = ready_at - now
         eid = sk.get("emoji_id")
         # Если есть кастомный эмодзи — убираем обычный из текста
-        name_part = sk["name"] if eid else f"{sk['emoji']} {sk['name']}"
-        btn_text = f"{name_part} ⏳{left}с" if left > 0 else name_part
+        sk_name = _name(sk, lang)
+        name_part = sk_name if eid else f"{sk['emoji']} {sk_name}"
+        sec_short = t(lang, "duel_battle_sec_short")
+        btn_text = f"{name_part} ⏳{left}{sec_short}" if left > 0 else name_part
         btn_kw = dict(text=btn_text, callback_data=f"duel_skill:{skill_key}")
         if eid:
             btn_kw["icon_custom_emoji_id"] = eid
@@ -2476,7 +2520,7 @@ def battle_keyboard(battle: dict, uid: int) -> InlineKeyboardMarkup:
         builder.row(*pair)
 
     builder.row(InlineKeyboardButton(
-        text="🏳️ Сдаться", callback_data="duel_surrender"
+        text=t(lang, "duel_battle_btn_surrender"), callback_data="duel_surrender"
     ))
     return builder.as_markup()
 
@@ -2515,6 +2559,28 @@ _DUEL_SHOP_QUOTES = [
     "✦ Инвестируй в себя. Или хотя бы в свои боевые навыки.\n\n— <i>Финансовый консультант арены</i>",
 ]
 
+_DUEL_SHOP_QUOTES_EN = [
+    "✦ A great warrior wins not through strength, but through coins well spent.\n\n— <i>Sage of the Duel Market</i>",
+    "✦ Your enemy browsed this shop too. The question is who bought faster.\n\n— <i>Anonymous Champion</i>",
+    "✦ Why grind a skill for years when you can just buy it here?\n\n— <i>Arena Philosopher</i>",
+    "✦ Money is just a resource. Invest in victories, not regrets.\n\n— <i>Treasurer of the Battle Guild</i>",
+    "✦ It's not the chosen who win — it's the well-equipped.\n\n— <i>Tournament Chronicles, Vol. III</i>",
+    "✦ Your opponent also thought about saving up. Now he decorates the losers' table.\n\n— <i>Witness of Duel №47</i>",
+    "✦ Precision comes with practice. Practice comes with a good skill.\n\n— <i>Blade Master</i>",
+    "✦ Magic has no patience for the stingy. Only for those who pay.\n\n— <i>Archivist of Martial Arts</i>",
+    "✦ Freeze your enemy before he unfreezes his own wallet.\n\n— <i>Ice Strategist</i>",
+    "✦ It doesn't matter how you look before the fight. What matters is whether your opponent still stands after.\n\n— <i>Nameless Gladiator</i>",
+    "✦ Darkness is the best ally. Especially once it's already paid for.\n\n— <i>Shadow Skill Merchant</i>",
+    "✦ Lightning strikes the same target twice — if you buy the right skill.\n\n— <i>Thunder Advisor</i>",
+    "✦ Willpower is admirable. Skill power is more effective.\n\n— <i>Arena Pragmatist</i>",
+    "✦ Every skill here has been battle-tested. Well, almost every one.\n\n— <i>Chief Tester (fired)</i>",
+    "✦ Invest in yourself. Or at least in your combat skills.\n\n— <i>Arena Financial Advisor</i>",
+]
+
+
+def _shop_quotes(lang: str = "ru") -> list:
+    return _DUEL_SHOP_QUOTES_EN if lang == "en" else _DUEL_SHOP_QUOTES
+
 
 def duel_skills_shop_text(user_data: dict, page: int = 0, lang: str = "ru") -> str:
     items, total = _skill_page_items(page)
@@ -2522,7 +2588,7 @@ def duel_skills_shop_text(user_data: dict, page: int = 0, lang: str = "ru") -> s
     equipped_skills = get_equipped_skills(user_data)
     balance = user_data.get("balance", 0)
     eq_count = len(equipped_skills)
-    quote = _random.choice(_DUEL_SHOP_QUOTES)
+    quote = _random.choice(_shop_quotes(lang))
     return (
         f'<tg-emoji emoji-id="{EMOJI_SKILLS}">✨</tg-emoji> <b>{t(lang, "duel_shop_title")}</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━\n'
@@ -2549,14 +2615,14 @@ def duel_skills_shop_keyboard(user_data: dict, page: int = 0, lang: str = "ru") 
 
         if is_equip:
             kw = dict(
-                text=sk["name"],
+                text=_name(sk, lang),
                 callback_data=f"duel_skill_card:{sk_key}:{page}",
                 style="primary",
                 icon_custom_emoji_id=eid or "5206607081334906820",
             )
         elif is_owned:
             kw = dict(
-                text=sk["name"],
+                text=_name(sk, lang),
                 callback_data=f"duel_skill_card:{sk_key}:{page}",
                 style="success",
             )
@@ -2564,14 +2630,14 @@ def duel_skills_shop_keyboard(user_data: dict, page: int = 0, lang: str = "ru") 
                 kw["icon_custom_emoji_id"] = eid
         elif balance >= sk["price"]:
             kw = dict(
-                text=f"{sk['name']} | {_fmt(sk['price'])}",
+                text=f"{_name(sk, lang)} | {_fmt(sk['price'])}",
                 callback_data=f"duel_skill_card:{sk_key}:{page}",
             )
             if eid:
                 kw["icon_custom_emoji_id"] = eid
         else:
             kw = dict(
-                text=f"{sk['name']} | {_fmt(sk['price'])}",
+                text=f"{_name(sk, lang)} | {_fmt(sk['price'])}",
                 callback_data=f"duel_skill_card:{sk_key}:{page}",
             )
             if eid:
@@ -3008,7 +3074,7 @@ def duel_charstats_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
 # ── Экран навыков (обзор + ссылка в магазин) ─────────────────
 
 def duel_skills_text(user_data: dict = None, lang: str = "ru") -> str:
-    quote = _random.choice(_DUEL_SHOP_QUOTES)
+    quote = _random.choice(_shop_quotes(lang))
 
     # Формируем строки слотов экипировки (всегда 5 слотов)
     equipped = get_equipped_skills(user_data) if user_data else []
