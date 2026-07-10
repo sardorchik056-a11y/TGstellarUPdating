@@ -267,6 +267,7 @@ from duel import (
     get_equipped_skills,
     equip_skill,
     unequip_skill,
+    _name as duel_skill_name,
     owned_level, equipped_level,
     apply_gear_purchase, apply_gear_equip, apply_gear_unequip,
     MAX_EQUIPPED_SKILLS,
@@ -731,11 +732,12 @@ async def handle_pending_text_input(message: Message):
             return
         # Уведомляем цель в ЛС
         try:
+            _target_lang = get_lang(target)
             await bot.send_message(
                 target["id"],
-                challenge_invite_text(u),
+                challenge_invite_text(u, _target_lang),
                 parse_mode="HTML",
-                reply_markup=challenge_invite_keyboard(uid),
+                reply_markup=challenge_invite_keyboard(uid, _target_lang),
             )
         except Exception:
             await message.reply(
@@ -2912,11 +2914,12 @@ async def _handle_duel_cmd(message: Message):
                 await message.reply(cmd_invite_limit_text(target_name, secs, lang=lang), parse_mode="HTML")
                 return
             try:
+                _target_lang2 = get_lang(target)
                 await bot.send_message(
                     target["id"],
-                    challenge_invite_text(u),
+                    challenge_invite_text(u, _target_lang2),
                     parse_mode="HTML",
-                    reply_markup=challenge_invite_keyboard(uid),
+                    reply_markup=challenge_invite_keyboard(uid, _target_lang2),
                 )
             except Exception:
                 await message.reply(cmd_invite_blocked_text(target_name, lang), parse_mode="HTML")
@@ -5608,37 +5611,37 @@ async def handle_callback(call: CallbackQuery):
             sk_key   = parts[1]
             from_page = int(parts[2]) if len(parts) > 2 else 0
             await call.answer()
-            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data, from_page))
+            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data, from_page, lang))
             return
 
         # ===== ДУЭЛИ: экипировать навык в бой =====
         if cd.startswith("duel_skill_equip:"):
             sk_key = cd.split(":", 1)[1]
-            ok, msg = equip_skill(sk_key, data)
+            ok, msg = equip_skill(sk_key, data, lang)
             await call.answer(msg, show_alert=not ok)
             if ok:
                 _ach_newly = check_achievements(data)
                 save_user(user.id, data)
                 await _notify_ach(user.id, data, _ach_newly)
             # Возвращаемся на карточку
-            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data))
+            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data, lang=lang))
             return
 
         # ===== ДУЭЛИ: снять навык из боя =====
         if cd.startswith("duel_skill_unequip:"):
             sk_key = cd.split(":", 1)[1]
-            ok, msg = unequip_skill(sk_key, data)
+            ok, msg = unequip_skill(sk_key, data, lang)
             await call.answer(msg, show_alert=not ok)
             if ok:
                 _ach_newly = check_achievements(data)
                 save_user(user.id, data)
                 await _notify_ach(user.id, data, _ach_newly)
-            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data))
+            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data, lang=lang))
             return
 
         # ===== ДУЭЛИ: все слоты заняты =====
         if cd == "duel_skill_slots_full":
-            await call.answer(f"⚠️ Все {MAX_EQUIPPED_SKILLS} слотов в бою заняты! Сначала снимите один навык.", show_alert=True)
+            await call.answer(t(lang, "duel_skill_slots_full_alert").format(max=MAX_EQUIPPED_SKILLS), show_alert=True)
             return
 
         # ===== ДУЭЛИ: магазин навыков =====
@@ -5659,39 +5662,39 @@ async def handle_callback(call: CallbackQuery):
             sk_key = cd.split(":", 1)[1]
             sk = SKILLS.get(sk_key)
             if not sk:
-                await call.answer("Неизвестный навык.", show_alert=True)
+                await call.answer(t(lang, "duel_skill_unknown"), show_alert=True)
                 return
             price = sk["price"]
             balance = data.get("balance", 0)
             if balance < price:
-                _no_money_msg = f"Недостаточно монет! Нужно: {_fmt_d(price)} | У вас: {_fmt_d(balance)}"
+                _no_money_msg = t(lang, "duel_skill_not_enough").format(need=_fmt_d(price), have=_fmt_d(balance))
                 await call.answer(_no_money_msg, show_alert=True)
                 return
             owned_sk = data.setdefault("duel_owned_skills", [])
             if sk_key in owned_sk:
-                await call.answer("Навык уже куплен!", show_alert=True)
-                await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data))
+                await call.answer(t(lang, "duel_skill_already_bought"), show_alert=True)
+                await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data, lang=lang))
                 return
             data["balance"] -= price
             owned_sk.append(sk_key)
             _ach_newly = check_achievements(data)
             save_user(user.id, data)
             await _notify_ach(user.id, data, _ach_newly)
-            await call.answer(f"✅ Куплен навык: {sk['name']}!", show_alert=True)
+            await call.answer(t(lang, "duel_skill_bought_alert").format(name=duel_skill_name(sk, lang)), show_alert=True)
             # Открываем карточку навыка — теперь можно экипировать
-            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data))
+            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data, lang=lang))
             return
 
         # ===== ДУЭЛИ: навык уже куплен (заглушка) =====
         if cd.startswith("duel_skill_owned:"):
             sk_key = cd.split(":", 1)[1]
             await call.answer()
-            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data))
+            await edit(duel_skill_card_text(sk_key, data, lang), duel_skill_card_keyboard(sk_key, data, lang=lang))
             return
 
         # ===== ДУЭЛИ: недостаточно монет (навык) =====
         if cd == "duel_skill_nofunds":
-            await call.answer("💸 Недостаточно монет для покупки навыка!", show_alert=True)
+            await call.answer(t(lang, "duel_skill_nofunds_alert"), show_alert=True)
             return
 
         # ===== ДУЭЛИ: надеть предмет =====
@@ -5731,14 +5734,14 @@ async def handle_callback(call: CallbackQuery):
             if user.id in _active_battles:
                 await call.answer()
                 battle = _active_battles[user.id]
-                await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                await edit(battle_text(battle, user.id, lang), battle_keyboard(battle, user.id, lang))
                 _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
                 return
             if not is_player_ready(user.id, data):
                 hp_now = get_player_hp(user.id, data)
                 secs   = player_hp_regen_seconds(user.id, data)
                 await call.answer(
-                    f"HP слишком низкий ({hp_now}/100)! Восстановится через {secs} сек.",
+                    t(lang, "duel_hp_too_low_regen").format(hp=hp_now, secs=secs),
                     show_alert=True
                 )
                 return
@@ -5754,7 +5757,7 @@ async def handle_callback(call: CallbackQuery):
                 battle["p2_skills"] = get_equipped_skills(_d2) or get_owned_skills(_d2)
                 _active_battles[p1_uid] = battle
                 _active_battles[p2_uid] = battle
-                await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                await edit(battle_text(battle, user.id, lang), battle_keyboard(battle, user.id, lang))
                 _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
                 foe_msg = _battle_msgs.get(p2_uid)
                 try:
@@ -5762,16 +5765,16 @@ async def handle_callback(call: CallbackQuery):
                         await bot.edit_message_text(
                             chat_id=foe_msg[0],
                             message_id=foe_msg[1],
-                            text=battle_text(battle, p2_uid),
+                            text=battle_text(battle, p2_uid, _lang_for_uid(p2_uid)),
                             parse_mode="HTML",
-                            reply_markup=battle_keyboard(battle, p2_uid)
+                            reply_markup=battle_keyboard(battle, p2_uid, _lang_for_uid(p2_uid))
                         )
                     else:
                         sent = await bot.send_message(
                             p2_uid,
-                            battle_text(battle, p2_uid),
+                            battle_text(battle, p2_uid, _lang_for_uid(p2_uid)),
                             parse_mode="HTML",
-                            reply_markup=battle_keyboard(battle, p2_uid)
+                            reply_markup=battle_keyboard(battle, p2_uid, _lang_for_uid(p2_uid))
                         )
                         _battle_msgs[p2_uid] = (sent.chat.id, sent.message_id)
                 except Exception:
@@ -5786,14 +5789,14 @@ async def handle_callback(call: CallbackQuery):
             if user.id in _active_battles:
                 await call.answer()
                 battle = _active_battles[user.id]
-                await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                await edit(battle_text(battle, user.id, lang), battle_keyboard(battle, user.id, lang))
                 _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
                 return
             if not is_player_ready(user.id, data):
                 hp_now = get_player_hp(user.id, data)
                 secs   = player_hp_regen_seconds(user.id, data)
                 await call.answer(
-                    f"HP слишком низкий ({hp_now}/100)! Следующий тик через {secs} сек.",
+                    t(lang, "duel_hp_too_low_tick").format(hp=hp_now, secs=secs),
                     show_alert=True
                 )
                 return
@@ -5811,7 +5814,7 @@ async def handle_callback(call: CallbackQuery):
                 _active_battles[p1_uid] = battle
                 _active_battles[p2_uid] = battle
                 # Показываем боевой экран инициатору (p1) — редактируем его сообщение
-                await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                await edit(battle_text(battle, user.id, lang), battle_keyboard(battle, user.id, lang))
                 _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
                 # Соперник (p2) был в экране поиска — обновляем его сообщение если знаем
                 foe_msg = _battle_msgs.get(p2_uid)
@@ -5820,16 +5823,16 @@ async def handle_callback(call: CallbackQuery):
                         await bot.edit_message_text(
                             chat_id=foe_msg[0],
                             message_id=foe_msg[1],
-                            text=battle_text(battle, p2_uid),
+                            text=battle_text(battle, p2_uid, _lang_for_uid(p2_uid)),
                             parse_mode="HTML",
-                            reply_markup=battle_keyboard(battle, p2_uid)
+                            reply_markup=battle_keyboard(battle, p2_uid, _lang_for_uid(p2_uid))
                         )
                     else:
                         sent = await bot.send_message(
                             p2_uid,
-                            battle_text(battle, p2_uid),
+                            battle_text(battle, p2_uid, _lang_for_uid(p2_uid)),
                             parse_mode="HTML",
-                            reply_markup=battle_keyboard(battle, p2_uid)
+                            reply_markup=battle_keyboard(battle, p2_uid, _lang_for_uid(p2_uid))
                         )
                         _battle_msgs[p2_uid] = (sent.chat.id, sent.message_id)
                 except Exception:
@@ -5844,7 +5847,7 @@ async def handle_callback(call: CallbackQuery):
             await call.answer()
             if user.id in _active_battles:
                 battle = _active_battles[user.id]
-                await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+                await edit(battle_text(battle, user.id, lang), battle_keyboard(battle, user.id, lang))
                 _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
                 return
             in_q = in_queue(user.id)
@@ -5855,7 +5858,7 @@ async def handle_callback(call: CallbackQuery):
         if cd == "duel_search_cancel":
             leave_queue(user.id)
             _battle_msgs.pop(user.id, None)
-            await call.answer("Поиск отменён.")
+            await call.answer(t(lang, "duel_search_cancelled_toast"))
             await edit(duel_search_text(False, lang), duel_search_keyboard(False, lang))
             return
 
@@ -5863,10 +5866,10 @@ async def handle_callback(call: CallbackQuery):
         if cd.startswith("duel_skill:"):
             skill_key = cd.split(":", 1)[1]
             if user.id not in _active_battles:
-                await call.answer("Ты не в бою!", show_alert=True)
+                await call.answer(t(lang, "duel_battle_not_in_battle"), show_alert=True)
                 return
             battle = _active_battles[user.id]
-            battle, result = battle_use_skill(battle, user.id, skill_key)
+            battle, result = battle_use_skill(battle, user.id, skill_key, lang)
             if not result["ok"]:
                 await call.answer(result["msg"], show_alert=True)
                 return
@@ -5900,7 +5903,7 @@ async def handle_callback(call: CallbackQuery):
                 _battle_msgs.pop(foe_uid, None)
             # Обновляем message_id текущего игрока
             _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
-            await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+            await edit(battle_text(battle, user.id, lang), battle_keyboard(battle, user.id, lang))
             # Обновляем сообщение соперника
             foe_msg = _battle_msgs.get(foe_uid)
             if foe_msg:
@@ -5908,9 +5911,9 @@ async def handle_callback(call: CallbackQuery):
                     await bot.edit_message_text(
                         chat_id=foe_msg[0],
                         message_id=foe_msg[1],
-                        text=battle_text(battle, foe_uid),
+                        text=battle_text(battle, foe_uid, _lang_for_uid(foe_uid)),
                         parse_mode="HTML",
-                        reply_markup=battle_keyboard(battle, foe_uid)
+                        reply_markup=battle_keyboard(battle, foe_uid, _lang_for_uid(foe_uid))
                     )
                 except Exception:
                     pass
@@ -5920,14 +5923,15 @@ async def handle_callback(call: CallbackQuery):
         # ===== ДУЭЛИ: сдаться =====
         if cd == "duel_surrender":
             if user.id not in _active_battles:
-                await call.answer("Ты не в бою!", show_alert=True)
+                await call.answer(t(lang, "duel_battle_not_in_battle"), show_alert=True)
                 return
             battle = _active_battles[user.id]
             if not battle.get("finished"):
                 foe_uid = battle["p2_uid"] if battle["p1_uid"] == user.id else battle["p1_uid"]
+                me_prefix = "p1" if battle["p1_uid"] == user.id else "p2"
                 battle["finished"] = True
                 battle["winner_uid"] = foe_uid
-                battle["log"].append(f"🏳️ {_esc(data.get('first_name', 'Игрок'))} сдался.")
+                battle["log"].append({"kind": "surrender", "actor": me_prefix})
                 # Считаем награду ДО рендера battle_text
                 from database import get_user as _gu_sr, save_user as _su_sr
                 _d1 = _gu_sr(battle["p1_uid"]) or {}
@@ -5953,9 +5957,9 @@ async def handle_callback(call: CallbackQuery):
                         await bot.edit_message_text(
                             chat_id=foe_msg[0],
                             message_id=foe_msg[1],
-                            text=battle_text(battle, foe_uid),
+                            text=battle_text(battle, foe_uid, _lang_for_uid(foe_uid)),
                             parse_mode="HTML",
-                            reply_markup=battle_keyboard(battle, foe_uid)
+                            reply_markup=battle_keyboard(battle, foe_uid, _lang_for_uid(foe_uid))
                         )
                     except Exception:
                         pass
@@ -5963,8 +5967,8 @@ async def handle_callback(call: CallbackQuery):
                 _battle_msgs.pop(foe_uid, None)
             _active_battles.pop(user.id, None)
             _battle_msgs.pop(user.id, None)
-            await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
-            await call.answer("Ты сдался.")
+            await edit(battle_text(battle, user.id, lang), battle_keyboard(battle, user.id, lang))
+            await call.answer(t(lang, "duel_battle_you_surrendered"))
             return
 
         # ===== ДУЭЛИ: навыки =====
@@ -5977,13 +5981,13 @@ async def handle_callback(call: CallbackQuery):
         # ===== ДУЭЛИ: бросить вызов — экран ввода =====
         if cd == "duel_challenge_start":
             if user.id in _active_battles:
-                await call.answer("Ты уже в бою!", show_alert=True)
+                await call.answer(t(lang, "duel_already_in_battle_toast"), show_alert=True)
                 return
             if not is_player_ready(user.id, data):
                 hp_now = get_player_hp(user.id, data)
                 secs   = player_hp_regen_seconds(user.id, data)
                 await call.answer(
-                    f"HP слишком низкий ({hp_now}/100)! Следующий тик через {secs} сек.",
+                    t(lang, "duel_hp_too_low_tick").format(hp=hp_now, secs=secs),
                     show_alert=True
                 )
                 return
@@ -5996,7 +6000,7 @@ async def handle_callback(call: CallbackQuery):
         if cd == "duel_challenge_cancel":
             cancel_challenge(user.id)
             _challenge_input_pending.pop(user.id, None)
-            await call.answer("Вызов отменён.")
+            await call.answer(t(lang, "duel_challenge_cancelled_toast"))
             await edit(duel_main_text(data, lang), duel_main_keyboard(lang))
             return
 
@@ -6004,13 +6008,13 @@ async def handle_callback(call: CallbackQuery):
         if cd.startswith("duel_challenge_accept:"):
             challenger_uid = int(cd.split(":")[1])
             if user.id in _active_battles:
-                await call.answer("Ты уже в бою!", show_alert=True)
+                await call.answer(t(lang, "duel_already_in_battle_toast"), show_alert=True)
                 return
             if not is_player_ready(user.id, data):
                 hp_now = get_player_hp(user.id, data)
                 secs   = player_hp_regen_seconds(user.id, data)
                 await call.answer(
-                    f"HP слишком низкий ({hp_now}/100)! Сначала восстановись.",
+                    t(lang, "duel_hp_too_low_recover_first").format(hp=hp_now),
                     show_alert=True
                 )
                 return
@@ -6019,40 +6023,42 @@ async def handle_callback(call: CallbackQuery):
             # принятие в этом случае перетёрло бы его текущий активный battle-state.
             if challenger_uid in _active_battles:
                 cancel_challenge(challenger_uid)
-                await call.answer("❌ Вызывающий уже в другом бою. Вызов отменён.", show_alert=True)
+                await call.answer(t(lang, "duel_challenger_in_battle"), show_alert=True)
                 await edit(duel_main_text(data, lang), duel_main_keyboard(lang))
                 return
             from database import get_user as _gu_ch
             challenger_data = _gu_ch(challenger_uid)
             if not challenger_data:
-                await call.answer("❌ Вызывающий не найден.", show_alert=True)
+                await call.answer(t(lang, "duel_challenger_not_found"), show_alert=True)
                 return
             # Принимаем
             result = accept_challenge(user.id)
             if not result:
-                await call.answer("❌ Вызов истёк или уже не действителен.", show_alert=True)
+                await call.answer(t(lang, "duel_challenge_expired"), show_alert=True)
                 await edit(duel_main_text(data, lang), duel_main_keyboard(lang))
                 return
             # Двойная проверка под защитой лока: между предыдущей проверкой и
             # accept_challenge() вызывающий теоретически мог успеть войти в бой.
             if challenger_uid in _active_battles:
-                await call.answer("❌ Вызывающий уже в другом бою.", show_alert=True)
+                await call.answer(t(lang, "duel_challenger_in_battle_2"), show_alert=True)
                 await edit(duel_main_text(data, lang), duel_main_keyboard(lang))
                 return
             battle = start_challenge_battle(challenger_uid, challenger_data, user.id, data)
             _active_battles[challenger_uid] = battle
             _active_battles[user.id] = battle
             # Показываем бой принявшему
-            await edit(battle_text(battle, user.id), battle_keyboard(battle, user.id))
+            await edit(battle_text(battle, user.id, lang), battle_keyboard(battle, user.id, lang))
             _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
             # Уведомляем вызывающего
             try:
+                _challenger_lang = _lang_for_uid(challenger_uid)
+                _acceptor_name = _esc(data.get("first_name") or data.get("username") or t(_challenger_lang, "duel_invite_player_default"))
                 sent = await bot.send_message(
                     challenger_uid,
-                    f'✅ <b>{_esc(data.get("first_name") or data.get("username") or "Игрок")} принял вызов! Бой начался!</b>\n\n'
-                    + battle_text(battle, challenger_uid),
+                    t(_challenger_lang, "duel_accepted_battle_started").format(name=_acceptor_name)
+                    + battle_text(battle, challenger_uid, _challenger_lang),
                     parse_mode="HTML",
-                    reply_markup=battle_keyboard(battle, challenger_uid),
+                    reply_markup=battle_keyboard(battle, challenger_uid, _challenger_lang),
                 )
                 _battle_msgs[challenger_uid] = (sent.chat.id, sent.message_id)
             except Exception:
@@ -6063,14 +6069,15 @@ async def handle_callback(call: CallbackQuery):
         if cd.startswith("duel_challenge_decline:"):
             challenger_uid = int(cd.split(":")[1])
             decline_challenge(user.id)
-            await call.answer("Вызов отклонён.")
+            await call.answer(t(lang, "duel_challenge_declined_toast"))
             await edit(duel_main_text(data, lang), duel_main_keyboard(lang))
             # Уведомляем вызывающего
             try:
-                target_name = _esc(data.get("first_name") or data.get("username") or "Игрок")
+                _decline_lang = _lang_for_uid(challenger_uid)
+                target_name = _esc(data.get("first_name") or data.get("username") or t(_decline_lang, "duel_invite_player_default"))
                 await bot.send_message(
                     challenger_uid,
-                    f'❌ <b>{target_name} отклонил твой вызов на дуэль.</b>',
+                    t(_decline_lang, "duel_challenge_declined_notify").format(name=target_name),
                     parse_mode="HTML",
                 )
             except Exception:
@@ -6896,6 +6903,16 @@ async def _poison_loop():
 
 
 
+def _lang_for_uid(uid: int) -> str:
+    """Возвращает язык интерфейса конкретного игрока (для рендера боя другому игроку)."""
+    try:
+        from database import get_user as _gu_lang
+        d = _gu_lang(uid) or {}
+        return get_lang(d)
+    except Exception:
+        return "ru"
+
+
 async def _duel_timer_loop():
     """Каждые 3 секунды обновляет боевые экраны активных дуэлей,
     чтобы кнопки отображали актуальный таймер кулдауна."""
@@ -6925,9 +6942,9 @@ async def _duel_timer_loop():
                     await bot.edit_message_text(
                         chat_id=msg_info[0],
                         message_id=msg_info[1],
-                        text=battle_text(battle, uid),
+                        text=battle_text(battle, uid, _lang_for_uid(uid)),
                         parse_mode="HTML",
-                        reply_markup=battle_keyboard(battle, uid),
+                        reply_markup=battle_keyboard(battle, uid, _lang_for_uid(uid)),
                     )
                 except Exception:
                     pass
