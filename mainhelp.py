@@ -869,7 +869,7 @@ async def cmd_add_balance(message: Message):
 
     # Поиск пользователя в БД
     from database import aio_get_user_by_id_or_username, aio_save_user as _save
-    found = await get_user_by_id_or_username(target_raw)
+    found = await aio_get_user_by_id_or_username(target_raw)
 
     if not found:
         await message.reply(
@@ -913,7 +913,7 @@ async def cmd_getallart(message: Message):
     if len(parts) >= 2:
         # /getallart @username  или  /getallart 123456789
         target_raw = parts[1].lstrip("@")
-        data = await get_user_by_id_or_username(target_raw)
+        data = await aio_get_user_by_id_or_username(target_raw)
         if not data:
             await message.reply(
                 f"❌ Пользователь <code>{target_raw}</code> не найден в базе.",
@@ -924,7 +924,7 @@ async def cmd_getallart(message: Message):
     else:
         # без аргумента — выдаём себе
         uid  = message.from_user.id
-        data = await get_user(uid)
+        data = await aio_get_user(uid)
         if not data:
             await message.reply(
                 "❌ Пользователь не найден в БД. Напиши /start сначала.",
@@ -982,7 +982,7 @@ async def cmd_updamage(message: Message):
 
     target_raw = parts[1].lstrip("@")
     from database import aio_get_user_by_id_or_username, aio_save_user as _save
-    found = await get_user_by_id_or_username(target_raw)
+    found = await aio_get_user_by_id_or_username(target_raw)
 
     if not found:
         await message.reply(
@@ -1017,14 +1017,14 @@ async def cmd_checkmine(message: Message):
     # Определяем целевого пользователя: реплай > @username/id аргумент > себя
     if message.reply_to_message and message.reply_to_message.from_user:
         uid  = message.reply_to_message.from_user.id
-        data = await get_user(uid)
+        data = await aio_get_user(uid)
     elif len(parts) >= 2:
         target_raw = parts[1].lstrip("@")
-        data = await get_user_by_id_or_username(target_raw)
+        data = await aio_get_user_by_id_or_username(target_raw)
         uid  = data["id"] if data else None
     else:
         uid  = message.from_user.id
-        data = await get_user(uid)
+        data = await aio_get_user(uid)
 
     if not data:
         await message.reply(
@@ -1087,10 +1087,10 @@ async def cmd_deletebd(message: Message):
     # Определяем целевого пользователя: реплай > @username/id аргумент
     if message.reply_to_message and message.reply_to_message.from_user:
         uid  = message.reply_to_message.from_user.id
-        data = await get_user(uid)
+        data = await aio_get_user(uid)
     elif len(parts) >= 2:
         target_raw = parts[1].lstrip("@")
-        data = await get_user_by_id_or_username(target_raw)
+        data = await aio_get_user_by_id_or_username(target_raw)
         uid  = data["id"] if data else None
     else:
         await message.reply(
@@ -1196,7 +1196,7 @@ async def cmd_giveart(message: Message):
     # ответом (reply) на игрока: /giveart Название артефакта
     if message.reply_to_message and message.reply_to_message.from_user:
         uid  = message.reply_to_message.from_user.id
-        data = await get_user(uid)
+        data = await aio_get_user(uid)
         rest = text.split(maxsplit=1)
         name_query = rest[1] if len(rest) >= 2 else ""
     else:
@@ -1210,7 +1210,7 @@ async def cmd_giveart(message: Message):
             )
             return
         target_raw = parts[1].lstrip("@")
-        data = await get_user_by_id_or_username(target_raw)
+        data = await aio_get_user_by_id_or_username(target_raw)
         uid  = data["id"] if data else None
         name_query = parts[2]
 
@@ -1330,7 +1330,7 @@ async def cmd_getstatus(message: Message):
     tier       = "premium" if tier_arg in ("pr", "premium") else "vip"
 
     from database import aio_get_user_by_id_or_username, aio_save_user as _save
-    found = await get_user_by_id_or_username(target_raw)
+    found = await aio_get_user_by_id_or_username(target_raw)
 
     if not found:
         await message.reply(
@@ -2274,7 +2274,7 @@ async def cmd_gift(message: Message):
             return
 
         target_uid = message.reply_to_message.from_user.id
-        recipient_data = await get_user(target_uid)
+        recipient_data = await aio_get_user(target_uid)
 
     if not recipient_data:
         await message.reply(
@@ -3087,7 +3087,7 @@ async def cmd_transfer_item(message: Message):
             await message.reply(hint, parse_mode="HTML")
             return
         target_uid     = message.reply_to_message.from_user.id
-        recipient_data = await get_user(target_uid)
+        recipient_data = await aio_get_user(target_uid)
 
     if not recipient_data:
         await message.reply(
@@ -3113,7 +3113,7 @@ async def cmd_transfer_item(message: Message):
     async with first_lock:
         async with second_lock:
             sender_data    = await aio_get_or_create_user(message.from_user)
-            recipient_data = await get_user(recipient_data["id"])
+            recipient_data = await aio_get_user(recipient_data["id"])
 
             ok, sender_msg, recip_msg = transfer_item_by_slot_id(
                 sender_data, recipient_data, slot_id, qty, lang
@@ -6145,7 +6145,7 @@ async def handle_successful_payment(message: Message):
         # исключения, без лога, без сообщения игроку. Именно так выглядит
         # "деньги списаны, а бот молчит". Убираю лок, выдаём напрямую —
         # ровно как /giveart.
-        data = await get_user(uid)
+        data = await aio_get_user(uid)
         if not data:
             # Пользователь не найден в БД — создаём и пробуем снова
             data = await aio_get_or_create_user(message.from_user)
@@ -6305,7 +6305,7 @@ async def handle_successful_payment(message: Message):
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
-            data = await get_user(uid)
+            data = await aio_get_user(uid)
             if not data:
                 data = await aio_get_or_create_user(message.from_user)
             _lang = data.get("lang", "ru")
@@ -6355,7 +6355,7 @@ async def handle_successful_payment(message: Message):
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
-            data = await get_user(uid)
+            data = await aio_get_user(uid)
             if not data:
                 return
             ok, _ = grant_premium_pickaxe(data, pick_key)
@@ -6414,7 +6414,7 @@ async def handle_successful_payment(message: Message):
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
-            data = await get_user(uid)
+            data = await aio_get_user(uid)
             if not data:
                 return
             _lang = data.get("lang", "ru")
@@ -6474,7 +6474,7 @@ async def handle_successful_payment(message: Message):
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
-            data = await get_user(uid)
+            data = await aio_get_user(uid)
             if not data:
                 return
             _lang = data.get("lang", "ru")
@@ -6541,7 +6541,7 @@ async def handle_successful_payment(message: Message):
         uid  = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
-            data = await get_user(uid)
+            data = await aio_get_user(uid)
             if not data:
                 data = await aio_get_or_create_user(message.from_user)
 
@@ -6600,7 +6600,7 @@ async def handle_successful_payment(message: Message):
         uid = message.from_user.id
         lock = await _get_user_lock(uid)
         async with lock:
-            data = await get_user(uid)
+            data = await aio_get_user(uid)
             if not data:
                 return
             _lang = data.get("lang", "ru")
@@ -7022,7 +7022,7 @@ async def run_bot():
 
     # ── Миграция: добавляем поля питомцев для старых пользователей ──
     from database import aio_get_all_users, aio_save_user as _save_mig
-    for _u in await get_all_users():
+    for _u in await aio_get_all_users():
         _changed = False
         if "owned_pets" not in _u:
             _u["owned_pets"] = []
