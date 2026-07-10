@@ -487,6 +487,22 @@ async def aio_get_all_users() -> list[dict]:
     return await asyncio.to_thread(get_all_users)
 
 
+async def aio_transfer_coins(sender_uid: int, recipient_uid: int, amount: int,
+                              daily_limit: int | None = None, gift_window: int = 86400,
+                              now_ts: int | None = None) -> dict:
+    return await asyncio.to_thread(
+        transfer_coins, sender_uid, recipient_uid, amount, daily_limit, gift_window, now_ts
+    )
+
+
+async def aio_change_balance(uid: int, delta: int, min_balance: int = 0) -> int | None:
+    return await asyncio.to_thread(change_balance, uid, delta, min_balance)
+
+
+async def aio_load_raw(uid: int) -> dict | None:
+    return await asyncio.to_thread(_load_raw, uid)
+
+
 # ---------- Вспомогательные функции профиля ----------
 
 def days_on_project(joined_str: str) -> int:
