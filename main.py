@@ -11,15 +11,20 @@
 import asyncio
 
 from aiogram import F
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery, Update, ChatMemberUpdated
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from mainhelp import bot, dp, run_bot, ADMIN_IDS
 
-# Если что-то новое понадобится, обычно достаточно из mainhelp импортировать
-# нужные функции/данные, например:
-# from mainhelp import ADMIN_IDS, _get_user_lock
-# from database import get_user, save_user
+# Готовые хелперы из mainhelp.py — НЕ трогаем сам mainhelp.py, просто
+# переиспользуем то, что там уже есть, чтобы не дублировать логику:
+#  _esc          — экранирование HTML в именах игроков
+#  _parse_amount — парсер сумм с суффиксами (50000 / 50к / 1.5кк и т.д.),
+#                  тот же самый, что использует /addalldiamond и /gift
+from mainhelp import _esc, _parse_amount
 
 # ── Игра "Общий сундук" / ивент "Щедрый пират" — вся логика, тексты
 # и реестр чатов вынесены в case.py, здесь только хендлеры команд/кнопок. ──
@@ -88,25 +93,267 @@ async def _on_bot_membership_changed(update: ChatMemberUpdated):
 # ══════════════════════════════════════════════════════════════════════
 #  ИГРА "ОБЩИЙ СУНДУК" / ИВЕНТ "ЩЕДРЫЙ ПИРАТ"
 #  (/startcase, /stopcase, /case, кнопка "Вложить")
+#
+#  /startcase теперь — не мгновенный запуск, а маленький мастер для админа:
+#    1) выбрать тип приза — 💰 монеты / 💎 артефакт / 👑 статус
+#    2а) если "монеты"        — сразу стартуем с суммой вклада по умолчанию
+#         (CASE_DEPOSIT из case.py), спрашивать больше нечего;
+#    2б) если "артефакт"       — выбрать конкретный артефакт из списка;
+#    2в) если "статус"         — выбрать VIP или Premium;
+#    3) для артефакта/статуса — админ ЕЩЁ вводит текстом сумму вклада
+#       (сколько монет стоит один клик "Вложить"), т.к. для этих призов
+#       нет растущего банка — сумма влияет только на цену входа.
+#  Мастер живёт в aiogram FSM (per-admin состояние), шаги можно отменить
+#  кнопкой "Отмена" на любом этапе.
 # ══════════════════════════════════════════════════════════════════════
 
+class CaseAdminSetup(StatesGroup):
+    choosing_type     = State()
+    choosing_artifact = State()
+    choosing_status   = State()
+    entering_deposit  = State()
+
+
+_CASE_ADMIN_CANCEL_CB = "city_case_admin_cancel"
+
+
+def _case_prize_type_keyboard():
+    b = InlineKeyboardBuilder()
+    b.button(text="💰 Монеты", callback_data="city_case_admin_type:coins")
+    b.button(text="💎 Артефакт", callback_data="city_case_admin_type:artifact")
+    b.button(text="👑 Статус", callback_data="city_case_admin_type:status")
+    b.button(text="❌ Отмена", callback_data=_CASE_ADMIN_CANCEL_CB)
+    b.adjust(1)
+    return b.as_markup()
+
+
+def _case_artifact_choice_keyboard():
+    from shop import _ARTIFACT_POOL
+    b = InlineKeyboardBuilder()
+    for a in _ARTIFACT_POOL:
+        b.button(
+            text=f'{a["name"]} · ×{a["multiplier"]}',
+            callback_data=f'city_case_admin_art:{a["key"]}',
+        )
+    b.button(text="❌ Отмена", callback_data=_CASE_ADMIN_CANCEL_CB)
+    b.adjust(1)
+    return b.as_markup()
+
+
+def _case_status_choice_keyboard():
+    b = InlineKeyboardBuilder()
+    b.button(text="👑 VIP · 30 дней", callback_data="city_case_admin_status:vip")
+    b.button(text="⭐ Premium · 30 дней", callback_data="city_case_admin_status:premium")
+    b.button(text="❌ Отмена", callback_data=_CASE_ADMIN_CANCEL_CB)
+    b.adjust(1)
+    return b.as_markup()
+
+
 @dp.message(Command("startcase"))
-async def cmd_startcase(message: Message):
+async def cmd_startcase(message: Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         return  # тихо игнорируем, как и остальные админ-команды в проекте
 
     chat_id = message.chat.id
     set_chat_type(chat_id, message.chat.type)
 
-    # Сундук один на весь бот — команда открывает его и рассылает анонс
-    # сразу во все известные чаты, а не только в текущий. Ивент НЕ стартует
-    # сам по себе при запуске бота — только по этой команде.
-    started = await broadcast_event_start(bot)
-    if not started:
+    if get_case_state()["running"]:
+        await message.reply("⚠️ <b>Ивент уже запущен.</b>", parse_mode="HTML")
+        return
+
+    await state.clear()
+    await state.set_state(CaseAdminSetup.choosing_type)
+    await message.reply(
+        "🏴‍☠️ <b>Настройка ивента «Щедрый пират»</b>\n"
+        "<blockquote>Выбери, каким призом наградить победителя — того, кто "
+        "сделает последний вклад перед закрытием сундука.</blockquote>",
+        parse_mode="HTML",
+        reply_markup=_case_prize_type_keyboard(),
+    )
+
+
+@dp.callback_query(F.data.startswith("city_case_admin_type:"), CaseAdminSetup.choosing_type)
+async def cb_case_admin_type(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        await call.answer()
+        return
+
+    if get_case_state()["running"]:
+        await call.answer("Ивент уже запущен.", show_alert=True)
+        await state.clear()
+        return
+
+    prize_type = call.data.split(":", 1)[1]
+
+    if prize_type == "coins":
+        # Для монет ничего дополнительно спрашивать не нужно — сумма
+        # вклада берётся по умолчанию (CASE_DEPOSIT), банк растёт как раньше.
+        await state.clear()
+        set_chat_type(call.message.chat.id, call.message.chat.type)
+        started = await broadcast_event_start(bot, deposit=CASE_DEPOSIT, prize_type="coins")
+        if started:
+            await call.message.edit_text(
+                f'✅ <b>Ивент запущен!</b>\n'
+                f'💰 Приз: монеты (банк растёт с каждым вкладом)\n'
+                f'Вклад: <b>{format_amount(CASE_DEPOSIT)}</b>',
+                parse_mode="HTML",
+            )
+        else:
+            await call.message.edit_text("⚠️ <b>Ивент уже запущен.</b>", parse_mode="HTML")
+        await call.answer()
+        return
+
+    if prize_type == "artifact":
+        await state.update_data(prize_type="artifact")
+        await state.set_state(CaseAdminSetup.choosing_artifact)
+        await call.message.edit_text(
+            "💎 <b>Выбери артефакт-приз:</b>",
+            parse_mode="HTML",
+            reply_markup=_case_artifact_choice_keyboard(),
+        )
+        await call.answer()
+        return
+
+    if prize_type == "status":
+        await state.update_data(prize_type="status")
+        await state.set_state(CaseAdminSetup.choosing_status)
+        await call.message.edit_text(
+            "👑 <b>Выбери статус-приз:</b>",
+            parse_mode="HTML",
+            reply_markup=_case_status_choice_keyboard(),
+        )
+        await call.answer()
+        return
+
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("city_case_admin_art:"), CaseAdminSetup.choosing_artifact)
+async def cb_case_admin_artifact(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        await call.answer()
+        return
+
+    from shop import _ARTIFACT_POOL
+    key   = call.data.split(":", 1)[1]
+    found = next((a for a in _ARTIFACT_POOL if a["key"] == key), None)
+    if not found:
+        await call.answer("❌ Артефакт не найден.", show_alert=True)
+        return
+
+    await state.update_data(
+        artifact_key=found["key"],
+        artifact_name=found["name"],
+        artifact_multiplier=found["multiplier"],
+    )
+    await state.set_state(CaseAdminSetup.entering_deposit)
+    await call.message.edit_text(
+        f'💎 Приз: <b>{_esc(found["name"])}</b> (×{found["multiplier"]})\n\n'
+        f'Теперь пришли сумму вклада (сколько будет стоить один клик '
+        f'"Вложить") — например <code>50000</code> или <code>50к</code>.',
+        parse_mode="HTML",
+    )
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("city_case_admin_status:"), CaseAdminSetup.choosing_status)
+async def cb_case_admin_status(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        await call.answer()
+        return
+
+    tier  = call.data.split(":", 1)[1]  # "vip" | "premium"
+    label = "VIP" if tier == "vip" else "Premium"
+
+    await state.update_data(status_tier=tier)
+    await state.set_state(CaseAdminSetup.entering_deposit)
+    await call.message.edit_text(
+        f'👑 Приз: статус <b>{label}</b> (30 дней)\n\n'
+        f'Теперь пришли сумму вклада (сколько будет стоить один клик '
+        f'"Вложить") — например <code>50000</code> или <code>50к</code>.',
+        parse_mode="HTML",
+    )
+    await call.answer()
+
+
+@dp.callback_query(F.data == _CASE_ADMIN_CANCEL_CB)
+async def cb_case_admin_cancel(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        await call.answer()
+        return
+    await state.clear()
+    await call.message.edit_text("❌ Настройка ивента отменена.")
+    await call.answer()
+
+
+# Ловит клики по кнопкам мастера, когда FSM-состояние админа уже не
+# совпадает с шагом кнопки (например, он отменил мастер или запустил
+# /startcase заново, а на экране осталась старая клавиатура) — просто
+# вежливо просим начать заново, а не оставляем кнопку "зависшей".
+# ВАЖНО: регистрируется ПОСЛЕДНИМ среди city_case_admin_*-хендлеров,
+# чтобы не перехватывать клики, которые уже обработаны выше.
+@dp.callback_query(F.data.startswith("city_case_admin_"))
+async def cb_case_admin_stale(call: CallbackQuery):
+    await call.answer("⌛️ Эта настройка устарела, начни заново: /startcase", show_alert=True)
+
+
+@dp.message(StateFilter(CaseAdminSetup.entering_deposit))
+async def msg_case_admin_deposit(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    amount = _parse_amount((message.text or "").strip())
+    if amount is None or amount <= 0:
         await message.reply(
-            "⚠️ <b>Ивент уже запущен.</b>",
+            "❌ Не удалось распознать сумму. Пришли число, например "
+            "<code>50000</code> или <code>50к</code>.",
             parse_mode="HTML",
         )
+        return
+
+    if get_case_state()["running"]:
+        await message.reply("⚠️ <b>Ивент уже запущен.</b>", parse_mode="HTML")
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    await state.clear()
+    set_chat_type(message.chat.id, message.chat.type)
+
+    prize_type = data.get("prize_type")
+    if prize_type == "artifact":
+        started = await broadcast_event_start(
+            bot,
+            deposit=amount,
+            prize_type="artifact",
+            prize_artifact={
+                "key":        data.get("artifact_key"),
+                "name":       data.get("artifact_name"),
+                "multiplier": data.get("artifact_multiplier"),
+            },
+        )
+        prize_line = f'💎 Приз: {data.get("artifact_name")} (×{data.get("artifact_multiplier")})'
+    elif prize_type == "status":
+        tier  = data.get("status_tier")
+        label = "VIP" if tier == "vip" else "Premium"
+        started = await broadcast_event_start(
+            bot, deposit=amount, prize_type="status", prize_status_tier=tier,
+        )
+        prize_line = f'👑 Приз: статус {label} (30 дней)'
+    else:
+        # Сюда попасть не должны (для "coins" этот шаг вообще не запускается),
+        # но на всякий случай — не молчим, а сообщаем и откатываемся.
+        await message.reply("❌ Что-то пошло не так, начни заново: /startcase", parse_mode="HTML")
+        return
+
+    if not started:
+        await message.reply("⚠️ <b>Ивент уже запущен.</b>", parse_mode="HTML")
+        return
+
+    await message.reply(
+        f'✅ <b>Ивент запущен!</b>\n{prize_line}\n💰 Вклад: <b>{format_amount(amount)}</b>',
+        parse_mode="HTML",
+    )
 
 
 @dp.message(Command("stopcase"))
@@ -177,9 +424,9 @@ async def _handle_invest(uid: int, name: str,
             text = "📦 Сейчас нет активного сундука."
         elif reason == "cooldown":
             text = f"⏳ Подождите ещё {result['wait']} сек. перед следующим вкладом."
-        else:  # insufficient
+        else:  # insufficient — result["deposit"] содержит реальную (выбранную админом) сумму
             text = (
-                f"❌ Недостаточно монет! Нужно {format_amount(CASE_DEPOSIT)}, "
+                f"❌ Недостаточно монет! Нужно {format_amount(result['deposit'])}, "
                 f"у вас {format_amount(result['balance'])}."
             )
         if call:
@@ -191,7 +438,12 @@ async def _handle_invest(uid: int, name: str,
     await bump_card(bot)
 
     if call:
-        await call.answer(f"💰 Вложено {format_amount(CASE_DEPOSIT)}! В сундуке: {format_amount(result['bank'])}")
+        deposit_str = format_amount(result["deposit"])
+        state = get_case_state()
+        if state["prize_type"] == "coins":
+            await call.answer(f"💰 Вложено {deposit_str}! В сундуке: {format_amount(result['bank'])}")
+        else:
+            await call.answer(f"💰 Вложено {deposit_str}! Ты сейчас последний претендент на приз.")
 
 
 # ──────────────────────────────────────────────────────────────────────────
