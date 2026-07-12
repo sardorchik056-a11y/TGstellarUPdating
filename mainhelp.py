@@ -334,7 +334,7 @@ _active_battles: dict[int, dict] = {}
 # ── Хранилище message_id боевого экрана (uid -> (chat_id, message_id)) ─
 _battle_msgs: dict[int, tuple] = {}
 
-BOT_TOKEN = '8947252465:AAHqlauZc6nOfLylBxlc6xt0VvOhSqR8Rc8'
+BOT_TOKEN = '8693034024:AAEjOqhChUGq8IvZHYIOw2-RcfJLSyK7ZBI'
 
 bot = Bot(token=BOT_TOKEN)
 
