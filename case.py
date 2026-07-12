@@ -314,7 +314,7 @@ def start_case(
         _CASE["prize_artifact_name"]     = prize_artifact.get("name")
         _CASE["prize_artifact_mult"]     = prize_artifact.get("multiplier")
         _CASE["prize_artifact_emoji_id"] = prize_artifact.get("emoji_id")
-        _CASE["prize_artifact_emoji"]    = prize_artifact.get("emoji") or "💎"
+        _CASE["prize_artifact_emoji"]    = prize_artifact.get("emoji") or "♦️"
     else:
         _CASE["prize_artifact_key"]      = None
         _CASE["prize_artifact_name"]     = None
@@ -444,10 +444,10 @@ def _bonus_bank_line(state: dict) -> str:
 def _artifact_icon(state: dict) -> str:
     """Иконка артефакта-приза: если у самого артефакта в пуле есть свой
     custom-эмодзи (emoji_id) — используем именно его, иначе показываем
-    обычный юникод-эмодзи (по умолчанию 💎), заданный при выборе приза
+    обычный юникод-эмодзи (по умолчанию ♦️, как в shop._artifact_desc), заданный при выборе приза
     в /startcase (см. start_case в этом же файле)."""
     emoji_id = state.get("prize_artifact_emoji_id")
-    emoji    = state.get("prize_artifact_emoji") or "💎"
+    emoji    = state.get("prize_artifact_emoji") or "♦️"
     if emoji_id:
         return f'<tg-emoji emoji-id="{emoji_id}">{emoji}</tg-emoji>'
     return emoji
