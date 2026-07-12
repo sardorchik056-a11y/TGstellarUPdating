@@ -302,7 +302,7 @@ DIVIDER = "▬▬▬▬▬▬▬▬▬▬▬▬▬"
 # у аккаунта бота есть активная Telegram Premium подписка (или куплен доп.
 # юзернейм на Fragment) — иначе Telegram эту иконку молча проигнорирует.
 # Как достать ID своего эмодзи — см. инструкцию в чате.
-CASE_INVEST_BUTTON_EMOJI_ID = "5377544787839521766"  # ← замени на свой ID
+CASE_INVEST_BUTTON_EMOJI_ID = "5397916757333654639"  # ← замени на свой ID
 
 
 def case_keyboard(active: bool) -> InlineKeyboardMarkup | None:
@@ -311,7 +311,7 @@ def case_keyboard(active: bool) -> InlineKeyboardMarkup | None:
     карточкой на каждом тике, так что таймер на ней тоже "тикает").
     Кнопки "Обновить" больше нет: карточка обновляется сама.
 
-    Вид: [premium-иконка] 50К | ⏳ ММ:СС — иконка задаётся отдельным полем
+    Вид: [premium-иконка] 50К |  ММ:СС — иконка задаётся отдельным полем
     icon_custom_emoji_id, а не эмодзи внутри text (Telegram не рендерит
     custom-эмодзи как символ текста на кнопках, только как icon)."""
     if not active:
@@ -323,7 +323,7 @@ def case_keyboard(active: bool) -> InlineKeyboardMarkup | None:
 
     builder = InlineKeyboardBuilder()
     builder.button(
-        text=f"{format_amount(CASE_DEPOSIT)} | ⏳ {mins:02d}:{secs:02d}",
+        text=f"{format_amount(CASE_DEPOSIT)} |  {mins:02d}:{secs:02d}",
         callback_data=CASE_INVEST_CB,
         icon_custom_emoji_id=CASE_INVEST_BUTTON_EMOJI_ID,
         style="primary",  # синяя кнопка; варианты: "success" (зелёная), "danger" (красная)
