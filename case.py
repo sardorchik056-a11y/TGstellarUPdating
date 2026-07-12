@@ -38,7 +38,8 @@ from miner import COIN
 
 CASE_INITIAL_BANK       = 500_000   # стартовый банк сундука
 CASE_DEPOSIT             = 50_000    # фиксированный вклад
-CASE_TIMER_SECONDS      = 60        # таймер сундука (сбрасывается при вкладе)
+CASE_TIMER_SECONDS       = 60        # таймер сундука (сбрасывается при каждом вкладе)
+CASE_FIRST_DEPOSIT_SECONDS = 15 * 60  # время на ПЕРВЫЙ вклад в новом сундуке — 15 минут
 PLAYER_COOLDOWN_SECONDS = 15        # кулдаун игрока между вкладами
 PAUSE_SECONDS           = 30 * 60   # пауза после закрытия сундука (авто-рестарт)
 CARD_REFRESH_SECONDS    = 2         # частота "тихого" авто-обновления карточки
@@ -191,10 +192,13 @@ def set_chat_type(chat_id: int, chat_type: str) -> None:
 
 
 def _spawn_chest(state: dict) -> None:
-    """Открывает новый сундук с нуля (стартовый банк + полный таймер)."""
+    """Открывает новый сундук с нуля: стартовый банк и увеличенный таймер
+    на ПЕРВЫЙ вклад (15 минут — чтобы игроки успели заметить и зайти).
+    Как только кто-то вложится первым — таймер начинает работать в обычном
+    режиме (см. try_invest: сброс до CASE_TIMER_SECONDS)."""
     state["active"]      = True
     state["bank"]        = CASE_INITIAL_BANK
-    state["expires_at"]  = time.time() + CASE_TIMER_SECONDS
+    state["expires_at"]  = time.time() + CASE_FIRST_DEPOSIT_SECONDS
     state["last_uid"]    = None
     state["last_name"]   = None
     state["cooldowns"]   = {}
