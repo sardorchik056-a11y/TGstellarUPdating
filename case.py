@@ -143,6 +143,29 @@ async def get_all_chats() -> list[tuple[int, str]]:
 
 
 # ---------- Состояние игры (per chat_id) ----------
+# ══════════════════════════════════════════════════════════════════════
+#  ЛОК НА ЧАТ ДЛЯ ОБНОВЛЕНИЯ КАРТОЧКИ
+#
+#  Раньше bump_card / refresh_card / _close_chest могли выполняться
+#  ПАРАЛЛЕЛЬНО для одного chat_id (например: два игрока жмут "Вложить"
+#  почти одновременно, или фоновый refresh_card тикает ровно в момент
+#  вклада). Каждый из них — это несколько await'ов подряд (delete/send/
+#  edit), и пока один "в полёте", второй уже читает state["msg_id"] —
+#  получается гонка: оба видят один и тот же old_id, оба его "обрабатывают",
+#  в итоге одно сообщение остаётся неудалённым (в группе) либо создаётся
+#  лишнее (в личке). Лок на chat_id всё это сериализует.
+# ══════════════════════════════════════════════════════════════════════
+_CARD_LOCKS: dict[int, asyncio.Lock] = {}
+
+
+def _get_card_lock(chat_id: int) -> asyncio.Lock:
+    lock = _CARD_LOCKS.get(chat_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _CARD_LOCKS[chat_id] = lock
+    return lock
+
+
 # _CASES[chat_id] = {
 #   "running":       bool,  # цикл запущен (вручную или автостартом) и не остановлен
 #   "active":        bool,  # сундук сейчас открыт (принимает вклады)
@@ -351,18 +374,21 @@ def case_status_text(chat_id: int) -> str:
 async def send_case_card(bot, chat_id: int):
     """Отправляет свежую карточку сундука новым сообщением и запоминает её id."""
     state = get_case_state(chat_id)
-    text  = case_status_text(chat_id)
-    sent  = await bot.send_message(
-        chat_id, text, parse_mode="HTML",
-        reply_markup=case_keyboard(state["active"]),
-    )
-    state["msg_id"] = sent.message_id
-    return sent
+    async with _get_card_lock(chat_id):
+        text = case_status_text(chat_id)
+        sent = await bot.send_message(
+            chat_id, text, parse_mode="HTML",
+            reply_markup=case_keyboard(state["active"]),
+        )
+        state["msg_id"] = sent.message_id
+        print(f"[case] send_case_card: new msg_id={sent.message_id} chat_id={chat_id}")
+        return sent
 
 
 async def _send_or_edit(bot, chat_id: int, state: dict, text: str, active: bool):
-    """Тихое обновление на месте: пробуем отредактировать старую карточку,
-    если не вышло (удалена/устарела) — шлём новую."""
+    """Тихое обновление на месте: пробуем отредактировать старую карточку.
+    ВАЖНО: вызывается только изнутри блока с уже захваченным _get_card_lock —
+    сама лок не берёт, чтобы не было дедлока при вложенных вызовах."""
     msg_id = state.get("msg_id")
     if msg_id:
         try:
@@ -371,15 +397,24 @@ async def _send_or_edit(bot, chat_id: int, state: dict, text: str, active: bool)
                 parse_mode="HTML", reply_markup=case_keyboard(active),
             )
             return
-        except Exception:
-            pass  # текст не изменился, либо сообщение недоступно — не страшно
+        except Exception as e:
+            err = str(e).lower()
+            if "message is not modified" in err:
+                # текст (и клавиатура) не изменились — это НЕ ошибка,
+                # редактировать нечего, лишнее сообщение слать не нужно
+                return
+            # реальная причина, по которой edit не прошёл (сообщение
+            # удалено/устарело/чат недоступен и т.п.) — печатаем, чтобы
+            # было видно наверняка, что произошло
+            print(f"[case] edit_message_text FAILED chat_id={chat_id} msg_id={msg_id}: {e}")
     try:
         sent = await bot.send_message(
             chat_id, text, parse_mode="HTML", reply_markup=case_keyboard(active),
         )
         state["msg_id"] = sent.message_id
-    except Exception:
-        pass
+        print(f"[case] _send_or_edit: sent NEW msg_id={sent.message_id} chat_id={chat_id} (fallback, old msg_id={msg_id})")
+    except Exception as e:
+        print(f"[case] send_message FAILED chat_id={chat_id}: {e}")
 
 
 async def refresh_card(bot, chat_id: int):
@@ -388,35 +423,47 @@ async def refresh_card(bot, chat_id: int):
     state = get_case_state(chat_id)
     if not state.get("msg_id"):
         return
-    text = case_status_text(chat_id)
-    await _send_or_edit(bot, chat_id, state, text, state["active"])
+    async with _get_card_lock(chat_id):
+        text = case_status_text(chat_id)
+        await _send_or_edit(bot, chat_id, state, text, state["active"])
 
 
 async def bump_card(bot, chat_id: int):
     """Обновление карточки на ЗНАЧИМЫХ событиях (новый вклад, закрытие сундука,
     открытие нового): в личке с ботом — редактирует то же сообщение,
     в группах/супергруппах — удаляет старое и присылает новое, чтобы карточка
-    "поднималась" в чате и не терялась среди сообщений участников."""
+    "поднималась" в чате и не терялась среди сообщений участников.
+
+    Всё выполняется под _get_card_lock(chat_id) — это критично: если два
+    вклада (или вклад + фоновый тик) прилетают почти одновременно, без лока
+    оба одновременно читают тот же старый msg_id, и получается гонка —
+    старое сообщение может остаться неудалённым в группе, либо в личке
+    вместо одного edit'а появляется лишнее новое сообщение."""
     state = get_case_state(chat_id)
-    text   = case_status_text(chat_id)
-    active = state["active"]
+    async with _get_card_lock(chat_id):
+        text   = case_status_text(chat_id)
+        active = state["active"]
 
-    if state.get("chat_type") == "private":
-        await _send_or_edit(bot, chat_id, state, text, active)
-        return
+        if state.get("chat_type") == "private":
+            await _send_or_edit(bot, chat_id, state, text, active)
+            return
 
-    # группа / супергруппа — удаляем старую карточку и шлём новую
-    old_id = state.get("msg_id")
-    if old_id:
+        # группа / супергруппа — удаляем старую карточку и шлём новую
+        old_id = state.get("msg_id")
+        if old_id:
+            try:
+                await bot.delete_message(chat_id, old_id)
+                print(f"[case] bump_card: deleted old msg_id={old_id} chat_id={chat_id}")
+            except Exception as e:
+                # печатаем РЕАЛЬНУЮ причину — раньше она молча проглатывалась,
+                # из-за чего было невозможно понять, почему сообщение не удаляется
+                print(f"[case] bump_card: delete_message FAILED chat_id={chat_id} msg_id={old_id}: {e}")
         try:
-            await bot.delete_message(chat_id, old_id)
-        except Exception:
-            pass
-    try:
-        sent = await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=case_keyboard(active))
-        state["msg_id"] = sent.message_id
-    except Exception:
-        pass
+            sent = await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=case_keyboard(active))
+            state["msg_id"] = sent.message_id
+            print(f"[case] bump_card: sent new msg_id={sent.message_id} chat_id={chat_id}")
+        except Exception as e:
+            print(f"[case] bump_card: send_message FAILED chat_id={chat_id}: {e}")
 
 
 # ---------- Рассылка анонса ивента на старте бота ----------
@@ -495,21 +542,24 @@ async def _close_chest(bot, chat_id: int, state: dict):
             '<i>Новый сундук откроется через 30 минут.</i>'
         )
 
-    if state.get("chat_type") == "private":
-        await _send_or_edit(bot, chat_id, state, text, active=False)
-        return
+    async with _get_card_lock(chat_id):
+        if state.get("chat_type") == "private":
+            await _send_or_edit(bot, chat_id, state, text, active=False)
+            return
 
-    old_id = state.get("msg_id")
-    if old_id:
+        old_id = state.get("msg_id")
+        if old_id:
+            try:
+                await bot.delete_message(chat_id, old_id)
+                print(f"[case] _close_chest: deleted old msg_id={old_id} chat_id={chat_id}")
+            except Exception as e:
+                print(f"[case] _close_chest: delete_message FAILED chat_id={chat_id} msg_id={old_id}: {e}")
         try:
-            await bot.delete_message(chat_id, old_id)
-        except Exception:
-            pass
-    try:
-        sent = await bot.send_message(chat_id, text, parse_mode="HTML")
-        state["msg_id"] = sent.message_id
-    except Exception:
-        pass
+            sent = await bot.send_message(chat_id, text, parse_mode="HTML")
+            state["msg_id"] = sent.message_id
+            print(f"[case] _close_chest: sent new msg_id={sent.message_id} chat_id={chat_id}")
+        except Exception as e:
+            print(f"[case] _close_chest: send_message FAILED chat_id={chat_id}: {e}")
 
 
 async def case_tick_loop(bot):
