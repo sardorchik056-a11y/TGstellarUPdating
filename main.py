@@ -356,6 +356,28 @@ async def msg_case_admin_deposit(message: Message, state: FSMContext):
     )
 
 
+# В mainhelp.py есть глобальный перехватчик ЛЮБОГО голого текста без "/"
+# (handle_captcha_answer, "@dp.message(F.text & ~F.text.startswith('/'))" —
+# нужен для капчи/онбординга) — он зарегистрирован раньше наших хендлеров
+# из main.py, поэтому aiogram, проверяя message-хендлеры В ПОРЯДКЕ
+# РЕГИСТРАЦИИ, отдавал бы "100000"/"50к" ЕМУ первым, а до
+# msg_case_admin_deposit они бы просто не доходили. Трогать mainhelp.py
+# нельзя — поэтому просто переставляем НАШ уже зарегистрированный хендлер
+# в начало внутреннего списка dp.message.handlers: он и так почти всегда
+# молча пропускает сообщение (StateFilter не совпал — обычный текст без
+# активного мастера /startcase), так что на остальной бот это не влияет
+# вообще никак, просто наш ввод суммы вклада теперь проверяется первым.
+def _prioritize_message_handlers(*callbacks) -> None:
+    wanted    = list(callbacks)
+    moved     = [h for h in dp.message.handlers if h.callback in wanted]
+    remaining = [h for h in dp.message.handlers if h.callback not in wanted]
+    moved.sort(key=lambda h: wanted.index(h.callback))
+    dp.message.handlers[:] = moved + remaining
+
+
+_prioritize_message_handlers(msg_case_admin_deposit)
+
+
 @dp.message(Command("stopcase"))
 async def cmd_stopcase(message: Message):
     if message.from_user.id not in ADMIN_IDS:
