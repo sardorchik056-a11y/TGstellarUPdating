@@ -231,12 +231,29 @@ _CASE: dict = {
     "prize_artifact_name": None,
     "prize_artifact_mult": None,
     "prize_status_tier":   None,
+
+    # Картинка ивента (см. /photo в main.py) — file_id фото, которое
+    # прикрепляется к карточке сундука вместо простого текстового
+    # сообщения. Живёт поверх пересоздания сундука/остановки цикла,
+    # пока админ не пришлёт новое фото командой /photo.
+    "photo_file_id":       None,
 }
 
 
 def get_case_state() -> dict:
     """Возвращает глобальное состояние сундука (одно на весь бот)."""
     return _CASE
+
+
+def set_event_photo(file_id: str | None) -> None:
+    """Задаёт (или сбрасывает, если file_id=None) картинку ивента —
+    после этого карточка сундука отправляется как фото с текстом-подписью
+    вместо обычного текстового сообщения. См. команду /photo в main.py."""
+    _CASE["photo_file_id"] = file_id
+
+
+def get_event_photo() -> str | None:
+    return _CASE["photo_file_id"]
 
 
 def _esc(s) -> str:
@@ -347,8 +364,11 @@ async def try_invest(uid: int, name: str) -> dict:
         balance = u.get("balance", 0) if u else 0
         return {"ok": False, "reason": "insufficient", "balance": balance, "deposit": deposit}
 
-    if _CASE["prize_type"] == "coins":
-        _CASE["bank"] += deposit
+    # Банк копится ВСЕГДА, независимо от типа приза: для "монет" это и
+    # есть сам приз, а для "артефакта"/"статуса" — это дополнительный
+    # бонус, который винер получит ПОВЕРХ фиксированного приза (см.
+    # _close_chest) — золото, накопленное на фоне вкладов, не пропадает.
+    _CASE["bank"] += deposit
     _CASE["last_uid"]        = uid
     _CASE["last_name"]       = name
     _CASE["cooldowns"][uid]  = now
@@ -398,6 +418,17 @@ def case_keyboard(active: bool) -> InlineKeyboardMarkup | None:
     return builder.as_markup()
 
 
+def _bonus_bank_line(state: dict) -> str:
+    """Доп. строка "золото в трюме" для призов "артефакт"/"статус" — банк
+    копится на фоне вкладов (см. try_invest) и достаётся победителю ПОВЕРХ
+    фиксированного приза (см. _close_chest). Пустая строка, пока в банке
+    ещё ничего нет (первый вклад в новом сундуке ещё не сделан)."""
+    if state["bank"] <= 0:
+        return ""
+    bank_str = format_amount(state["bank"])
+    return f'\n<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>Плюс золото в трюме:</b> <code>{bank_str}</code>{COIN}'
+
+
 def _active_prize_line(state: dict) -> str:
     """Строка "что лежит в сундуке" для карточки, пока сундук открыт —
     зависит от режима приза, выбранного админом в /startcase."""
@@ -405,10 +436,16 @@ def _active_prize_line(state: dict) -> str:
         name = _esc(state["prize_artifact_name"] or "?")
         mult = state["prize_artifact_mult"]
         mult_str = f" (×{mult})" if mult else ""
-        return f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>В сундуке артефакт:</b> {name}{mult_str}'
+        return (
+            f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>В сундуке артефакт:</b> {name}{mult_str}'
+            f'{_bonus_bank_line(state)}'
+        )
     if state["prize_type"] == "status":
         label = "VIP" if state["prize_status_tier"] == "vip" else "Premium"
-        return f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>В сундуке статус:</b> {label} (30 дней)'
+        return (
+            f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>В сундуке статус:</b> {label} (30 дней)'
+            f'{_bonus_bank_line(state)}'
+        )
     bank_str = format_amount(state["bank"])
     return f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>Золота в трюме:</b> <code>{bank_str}</code>{COIN}'
 
@@ -545,39 +582,72 @@ async def _tg_call_with_retry(coro_factory, chat_id: int, what: str):
         return await coro_factory()
 
 
+async def _send_card_new(bot, chat_id: int, text: str, active: bool):
+    """Отправляет карточку НОВЫМ сообщением — фото с подписью, если для
+    ивента задана картинка (/photo), иначе обычный текст, как раньше."""
+    photo_id = _CASE.get("photo_file_id")
+    if photo_id:
+        return await _tg_call_with_retry(
+            lambda: bot.send_photo(
+                chat_id, photo_id, caption=text,
+                parse_mode="HTML", reply_markup=case_keyboard(active),
+            ),
+            chat_id, "send_photo",
+        )
+    return await _tg_call_with_retry(
+        lambda: bot.send_message(
+            chat_id, text, parse_mode="HTML", reply_markup=case_keyboard(active),
+        ),
+        chat_id, "send_message",
+    )
+
+
 async def _send_or_edit(bot, chat_id: int, card: dict, text: str, active: bool):
-    """Тихое обновление на месте: пробуем отредактировать старую карточку.
-    ВАЖНО: вызывается только изнутри блока с уже захваченным _get_card_lock
+    """Тихое обновление на месте: пробуем отредактировать старую карточку
+    (подпись — если это фото-карточка, текст — если обычная). ВАЖНО:
+    вызывается только изнутри блока с уже захваченным _get_card_lock
     (и уже прошедшего _throttle_card) — сама лок/троттлинг не берёт, чтобы
     не было дедлока и двойного троттлинга при вложенных вызовах."""
-    msg_id = card.get("msg_id")
+    msg_id   = card.get("msg_id")
+    photo_id = _CASE.get("photo_file_id")
     if msg_id:
         try:
-            await _tg_call_with_retry(
-                lambda: bot.edit_message_text(
-                    text, chat_id=chat_id, message_id=msg_id,
-                    parse_mode="HTML", reply_markup=case_keyboard(active),
-                ),
-                chat_id, "edit_message_text",
-            )
+            if photo_id:
+                await _tg_call_with_retry(
+                    lambda: bot.edit_message_caption(
+                        chat_id=chat_id, message_id=msg_id, caption=text,
+                        parse_mode="HTML", reply_markup=case_keyboard(active),
+                    ),
+                    chat_id, "edit_message_caption",
+                )
+            else:
+                await _tg_call_with_retry(
+                    lambda: bot.edit_message_text(
+                        text, chat_id=chat_id, message_id=msg_id,
+                        parse_mode="HTML", reply_markup=case_keyboard(active),
+                    ),
+                    chat_id, "edit_message_text",
+                )
             return
         except Exception as e:
             err = str(e).lower()
             if "message is not modified" in err:
-                # текст (и клавиатура) не изменились — это НЕ ошибка,
+                # текст/подпись (и клавиатура) не изменились — это НЕ ошибка,
                 # редактировать нечего, лишнее сообщение слать не нужно
                 return
-            print(f"[case] edit_message_text FAILED chat_id={chat_id} msg_id={msg_id}: {e}")
+            if "there is no caption in the message to edit" not in err and \
+               "message to edit not found" not in err and \
+               "there is no text in the message to edit" not in err:
+                print(f"[case] edit FAILED chat_id={chat_id} msg_id={msg_id}: {e}")
+            # Сюда попадаем и когда карточка "сменила тип" (была текстом,
+            # а теперь для неё включили фото, или наоборот) — Telegram не
+            # даёт редактировать текст в подпись и обратно. В этом случае
+            # просто присылаем карточку заново ниже.
     try:
-        sent = await _tg_call_with_retry(
-            lambda: bot.send_message(
-                chat_id, text, parse_mode="HTML", reply_markup=case_keyboard(active),
-            ),
-            chat_id, "send_message",
-        )
+        sent = await _send_card_new(bot, chat_id, text, active)
         card["msg_id"] = sent.message_id
     except Exception as e:
-        print(f"[case] send_message FAILED chat_id={chat_id}: {e}")
+        print(f"[case] send FAILED chat_id={chat_id}: {e}")
 
 
 async def _push_card(bot, chat_id: int, text: str, active: bool):
@@ -604,13 +674,10 @@ async def _push_card(bot, chat_id: int, text: str, active: bool):
             except Exception as e:
                 print(f"[case] _push_card: delete_message FAILED chat_id={chat_id} msg_id={old_id}: {e}")
         try:
-            sent = await _tg_call_with_retry(
-                lambda: bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=case_keyboard(active)),
-                chat_id, "_push_card.send_message",
-            )
+            sent = await _send_card_new(bot, chat_id, text, active)
             card["msg_id"] = sent.message_id
         except Exception as e:
-            print(f"[case] _push_card: send_message FAILED chat_id={chat_id}: {e}")
+            print(f"[case] _push_card: send FAILED chat_id={chat_id}: {e}")
 
 
 async def _refresh_chat_card(bot, chat_id: int, text: str):
@@ -649,13 +716,7 @@ async def send_case_card(bot, chat_id: int):
     async with _get_card_lock(chat_id):
         await _throttle_card(chat_id)
         text = case_status_text()
-        sent = await _tg_call_with_retry(
-            lambda: bot.send_message(
-                chat_id, text, parse_mode="HTML",
-                reply_markup=case_keyboard(_CASE["active"]),
-            ),
-            chat_id, "send_case_card",
-        )
+        sent = await _send_card_new(bot, chat_id, text, _CASE["active"])
         card["msg_id"] = sent.message_id
         return sent
 
@@ -696,10 +757,7 @@ async def broadcast_event_start(
         card["chat_type"] = chat_type
 
         try:
-            sent = await bot.send_message(
-                chat_id, text, parse_mode="HTML",
-                reply_markup=case_keyboard(_CASE["active"]),
-            )
+            sent = await _send_card_new(bot, chat_id, text, _CASE["active"])
             card["msg_id"] = sent.message_id
         except Exception as e:
             print(f"[broadcast_event_start] {chat_id}: {e}")
@@ -711,6 +769,18 @@ async def broadcast_event_start(
 
 
 # ---------- Выдача приза победителю (по типу) ----------
+
+async def _grant_bonus_bank(winner_uid: int, bank: int) -> str:
+    """Довыдаёт победителю приза "артефакт"/"статус" золото, накопленное
+    в банке на фоне вкладов (см. try_invest — банк теперь копится всегда,
+    а не только в режиме "монеты"). Возвращает готовый HTML-хвост для
+    prize_label ("" если банк пуст — например, был всего один вклад и
+    он же оказался последним)."""
+    if bank <= 0:
+        return ""
+    await aio_change_balance(winner_uid, bank)
+    return f' <b>+</b> <code>{format_amount(bank)}</code>{COIN}'
+
 
 async def _grant_artifact_prize(winner_uid: int) -> str:
     """Выдаёт победителю зафиксированный артефакт-приз (см. state
@@ -775,8 +845,10 @@ async def _close_chest(bot):
         prize_type = state["prize_type"]
         if prize_type == "artifact":
             prize_label = await _grant_artifact_prize(winner_uid)
+            prize_label += await _grant_bonus_bank(winner_uid, state["bank"])
         elif prize_type == "status":
             prize_label = await _grant_status_prize(winner_uid)
+            prize_label += await _grant_bonus_bank(winner_uid, state["bank"])
         else:
             bank = state["bank"]
             await aio_change_balance(winner_uid, bank)
