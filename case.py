@@ -82,7 +82,7 @@ MIN_CARD_UPDATE_INTERVAL = 1.5
 # слать всё вообще одним махом.
 _BROADCAST_CONCURRENCY = 20
 
-EVENT_TITLE = "🏴‍☠️ <b>ЩЕДРЫЙ ПИРАТ</b> 🏴‍☠️"
+EVENT_TITLE = "🏴‍☠️ <b><i>ЩЕДРЫЙ ПИРАТ</i></b> 🏴‍☠️"
 
 # ВАЖНО: callback_data кнопки "Вложить" намеренно начинается с "city_".
 # В mainhelp.py есть общий catch-all колбэк-хендлер (ловит ВСЁ, кроме данных
@@ -208,6 +208,8 @@ async def get_all_chats() -> list[tuple[int, str]]:
 #   "prize_artifact_key":   str | None,
 #   "prize_artifact_name":  str | None,
 #   "prize_artifact_mult":  float | None,
+#   "prize_artifact_emoji_id": str | None,  # custom-эмодзи артефакта (если есть у него в пуле)
+#   "prize_artifact_emoji":    str | None,  # обычный юникод-эмодзи (фолбэк/аргумент tg-emoji)
 #   "prize_status_tier":    str | None,   # "vip" | "premium"
 # }
 _CASE: dict = {
@@ -230,6 +232,8 @@ _CASE: dict = {
     "prize_artifact_key":  None,
     "prize_artifact_name": None,
     "prize_artifact_mult": None,
+    "prize_artifact_emoji_id": None,
+    "prize_artifact_emoji":    None,
     "prize_status_tier":   None,
 
     # Картинка ивента (см. /photo в main.py) — file_id фото, которое
@@ -292,7 +296,8 @@ def start_case(
     deposit            — сумма одного вклада, выбирает админ в мастере настройки.
     prize_type          — "coins" (обычный растущий банк), "artifact" (фиксированный
                           артефакт) или "status" (фиксированный VIP/Premium).
-    prize_artifact       — для prize_type="artifact": {"key", "name", "multiplier"}.
+    prize_artifact       — для prize_type="artifact": {"key", "name", "multiplier",
+                          "emoji_id" (опц., custom-эмодзи), "emoji" (опц., юникод-фолбэк)}.
     prize_status_tier    — для prize_type="status": "vip" | "premium".
 
     Настройки сохраняются в _CASE и действуют для ВСЕХ сундуков этого
@@ -305,13 +310,17 @@ def start_case(
     _CASE["prize_type"] = prize_type
 
     if prize_type == "artifact" and prize_artifact:
-        _CASE["prize_artifact_key"]  = prize_artifact.get("key")
-        _CASE["prize_artifact_name"] = prize_artifact.get("name")
-        _CASE["prize_artifact_mult"] = prize_artifact.get("multiplier")
+        _CASE["prize_artifact_key"]      = prize_artifact.get("key")
+        _CASE["prize_artifact_name"]     = prize_artifact.get("name")
+        _CASE["prize_artifact_mult"]     = prize_artifact.get("multiplier")
+        _CASE["prize_artifact_emoji_id"] = prize_artifact.get("emoji_id")
+        _CASE["prize_artifact_emoji"]    = prize_artifact.get("emoji") or "💎"
     else:
-        _CASE["prize_artifact_key"]  = None
-        _CASE["prize_artifact_name"] = None
-        _CASE["prize_artifact_mult"] = None
+        _CASE["prize_artifact_key"]      = None
+        _CASE["prize_artifact_name"]     = None
+        _CASE["prize_artifact_mult"]     = None
+        _CASE["prize_artifact_emoji_id"] = None
+        _CASE["prize_artifact_emoji"]    = None
 
     _CASE["prize_status_tier"] = prize_status_tier if prize_type == "status" else None
 
@@ -426,7 +435,22 @@ def _bonus_bank_line(state: dict) -> str:
     if state["bank"] <= 0:
         return ""
     bank_str = format_amount(state["bank"])
-    return f'\n<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>Плюс золото в трюме:</b> <code>{bank_str}</code>{COIN}'
+    return (
+        f'\n<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> '
+        f'<b><i>Плюс золото в трюме: <code>{bank_str}</code>{COIN}</i></b>'
+    )
+
+
+def _artifact_icon(state: dict) -> str:
+    """Иконка артефакта-приза: если у самого артефакта в пуле есть свой
+    custom-эмодзи (emoji_id) — используем именно его, иначе показываем
+    обычный юникод-эмодзи (по умолчанию 💎), заданный при выборе приза
+    в /startcase (см. start_case в этом же файле)."""
+    emoji_id = state.get("prize_artifact_emoji_id")
+    emoji    = state.get("prize_artifact_emoji") or "💎"
+    if emoji_id:
+        return f'<tg-emoji emoji-id="{emoji_id}">{emoji}</tg-emoji>'
+    return emoji
 
 
 def _active_prize_line(state: dict) -> str:
@@ -437,23 +461,29 @@ def _active_prize_line(state: dict) -> str:
         mult = state["prize_artifact_mult"]
         mult_str = f" (×{mult})" if mult else ""
         return (
-            f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>В сундуке артефакт:</b> {name}{mult_str}'
+            f'{_artifact_icon(state)} <b><i>В сундуке артефакт: {name}{mult_str}</i></b>'
             f'{_bonus_bank_line(state)}'
         )
     if state["prize_type"] == "status":
         label = "VIP" if state["prize_status_tier"] == "vip" else "Premium"
         return (
-            f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>В сундуке статус:</b> {label} (30 дней)'
+            f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> '
+            f'<b><i>В сундуке статус: {label} (30 дней)</i></b>'
             f'{_bonus_bank_line(state)}'
         )
     bank_str = format_amount(state["bank"])
-    return f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>Золота в трюме:</b> <code>{bank_str}</code>{COIN}'
+    return (
+        f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> '
+        f'<b><i>Золота в трюме: <code>{bank_str}</code>{COIN}</i></b>'
+    )
 
 
 def case_status_text() -> str:
     """Единый текст карточки сундука — используется ВЕЗДЕ: и когда бот
     впервые анонсирует ивент по /startcase, и на обычных обновлениях
-    карточки. Никакого отдельного "текста для старта" больше нет."""
+    карточки. Никакого отдельного "текста для старта" больше нет.
+
+    Весь текст (кроме иконок-эмодзи) — жирным И курсивом одновременно."""
     state = _CASE
     now   = time.time()
 
@@ -463,21 +493,29 @@ def case_status_text() -> str:
         timer_str  = f"{mins:02d}:{secs:02d}"
 
         if state["last_uid"]:
-            last_line = f'<tg-emoji emoji-id="5402477260982731644">🌟</tg-emoji> <b>Последний, кто рискнул:</b> {_esc(state["last_name"])}'
+            last_line = (
+                f'<tg-emoji emoji-id="5402477260982731644">🌟</tg-emoji> '
+                f'<b><i>Последний, кто рискнул: {_esc(state["last_name"])}</i></b>'
+            )
         else:
-            last_line = '<tg-emoji emoji-id="5399913388845322366">🌟</tg-emoji> <b>Пока никто не рискнул</b> — стань первым!'
+            last_line = (
+                f'<tg-emoji emoji-id="5399913388845322366">🌟</tg-emoji> '
+                f'<b><i>Пока никто не рискнул — стань первым!</i></b>'
+            )
 
         return (
             f'{EVENT_TITLE}\n'
             f'{DIVIDER}\n'
-            f'<i>Тишина... только скрип старого дерева и блеск золота во тьме.</i>\n\n'
+            f'<b><i>Тишина... только скрип старого дерева и блеск золота во тьме.</i></b>\n\n'
             f'<blockquote>'
             f'{_active_prize_line(state)}\n'
-            f'<tg-emoji emoji-id="5382194935057372936">🌟</tg-emoji> <b>Секунды утекают:</b> <code>{timer_str}</code>\n'
+            f'<tg-emoji emoji-id="5382194935057372936">🌟</tg-emoji> '
+            f'<b><i>Секунды утекают: <code>{timer_str}</code></i></b>\n'
             f'{last_line}'
             f'</blockquote>\n'
-            f'<b>Стань последним — и сундук навсегда твой.</b>\n'
-            f'<tg-emoji emoji-id="5397916757333654639">🌟</tg-emoji> Вклад: <b>{format_amount(state["deposit"])}</b>{COIN}'
+            f'<b><i>Стань последним — и сундук навсегда твой.</i></b>\n'
+            f'<tg-emoji emoji-id="5397916757333654639">🌟</tg-emoji> '
+            f'<b><i>Вклад: {format_amount(state["deposit"])}{COIN}</i></b>'
         )
 
     if state["running"]:
@@ -488,23 +526,26 @@ def case_status_text() -> str:
         if state.get("last_winner_name"):
             winner_block = (
                 f'\n\n<blockquote>'
-                f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> <b>Последний, кому повезло:</b> {_esc(state["last_winner_name"])}\n'
-                f'<tg-emoji emoji-id="5438496463044752972">🌟</tg-emoji> <b>Унёс с собой:</b> {state.get("last_prize_label") or "—"}'
+                f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> '
+                f'<b><i>Последний, кому повезло: {_esc(state["last_winner_name"])}</i></b>\n'
+                f'<tg-emoji emoji-id="5438496463044752972">🌟</tg-emoji> '
+                f'<b><i>Унёс с собой: {state.get("last_prize_label") or "—"}</i></b>'
                 f'</blockquote>'
             )
 
         return (
             f'{EVENT_TITLE}\n'
             f'{DIVIDER}\n'
-            f'<i>Пират растворился во тьме, унеся сундук с собой... но он вернётся.</i>\n\n'
-            f'<blockquote><tg-emoji emoji-id="5303479226882603449">🌟</tg-emoji> <b>Новый сундук всплывёт через:</b> <code>{mins:02d}:{secs:02d}</code></blockquote>'
+            f'<b><i>Пират растворился во тьме, унеся сундук с собой... но он вернётся.</i></b>\n\n'
+            f'<blockquote><tg-emoji emoji-id="5303479226882603449">🌟</tg-emoji> '
+            f'<b><i>Новый сундук всплывёт через: <code>{mins:02d}:{secs:02d}</code></i></b></blockquote>'
             f'{winner_block}'
         )
 
     return (
         f'{EVENT_TITLE}\n'
         f'{DIVIDER}\n'
-        f'<i>Тишина... сундук ещё не заброшен в эти воды.</i>'
+        f'<b><i>Тишина... сундук ещё не заброшен в эти воды.</i></b>'
     )
 
 
