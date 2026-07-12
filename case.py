@@ -294,33 +294,34 @@ async def try_invest(uid: int, name: str) -> dict:
 
 # ---------- Тексты и клавиатура ----------
 
+DIVIDER = "▬▬▬▬▬▬▬▬▬▬▬▬▬"
+
+
 def case_keyboard(active: bool) -> InlineKeyboardMarkup | None:
-    """Кнопка "Вложить" — только когда сундук активен. Кнопки "Обновить"
-    больше нет: карточка теперь обновляется сама, каждые несколько секунд."""
+    """Кнопка "Вложить" — только когда сундук активен, и прямо на кнопке
+    живой обратный отсчёт до закрытия (кнопка перерисовывается вместе с
+    карточкой на каждом тике, так что таймер на ней тоже "тикает").
+    Кнопки "Обновить" больше нет: карточка обновляется сама."""
     if not active:
         return None
     from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+    remaining  = max(0, int(_CASE["expires_at"] - time.time()))
+    mins, secs = divmod(remaining, 60)
+
     builder = InlineKeyboardBuilder()
-    builder.button(text=f"💰 Вложить {format_amount(CASE_DEPOSIT)}", callback_data=CASE_INVEST_CB)
+    builder.button(
+        text=f"💰 Вложить {format_amount(CASE_DEPOSIT)} · ⏳ {mins:02d}:{secs:02d}",
+        callback_data=CASE_INVEST_CB,
+    )
     builder.adjust(1)
     return builder.as_markup()
 
 
-def event_announce_text() -> str:
-    """Красивый анонс ивента — отправляется во все известные чаты по команде /startcase."""
-    return (
-        f'{EVENT_TITLE}\n\n'
-        '<blockquote>Где-то в этих водах затонул корабль легендарного пирата, '
-        'а вместе с ним — сундук, доверху набитый золотом. Каждый вклад '
-        'приближает момент, когда сундук всплывёт... но заберёт добычу лишь тот, '
-        'кто окажется рядом последним.</blockquote>\n\n'
-        f'🎟 <i>Вклад: <b>{format_amount(CASE_DEPOSIT)}</b>{COIN} • '
-        f'таймер сбрасывается с каждым новым вкладом!</i>'
-    )
-
-
 def case_status_text() -> str:
-    """Текст карточки сундука."""
+    """Единый текст карточки сундука — используется ВЕЗДЕ: и когда бот
+    впервые анонсирует ивент по /startcase, и на обычных обновлениях
+    карточки. Никакого отдельного "текста для старта" больше нет."""
     state = _CASE
     now   = time.time()
 
@@ -331,42 +332,49 @@ def case_status_text() -> str:
         bank_str   = format_amount(state["bank"])
 
         if state["last_uid"]:
-            last_line = f'👤 Последним вложился: <b>{_esc(state["last_name"])}</b>'
+            last_line = f'🙋 Последним рискнул: <b>{_esc(state["last_name"])}</b>'
         else:
-            last_line = '👤 Пока никто не рискнул — стань первым!'
+            last_line = '🙋 Пока никто не рискнул — стань первым!'
 
         return (
-            f'{EVENT_TITLE}\n\n'
+            f'{EVENT_TITLE}\n'
+            f'{DIVIDER}\n'
+            f'<i>На дне морском блеснул сундук легендарного пирата — '
+            f'кто вложится последним перед закрытием, заберёт всё золото.</i>\n\n'
             f'<blockquote>'
-            f'💰 <b>В сундуке:</b> {bank_str}{COIN}\n'
-            f'⏳ <b>Уплывает через:</b> {timer_str}\n'
+            f'💰 <b>В сундуке:</b> <code>{bank_str}</code>{COIN}\n'
+            f'⏳ <b>До закрытия:</b> <code>{timer_str}</code>\n'
             f'{last_line}'
             f'</blockquote>\n'
-            f'✨ <i>Вложись последним перед закрытием — и всё золото твоё.</i>\n'
-            f'🎟 Вклад: <b>{format_amount(CASE_DEPOSIT)}</b>{COIN}'
+            f'🎟 <i>Вклад:</i> <b>{format_amount(CASE_DEPOSIT)}</b>{COIN} '
+            f'<i>· таймер сбрасывается с каждым новым вкладом</i>'
         )
 
     if state["running"]:
         remaining  = max(0, int(state["paused_until"] - now)) if state["paused_until"] else 0
         mins, secs = divmod(remaining, 60)
 
-        winner_line = ""
+        winner_block = ""
         if state.get("last_winner_name"):
-            winner_line = (
-                f'\n\n<blockquote>👑 Последний счастливчик: <b>{_esc(state["last_winner_name"])}</b>\n'
-                f'💰 Унёс с собой: <b>{format_amount(state["last_winner_amount"])}</b>{COIN}</blockquote>'
+            winner_block = (
+                f'\n\n<blockquote>'
+                f'👑 <b>Последний победитель:</b> {_esc(state["last_winner_name"])}\n'
+                f'💰 <b>Унёс с собой:</b> <code>{format_amount(state["last_winner_amount"])}</code>{COIN}'
+                f'</blockquote>'
             )
 
         return (
-            f'{EVENT_TITLE}\n\n'
-            f'<blockquote>🌊 Пират снова прячет добычу на дне...\n'
-            f'🕰 Сундук покажется через <b>{mins:02d}:{secs:02d}</b></blockquote>'
-            f'{winner_line}'
+            f'{EVENT_TITLE}\n'
+            f'{DIVIDER}\n'
+            f'<i>Пират снова прячет добычу на дне морском...</i>\n\n'
+            f'<blockquote>🌊 <b>Новый сундук через:</b> <code>{mins:02d}:{secs:02d}</code></blockquote>'
+            f'{winner_block}'
         )
 
     return (
-        f'{EVENT_TITLE}\n\n'
-        '<blockquote>🗺 Пока тихо — сундук ещё не заброшен в эти воды.</blockquote>'
+        f'{EVENT_TITLE}\n'
+        f'{DIVIDER}\n'
+        f'<i>Пока тихо — сундук ещё не заброшен в эти воды.</i>'
     )
 
 
@@ -566,32 +574,12 @@ async def bump_card(bot):
     await _broadcast(bot, case_status_text(), _CASE["active"])
 
 
-# ---------- Рассылка анонса ивента на старте бота ----------
-
-def _broadcast_card_text() -> str:
-    """Анонс + статус сундука ОДНИМ сообщением (флавор-текст ивента сразу
-    вместе с банком/таймером), чтобы при запуске бот не слал два сообщения подряд."""
-    state = _CASE
-    now = time.time()
-    remaining  = max(0, int(state["expires_at"] - now))
-    mins, secs = divmod(remaining, 60)
-
-    return (
-        f'{EVENT_TITLE}\n\n'
-        '<blockquote>Где-то в этих водах затонул корабль легендарного пирата, '
-        'а вместе с ним — сундук, доверху набитый золотом. Каждый вклад '
-        'приближает момент, когда сундук всплывёт... но заберёт добычу лишь тот, '
-        'кто окажется рядом последним.\n\n'
-        f'💰 В сундуке: <b>{format_amount(state["bank"])}</b>{COIN}\n'
-        f'⏳ Уплывает через: <b>{mins:02d}:{secs:02d}</b></blockquote>\n\n'
-        f'🎟 <i>Вклад: <b>{format_amount(CASE_DEPOSIT)}</b>{COIN} • '
-        f'таймер сбрасывается с каждым новым вкладом!</i>'
-    )
-
+# ---------- Рассылка анонса ивента по команде /startcase ----------
 
 async def broadcast_event_start(bot):
     """Запускает ивент ПО КОМАНДЕ /startcase: открывает сундук и рассылает
-    анонс + карточку одним сообщением во все известные чаты (личка + группы).
+    карточку (тот же case_status_text(), что и везде — отдельного текста
+    для "анонса" больше нет) во все известные чаты (личка + группы).
     Ошибки по отдельным чатам (бот заблокирован/выгнан) просто пропускаются.
 
     ВАЖНО: вызывается только из хендлера команды, НЕ на старте процесса —
@@ -600,13 +588,14 @@ async def broadcast_event_start(bot):
         return False
 
     chats = await get_all_chats()
+    text = case_status_text()
     for chat_id, chat_type in chats:
         card = get_card_state(chat_id)
         card["chat_type"] = chat_type
 
         try:
             sent = await bot.send_message(
-                chat_id, _broadcast_card_text(), parse_mode="HTML",
+                chat_id, text, parse_mode="HTML",
                 reply_markup=case_keyboard(_CASE["active"]),
             )
             card["msg_id"] = sent.message_id
@@ -635,18 +624,22 @@ async def _close_chest(bot):
         state["last_winner_name"]   = winner_name
         state["last_winner_amount"] = bank
         text = (
-            f'{EVENT_TITLE}\n\n'
-            f'🎉 <b>СУНДУК НАЙДЕН!</b> 🎉\n\n'
-            f'<blockquote>👑 Победитель: <b>{_esc(winner_name)}</b>\n'
-            f'💰 Забрал: <b>{format_amount(bank)}</b>{COIN}</blockquote>\n'
-            f'⏳ <i>Новый сундук пират спрячет через 30 минут.</i>'
+            f'{EVENT_TITLE}\n'
+            f'{DIVIDER}\n'
+            f'🎉 <b>Сундук найден!</b>\n\n'
+            f'<blockquote>'
+            f'👑 <b>Победитель:</b> {_esc(winner_name)}\n'
+            f'💰 <b>Забрал:</b> <code>{format_amount(bank)}</code>{COIN}'
+            f'</blockquote>\n'
+            f'<i>⏳ Новый сундук пират спрячет через 30 минут.</i>'
         )
     else:
         text = (
-            f'{EVENT_TITLE}\n\n'
-            '💨 <b>Сундук исчез в тумане...</b>\n\n'
-            '<blockquote>Никто не успел вложиться — золото утонуло вместе с сундуком.</blockquote>\n'
-            '⏳ <i>Новый сундук появится через 30 минут.</i>'
+            f'{EVENT_TITLE}\n'
+            f'{DIVIDER}\n'
+            f'💨 <b>Сундук исчез в тумане...</b>\n\n'
+            f'<blockquote>Никто не успел вложиться — золото утонуло вместе с сундуком.</blockquote>\n'
+            f'<i>⏳ Новый сундук появится через 30 минут.</i>'
         )
 
     await _broadcast(bot, text, active=False)
