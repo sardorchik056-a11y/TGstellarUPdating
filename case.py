@@ -40,13 +40,20 @@ import html as _html
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.exceptions import TelegramRetryAfter
 
-from database import aio_change_balance, aio_get_user, format_amount
+from database import aio_change_balance, aio_get_user, aio_save_user, format_amount
 from miner import COIN
 
 # ---------- Параметры игры ----------
 
-CASE_INITIAL_BANK          = 500_000   # стартовый банк сундука
-CASE_DEPOSIT                = 50_000    # фиксированный вклад
+CASE_INITIAL_BANK          = 500_000   # стартовый банк сундука (режим приза "монеты")
+CASE_DEPOSIT                = 50_000    # вклад по умолчанию для режима "монеты"
+                                          # (для призов "артефакт"/"статус" сумму вклада
+                                          # каждый раз выбирает админ через /startcase)
+
+# Если победителю выпадает артефакт, который у него уже есть — вместо
+# повторной записи в коллекцию (это сломало бы подсчёт бонусов) выдаём
+# монеты-компенсацию: множитель_артефакта × эта константа.
+CASE_ARTIFACT_DUPLICATE_COMPENSATION_PER_MULT = 200_000
 CASE_TIMER_SECONDS          = 60        # таймер сундука (сбрасывается при каждом вкладе)
 CASE_FIRST_DEPOSIT_SECONDS  = 15 * 60   # время на ПЕРВЫЙ вклад в новом сундуке — 15 минут
 PLAYER_COOLDOWN_SECONDS     = 15        # кулдаун игрока между вкладами (общий, на весь бот)
@@ -181,7 +188,7 @@ async def get_all_chats() -> list[tuple[int, str]]:
 # _CASE = {
 #   "running":            bool,  # цикл запущен (вручную или автостартом) и не остановлен
 #   "active":             bool,  # сундук сейчас открыт (принимает вклады)
-#   "bank":               int,
+#   "bank":               int,   # копится только в режиме приза "монеты"
 #   "expires_at":         float, # unix ts закрытия текущего сундука
 #   "window_seconds":     int,   # длина текущего окна (для прогресс-бара)
 #   "last_uid":           int | None,
@@ -189,7 +196,19 @@ async def get_all_chats() -> list[tuple[int, str]]:
 #   "cooldowns":          {uid: last_invest_ts},   # общий кулдаун на весь бот
 #   "paused_until":        float | None,
 #   "last_winner_name":    str | None,
-#   "last_winner_amount":  int | None,
+#   "last_winner_amount":  int | None,   # для "монет" — сумма; для остальных призов — None
+#   "last_prize_type":     str | None,   # чем был награждён ПОСЛЕДНИЙ закрытый сундук
+#   "last_prize_label":     str | None,  # готовая подпись приза для текста "прошлого победителя"
+#
+#   ---- Настройки ТЕКУЩЕГО ивента (задаются админом в /startcase и
+#        живут, пока цикл не остановлен /stopcase — при авто-рестарте
+#        нового сундука после паузы используются те же настройки) ----
+#   "deposit":              int,          # сумма одного вклада (выбирает админ)
+#   "prize_type":           str,          # "coins" | "artifact" | "status"
+#   "prize_artifact_key":   str | None,
+#   "prize_artifact_name":  str | None,
+#   "prize_artifact_mult":  float | None,
+#   "prize_status_tier":    str | None,   # "vip" | "premium"
 # }
 _CASE: dict = {
     "running":            False,
@@ -203,6 +222,15 @@ _CASE: dict = {
     "paused_until":       None,
     "last_winner_name":   None,
     "last_winner_amount": None,
+    "last_prize_type":    None,
+    "last_prize_label":   None,
+
+    "deposit":             CASE_DEPOSIT,
+    "prize_type":          "coins",
+    "prize_artifact_key":  None,
+    "prize_artifact_name": None,
+    "prize_artifact_mult": None,
+    "prize_status_tier":   None,
 }
 
 
@@ -216,12 +244,16 @@ def _esc(s) -> str:
 
 
 def _spawn_chest(state: dict) -> None:
-    """Открывает новый сундук с нуля: стартовый банк и увеличенный таймер
-    на ПЕРВЫЙ вклад (15 минут — чтобы игроки успели заметить и зайти в
-    любом из чатов бота). Как только кто-то вложится первым — таймер
-    начинает работать в обычном режиме (см. try_invest)."""
+    """Открывает новый сундук с нуля: стартовый банк (только для приза
+    "монеты" — для "артефакт"/"статус" банк не используется, приз
+    фиксирован заранее) и увеличенный таймер на ПЕРВЫЙ вклад (15 минут —
+    чтобы игроки успели заметить и зайти в любом из чатов бота). Как
+    только кто-то вложится первым — таймер начинает работать в обычном
+    режиме (см. try_invest). Настройки приза/вклада (deposit, prize_*)
+    НЕ трогаем — они живут поверх пересоздания сундука, пока цикл не
+    остановлен /stopcase."""
     state["active"]         = True
-    state["bank"]            = CASE_INITIAL_BANK
+    state["bank"]            = CASE_INITIAL_BANK if state["prize_type"] == "coins" else 0
     state["expires_at"]      = time.time() + CASE_FIRST_DEPOSIT_SECONDS
     state["window_seconds"]  = CASE_FIRST_DEPOSIT_SECONDS
     state["last_uid"]        = None
@@ -232,10 +264,40 @@ def _spawn_chest(state: dict) -> None:
 
 # ---------- Управление циклом (админ / автостарт) ----------
 
-def start_case() -> bool:
-    """/startcase — запускает общий цикл сундука (на весь бот). False, если уже запущен."""
+def start_case(
+    deposit: int = CASE_DEPOSIT,
+    prize_type: str = "coins",
+    prize_artifact: dict | None = None,
+    prize_status_tier: str | None = None,
+) -> bool:
+    """/startcase — запускает общий цикл сундука (на весь бот). False, если уже запущен.
+
+    deposit            — сумма одного вклада, выбирает админ в мастере настройки.
+    prize_type          — "coins" (обычный растущий банк), "artifact" (фиксированный
+                          артефакт) или "status" (фиксированный VIP/Premium).
+    prize_artifact       — для prize_type="artifact": {"key", "name", "multiplier"}.
+    prize_status_tier    — для prize_type="status": "vip" | "premium".
+
+    Настройки сохраняются в _CASE и действуют для ВСЕХ сундуков этого
+    запуска цикла (в т.ч. авто-рестартующихся после паузы), пока админ
+    не остановит ивент /stopcase и не запустит заново с другими настройками."""
     if _CASE["running"]:
         return False
+
+    _CASE["deposit"]    = max(1, int(deposit))
+    _CASE["prize_type"] = prize_type
+
+    if prize_type == "artifact" and prize_artifact:
+        _CASE["prize_artifact_key"]  = prize_artifact.get("key")
+        _CASE["prize_artifact_name"] = prize_artifact.get("name")
+        _CASE["prize_artifact_mult"] = prize_artifact.get("multiplier")
+    else:
+        _CASE["prize_artifact_key"]  = None
+        _CASE["prize_artifact_name"] = None
+        _CASE["prize_artifact_mult"] = None
+
+    _CASE["prize_status_tier"] = prize_status_tier if prize_type == "status" else None
+
     _CASE["running"] = True
     _spawn_chest(_CASE)
     return True
@@ -260,9 +322,10 @@ async def try_invest(uid: int, name: str) -> dict:
     Пытается сделать вклад за игрока uid в ОБЩИЙ сундук (не важно, из
     какого чата пришёл вклад — банк и кулдаун одни на весь бот).
     Возвращает dict:
-      {"ok": True, "bank": int}
+      {"ok": True, "bank": int, "deposit": int}
       {"ok": False, "reason": "no_active" | "cooldown" | "insufficient",
-       "wait": int (для cooldown), "balance": int (для insufficient)}
+       "wait": int (для cooldown), "balance": int (для insufficient),
+       "deposit": int (для insufficient — сколько было нужно)}
     """
     if not _CASE["active"]:
         return {"ok": False, "reason": "no_active"}
@@ -273,23 +336,26 @@ async def try_invest(uid: int, name: str) -> dict:
     if elapsed < PLAYER_COOLDOWN_SECONDS:
         return {"ok": False, "reason": "cooldown", "wait": int(PLAYER_COOLDOWN_SECONDS - elapsed) + 1}
 
+    deposit = _CASE["deposit"]
+
     # Атомарное списание — та же гарантия, что и везде в проекте:
     # если баланса не хватает, change_balance просто вернёт None и
     # ничего не спишет (см. database.change_balance).
-    new_balance = await aio_change_balance(uid, -CASE_DEPOSIT, min_balance=0)
+    new_balance = await aio_change_balance(uid, -deposit, min_balance=0)
     if new_balance is None:
         u = await aio_get_user(uid)
         balance = u.get("balance", 0) if u else 0
-        return {"ok": False, "reason": "insufficient", "balance": balance}
+        return {"ok": False, "reason": "insufficient", "balance": balance, "deposit": deposit}
 
-    _CASE["bank"]           += CASE_DEPOSIT
+    if _CASE["prize_type"] == "coins":
+        _CASE["bank"] += deposit
     _CASE["last_uid"]        = uid
     _CASE["last_name"]       = name
     _CASE["cooldowns"][uid]  = now
     _CASE["expires_at"]      = now + CASE_TIMER_SECONDS
     _CASE["window_seconds"]  = CASE_TIMER_SECONDS
 
-    return {"ok": True, "bank": _CASE["bank"]}
+    return {"ok": True, "bank": _CASE["bank"], "deposit": deposit}
 
 
 # ---------- Тексты и клавиатура ----------
@@ -302,7 +368,7 @@ DIVIDER = "▬▬▬▬▬▬▬▬▬▬▬▬▬"
 # у аккаунта бота есть активная Telegram Premium подписка (или куплен доп.
 # юзернейм на Fragment) — иначе Telegram эту иконку молча проигнорирует.
 # Как достать ID своего эмодзи — см. инструкцию в чате.
-CASE_INVEST_BUTTON_EMOJI_ID = "5397916757333654639"  # ← замени на свой ID
+CASE_INVEST_BUTTON_EMOJI_ID = "5377544787839521766"  # ← замени на свой ID
 
 
 def case_keyboard(active: bool) -> InlineKeyboardMarkup | None:
@@ -311,7 +377,7 @@ def case_keyboard(active: bool) -> InlineKeyboardMarkup | None:
     карточкой на каждом тике, так что таймер на ней тоже "тикает").
     Кнопки "Обновить" больше нет: карточка обновляется сама.
 
-    Вид: [premium-иконка] 50К |  ММ:СС — иконка задаётся отдельным полем
+    Вид: [premium-иконка] 50К | ⏳ ММ:СС — иконка задаётся отдельным полем
     icon_custom_emoji_id, а не эмодзи внутри text (Telegram не рендерит
     custom-эмодзи как символ текста на кнопках, только как icon)."""
     if not active:
@@ -323,13 +389,28 @@ def case_keyboard(active: bool) -> InlineKeyboardMarkup | None:
 
     builder = InlineKeyboardBuilder()
     builder.button(
-        text=f"{format_amount(CASE_DEPOSIT)} |  {mins:02d}:{secs:02d}",
+        text=f"{format_amount(_CASE['deposit'])} | ⏳ {mins:02d}:{secs:02d}",
         callback_data=CASE_INVEST_CB,
         icon_custom_emoji_id=CASE_INVEST_BUTTON_EMOJI_ID,
         style="primary",  # синяя кнопка; варианты: "success" (зелёная), "danger" (красная)
     )
     builder.adjust(1)
     return builder.as_markup()
+
+
+def _active_prize_line(state: dict) -> str:
+    """Строка "что лежит в сундуке" для карточки, пока сундук открыт —
+    зависит от режима приза, выбранного админом в /startcase."""
+    if state["prize_type"] == "artifact":
+        name = _esc(state["prize_artifact_name"] or "?")
+        mult = state["prize_artifact_mult"]
+        mult_str = f" (×{mult})" if mult else ""
+        return f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>В сундуке артефакт:</b> {name}{mult_str}'
+    if state["prize_type"] == "status":
+        label = "VIP" if state["prize_status_tier"] == "vip" else "Premium"
+        return f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>В сундуке статус:</b> {label} (30 дней)'
+    bank_str = format_amount(state["bank"])
+    return f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>Золота в трюме:</b> <code>{bank_str}</code>{COIN}'
 
 
 def case_status_text() -> str:
@@ -343,7 +424,6 @@ def case_status_text() -> str:
         remaining  = max(0, int(state["expires_at"] - now))
         mins, secs = divmod(remaining, 60)
         timer_str  = f"{mins:02d}:{secs:02d}"
-        bank_str   = format_amount(state["bank"])
 
         if state["last_uid"]:
             last_line = f'🙋 <b>Последний, кто рискнул:</b> {_esc(state["last_name"])}'
@@ -355,12 +435,12 @@ def case_status_text() -> str:
             f'{DIVIDER}\n'
             f'<i>Тишина... только скрип старого дерева и блеск золота во тьме.</i>\n\n'
             f'<blockquote>'
-            f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>Золота в трюме:</b> <code>{bank_str}</code>{COIN}\n'
+            f'{_active_prize_line(state)}\n'
             f'<tg-emoji emoji-id="5382194935057372936">🌟</tg-emoji> <b>Секунды утекают:</b> <code>{timer_str}</code>\n'
             f'{last_line}'
             f'</blockquote>\n'
             f'<b>Стань последним — и сундук навсегда твой.</b>\n'
-            f'<tg-emoji emoji-id="5397916757333654639">🌟</tg-emoji> Вклад: <b>{format_amount(CASE_DEPOSIT)}</b>{COIN}'
+            f'<tg-emoji emoji-id="5397916757333654639">🌟</tg-emoji> Вклад: <b>{format_amount(state["deposit"])}</b>{COIN}'
         )
 
     if state["running"]:
@@ -372,7 +452,7 @@ def case_status_text() -> str:
             winner_block = (
                 f'\n\n<blockquote>'
                 f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> <b>Последний, кому повезло:</b> {_esc(state["last_winner_name"])}\n'
-                f'<tg-emoji emoji-id="5438496463044752972">🌟</tg-emoji> <b>Унёс с собой:</b> <code>{format_amount(state["last_winner_amount"])}</code>{COIN}'
+                f'<tg-emoji emoji-id="5438496463044752972">🌟</tg-emoji> <b>Унёс с собой:</b> {state.get("last_prize_label") or "—"}'
                 f'</blockquote>'
             )
 
@@ -589,15 +669,24 @@ async def bump_card(bot):
 
 # ---------- Рассылка анонса ивента по команде /startcase ----------
 
-async def broadcast_event_start(bot):
-    """Запускает ивент ПО КОМАНДЕ /startcase: открывает сундук и рассылает
-    карточку (тот же case_status_text(), что и везде — отдельного текста
-    для "анонса" больше нет) во все известные чаты (личка + группы).
+async def broadcast_event_start(
+    bot,
+    deposit: int = CASE_DEPOSIT,
+    prize_type: str = "coins",
+    prize_artifact: dict | None = None,
+    prize_status_tier: str | None = None,
+):
+    """Запускает ивент ПО КОМАНДЕ /startcase (после того, как админ прошёл
+    мастер выбора приза в main.py): открывает сундук и рассылает карточку
+    (тот же case_status_text(), что и везде — отдельного текста для
+    "анонса" больше нет) во все известные чаты (личка + группы).
     Ошибки по отдельным чатам (бот заблокирован/выгнан) просто пропускаются.
+
+    deposit/prize_type/prize_artifact/prize_status_tier — см. start_case().
 
     ВАЖНО: вызывается только из хендлера команды, НЕ на старте процесса —
     иначе ивент начинался бы сам по себе при каждом деплое/рестарте бота."""
-    if not start_case():
+    if not start_case(deposit, prize_type, prize_artifact, prize_status_tier):
         return False
 
     chats = await get_all_chats()
@@ -621,11 +710,61 @@ async def broadcast_event_start(bot):
     return True
 
 
+# ---------- Выдача приза победителю (по типу) ----------
+
+async def _grant_artifact_prize(winner_uid: int) -> str:
+    """Выдаёт победителю зафиксированный артефакт-приз (см. state
+    "prize_artifact_*", задаётся один раз в /startcase). Если артефакт у
+    игрока уже есть — во избежание поломки подсчёта бонусов (та же защита,
+    что и у команды /giveart в mainhelp.py) выдаём вместо повторной записи
+    монеты-компенсацию. Возвращает готовую HTML-подпись приза для карточки."""
+    key  = _CASE["prize_artifact_key"]
+    name = _CASE["prize_artifact_name"] or "?"
+    mult = _CASE["prize_artifact_mult"]
+
+    data = await aio_get_user(winner_uid)
+    if data is None:
+        return f'{_esc(name)} <i>(не удалось выдать — игрок не найден в базе)</i>'
+
+    artifacts = data.setdefault("artifacts", [])
+    if any(entry.get("key") == key for entry in artifacts):
+        comp = int((mult or 1) * CASE_ARTIFACT_DUPLICATE_COMPENSATION_PER_MULT)
+        await aio_change_balance(winner_uid, comp)
+        return f'<code>{format_amount(comp)}</code>{COIN} <i>(дубликат «{_esc(name)}», выдана компенсация)</i>'
+
+    artifacts.append({"key": key})
+    data["artifact_cases_opened"] = data.get("artifact_cases_opened", 0) + 1
+    await aio_save_user(winner_uid, data)
+
+    mult_str = f" (×{mult})" if mult else ""
+    return f'{_esc(name)}{mult_str}'
+
+
+async def _grant_status_prize(winner_uid: int) -> str:
+    """Выдаёт победителю зафиксированный статус-приз (VIP/Premium, 30 дней —
+    та же activate_status(), что используют /getstatus и покупка статуса
+    в mainhelp.py)."""
+    from status import activate_status
+
+    tier  = _CASE["prize_status_tier"]
+    label = "VIP" if tier == "vip" else "Premium"
+
+    data = await aio_get_user(winner_uid)
+    if data is None:
+        return f'статус <b>{label}</b> <i>(не удалось выдать — игрок не найден в базе)</i>'
+
+    ok, msg = activate_status(data, tier)
+    if not ok:
+        return f'статус <b>{label}</b> <i>(не удалось активировать: {_esc(msg)})</i>'
+
+    await aio_save_user(winner_uid, data)
+    return f'статус <b>{label}</b> (30 дней)'
+
+
 # ---------- Фоновый цикл (закрытие сундука / авто-рестарт) ----------
 
 async def _close_chest(bot):
     state       = _CASE
-    bank        = state["bank"]
     winner_uid  = state["last_uid"]
     winner_name = state["last_name"]
 
@@ -633,25 +772,37 @@ async def _close_chest(bot):
     state["paused_until"] = time.time() + PAUSE_SECONDS
 
     if winner_uid:
-        await aio_change_balance(winner_uid, bank)
+        prize_type = state["prize_type"]
+        if prize_type == "artifact":
+            prize_label = await _grant_artifact_prize(winner_uid)
+        elif prize_type == "status":
+            prize_label = await _grant_status_prize(winner_uid)
+        else:
+            bank = state["bank"]
+            await aio_change_balance(winner_uid, bank)
+            prize_label = f'<code>{format_amount(bank)}</code>{COIN}'
+
         state["last_winner_name"]   = winner_name
-        state["last_winner_amount"] = bank
+        state["last_winner_amount"] = state["bank"] if prize_type == "coins" else None
+        state["last_prize_type"]    = prize_type
+        state["last_prize_label"]   = prize_label
+
         text = (
-            f'<b>{EVENT_TITLE}\n'
+            f'{EVENT_TITLE}\n'
             f'{DIVIDER}\n'
             f'<i>Волны сомкнулись над сундуком — но не раньше, чем кто-то успел к нему прикоснуться.</i>\n\n'
             f'<blockquote>'
-            f'<tg-emoji emoji-id="...">🌟</tg-emoji> <b>Победитель:</b> {_esc(winner_name)}\n'
-            f'<tg-emoji emoji-id="...">🌟</tg-emoji> <b>Забрал:</b> <code>{format_amount(bank)}</code>{COIN}'
+            f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> <b>Победитель:</b> {_esc(winner_name)}\n'
+            f'<tg-emoji emoji-id="5438496463044752972">🌟</tg-emoji> <b>Забрал:</b> {prize_label}'
             f'</blockquote>\n'
-            f'<b>Новый сундук пират спрячет через 30 минут.</b></b>'
+            f'<b>Новый сундук пират спрячет через 30 минут.</b>'
         )
     else:
         text = (
             f'{EVENT_TITLE}\n'
             f'{DIVIDER}\n'
             f'<i>Никто не решился подойти — сундук исчез в тумане так же тихо, как появился.</i>\n\n'
-            f'<blockquote>Золото утонуло вместе с сундуком.</blockquote>\n'
+            f'<blockquote>Приз утонул вместе с сундуком.</blockquote>\n'
             f'<b>Новый сундук появится через 30 минут.</b>'
         )
 
