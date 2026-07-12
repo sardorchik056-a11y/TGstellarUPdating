@@ -98,14 +98,18 @@ async def cmd_startcase(message: Message):
     chat_id = message.chat.id
     set_chat_type(chat_id, message.chat.type)
 
-    if not start_case(chat_id):
+    # Сундук общий на весь бот — команда запускает цикл сразу для всех
+    # чатов, а не только для текущего.
+    if not start_case():
         await message.reply(
-            "⚠️ <b>Цикл сундуков уже запущен</b> в этом чате.",
+            "⚠️ <b>Общий цикл сундуков уже запущен.</b>",
             parse_mode="HTML",
         )
         return
 
-    await send_case_card(bot, chat_id)
+    # Рассылаем свежую карточку сразу во все известные чаты (не только
+    # в этот), потому что банк и таймер теперь общие на всех.
+    await bump_card(bot)
 
 
 @dp.message(Command("stopcase"))
@@ -113,10 +117,9 @@ async def cmd_stopcase(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return
 
-    chat_id = message.chat.id
-    if stop_case(chat_id):
+    if stop_case():
         await message.reply(
-            "🛑 <b>Цикл сундуков остановлен.</b>\n"
+            "🛑 <b>Общий цикл сундуков остановлен.</b>\n"
             "<blockquote>Чтобы запустить заново — <code>/startcase</code>.</blockquote>",
             parse_mode="HTML",
         )
@@ -134,20 +137,20 @@ async def cmd_case(message: Message):
     chat_id = message.chat.id
     set_chat_type(chat_id, message.chat.type)
 
-    from case import get_case_state
-    state = get_case_state(chat_id)
+    from case import get_case_state, get_card_state
+    state = get_case_state()
     sent = await message.answer(
-        case_status_text(chat_id),
+        case_status_text(),
         parse_mode="HTML",
         reply_markup=case_keyboard(state["active"]),
     )
-    state["msg_id"] = sent.message_id
+    get_card_state(chat_id)["msg_id"] = sent.message_id
 
 
 @dp.message(Command("invest"))
 async def cmd_invest(message: Message):
     set_chat_type(message.chat.id, message.chat.type)
-    await _handle_invest(chat_id=message.chat.id, uid=message.from_user.id,
+    await _handle_invest(uid=message.from_user.id,
                           name=message.from_user.first_name or message.from_user.username or str(message.from_user.id),
                           message=message)
 
@@ -155,19 +158,22 @@ async def cmd_invest(message: Message):
 @dp.callback_query(F.data == CASE_INVEST_CB)
 async def cb_case_invest(call: CallbackQuery):
     set_chat_type(call.message.chat.id, call.message.chat.type)
-    await _handle_invest(chat_id=call.message.chat.id, uid=call.from_user.id,
+    await _handle_invest(uid=call.from_user.id,
                           name=call.from_user.first_name or call.from_user.username or str(call.from_user.id),
                           call=call)
 
 
-async def _handle_invest(chat_id: int, uid: int, name: str,
+async def _handle_invest(uid: int, name: str,
                           message: Message | None = None, call: CallbackQuery | None = None):
     """Общая логика вклада — используется и командой /invest, и кнопкой.
+    Банк общий на весь бот, поэтому вклад из ЛЮБОГО чата пополняет один
+    и тот же сундук.
 
     Обновление карточки после успешного вклада делает case.bump_card():
-    в личке с ботом карточка редактируется на месте, а в группах старая
-    удаляется и присылается новая (чтобы она "поднималась" в чате)."""
-    result = await try_invest(chat_id, uid, name)
+    она рассылает свежую карточку СРАЗУ во все известные чаты (в личке —
+    редактирует на месте, в группах — удаляет старую и присылает новую,
+    чтобы карточка "поднималась" в чате)."""
+    result = await try_invest(uid, name)
 
     if not result["ok"]:
         reason = result["reason"]
@@ -186,10 +192,10 @@ async def _handle_invest(chat_id: int, uid: int, name: str,
             await message.reply(text, parse_mode="HTML")
         return
 
-    await bump_card(bot, chat_id)
+    await bump_card(bot)
 
     if call:
-        await call.answer(f"💰 Вложено {format_amount(CASE_DEPOSIT)}! Банк: {format_amount(result['bank'])}")
+        await call.answer(f"💰 Вложено {format_amount(CASE_DEPOSIT)}! Общий банк: {format_amount(result['bank'])}")
 
 
 # ──────────────────────────────────────────────────────────────────────────
