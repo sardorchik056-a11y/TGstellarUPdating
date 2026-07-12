@@ -1908,26 +1908,52 @@ def unified_inventory_text(data: dict, lang: str = "ru") -> str:
         lbl_inv = "In inventory" if lang == "en" else "В инвентаре"
         lines.append(f"\n<blockquote expandable><b><i>{lbl_inv} ({total} шт.):</i></b>\n")
         for s in stacks:
-            cnt_str = f" <i>({s['count']} шт.)</i>" if s["count"] > 1 else ""
-            lines.append(f"<b><i>#{s['slot_id']}</i></b> <i>{s['display']}</i>{cnt_str}\n")
+            cnt_str = f" <b><i>({s['count']} шт.)</i></b>" if s["count"] > 1 else ""
+            lines.append(f"<b><i>#{s['slot_id']} {s['display']}</i></b>{cnt_str}\n")
         lines.append("</blockquote>")
 
+    # Артефакты — не стакаются (у игрока либо есть, либо нет), поэтому
+    # отдельным блоком под обычным инвентарём, тем же стилем, что и на
+    # экране коллекции (artifact_collection_text): своя иконка у каждого
+    # артефакта (emoji_id из _ARTIFACT_POOL, если задан) + название и
+    # множитель/эффект жирным курсивом.
+    owned_artifacts = data.get("artifacts", [])
+    if owned_artifacts:
+        lbl_art = "Artifacts" if lang == "en" else "Артефакты"
+        artifact_lines = []
+        for entry in owned_artifacts:
+            a = ARTIFACT_POOL_BY_KEY.get(entry["key"])
+            if not a:
+                continue
+            eid   = a.get("emoji_id", "")
+            aicon = f'<tg-emoji emoji-id="{eid}">♦️</tg-emoji>' if eid else "♦️"
+            aname = a.get("name_en", a["name"]) if lang == "en" else a["name"]
+            effect_label = _get_effect_label(a["effect"], lang)
+            artifact_lines.append(
+                f'{aicon} <b><i>{aname} — {a["multiplier"]}× {effect_label}</i></b>\n'
+            )
+        if artifact_lines:
+            lines.append(
+                f"\n<blockquote><b><i>{lbl_art} ({len(artifact_lines)}):</i></b>\n"
+                + "".join(artifact_lines) + "</blockquote>"
+            )
+
     lbl_hint = (
-        "\n<blockquote><i>"
+        "\n<blockquote><b><i>"
         "Use: <code>use #N</code> or <code>-use #N</code>\n"
         "Cancel: <code>/boost</code>\n"
         "Sell: <code>/sell #N</code> or <code>/sell #N 5</code>\n"
         "Transfer: <code>отп #N</code> or <code>отп #N 3 @username</code>\n"
         "Open cases: <code>open #1 5</code> or <code>/open #2 10</code>"
-        "</i></blockquote>"
+        "</i></b></blockquote>"
         if lang == "en" else
-        "\n<blockquote><i>"
+        "\n<blockquote><b><i>"
         "Использовать: <code>исп #N</code> или <code>-use #N</code>\n"
         "Отменить: <code>/буст </code>\n"
         "Продать: <code>/sell #N</code> или <code>/sell #N 5</code>\n"
         "Передать: <code>отп #N</code> или <code>отп #N 3 @username</code>\n"
         "Открыть кейсы: <code>открыть #1 5</code> или <code>/купить #2 10</code>"
-        "</i></blockquote>"
+        "</i></b></blockquote>"
     )
     lines.append(lbl_hint)
     return "".join(lines)
