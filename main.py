@@ -24,11 +24,11 @@ from mainhelp import bot, dp, run_bot, ADMIN_IDS
 # ── Игра "Общий сундук" / ивент "Щедрый пират" — вся логика, тексты
 # и реестр чатов вынесены в case.py, здесь только хендлеры команд/кнопок. ──
 from case import (
-    start_case, stop_case,
+    stop_case,
     try_invest, case_status_text, case_keyboard,
-    send_case_card, case_tick_loop, case_card_refresh_loop,
+    case_tick_loop, case_card_refresh_loop,
     bump_card, set_chat_type, register_chat, forget_chat,
-    broadcast_event_start,
+    broadcast_event_start, get_case_state, get_card_state,
     CASE_DEPOSIT, CASE_INVEST_CB,
 )
 from database import format_amount
@@ -48,11 +48,11 @@ from database import format_amount
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  РЕЕСТР ЧАТОВ — запоминаем chat_id каждого апдейта, чтобы на старте
-#  бота было куда разослать анонс ивента. Это outer-middleware: она
-#  ничего не решает и никого не блокирует, просто "подсматривает"
-#  chat_id и пропускает апдейт дальше — ни один хендлер в mainhelp.py
-#  об этом даже не узнает, поведение бота не меняется ни на йоту.
+#  РЕЕСТР ЧАТОВ — запоминаем chat_id каждого апдейта, чтобы было куда
+#  разослать анонс и карточку сундука по команде /startcase. Это
+#  outer-middleware: она ничего не решает и никого не блокирует, просто
+#  "подсматривает" chat_id и пропускает апдейт дальше — ни один хендлер
+#  в mainhelp.py об этом даже не узнает, поведение бота не меняется ни на йоту.
 # ══════════════════════════════════════════════════════════════════════
 
 @dp.update.outer_middleware()
@@ -98,18 +98,15 @@ async def cmd_startcase(message: Message):
     chat_id = message.chat.id
     set_chat_type(chat_id, message.chat.type)
 
-    # Сундук общий на весь бот — команда запускает цикл сразу для всех
-    # чатов, а не только для текущего.
-    if not start_case():
+    # Сундук один на весь бот — команда открывает его и рассылает анонс
+    # сразу во все известные чаты, а не только в текущий. Ивент НЕ стартует
+    # сам по себе при запуске бота — только по этой команде.
+    started = await broadcast_event_start(bot)
+    if not started:
         await message.reply(
-            "⚠️ <b>Общий цикл сундуков уже запущен.</b>",
+            "⚠️ <b>Ивент уже запущен.</b>",
             parse_mode="HTML",
         )
-        return
-
-    # Рассылаем свежую карточку сразу во все известные чаты (не только
-    # в этот), потому что банк и таймер теперь общие на всех.
-    await bump_card(bot)
 
 
 @dp.message(Command("stopcase"))
@@ -119,7 +116,7 @@ async def cmd_stopcase(message: Message):
 
     if stop_case():
         await message.reply(
-            "🛑 <b>Общий цикл сундуков остановлен.</b>\n"
+            "🛑 <b>Цикл сундуков остановлен.</b>\n"
             "<blockquote>Чтобы запустить заново — <code>/startcase</code>.</blockquote>",
             parse_mode="HTML",
         )
@@ -137,7 +134,6 @@ async def cmd_case(message: Message):
     chat_id = message.chat.id
     set_chat_type(chat_id, message.chat.type)
 
-    from case import get_case_state, get_card_state
     state = get_case_state()
     sent = await message.answer(
         case_status_text(),
@@ -195,7 +191,7 @@ async def _handle_invest(uid: int, name: str,
     await bump_card(bot)
 
     if call:
-        await call.answer(f"💰 Вложено {format_amount(CASE_DEPOSIT)}! Общий банк: {format_amount(result['bank'])}")
+        await call.answer(f"💰 Вложено {format_amount(CASE_DEPOSIT)}! В сундуке: {format_amount(result['bank'])}")
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -203,23 +199,17 @@ async def _handle_invest(uid: int, name: str,
 # ──────────────────────────────────────────────────────────────────────────
 
 
-async def _startup_event_broadcast():
-    """При старте бота — анонс ивента "Щедрый пират" во все чаты, где бота
-    когда-либо видели (личка + группы), с автозапуском сундука там,
-    где цикл ещё не был запущен. Небольшая пауза даёт mainhelp.run_bot()
-    спокойно закончить свои миграции БД, прежде чем начнётся рассылка."""
-    await asyncio.sleep(2)
-    await broadcast_event_start(bot)
-
-
 async def _entrypoint():
     # Фоновые задачи сундука:
     #  - case_tick_loop        — раз в 1 сек: закрытие истёкших сундуков / авто-рестарт
-    #  - case_card_refresh_loop — раз в 2 сек: тихое обновление таймера на карточках
+    #  - case_card_refresh_loop — раз в несколько сек: тихое обновление таймера на карточках
     # запускаются здесь же, чтобы не трогать run_bot() в mainhelp.py.
+    #
+    # Сам ивент (открытие сундука + анонс) на старте НЕ запускается —
+    # только вручную, командой /startcase. Эти фоновые циклы просто ждут,
+    # пока цикл не будет запущен (см. case._CASE["running"]).
     asyncio.create_task(case_tick_loop(bot))
     asyncio.create_task(case_card_refresh_loop(bot))
-    asyncio.create_task(_startup_event_broadcast())
     await run_bot()
 
 
