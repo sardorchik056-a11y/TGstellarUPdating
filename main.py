@@ -246,6 +246,8 @@ async def cb_case_admin_artifact(call: CallbackQuery, state: FSMContext):
         artifact_key=found["key"],
         artifact_name=found["name"],
         artifact_multiplier=found["multiplier"],
+        artifact_emoji_id=found.get("emoji_id"),
+        artifact_emoji=found.get("emoji"),
     )
     await state.set_state(CaseAdminSetup.entering_deposit)
     await call.message.edit_text(
@@ -331,6 +333,8 @@ async def msg_case_admin_deposit(message: Message, state: FSMContext):
                 "key":        data.get("artifact_key"),
                 "name":       data.get("artifact_name"),
                 "multiplier": data.get("artifact_multiplier"),
+                "emoji_id":   data.get("artifact_emoji_id"),
+                "emoji":      data.get("artifact_emoji"),
             },
         )
         prize_line = f'💎 Приз: {data.get("artifact_name")} (×{data.get("artifact_multiplier")})'
