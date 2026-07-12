@@ -12,7 +12,7 @@ import asyncio
 
 from aiogram import F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, Update
 
 from mainhelp import bot, dp, run_bot, ADMIN_IDS
 
@@ -21,12 +21,14 @@ from mainhelp import bot, dp, run_bot, ADMIN_IDS
 # from mainhelp import ADMIN_IDS, _get_user_lock
 # from database import get_user, save_user
 
-# ── Игра "Общий сундук" — вся логика и тексты вынесены в case.py,
-# здесь только хендлеры команд/кнопок. ──
+# ── Игра "Общий сундук" / ивент "Щедрый пират" — вся логика, тексты
+# и реестр чатов вынесены в case.py, здесь только хендлеры команд/кнопок. ──
 from case import (
     start_case, stop_case,
     try_invest, case_status_text, case_keyboard,
-    send_case_card, case_tick_loop,
+    send_case_card, case_tick_loop, case_card_refresh_loop,
+    bump_card, set_chat_type, register_chat,
+    broadcast_event_start,
     CASE_DEPOSIT,
 )
 from database import format_amount
@@ -46,7 +48,28 @@ from database import format_amount
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  ИГРА "ОБЩИЙ СУНДУК" (/startcase, /stopcase, /case, кнопка "Вложить")
+#  РЕЕСТР ЧАТОВ — запоминаем chat_id каждого апдейта, чтобы на старте
+#  бота было куда разослать анонс ивента. Это outer-middleware: она
+#  ничего не решает и никого не блокирует, просто "подсматривает"
+#  chat_id и пропускает апдейт дальше — ни один хендлер в mainhelp.py
+#  об этом даже не узнает, поведение бота не меняется ни на йоту.
+# ══════════════════════════════════════════════════════════════════════
+
+@dp.update.outer_middleware()
+async def _chat_registry_middleware(handler, event: Update, data: dict):
+    try:
+        msg = event.message or (event.callback_query.message if event.callback_query else None)
+        if msg is not None and msg.chat is not None:
+            chat = msg.chat
+            asyncio.create_task(register_chat(chat.id, chat.type, getattr(chat, "title", None)))
+    except Exception:
+        pass
+    return await handler(event, data)
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  ИГРА "ОБЩИЙ СУНДУК" / ИВЕНТ "ЩЕДРЫЙ ПИРАТ"
+#  (/startcase, /stopcase, /case, кнопка "Вложить")
 # ══════════════════════════════════════════════════════════════════════
 
 @dp.message(Command("startcase"))
@@ -55,6 +78,8 @@ async def cmd_startcase(message: Message):
         return  # тихо игнорируем, как и остальные админ-команды в проекте
 
     chat_id = message.chat.id
+    set_chat_type(chat_id, message.chat.type)
+
     if not start_case(chat_id):
         await message.reply(
             "⚠️ <b>Цикл сундуков уже запущен</b> в этом чате.",
@@ -89,6 +114,8 @@ async def cmd_stopcase(message: Message):
 @dp.message(Command("case"))
 async def cmd_case(message: Message):
     chat_id = message.chat.id
+    set_chat_type(chat_id, message.chat.type)
+
     from case import get_case_state
     state = get_case_state(chat_id)
     sent = await message.answer(
@@ -101,6 +128,7 @@ async def cmd_case(message: Message):
 
 @dp.message(Command("invest"))
 async def cmd_invest(message: Message):
+    set_chat_type(message.chat.id, message.chat.type)
     await _handle_invest(chat_id=message.chat.id, uid=message.from_user.id,
                           name=message.from_user.first_name or message.from_user.username or str(message.from_user.id),
                           message=message)
@@ -108,30 +136,19 @@ async def cmd_invest(message: Message):
 
 @dp.callback_query(F.data == "case_invest")
 async def cb_case_invest(call: CallbackQuery):
+    set_chat_type(call.message.chat.id, call.message.chat.type)
     await _handle_invest(chat_id=call.message.chat.id, uid=call.from_user.id,
                           name=call.from_user.first_name or call.from_user.username or str(call.from_user.id),
                           call=call)
 
 
-@dp.callback_query(F.data == "case_refresh")
-async def cb_case_refresh(call: CallbackQuery):
-    chat_id = call.message.chat.id
-    from case import get_case_state
-    state = get_case_state(chat_id)
-    state["msg_id"] = call.message.message_id
-    try:
-        await call.message.edit_text(
-            case_status_text(chat_id), parse_mode="HTML",
-            reply_markup=case_keyboard(state["active"]),
-        )
-    except Exception:
-        pass  # текст не изменился — Telegram запрещает "пустой" edit, это не ошибка
-    await call.answer()
-
-
 async def _handle_invest(chat_id: int, uid: int, name: str,
                           message: Message | None = None, call: CallbackQuery | None = None):
-    """Общая логика вклада — используется и командой /invest, и кнопкой."""
+    """Общая логика вклада — используется и командой /invest, и кнопкой.
+
+    Обновление карточки после успешного вклада делает case.bump_card():
+    в личке с ботом карточка редактируется на месте, а в группах старая
+    удаляется и присылается новая (чтобы она "поднималась" в чате)."""
     result = await try_invest(chat_id, uid, name)
 
     if not result["ok"]:
@@ -151,21 +168,10 @@ async def _handle_invest(chat_id: int, uid: int, name: str,
             await message.reply(text, parse_mode="HTML")
         return
 
-    from case import get_case_state
-    state = get_case_state(chat_id)
-    new_text = case_status_text(chat_id)
-    new_kb   = case_keyboard(state["active"])
+    await bump_card(bot, chat_id)
 
     if call:
-        state["msg_id"] = call.message.message_id
-        try:
-            await call.message.edit_text(new_text, parse_mode="HTML", reply_markup=new_kb)
-        except Exception:
-            pass
         await call.answer(f"💰 Вложено {format_amount(CASE_DEPOSIT)}! Банк: {format_amount(result['bank'])}")
-    else:
-        sent = await message.answer(new_text, parse_mode="HTML", reply_markup=new_kb)
-        state["msg_id"] = sent.message_id
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -173,10 +179,23 @@ async def _handle_invest(chat_id: int, uid: int, name: str,
 # ──────────────────────────────────────────────────────────────────────────
 
 
+async def _startup_event_broadcast():
+    """При старте бота — анонс ивента "Щедрый пират" во все чаты, где бота
+    когда-либо видели (личка + группы), с автозапуском сундука там,
+    где цикл ещё не был запущен. Небольшая пауза даёт mainhelp.run_bot()
+    спокойно закончить свои миграции БД, прежде чем начнётся рассылка."""
+    await asyncio.sleep(2)
+    await broadcast_event_start(bot)
+
+
 async def _entrypoint():
-    # Фоновый тик сундука (закрытие по таймеру / авто-рестарт после паузы)
-    # запускается здесь же, чтобы не трогать run_bot() в mainhelp.py.
+    # Фоновые задачи сундука:
+    #  - case_tick_loop        — раз в 1 сек: закрытие истёкших сундуков / авто-рестарт
+    #  - case_card_refresh_loop — раз в 2 сек: тихое обновление таймера на карточках
+    # запускаются здесь же, чтобы не трогать run_bot() в mainhelp.py.
     asyncio.create_task(case_tick_loop(bot))
+    asyncio.create_task(case_card_refresh_loop(bot))
+    asyncio.create_task(_startup_event_broadcast())
     await run_bot()
 
 
