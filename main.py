@@ -34,6 +34,7 @@ from case import (
     case_tick_loop, case_card_refresh_loop,
     bump_card, set_chat_type, register_chat, forget_chat,
     broadcast_event_start, get_case_state, get_card_state,
+    set_event_photo, get_event_photo,
     CASE_DEPOSIT, CASE_INVEST_CB,
 )
 from database import format_amount
@@ -396,6 +397,66 @@ async def cmd_stopcase(message: Message):
             "если сундук активен или цикл не запущен, команда игнорируется.</blockquote>",
             parse_mode="HTML",
         )
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  /photo — картинка ивента "Щедрый пират"
+#
+#  Админ присылает картинку (как подпись к самой команде "/photo" или
+#  ответом на уже отправленное в чат фото) — бот сохраняет её file_id
+#  (сама картинка при этом НИКУДА не скачивается и не хранится отдельно,
+#  Telegram присылает готовый file_id, который можно переиспользовать
+#  сколько угодно раз — это и есть штатный способ работы с медиа в Bot API).
+#  Дальше карточка сундука (case_status_text) рассылается уже КАК ФОТО
+#  с этим текстом в подписи, а не обычным текстовым сообщением — везде,
+#  где раньше слался/редактировался обычный текст (см. case.py).
+#
+#  "/photo" без картинки и без ответа на фото — просто напоминание, как
+#  пользоваться командой. "/photo off" — убирает картинку, карточка
+#  снова становится обычным текстовым сообщением.
+# ══════════════════════════════════════════════════════════════════════
+
+@dp.message(Command("photo"))
+async def cmd_photo(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    arg = (message.text or "").split(maxsplit=1)
+    if len(arg) > 1 and arg[1].strip().lower() in ("off", "выкл", "стоп"):
+        set_event_photo(None)
+        await message.reply(
+            "🖼 <b>Картинка ивента убрана.</b>\n"
+            "<blockquote>Карточка сундука снова будет обычным текстовым сообщением.</blockquote>",
+            parse_mode="HTML",
+        )
+        return
+
+    photo = None
+    if message.photo:
+        photo = message.photo[-1]
+    elif message.reply_to_message and message.reply_to_message.photo:
+        photo = message.reply_to_message.photo[-1]
+
+    if photo is None:
+        await message.reply(
+            "🖼 <b>Картинка ивента</b>\n"
+            "<blockquote>Пришли картинку с подписью <code>/photo</code>, либо ответь "
+            "командой <code>/photo</code> на уже отправленное в чат фото — бот запомнит "
+            "его и будет прикреплять к карточке сундука.\n"
+            "<code>/photo off</code> — убрать картинку.</blockquote>",
+            parse_mode="HTML",
+        )
+        return
+
+    set_event_photo(photo.file_id)
+    await message.reply(
+        "✅ <b>Картинка ивента сохранена!</b>\n"
+        "<blockquote>Карточка сундука теперь будет присылаться как фото с этим "
+        "текстом в подписи. Учти: у подписи к фото в Telegram лимит 1024 символа "
+        "(у обычного текста — 4096), так что при очень длинном тексте карточки "
+        "часть может не влезть.</blockquote>",
+        parse_mode="HTML",
+    )
 
 
 @dp.message(Command("case"))
