@@ -426,9 +426,9 @@ def case_status_text() -> str:
         timer_str  = f"{mins:02d}:{secs:02d}"
 
         if state["last_uid"]:
-            last_line = f'🙋 <b>Последний, кто рискнул:</b> {_esc(state["last_name"])}'
+            last_line = f'<tg-emoji emoji-id="5402477260982731644">🌟</tg-emoji> <b>Последний, кто рискнул:</b> {_esc(state["last_name"])}'
         else:
-            last_line = '🙋 <b>Пока никто не рискнул</b> — стань первым!'
+            last_line = '<tg-emoji emoji-id="5399913388845322366">🌟</tg-emoji> <b>Пока никто не рискнул</b> — стань первым!'
 
         return (
             f'{EVENT_TITLE}\n'
@@ -792,8 +792,8 @@ async def _close_chest(bot):
             f'{DIVIDER}\n'
             f'<i>Волны сомкнулись над сундуком — но не раньше, чем кто-то успел к нему прикоснуться.</i>\n\n'
             f'<blockquote>'
-            f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> <b>Победитель:</b> {_esc(winner_name)}\n'
-            f'<tg-emoji emoji-id="5438496463044752972">🌟</tg-emoji> <b>Забрал:</b> {prize_label}'
+            f'<tg-emoji emoji-id="5217822164362739968">🌟</tg-emoji> <b>Победитель:</b> {_esc(winner_name)}\n'
+            f'<tg-emoji emoji-id="5402477260982731644">🌟</tg-emoji> <b>Забрал:</b> {prize_label}'
             f'</blockquote>\n'
             f'<b>Новый сундук пират спрячет через 30 минут.</b>'
         )
