@@ -332,22 +332,21 @@ def case_status_text() -> str:
         bank_str   = format_amount(state["bank"])
 
         if state["last_uid"]:
-            last_line = f'🙋 Последним рискнул: <b>{_esc(state["last_name"])}</b>'
+            last_line = f'🙋 <b>Последний, кто рискнул:</b> {_esc(state["last_name"])}'
         else:
-            last_line = '🙋 Пока никто не рискнул — стань первым!'
+            last_line = '🙋 <b>Пока никто не рискнул</b> — стань первым!'
 
         return (
             f'{EVENT_TITLE}\n'
             f'{DIVIDER}\n'
-            f'<i>На дне морском блеснул сундук легендарного пирата — '
-            f'кто вложится последним перед закрытием, заберёт всё золото.</i>\n\n'
+            f'<i>Тишина... только скрип старого дерева и блеск золота во тьме.</i>\n\n'
             f'<blockquote>'
-            f'💰 <b>В сундуке:</b> <code>{bank_str}</code>{COIN}\n'
-            f'⏳ <b>До закрытия:</b> <code>{timer_str}</code>\n'
+            f'💰 <b>Золота в трюме:</b> <code>{bank_str}</code>{COIN}\n'
+            f'⏳ <b>Секунды утекают:</b> <code>{timer_str}</code>\n'
             f'{last_line}'
             f'</blockquote>\n'
-            f'🎟 <i>Вклад:</i> <b>{format_amount(CASE_DEPOSIT)}</b>{COIN} '
-            f'<i>· таймер сбрасывается с каждым новым вкладом</i>'
+            f'<b>Стань последним — и сундук навсегда твой.</b>\n'
+            f'🎟 Вклад: <b>{format_amount(CASE_DEPOSIT)}</b>{COIN}'
         )
 
     if state["running"]:
@@ -358,7 +357,7 @@ def case_status_text() -> str:
         if state.get("last_winner_name"):
             winner_block = (
                 f'\n\n<blockquote>'
-                f'👑 <b>Последний победитель:</b> {_esc(state["last_winner_name"])}\n'
+                f'👑 <b>Последний, кому повезло:</b> {_esc(state["last_winner_name"])}\n'
                 f'💰 <b>Унёс с собой:</b> <code>{format_amount(state["last_winner_amount"])}</code>{COIN}'
                 f'</blockquote>'
             )
@@ -366,15 +365,15 @@ def case_status_text() -> str:
         return (
             f'{EVENT_TITLE}\n'
             f'{DIVIDER}\n'
-            f'<i>Пират снова прячет добычу на дне морском...</i>\n\n'
-            f'<blockquote>🌊 <b>Новый сундук через:</b> <code>{mins:02d}:{secs:02d}</code></blockquote>'
+            f'<i>Пират растворился во тьме, унеся сундук с собой... но он вернётся.</i>\n\n'
+            f'<blockquote>🌊 <b>Новый сундук всплывёт через:</b> <code>{mins:02d}:{secs:02d}</code></blockquote>'
             f'{winner_block}'
         )
 
     return (
         f'{EVENT_TITLE}\n'
         f'{DIVIDER}\n'
-        f'<i>Пока тихо — сундук ещё не заброшен в эти воды.</i>'
+        f'<i>Тишина... сундук ещё не заброшен в эти воды.</i>'
     )
 
 
@@ -626,20 +625,20 @@ async def _close_chest(bot):
         text = (
             f'{EVENT_TITLE}\n'
             f'{DIVIDER}\n'
-            f'🎉 <b>Сундук найден!</b>\n\n'
+            f'<i>Волны сомкнулись над сундуком — но не раньше, чем кто-то успел к нему прикоснуться.</i>\n\n'
             f'<blockquote>'
             f'👑 <b>Победитель:</b> {_esc(winner_name)}\n'
             f'💰 <b>Забрал:</b> <code>{format_amount(bank)}</code>{COIN}'
             f'</blockquote>\n'
-            f'<i>⏳ Новый сундук пират спрячет через 30 минут.</i>'
+            f'<b>Новый сундук пират спрячет через 30 минут.</b>'
         )
     else:
         text = (
             f'{EVENT_TITLE}\n'
             f'{DIVIDER}\n'
-            f'💨 <b>Сундук исчез в тумане...</b>\n\n'
-            f'<blockquote>Никто не успел вложиться — золото утонуло вместе с сундуком.</blockquote>\n'
-            f'<i>⏳ Новый сундук появится через 30 минут.</i>'
+            f'<i>Никто не решился подойти — сундук исчез в тумане так же тихо, как появился.</i>\n\n'
+            f'<blockquote>Золото утонуло вместе с сундуком.</blockquote>\n'
+            f'<b>Новый сундук появится через 30 минут.</b>'
         )
 
     await _broadcast(bot, text, active=False)
