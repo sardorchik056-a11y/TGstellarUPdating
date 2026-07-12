@@ -30,6 +30,7 @@ import sqlite3
 import html as _html
 
 from aiogram.types import InlineKeyboardMarkup
+from aiogram.exceptions import TelegramRetryAfter
 
 from database import aio_change_balance, aio_get_user, format_amount
 from miner import COIN
@@ -42,7 +43,21 @@ CASE_TIMER_SECONDS       = 60        # таймер сундука (сбрасы
 CASE_FIRST_DEPOSIT_SECONDS = 15 * 60  # время на ПЕРВЫЙ вклад в новом сундуке — 15 минут
 PLAYER_COOLDOWN_SECONDS = 15        # кулдаун игрока между вкладами
 PAUSE_SECONDS           = 30 * 60   # пауза после закрытия сундука (авто-рестарт)
-CARD_REFRESH_SECONDS    = 2         # частота "тихого" авто-обновления карточки
+CARD_REFRESH_SECONDS    = 3         # частота "тихого" авто-обновления карточки
+                                     # (было 2 — увеличили, чтобы оставить запас
+                                     # лимита Telegram на карточки, дёргаемые вкладами)
+
+# Минимальный интервал между ЛЮБЫМИ запросами к Telegram (edit/delete/send),
+# которые трогают карточку ОДНОГО чата. Telegram даёт группе примерно
+# 1 сообщение/сек в среднем (с короткими бёрстами), и при частых вкладах
+# (delete+send на каждый) + тике раз в CARD_REFRESH_SECONDS этот лимит легко
+# словить — тогда Telegram отвечает "flood control, retry after N" и обновления
+# карточки застревают. Поэтому все обновления карточки чата идут через один
+# и тот же _get_card_lock + троттлинг ниже: даже если вкладов было 10 подряд,
+# к Telegram уйдёт не больше одного запроса на карточку раз в этот интервал —
+# итоговое состояние (банк/таймер) всё равно всегда актуальное, просто не
+# каждое промежуточное значение долетает как отдельное сообщение.
+MIN_CARD_UPDATE_INTERVAL = 1.5
 
 EVENT_TITLE = "🏴‍☠️ <b>Ивент: Щедрый пират</b>"
 
@@ -164,6 +179,40 @@ def _get_card_lock(chat_id: int) -> asyncio.Lock:
         lock = asyncio.Lock()
         _CARD_LOCKS[chat_id] = lock
     return lock
+
+
+# Время последнего реального запроса к Telegram по карточке этого чата —
+# используется троттлингом ниже (_throttle_card), чтобы не словить flood control.
+_LAST_CARD_UPDATE_TS: dict[int, float] = {}
+
+
+async def _throttle_card(chat_id: int) -> None:
+    """Вызывается СРАЗУ после захвата _get_card_lock(chat_id), перед любым
+    edit/delete/send. Если с прошлого запроса к Telegram по карточке этого
+    чата прошло меньше MIN_CARD_UPDATE_INTERVAL — ждём остаток, чтобы не
+    спамить API чаще лимита. Раз лок общий на все функции (bump_card,
+    refresh_card, _close_chest, send_case_card), троттлинг тоже общий —
+    неважно, что именно вызвало обновление."""
+    now  = time.time()
+    last = _LAST_CARD_UPDATE_TS.get(chat_id, 0.0)
+    wait = MIN_CARD_UPDATE_INTERVAL - (now - last)
+    if wait > 0:
+        await asyncio.sleep(wait)
+    _LAST_CARD_UPDATE_TS[chat_id] = time.time()
+
+
+async def _tg_call_with_retry(coro_factory, chat_id: int, what: str):
+    """Выполняет один Telegram-вызов (edit/delete/send), и если Telegram
+    ответил flood control (TelegramRetryAfter) — ОДИН раз ждёт ровно
+    столько, сколько он просит, и повторяет. Если поймали её снова —
+    сдаёмся и пробрасываем исключение выше (там уже есть свой except
+    в вызывающем коде, который просто залогирует и пойдёт дальше)."""
+    try:
+        return await coro_factory()
+    except TelegramRetryAfter as e:
+        print(f"[case] {what}: flood control chat_id={chat_id}, retry_after={e.retry_after}s — жду и повторяю")
+        await asyncio.sleep(e.retry_after + 0.1)
+        return await coro_factory()
 
 
 # _CASES[chat_id] = {
@@ -375,10 +424,14 @@ async def send_case_card(bot, chat_id: int):
     """Отправляет свежую карточку сундука новым сообщением и запоминает её id."""
     state = get_case_state(chat_id)
     async with _get_card_lock(chat_id):
+        await _throttle_card(chat_id)
         text = case_status_text(chat_id)
-        sent = await bot.send_message(
-            chat_id, text, parse_mode="HTML",
-            reply_markup=case_keyboard(state["active"]),
+        sent = await _tg_call_with_retry(
+            lambda: bot.send_message(
+                chat_id, text, parse_mode="HTML",
+                reply_markup=case_keyboard(state["active"]),
+            ),
+            chat_id, "send_case_card",
         )
         state["msg_id"] = sent.message_id
         print(f"[case] send_case_card: new msg_id={sent.message_id} chat_id={chat_id}")
@@ -387,14 +440,18 @@ async def send_case_card(bot, chat_id: int):
 
 async def _send_or_edit(bot, chat_id: int, state: dict, text: str, active: bool):
     """Тихое обновление на месте: пробуем отредактировать старую карточку.
-    ВАЖНО: вызывается только изнутри блока с уже захваченным _get_card_lock —
-    сама лок не берёт, чтобы не было дедлока при вложенных вызовах."""
+    ВАЖНО: вызывается только изнутри блока с уже захваченным _get_card_lock
+    (и уже прошедшего _throttle_card) — сама лок/троттлинг не берёт, чтобы
+    не было дедлока и двойного троттлинга при вложенных вызовах."""
     msg_id = state.get("msg_id")
     if msg_id:
         try:
-            await bot.edit_message_text(
-                text, chat_id=chat_id, message_id=msg_id,
-                parse_mode="HTML", reply_markup=case_keyboard(active),
+            await _tg_call_with_retry(
+                lambda: bot.edit_message_text(
+                    text, chat_id=chat_id, message_id=msg_id,
+                    parse_mode="HTML", reply_markup=case_keyboard(active),
+                ),
+                chat_id, "edit_message_text",
             )
             return
         except Exception as e:
@@ -408,8 +465,11 @@ async def _send_or_edit(bot, chat_id: int, state: dict, text: str, active: bool)
             # было видно наверняка, что произошло
             print(f"[case] edit_message_text FAILED chat_id={chat_id} msg_id={msg_id}: {e}")
     try:
-        sent = await bot.send_message(
-            chat_id, text, parse_mode="HTML", reply_markup=case_keyboard(active),
+        sent = await _tg_call_with_retry(
+            lambda: bot.send_message(
+                chat_id, text, parse_mode="HTML", reply_markup=case_keyboard(active),
+            ),
+            chat_id, "send_message",
         )
         state["msg_id"] = sent.message_id
         print(f"[case] _send_or_edit: sent NEW msg_id={sent.message_id} chat_id={chat_id} (fallback, old msg_id={msg_id})")
@@ -424,6 +484,7 @@ async def refresh_card(bot, chat_id: int):
     if not state.get("msg_id"):
         return
     async with _get_card_lock(chat_id):
+        await _throttle_card(chat_id)
         text = case_status_text(chat_id)
         await _send_or_edit(bot, chat_id, state, text, state["active"])
 
@@ -434,13 +495,14 @@ async def bump_card(bot, chat_id: int):
     в группах/супергруппах — удаляет старое и присылает новое, чтобы карточка
     "поднималась" в чате и не терялась среди сообщений участников.
 
-    Всё выполняется под _get_card_lock(chat_id) — это критично: если два
-    вклада (или вклад + фоновый тик) прилетают почти одновременно, без лока
-    оба одновременно читают тот же старый msg_id, и получается гонка —
-    старое сообщение может остаться неудалённым в группе, либо в личке
-    вместо одного edit'а появляется лишнее новое сообщение."""
+    Всё выполняется под _get_card_lock(chat_id) + _throttle_card(chat_id) —
+    это критично: если несколько вкладов (или вклад + фоновый тик) прилетают
+    почти одновременно, без лока получилась бы гонка за msg_id, а без
+    троттлинга — flood control от Telegram на частые edit/delete/send в один
+    чат (что и происходило: видно по логам "Retry after N")."""
     state = get_case_state(chat_id)
     async with _get_card_lock(chat_id):
+        await _throttle_card(chat_id)
         text   = case_status_text(chat_id)
         active = state["active"]
 
@@ -452,14 +514,20 @@ async def bump_card(bot, chat_id: int):
         old_id = state.get("msg_id")
         if old_id:
             try:
-                await bot.delete_message(chat_id, old_id)
+                await _tg_call_with_retry(
+                    lambda: bot.delete_message(chat_id, old_id),
+                    chat_id, "bump_card.delete_message",
+                )
                 print(f"[case] bump_card: deleted old msg_id={old_id} chat_id={chat_id}")
             except Exception as e:
                 # печатаем РЕАЛЬНУЮ причину — раньше она молча проглатывалась,
                 # из-за чего было невозможно понять, почему сообщение не удаляется
                 print(f"[case] bump_card: delete_message FAILED chat_id={chat_id} msg_id={old_id}: {e}")
         try:
-            sent = await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=case_keyboard(active))
+            sent = await _tg_call_with_retry(
+                lambda: bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=case_keyboard(active)),
+                chat_id, "bump_card.send_message",
+            )
             state["msg_id"] = sent.message_id
             print(f"[case] bump_card: sent new msg_id={sent.message_id} chat_id={chat_id}")
         except Exception as e:
@@ -543,6 +611,7 @@ async def _close_chest(bot, chat_id: int, state: dict):
         )
 
     async with _get_card_lock(chat_id):
+        await _throttle_card(chat_id)
         if state.get("chat_type") == "private":
             await _send_or_edit(bot, chat_id, state, text, active=False)
             return
@@ -550,12 +619,18 @@ async def _close_chest(bot, chat_id: int, state: dict):
         old_id = state.get("msg_id")
         if old_id:
             try:
-                await bot.delete_message(chat_id, old_id)
+                await _tg_call_with_retry(
+                    lambda: bot.delete_message(chat_id, old_id),
+                    chat_id, "_close_chest.delete_message",
+                )
                 print(f"[case] _close_chest: deleted old msg_id={old_id} chat_id={chat_id}")
             except Exception as e:
                 print(f"[case] _close_chest: delete_message FAILED chat_id={chat_id} msg_id={old_id}: {e}")
         try:
-            sent = await bot.send_message(chat_id, text, parse_mode="HTML")
+            sent = await _tg_call_with_retry(
+                lambda: bot.send_message(chat_id, text, parse_mode="HTML"),
+                chat_id, "_close_chest.send_message",
+            )
             state["msg_id"] = sent.message_id
             print(f"[case] _close_chest: sent new msg_id={sent.message_id} chat_id={chat_id}")
         except Exception as e:
