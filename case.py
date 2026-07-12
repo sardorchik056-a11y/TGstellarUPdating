@@ -306,37 +306,21 @@ def case_keyboard(active: bool) -> InlineKeyboardMarkup | None:
     return builder.as_markup()
 
 
-def _progress_bar(remaining: int, total: int, length: int = 10) -> str:
-    """Красивый визуальный таймер в виде полоски — наглядно показывает,
-    сколько времени осталось до закрытия сундука, без лишних цифр."""
-    total = max(total, 1)
-    filled = max(0, min(length, round(length * remaining / total)))
-    if filled <= 2:
-        fill_ch = "🟥"
-    elif filled <= 5:
-        fill_ch = "🟨"
-    else:
-        fill_ch = "🟩"
-    return fill_ch * filled + "⬜" * (length - filled)
-
-
 def event_announce_text() -> str:
-    """Красивый анонс ивента — отправляется во все известные чаты при старте бота."""
+    """Красивый анонс ивента — отправляется во все известные чаты по команде /startcase."""
     return (
-        f'{EVENT_TITLE}\n'
-        f'<i>⚓ Один банк на все чаты бота!</i>\n\n'
-        '<blockquote>Легендарный пират устал прятать золото по одному сундуку в '
-        'каждой гавани и объединил их в ОДИН общий сундук на все чаты сразу! '
-        'Каждый вклад — из любого чата — продлевает ему жизнь, а игрок, который '
-        'вложится последним перед закрытием — заберёт себе всё золото.</blockquote>\n\n'
+        f'{EVENT_TITLE}\n\n'
+        '<blockquote>Где-то в этих водах затонул корабль легендарного пирата, '
+        'а вместе с ним — сундук, доверху набитый золотом. Каждый вклад '
+        'приближает момент, когда сундук всплывёт... но заберёт добычу лишь тот, '
+        'кто окажется рядом последним.</blockquote>\n\n'
         f'🎟 <i>Вклад: <b>{format_amount(CASE_DEPOSIT)}</b>{COIN} • '
-        f'таймер общий и сбрасывается при каждом новом вкладе!</i>'
+        f'таймер сбрасывается с каждым новым вкладом!</i>'
     )
 
 
 def case_status_text() -> str:
-    """Текст карточки общего сундука — одинаковый для всех чатов, потому что
-    состояние (банк/таймер) одно на весь бот."""
+    """Текст карточки сундука."""
     state = _CASE
     now   = time.time()
 
@@ -345,23 +329,20 @@ def case_status_text() -> str:
         mins, secs = divmod(remaining, 60)
         timer_str  = f"{mins:02d}:{secs:02d}"
         bank_str   = format_amount(state["bank"])
-        bar        = _progress_bar(remaining, state.get("window_seconds") or CASE_TIMER_SECONDS)
 
         if state["last_uid"]:
-            last_line = f'👤 Последний вкладчик: <b>{_esc(state["last_name"])}</b>'
+            last_line = f'👤 Последним вложился: <b>{_esc(state["last_name"])}</b>'
         else:
-            last_line = '👤 Вкладчиков ещё не было — стань первым!'
+            last_line = '👤 Пока никто не рискнул — стань первым!'
 
         return (
-            f'{EVENT_TITLE}\n'
-            f'<i>⚓ Общий банк на все чаты бота</i>\n\n'
+            f'{EVENT_TITLE}\n\n'
             f'<blockquote>'
-            f'💰 <b>Банк:</b> {bank_str}{COIN}\n'
-            f'⏳ <b>До закрытия:</b> {timer_str}\n'
-            f'{bar}\n'
+            f'💰 <b>В сундуке:</b> {bank_str}{COIN}\n'
+            f'⏳ <b>Уплывает через:</b> {timer_str}\n'
             f'{last_line}'
             f'</blockquote>\n'
-            f'✨ <i>Кто вложит последним — заберёт всё!</i>\n'
+            f'✨ <i>Вложись последним перед закрытием — и всё золото твоё.</i>\n'
             f'🎟 Вклад: <b>{format_amount(CASE_DEPOSIT)}</b>{COIN}'
         )
 
@@ -372,22 +353,20 @@ def case_status_text() -> str:
         winner_line = ""
         if state.get("last_winner_name"):
             winner_line = (
-                f'\n\n<blockquote>👑 Последний победитель: <b>{_esc(state["last_winner_name"])}</b>\n'
-                f'💰 Забрал: <b>{format_amount(state["last_winner_amount"])}</b>{COIN}</blockquote>'
+                f'\n\n<blockquote>👑 Последний счастливчик: <b>{_esc(state["last_winner_name"])}</b>\n'
+                f'💰 Унёс с собой: <b>{format_amount(state["last_winner_amount"])}</b>{COIN}</blockquote>'
             )
 
         return (
             f'{EVENT_TITLE}\n\n'
-            f'<blockquote>🌊 Пират зарывает новый сундук в песок...\n'
-            f'🕰 Откроется через: <b>{mins:02d}:{secs:02d}</b></blockquote>'
-            f'{winner_line}\n\n'
-            f'<i>Сундук снова будет общим — следи за карточкой в этом чате!</i>'
+            f'<blockquote>🌊 Пират снова прячет добычу на дне...\n'
+            f'🕰 Сундук покажется через <b>{mins:02d}:{secs:02d}</b></blockquote>'
+            f'{winner_line}'
         )
 
     return (
         f'{EVENT_TITLE}\n\n'
-        '<blockquote>🗺 Пират ещё не приплывал в эти воды...</blockquote>\n'
-        '<i>Ожидайте начала ивента — сундук будет общим на все чаты бота!</i>'
+        '<blockquote>🗺 Пока тихо — сундук ещё не заброшен в эти воды.</blockquote>'
     )
 
 
@@ -591,37 +570,36 @@ async def bump_card(bot):
 
 def _broadcast_card_text() -> str:
     """Анонс + статус сундука ОДНИМ сообщением (флавор-текст ивента сразу
-    вместе с банком/таймером), чтобы при старте бот не слал два сообщения подряд."""
+    вместе с банком/таймером), чтобы при запуске бот не слал два сообщения подряд."""
     state = _CASE
     now = time.time()
     remaining  = max(0, int(state["expires_at"] - now))
     mins, secs = divmod(remaining, 60)
-    bar = _progress_bar(remaining, state.get("window_seconds") or CASE_FIRST_DEPOSIT_SECONDS)
 
     return (
-        f'{EVENT_TITLE}\n'
-        f'<i>⚓ Один банк на все чаты бота!</i>\n\n'
-        '<blockquote>Легендарный пират устал прятать золото по одному сундуку в '
-        'каждой гавани и объединил их в ОДИН общий сундук на все чаты сразу! '
-        'Каждый вклад — из любого чата — продлевает ему жизнь, а игрок, который '
-        'вложится последним перед закрытием — заберёт себе всё золото.\n\n'
-        f'💰 Банк: <b>{format_amount(state["bank"])}</b>{COIN}\n'
-        f'⏳ До закрытия: <b>{mins:02d}:{secs:02d}</b>\n'
-        f'{bar}</blockquote>\n\n'
+        f'{EVENT_TITLE}\n\n'
+        '<blockquote>Где-то в этих водах затонул корабль легендарного пирата, '
+        'а вместе с ним — сундук, доверху набитый золотом. Каждый вклад '
+        'приближает момент, когда сундук всплывёт... но заберёт добычу лишь тот, '
+        'кто окажется рядом последним.\n\n'
+        f'💰 В сундуке: <b>{format_amount(state["bank"])}</b>{COIN}\n'
+        f'⏳ Уплывает через: <b>{mins:02d}:{secs:02d}</b></blockquote>\n\n'
         f'🎟 <i>Вклад: <b>{format_amount(CASE_DEPOSIT)}</b>{COIN} • '
-        f'таймер общий и сбрасывается при каждом вкладе!</i>'
+        f'таймер сбрасывается с каждым новым вкладом!</i>'
     )
 
 
 async def broadcast_event_start(bot):
-    """Рассылает анонс ивента во все известные чаты (личка + группы) ОДНИМ
-    сообщением на чат (анонс + карточка общего сундука вместе) и, если
-    общий цикл ещё не запущен, сразу открывает первый сундук.
-    Ошибки по отдельным чатам (бот заблокирован/выгнан) просто пропускаются."""
-    chats = await get_all_chats()
-    if not _CASE["running"]:
-        start_case()
+    """Запускает ивент ПО КОМАНДЕ /startcase: открывает сундук и рассылает
+    анонс + карточку одним сообщением во все известные чаты (личка + группы).
+    Ошибки по отдельным чатам (бот заблокирован/выгнан) просто пропускаются.
 
+    ВАЖНО: вызывается только из хендлера команды, НЕ на старте процесса —
+    иначе ивент начинался бы сам по себе при каждом деплое/рестарте бота."""
+    if not start_case():
+        return False
+
+    chats = await get_all_chats()
     for chat_id, chat_type in chats:
         card = get_card_state(chat_id)
         card["chat_type"] = chat_type
@@ -637,6 +615,8 @@ async def broadcast_event_start(bot):
             continue
 
         await asyncio.sleep(0.05)  # небольшая пауза, чтобы не словить flood-лимит
+
+    return True
 
 
 # ---------- Фоновый цикл (закрытие сундука / авто-рестарт) ----------
@@ -659,14 +639,14 @@ async def _close_chest(bot):
             f'🎉 <b>СУНДУК НАЙДЕН!</b> 🎉\n\n'
             f'<blockquote>👑 Победитель: <b>{_esc(winner_name)}</b>\n'
             f'💰 Забрал: <b>{format_amount(bank)}</b>{COIN}</blockquote>\n'
-            f'⏳ <i>Новый общий сундук пират спрячет через 30 минут.</i>'
+            f'⏳ <i>Новый сундук пират спрячет через 30 минут.</i>'
         )
     else:
         text = (
             f'{EVENT_TITLE}\n\n'
             '💨 <b>Сундук исчез в тумане...</b>\n\n'
             '<blockquote>Никто не успел вложиться — золото утонуло вместе с сундуком.</blockquote>\n'
-            '⏳ <i>Новый общий сундук появится через 30 минут.</i>'
+            '⏳ <i>Новый сундук появится через 30 минут.</i>'
         )
 
     await _broadcast(bot, text, active=False)
