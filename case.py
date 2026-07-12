@@ -341,12 +341,12 @@ def case_status_text() -> str:
             f'{DIVIDER}\n'
             f'<i>Тишина... только скрип старого дерева и блеск золота во тьме.</i>\n\n'
             f'<blockquote>'
-            f'💰 <b>Золота в трюме:</b> <code>{bank_str}</code>{COIN}\n'
-            f'⏳ <b>Секунды утекают:</b> <code>{timer_str}</code>\n'
+            f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> <b>Золота в трюме:</b> <code>{bank_str}</code>{COIN}\n'
+            f'<tg-emoji emoji-id="5382194935057372936">🌟</tg-emoji> <b>Секунды утекают:</b> <code>{timer_str}</code>\n'
             f'{last_line}'
             f'</blockquote>\n'
             f'<b>Стань последним — и сундук навсегда твой.</b>\n'
-            f'🎟 Вклад: <b>{format_amount(CASE_DEPOSIT)}</b>{COIN}'
+            f'<tg-emoji emoji-id="5397916757333654639">🌟</tg-emoji> Вклад: <b>{format_amount(CASE_DEPOSIT)}</b>{COIN}'
         )
 
     if state["running"]:
@@ -357,8 +357,8 @@ def case_status_text() -> str:
         if state.get("last_winner_name"):
             winner_block = (
                 f'\n\n<blockquote>'
-                f'👑 <b>Последний, кому повезло:</b> {_esc(state["last_winner_name"])}\n'
-                f'💰 <b>Унёс с собой:</b> <code>{format_amount(state["last_winner_amount"])}</code>{COIN}'
+                f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> <b>Последний, кому повезло:</b> {_esc(state["last_winner_name"])}\n'
+                f'<tg-emoji emoji-id="5438496463044752972">🌟</tg-emoji> <b>Унёс с собой:</b> <code>{format_amount(state["last_winner_amount"])}</code>{COIN}'
                 f'</blockquote>'
             )
 
@@ -366,7 +366,7 @@ def case_status_text() -> str:
             f'{EVENT_TITLE}\n'
             f'{DIVIDER}\n'
             f'<i>Пират растворился во тьме, унеся сундук с собой... но он вернётся.</i>\n\n'
-            f'<blockquote>🌊 <b>Новый сундук всплывёт через:</b> <code>{mins:02d}:{secs:02d}</code></blockquote>'
+            f'<blockquote><tg-emoji emoji-id="5303479226882603449">🌟</tg-emoji> <b>Новый сундук всплывёт через:</b> <code>{mins:02d}:{secs:02d}</code></blockquote>'
             f'{winner_block}'
         )
 
@@ -623,14 +623,14 @@ async def _close_chest(bot):
         state["last_winner_name"]   = winner_name
         state["last_winner_amount"] = bank
         text = (
-            f'{EVENT_TITLE}\n'
+            f'<b>{EVENT_TITLE}\n'
             f'{DIVIDER}\n'
             f'<i>Волны сомкнулись над сундуком — но не раньше, чем кто-то успел к нему прикоснуться.</i>\n\n'
             f'<blockquote>'
-            f'👑 <b>Победитель:</b> {_esc(winner_name)}\n'
-            f'💰 <b>Забрал:</b> <code>{format_amount(bank)}</code>{COIN}'
+            f'<tg-emoji emoji-id="...">🌟</tg-emoji> <b>Победитель:</b> {_esc(winner_name)}\n'
+            f'<tg-emoji emoji-id="...">🌟</tg-emoji> <b>Забрал:</b> <code>{format_amount(bank)}</code>{COIN}'
             f'</blockquote>\n'
-            f'<b>Новый сундук пират спрячет через 30 минут.</b>'
+            f'<b>Новый сундук пират спрячет через 30 минут.</b></b>'
         )
     else:
         text = (
