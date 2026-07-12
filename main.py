@@ -12,7 +12,7 @@ import asyncio
 
 from aiogram import F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, Update
+from aiogram.types import Message, CallbackQuery, Update, ChatMemberUpdated
 
 from mainhelp import bot, dp, run_bot, ADMIN_IDS
 
@@ -27,7 +27,7 @@ from case import (
     start_case, stop_case,
     try_invest, case_status_text, case_keyboard,
     send_case_card, case_tick_loop, case_card_refresh_loop,
-    bump_card, set_chat_type, register_chat,
+    bump_card, set_chat_type, register_chat, forget_chat,
     broadcast_event_start,
     CASE_DEPOSIT,
 )
@@ -65,6 +65,24 @@ async def _chat_registry_middleware(handler, event: Update, data: dict):
     except Exception:
         pass
     return await handler(event, data)
+
+
+# Telegram НЕ даёт API "покажи все чаты, где я есть" — единственный
+# надёжный способ узнать это заранее (а не только когда кто-то напишет
+# сообщение) — ловить my_chat_member: этот апдейт прилетает КАЖДЫЙ раз,
+# когда бота добавляют в чат, делают админом, разжалуют или выгоняют,
+# даже если там никто ничего не написал. Именно это и нужно для "везде,
+# где есть бот".
+@dp.my_chat_member()
+async def _on_bot_membership_changed(update: ChatMemberUpdated):
+    chat   = update.chat
+    status = update.new_chat_member.status  # "member" / "administrator" / "creator" / "left" / "kicked" / "restricted"
+
+    if status in ("member", "administrator", "creator"):
+        set_chat_type(chat.id, chat.type)
+        await register_chat(chat.id, chat.type, getattr(chat, "title", None))
+    elif status in ("left", "kicked"):
+        await forget_chat(chat.id)
 
 
 # ══════════════════════════════════════════════════════════════════════
