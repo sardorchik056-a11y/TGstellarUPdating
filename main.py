@@ -29,7 +29,7 @@ from case import (
     send_case_card, case_tick_loop, case_card_refresh_loop,
     bump_card, set_chat_type, register_chat, forget_chat,
     broadcast_event_start,
-    CASE_DEPOSIT,
+    CASE_DEPOSIT, CASE_INVEST_CB,
 )
 from database import format_amount
 
@@ -152,7 +152,7 @@ async def cmd_invest(message: Message):
                           message=message)
 
 
-@dp.callback_query(F.data == "case_invest")
+@dp.callback_query(F.data == CASE_INVEST_CB)
 async def cb_case_invest(call: CallbackQuery):
     set_chat_type(call.message.chat.id, call.message.chat.type)
     await _handle_invest(chat_id=call.message.chat.id, uid=call.from_user.id,
