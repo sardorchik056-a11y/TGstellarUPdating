@@ -552,12 +552,9 @@ async def cb_case_guess(call: CallbackQuery, state: FSMContext):
     if call.message.chat.type != "private":
         # Алерт видит только нажавший (Telegram показывает его всплывающим
         # окном поверх чата) — в сам чат он НЕ попадает, так что группу
-        # это никак не засоряет.
-        await call.answer(
-            "✏️ Чтобы никто не подсмотрел твой ответ, открой диалог со мной "
-            "в личке и там нажми эту же кнопку (или пришли /guess число).",
-            show_alert=True,
-        )
+        # это никак не засоряет. Текст нарочно короткий — это маленький
+        # всплывающий тост, а не сообщение в чате.
+        await call.answer("✏️ Пиши мне в личку.", show_alert=True)
         return
 
     await state.set_state(GuessInput.waiting_number)
