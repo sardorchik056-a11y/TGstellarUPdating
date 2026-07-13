@@ -30,12 +30,13 @@ from mainhelp import _esc, _parse_amount
 # и реестр чатов вынесены в case.py, здесь только хендлеры команд/кнопок. ──
 from case import (
     stop_case,
-    try_invest, case_status_text, case_keyboard,
+    try_guess, has_guessed, case_status_text, case_keyboard,
     case_tick_loop, case_card_refresh_loop,
-    bump_card, set_chat_type, register_chat, forget_chat,
+    set_chat_type, register_chat, forget_chat,
     broadcast_event_start, get_case_state, get_card_state,
     set_event_photo, get_event_photo,
-    CASE_DEPOSIT, CASE_INVEST_CB,
+    CASE_DEFAULT_COIN_PRIZE, CASE_GUESS_CB,
+    NUMBER_MIN, NUMBER_MAX,
 )
 from database import format_amount
 
@@ -92,18 +93,24 @@ async def _on_bot_membership_changed(update: ChatMemberUpdated):
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  ИГРА "ОБЩИЙ СУНДУК" / ИВЕНТ "ЩЕДРЫЙ ПИРАТ"
-#  (/startcase, /stopcase, /case, кнопка "Вложить")
+#  ИГРА "УГАДАЙ ЧИСЛО" / ИВЕНТ "ЩЕДРЫЙ ПИРАТ"
+#  (/startcase, /stopcase, /case, /guess, кнопка "Угадать")
 #
-#  /startcase теперь — не мгновенный запуск, а маленький мастер для админа:
+#  Механика: бот загадывает число от 1 до 999, у каждого игрока —
+#  ОДНА бесплатная попытка назвать его. Все ответы копятся молча (никто
+#  их не видит), ивент идёт РОВНО 24 часа. По истечении число раскрывается
+#  и выигрывает тот, кто назвал его точно (при нескольких точных —
+#  кто раньше отправил), а если точных совпадений нет — ближайший по
+#  модулю разницы (при равенстве — тоже кто раньше отправил).
+#
+#  /startcase — маленький мастер для админа:
 #    1) выбрать тип приза — 💰 монеты / 💎 артефакт / 👑 статус
-#    2а) если "монеты"        — сразу стартуем с суммой вклада по умолчанию
-#         (CASE_DEPOSIT из case.py), спрашивать больше нечего;
-#    2б) если "артефакт"       — выбрать конкретный артефакт из списка;
-#    2в) если "статус"         — выбрать VIP или Premium;
-#    3) для артефакта/статуса — админ ЕЩЁ вводит текстом сумму вклада
-#       (сколько монет стоит один клик "Вложить"), т.к. для этих призов
-#       нет растущего банка — сумма влияет только на цену входа.
+#    2а) если "монеты"    — админ вводит текстом сумму приза
+#         (сколько получит победитель), например 500000 или 500к;
+#    2б) если "артефакт"  — выбрать конкретный артефакт из списка,
+#         ивент стартует сразу же (сумма не нужна — приз фиксирован);
+#    2в) если "статус"    — выбрать VIP или Premium, ивент стартует
+#         сразу же (тоже без ввода суммы).
 #  Мастер живёт в aiogram FSM (per-admin состояние), шаги можно отменить
 #  кнопкой "Отмена" на любом этапе.
 # ══════════════════════════════════════════════════════════════════════
@@ -112,7 +119,13 @@ class CaseAdminSetup(StatesGroup):
     choosing_type     = State()
     choosing_artifact = State()
     choosing_status   = State()
-    entering_deposit  = State()
+    entering_amount   = State()
+
+
+# Ввод числа игроком в личной "переписке" после клика по кнопке "Угадать" —
+# отдельный, не админский, FSM-стейт (см. cb_case_guess/msg_case_guess_number).
+class GuessInput(StatesGroup):
+    waiting_number = State()
 
 
 _CASE_ADMIN_CANCEL_CB = "city_case_admin_cancel"
@@ -166,8 +179,10 @@ async def cmd_startcase(message: Message, state: FSMContext):
     await state.set_state(CaseAdminSetup.choosing_type)
     await message.reply(
         "🏴‍☠️ <b>Настройка ивента «Щедрый пират»</b>\n"
-        "<blockquote>Выбери, каким призом наградить победителя — того, кто "
-        "сделает последний вклад перед закрытием сундука.</blockquote>",
+        f"<blockquote>Бот загадает число от {NUMBER_MIN} до {NUMBER_MAX}. У каждого "
+        "игрока — одна бесплатная попытка угадать. Через 24 часа число раскроется, "
+        "и приз получит тот, кто угадал точно (или ближе всех). Выбери, каким "
+        "призом наградить победителя.</blockquote>",
         parse_mode="HTML",
         reply_markup=_case_prize_type_keyboard(),
     )
@@ -187,20 +202,17 @@ async def cb_case_admin_type(call: CallbackQuery, state: FSMContext):
     prize_type = call.data.split(":", 1)[1]
 
     if prize_type == "coins":
-        # Для монет ничего дополнительно спрашивать не нужно — сумма
-        # вклада берётся по умолчанию (CASE_DEPOSIT), банк растёт как раньше.
-        await state.clear()
-        set_chat_type(call.message.chat.id, call.message.chat.type)
-        started = await broadcast_event_start(bot, deposit=CASE_DEPOSIT, prize_type="coins")
-        if started:
-            await call.message.edit_text(
-                f'✅ <b>Ивент запущен!</b>\n'
-                f'💰 Приз: монеты (банк растёт с каждым вкладом)\n'
-                f'Вклад: <b>{format_amount(CASE_DEPOSIT)}</b>',
-                parse_mode="HTML",
-            )
-        else:
-            await call.message.edit_text("⚠️ <b>Ивент уже запущен.</b>", parse_mode="HTML")
+        # Для монет нужна сумма приза (сколько получит победитель) —
+        # растущего банка больше нет, участие бесплатное, поэтому сумму
+        # задаёт админ явно.
+        await state.update_data(prize_type="coins")
+        await state.set_state(CaseAdminSetup.entering_amount)
+        await call.message.edit_text(
+            f'💰 Приз: <b>монеты</b>\n\n'
+            f'Теперь пришли сумму приза (сколько получит победитель) — '
+            f'например <code>{CASE_DEFAULT_COIN_PRIZE}</code> или <code>500к</code>.',
+            parse_mode="HTML",
+        )
         await call.answer()
         return
 
@@ -235,6 +247,11 @@ async def cb_case_admin_artifact(call: CallbackQuery, state: FSMContext):
         await call.answer()
         return
 
+    if get_case_state()["running"]:
+        await call.answer("Ивент уже запущен.", show_alert=True)
+        await state.clear()
+        return
+
     from shop import _ARTIFACT_POOL
     key   = call.data.split(":", 1)[1]
     found = next((a for a in _ARTIFACT_POOL if a["key"] == key), None)
@@ -242,20 +259,27 @@ async def cb_case_admin_artifact(call: CallbackQuery, state: FSMContext):
         await call.answer("❌ Артефакт не найден.", show_alert=True)
         return
 
-    await state.update_data(
-        artifact_key=found["key"],
-        artifact_name=found["name"],
-        artifact_multiplier=found["multiplier"],
-        artifact_emoji_id=found.get("emoji_id"),
-        artifact_emoji=found.get("emoji"),
+    await state.clear()
+    set_chat_type(call.message.chat.id, call.message.chat.type)
+    started = await broadcast_event_start(
+        bot,
+        prize_type="artifact",
+        prize_artifact={
+            "key":        found["key"],
+            "name":       found["name"],
+            "multiplier": found["multiplier"],
+            "emoji_id":   found.get("emoji_id"),
+            "emoji":      found.get("emoji"),
+        },
     )
-    await state.set_state(CaseAdminSetup.entering_deposit)
-    await call.message.edit_text(
-        f'💎 Приз: <b>{_esc(found["name"])}</b> (×{found["multiplier"]})\n\n'
-        f'Теперь пришли сумму вклада (сколько будет стоить один клик '
-        f'"Вложить") — например <code>50000</code> или <code>50к</code>.',
-        parse_mode="HTML",
-    )
+    if started:
+        await call.message.edit_text(
+            f'✅ <b>Ивент запущен!</b>\n'
+            f'💎 Приз: {_esc(found["name"])} (×{found["multiplier"]})',
+            parse_mode="HTML",
+        )
+    else:
+        await call.message.edit_text("⚠️ <b>Ивент уже запущен.</b>", parse_mode="HTML")
     await call.answer()
 
 
@@ -265,17 +289,25 @@ async def cb_case_admin_status(call: CallbackQuery, state: FSMContext):
         await call.answer()
         return
 
+    if get_case_state()["running"]:
+        await call.answer("Ивент уже запущен.", show_alert=True)
+        await state.clear()
+        return
+
     tier  = call.data.split(":", 1)[1]  # "vip" | "premium"
     label = "VIP" if tier == "vip" else "Premium"
 
-    await state.update_data(status_tier=tier)
-    await state.set_state(CaseAdminSetup.entering_deposit)
-    await call.message.edit_text(
-        f'👑 Приз: статус <b>{label}</b> (30 дней)\n\n'
-        f'Теперь пришли сумму вклада (сколько будет стоить один клик '
-        f'"Вложить") — например <code>50000</code> или <code>50к</code>.',
-        parse_mode="HTML",
-    )
+    await state.clear()
+    set_chat_type(call.message.chat.id, call.message.chat.type)
+    started = await broadcast_event_start(bot, prize_type="status", prize_status_tier=tier)
+    if started:
+        await call.message.edit_text(
+            f'✅ <b>Ивент запущен!</b>\n'
+            f'👑 Приз: статус {label} (30 дней)',
+            parse_mode="HTML",
+        )
+    else:
+        await call.message.edit_text("⚠️ <b>Ивент уже запущен.</b>", parse_mode="HTML")
     await call.answer()
 
 
@@ -300,8 +332,8 @@ async def cb_case_admin_stale(call: CallbackQuery):
     await call.answer("⌛️ Эта настройка устарела, начни заново: /startcase", show_alert=True)
 
 
-@dp.message(StateFilter(CaseAdminSetup.entering_deposit))
-async def msg_case_admin_deposit(message: Message, state: FSMContext):
+@dp.message(StateFilter(CaseAdminSetup.entering_amount))
+async def msg_case_admin_amount(message: Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         return
 
@@ -309,7 +341,7 @@ async def msg_case_admin_deposit(message: Message, state: FSMContext):
     if amount is None or amount <= 0:
         await message.reply(
             "❌ Не удалось распознать сумму. Пришли число, например "
-            "<code>50000</code> или <code>50к</code>.",
+            "<code>500000</code> или <code>500к</code>.",
             parse_mode="HTML",
         )
         return
@@ -319,44 +351,16 @@ async def msg_case_admin_deposit(message: Message, state: FSMContext):
         await state.clear()
         return
 
-    data = await state.get_data()
     await state.clear()
     set_chat_type(message.chat.id, message.chat.type)
 
-    prize_type = data.get("prize_type")
-    if prize_type == "artifact":
-        started = await broadcast_event_start(
-            bot,
-            deposit=amount,
-            prize_type="artifact",
-            prize_artifact={
-                "key":        data.get("artifact_key"),
-                "name":       data.get("artifact_name"),
-                "multiplier": data.get("artifact_multiplier"),
-                "emoji_id":   data.get("artifact_emoji_id"),
-                "emoji":      data.get("artifact_emoji"),
-            },
-        )
-        prize_line = f'💎 Приз: {data.get("artifact_name")} (×{data.get("artifact_multiplier")})'
-    elif prize_type == "status":
-        tier  = data.get("status_tier")
-        label = "VIP" if tier == "vip" else "Premium"
-        started = await broadcast_event_start(
-            bot, deposit=amount, prize_type="status", prize_status_tier=tier,
-        )
-        prize_line = f'👑 Приз: статус {label} (30 дней)'
-    else:
-        # Сюда попасть не должны (для "coins" этот шаг вообще не запускается),
-        # но на всякий случай — не молчим, а сообщаем и откатываемся.
-        await message.reply("❌ Что-то пошло не так, начни заново: /startcase", parse_mode="HTML")
-        return
-
+    started = await broadcast_event_start(bot, prize_type="coins", prize_amount=amount)
     if not started:
         await message.reply("⚠️ <b>Ивент уже запущен.</b>", parse_mode="HTML")
         return
 
     await message.reply(
-        f'✅ <b>Ивент запущен!</b>\n{prize_line}\n💰 Вклад: <b>{format_amount(amount)}</b>',
+        f'✅ <b>Ивент запущен!</b>\n💰 Приз: <b>{format_amount(amount)}</b>',
         parse_mode="HTML",
     )
 
@@ -366,12 +370,12 @@ async def msg_case_admin_deposit(message: Message, state: FSMContext):
 # нужен для капчи/онбординга) — он зарегистрирован раньше наших хендлеров
 # из main.py, поэтому aiogram, проверяя message-хендлеры В ПОРЯДКЕ
 # РЕГИСТРАЦИИ, отдавал бы "100000"/"50к" ЕМУ первым, а до
-# msg_case_admin_deposit они бы просто не доходили. Трогать mainhelp.py
-# нельзя — поэтому просто переставляем НАШ уже зарегистрированный хендлер
-# в начало внутреннего списка dp.message.handlers: он и так почти всегда
-# молча пропускает сообщение (StateFilter не совпал — обычный текст без
-# активного мастера /startcase), так что на остальной бот это не влияет
-# вообще никак, просто наш ввод суммы вклада теперь проверяется первым.
+# msg_case_admin_amount/msg_case_guess_number они бы просто не доходили.
+# Трогать mainhelp.py нельзя — поэтому просто переставляем НАШИ уже
+# зарегистрированные хендлеры в начало внутреннего списка dp.message.handlers:
+# они и так почти всегда молча пропускают сообщение (StateFilter не совпал —
+# обычный текст без активного мастера/ввода числа), так что на остальной бот
+# это не влияет вообще никак, просто наш ввод теперь проверяется первым.
 def _prioritize_message_handlers(*callbacks) -> None:
     wanted    = list(callbacks)
     moved     = [h for h in dp.message.handlers if h.callback in wanted]
@@ -379,8 +383,6 @@ def _prioritize_message_handlers(*callbacks) -> None:
     moved.sort(key=lambda h: wanted.index(h.callback))
     dp.message.handlers[:] = moved + remaining
 
-
-_prioritize_message_handlers(msg_case_admin_deposit)
 
 
 @dp.message(Command("stopcase"))
@@ -391,8 +393,9 @@ async def cmd_stopcase(message: Message):
     if await stop_case(bot):
         await message.reply(
             "🛑 <b>Ивент остановлен.</b>\n"
-            "<blockquote>Если сундук был активен — он закрылся немедленно (приз, если был "
-            "последний вкладчик, уже выдан). Чтобы запустить заново — <code>/startcase</code>.</blockquote>",
+            "<blockquote>Если приём ответов ещё шёл — число раскрыто немедленно "
+            "(приз, если был победитель, уже выдан). Чтобы запустить заново — "
+            "<code>/startcase</code>.</blockquote>",
             parse_mode="HTML",
         )
     else:
@@ -476,60 +479,121 @@ async def cmd_case(message: Message):
     get_card_state(chat_id)["msg_id"] = sent.message_id
 
 
-@dp.message(Command("invest"))
-async def cmd_invest(message: Message):
+# ══════════════════════════════════════════════════════════════════════
+#  Ответ игрока: /guess <число> или кнопка "Угадать" (просит прислать
+#  число отдельным сообщением, т.к. inline-кнопка не может принимать
+#  произвольный ввод). У каждого игрока — только одна попытка, ответы
+#  копятся молча и НЕ дёргают карточку немедленно (см. try_guess/
+#  case_card_refresh_loop в case.py — новый счётчик участников
+#  подтянется на очередном тихом тике карточки, без немедленной рассылки).
+#
+#  ВАЖНО про приватность: своё число игрок всё равно печатает обычным
+#  сообщением, и если это происходит в группе — его увидят все, кто
+#  читает чат (Telegram не даёт ботам скрыть чужое сообщение). Карточка
+#  ивента при этом ничьи числа не палит и не ведёт публичный рейтинг —
+#  но полностью скрыть сам факт "какое число я написал" от соседей по
+#  группе можно, только если игрок отвечает боту в личке, поэтому
+#  подсказка ниже рекомендует именно это.
+# ══════════════════════════════════════════════════════════════════════
+
+@dp.message(Command("guess"))
+async def cmd_guess(message: Message):
     set_chat_type(message.chat.id, message.chat.type)
-    await _handle_invest(uid=message.from_user.id,
-                          name=message.from_user.first_name or message.from_user.username or str(message.from_user.id),
-                          message=message)
+
+    arg = (message.text or "").split(maxsplit=1)
+    if len(arg) < 2 or not arg[1].strip().lstrip("-").isdigit():
+        await message.reply(
+            f"✏️ Напиши число так: <code>/guess 123</code> (от {NUMBER_MIN} до {NUMBER_MAX}).",
+            parse_mode="HTML",
+        )
+        return
+
+    await _submit_guess(
+        uid=message.from_user.id,
+        name=message.from_user.first_name or message.from_user.username or str(message.from_user.id),
+        number=int(arg[1].strip()),
+        message=message,
+    )
 
 
-@dp.callback_query(F.data == CASE_INVEST_CB)
-async def cb_case_invest(call: CallbackQuery):
+@dp.callback_query(F.data == CASE_GUESS_CB)
+async def cb_case_guess(call: CallbackQuery, state: FSMContext):
     set_chat_type(call.message.chat.id, call.message.chat.type)
-    await _handle_invest(uid=call.from_user.id,
-                          name=call.from_user.first_name or call.from_user.username or str(call.from_user.id),
-                          call=call)
+
+    if not get_case_state()["active"]:
+        await call.answer("📦 Сейчас нет активного ивента.", show_alert=True)
+        return
+
+    if has_guessed(call.from_user.id):
+        await call.answer(
+            "🔮 Ты уже назвал число в этом ивенте — результат узнаешь, когда сундук раскроют.",
+            show_alert=True,
+        )
+        return
+
+    await state.set_state(GuessInput.waiting_number)
+    tip = "" if call.message.chat.type == "private" else (
+        "\n<i>Совет: если не хочешь, чтобы соседи по чату видели твоё число — "
+        "напиши мне в личку.</i>"
+    )
+    await call.message.answer(
+        f"✏️ <b>Напиши число от {NUMBER_MIN} до {NUMBER_MAX}</b> одним сообщением — "
+        f"это твоя единственная попытка в этом ивенте.{tip}",
+        parse_mode="HTML",
+    )
+    await call.answer()
 
 
-async def _handle_invest(uid: int, name: str,
-                          message: Message | None = None, call: CallbackQuery | None = None):
-    """Общая логика вклада — используется и командой /invest, и кнопкой.
-    Банк общий на весь бот, поэтому вклад из ЛЮБОГО чата пополняет один
-    и тот же сундук.
+@dp.message(StateFilter(GuessInput.waiting_number))
+async def msg_case_guess_number(message: Message, state: FSMContext):
+    text = (message.text or "").strip()
+    if not text.lstrip("-").isdigit():
+        await message.reply(
+            f"❌ Это не похоже на число. Пришли целое число от {NUMBER_MIN} до {NUMBER_MAX}.",
+            parse_mode="HTML",
+        )
+        return  # состояние не сбрасываем — ждём корректный ввод
 
-    Обновление карточки после успешного вклада делает case.bump_card():
-    она рассылает свежую карточку СРАЗУ во все известные чаты (в личке —
-    редактирует на месте, в группах — удаляет старую и присылает новую,
-    чтобы карточка "поднималась" в чате)."""
-    result = await try_invest(uid, name)
+    await state.clear()
+    set_chat_type(message.chat.id, message.chat.type)
+    await _submit_guess(
+        uid=message.from_user.id,
+        name=message.from_user.first_name or message.from_user.username or str(message.from_user.id),
+        number=int(text),
+        message=message,
+    )
+
+
+async def _submit_guess(uid: int, name: str, number: int, message: Message):
+    """Общая логика ответа — используется и командой /guess, и вводом числа
+    после кнопки "Угадать". Засчитывается только один раз на игрока за
+    весь ивент; сам факт ответа и число НИКОМУ не показываются до раскрытия."""
+    result = await try_guess(uid, name, number)
 
     if not result["ok"]:
         reason = result["reason"]
         if reason == "no_active":
-            text = "📦 Сейчас нет активного сундука."
-        elif reason == "cooldown":
-            text = f"⏳ Подождите ещё {result['wait']} сек. перед следующим вкладом."
-        else:  # insufficient — result["deposit"] содержит реальную (выбранную админом) сумму
-            text = (
-                f"❌ Недостаточно монет! Нужно {format_amount(result['deposit'])}, "
-                f"у вас {format_amount(result['balance'])}."
-            )
-        if call:
-            await call.answer(text, show_alert=True)
-        else:
-            await message.reply(text, parse_mode="HTML")
+            text = "📦 Сейчас нет активного ивента."
+        elif reason == "bad_range":
+            text = f"❌ Число должно быть от {NUMBER_MIN} до {NUMBER_MAX}."
+        else:  # already_guessed
+            text = "🔮 Ты уже называл число в этом ивенте — второй попытки нет."
+        await message.reply(text, parse_mode="HTML")
         return
 
-    await bump_card(bot)
+    await message.reply(
+        f"🔮 <b>Число {result['number']} принято!</b>\n"
+        f"<blockquote>Ответ сохранён и никому не виден. Результат станет известен, "
+        f"когда сундук раскроют.</blockquote>",
+        parse_mode="HTML",
+    )
 
-    if call:
-        deposit_str = format_amount(result["deposit"])
-        state = get_case_state()
-        if state["prize_type"] == "coins":
-            await call.answer(f"💰 Вложено {deposit_str}! В сундуке: {format_amount(result['bank'])}")
-        else:
-            await call.answer(f"💰 Вложено {deposit_str}! Ты сейчас последний претендент на приз.")
+
+# Оба наши хендлера голого текста (сумма приза от админа, число от игрока)
+# регистрируются здесь — уже ПОСЛЕ того, как обе функции определены выше
+# (см. подробное объяснение зачем это нужно рядом с определением
+# _prioritize_message_handlers).
+_prioritize_message_handlers(msg_case_admin_amount, msg_case_guess_number)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -538,8 +602,8 @@ async def _handle_invest(uid: int, name: str,
 
 
 async def _entrypoint():
-    # Фоновые задачи сундука:
-    #  - case_tick_loop        — раз в 1 сек: закрытие истёкших сундуков / авто-рестарт
+    # Фоновые задачи ивента:
+    #  - case_tick_loop        — раз в 1 сек: раскрытие числа по истечении 24 часов
     #  - case_card_refresh_loop — раз в несколько сек: тихое обновление таймера на карточках
     # запускаются здесь же, чтобы не трогать run_bot() в mainhelp.py.
     #
