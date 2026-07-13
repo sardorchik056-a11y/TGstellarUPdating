@@ -1,38 +1,47 @@
 # ============================================================
 #  case.py — мини-игра "Общий сундук" (TGStellar), ивент "Щедрый пират"
 #
-#  ⚓ ГЛОБАЛЬНАЯ ВЕРСИЯ: сундук ОДИН на весь бот, а не отдельный в каждом
-#  чате. Банк, таймер, последний вкладчик и кулдауны игроков — общее
-#  состояние. Вклад в ЛЮБОМ чате уменьшает общий кулдаун игрока и
-#  продлевает ОДИН таймер, а карточка с банком/таймером синхронно
+#  ⚓ ГЛОБАЛЬНАЯ ВЕРСИЯ: ивент ОДИН на весь бот, а не отдельный в каждом
+#  чате. Загаданное число, список ответов и таймер — общее состояние.
+#  Угадать можно из ЛЮБОГО чата, а карточка с таймером синхронно
 #  обновляется во ВСЕХ чатах, где бота видели (личка + группы).
-#  Так это и задумано как ивент: "весь бот скидывается в один банк".
+#
+#  ⚓ МЕХАНИКА (v2, угадайка): капитан прячет число от 1 до 999. У КАЖДОГО
+#  игрока — ОДНА попытка за весь ивент, назвать его можно бесплатно.
+#  Все ответы копятся молча, "на фоне" — никто не видит чужих чисел и
+#  карточка их не показывает, только счётчик участников. Ивент идёт
+#  РОВНО 24 часа с момента запуска. По истечении — число раскрывается,
+#  и определяется победитель:
+#    1) если кто-то назвал число ТОЧНО — выигрывает он (если точных
+#       совпадений несколько — то, что было отправлено РАНЬШЕ по времени);
+#    2) если точных совпадений нет — выигрывает ближайший по модулю
+#       разницы (при равенстве разницы — снова кто раньше отправил).
+#  Если за 24 часа никто не написал ни одного числа — приз никому не
+#  достаётся.
 #
 #  Единственное, что остаётся per-chat — это КАРТОЧКА (id сообщения
 #  и тип чата), потому что у каждого чата своё сообщение в Telegram,
 #  которое надо редактировать/пересылать отдельно.
 #
 #  Модуль полностью самостоятельный: хранит игровое состояние
-#  сундука в памяти и ничего не пишет в mainhelp.py.
-#  Все хендлеры (/startcase, /stopcase, /case, кнопка "Вложить")
+#  ивента в памяти и ничего не пишет в mainhelp.py.
+#  Все хендлеры (/startcase, /stopcase, /case, /guess, кнопка "Угадать")
 #  находятся в main.py — здесь только логика + тексты.
 #
 #  Тут же — маленький реестр чатов (своя SQLite-табличка в отдельном
 #  файле на диске, database.py не трогаем), нужный для двух вещей:
 #  1) на старте бота разослать анонс ивента "во все чаты куда можно"
-#  2) знать, КУДА рассылать обновления общей карточки при каждом вкладе
+#  2) знать, КУДА рассылать обновления общей карточки
 #  (Telegram Bot API не даёт списка чатов бота — копим сами, отмечая
 #  chat_id при каждом апдейте через middleware в main.py).
 #
-#  ВАЖНО: состояние сундука (банк, таймер, последний вкладчик) —
-#  в памяти процесса и НЕ переживает рестарт бота (это ок, банки
-#  игроков всё равно защищены — деньги списываются/начисляются
-#  через database.aio_change_balance, то есть уже до рестарта
-#  успевают сохраниться в SQLite). А вот реестр чатов — на диске,
-#  он как раз должен переживать рестарт, чтобы было куда слать анонс.
+#  ВАЖНО: состояние ивента (число, ответы, таймер) — в памяти процесса
+#  и НЕ переживает рестарт бота. Реестр чатов — на диске, он как раз
+#  должен переживать рестарт, чтобы было куда слать анонс.
 # ============================================================
 
 import time
+import random
 import asyncio
 import sqlite3
 import html as _html
@@ -45,61 +54,55 @@ from miner import COIN
 
 # ---------- Параметры игры ----------
 
-CASE_INITIAL_BANK          = 500_000   # стартовый банк сундука (режим приза "монеты")
-CASE_DEPOSIT                = 50_000    # вклад по умолчанию для режима "монеты"
-                                          # (для призов "артефакт"/"статус" сумму вклада
-                                          # каждый раз выбирает админ через /startcase)
+NUMBER_MIN = 1
+NUMBER_MAX = 999
+
+EVENT_DURATION_SECONDS = 24 * 60 * 60   # ивент всегда длится ровно 24 часа
+
+# Подсказка для админа в мастере /startcase — просто дефолт, который
+# показывается в подсказке суммы приза для режима "монеты", ни на что
+# больше не влияет (сумму всё равно вводит админ вручную).
+CASE_DEFAULT_COIN_PRIZE = 500_000
 
 # Если победителю выпадает артефакт, который у него уже есть — вместо
 # повторной записи в коллекцию (это сломало бы подсчёт бонусов) выдаём
 # монеты-компенсацию: множитель_артефакта × эта константа.
 CASE_ARTIFACT_DUPLICATE_COMPENSATION_PER_MULT = 200_000
-CASE_TIMER_SECONDS          = 60        # таймер сундука (сбрасывается при каждом вкладе)
-CASE_FIRST_DEPOSIT_SECONDS  = 15 * 60   # время на ПЕРВЫЙ вклад в новом сундуке — 15 минут
-PLAYER_COOLDOWN_SECONDS     = 15        # кулдаун игрока между вкладами (общий, на весь бот)
-CARD_REFRESH_SECONDS         = 3         # частота "тихого" авто-обновления карточек
-                                          # (было 2 — увеличили, чтобы оставить запас
-                                          # лимита Telegram на карточки, дёргаемые вкладами)
+
+CARD_REFRESH_SECONDS         = 15        # частота "тихого" авто-обновления карточек в личке
+                                          # (ивент идёт 24 часа — секундная точность таймера
+                                          # не нужна, а лишние запросы к Telegram ни к чему)
 
 # В группах тихий тик НЕ просто редактирует карточку на месте (там она может
 # затеряться под обычной перепиской), а раз в этот интервал удаляет старое
-# сообщение и шлёт новое — карточка "поднимается" наверх чата. Делаем это
-# РЕЖЕ, чем сам тик (CARD_REFRESH_SECONDS), потому что delete+send — это два
-# запроса к Telegram на чат, и слишком частые перевыпуски засоряли бы чат
-# постоянно мелькающими новыми сообщениями ("спам", см. личное сообщение
-# от erreu). В личке этого ограничения нет — там всегда дешёвый edit-in-place.
-GROUP_CARD_REFRESH_SECONDS   = 15
+# сообщение и шлёт новое — карточка "поднимается" наверх чата. При 24-часовом
+# ивенте поднимать её часто незачем — раз в несколько минут более чем
+# достаточно и не спамит чат.
+GROUP_CARD_REFRESH_SECONDS   = 180
 
 # Минимальный интервал между ЛЮБЫМИ запросами к Telegram (edit/delete/send),
-# которые трогают карточку ОДНОГО чата. Telegram даёт группе примерно
-# 1 сообщение/сек в среднем (с короткими бёрстами), и при частых вкладах
-# (delete+send на каждый) + тике раз в CARD_REFRESH_SECONDS этот лимит легко
-# словить — тогда Telegram отвечает "flood control, retry after N" и обновления
-# карточки застревают. Поэтому все обновления карточки чата идут через один
-# и тот же _get_card_lock + троттлинг ниже: даже если вкладов было 10 подряд,
-# к Telegram уйдёт не больше одного запроса на карточку раз в этот интервал —
-# итоговое состояние (банк/таймер) всё равно всегда актуальное, просто не
-# каждое промежуточное значение долетает как отдельное сообщение.
+# которые трогают карточку ОДНОГО чата — защита от flood control. Ответы
+# игроков теперь копятся молча и НЕ дёргают карточку немедленно (см.
+# try_guess/бросок в main.py — она обновится сама на следующем тихом тике
+# или при значимых событиях: старт/раскрытие), так что нагрузка тут в
+# принципе низкая, но троттлинг оставляем как страховку.
 MIN_CARD_UPDATE_INTERVAL = 1.5
 
-# Сколько чатов обновляем ПАРАЛЛЕЛЬНО при рассылке общей карточки. Раз банк
-# один на всех, любой вклад теперь трогает карточки СРАЗУ во всех чатах —
-# без ограничения одновременности это может быть десятки/сотни запросов
-# к Telegram одновременно. Троттлинг внутри каждого чата всё равно свой
-# (см. MIN_CARD_UPDATE_INTERVAL), а этот семафор просто не даёт бэкенду
-# слать всё вообще одним махом.
+# Сколько чатов обновляем ПАРАЛЛЕЛЬНО при рассылке общей карточки (старт
+# ивента / раскрытие числа). Без ограничения одновременности это могут
+# быть десятки/сотни запросов к Telegram одновременно.
 _BROADCAST_CONCURRENCY = 20
 
 EVENT_TITLE = "🏴‍☠️ <b><i>ЩЕДРЫЙ ПИРАТ</i></b> 🏴‍☠️"
 
-# ВАЖНО: callback_data кнопки "Вложить" намеренно начинается с "city_".
+# ВАЖНО: callback_data кнопки "Угадать" намеренно начинается с "city_".
 # В mainhelp.py есть общий catch-all колбэк-хендлер (ловит ВСЁ, кроме данных
 # с префиксом "city_"/"crystop_"), зарегистрированный раньше наших хендлеров —
 # без этого префикса Telegram отдавал клик именно ему, и он отвечал
 # "неизвестная команда", потому что не знает про нашу игру. Трогать
 # mainhelp.py нельзя, поэтому просто используем префикс, который тот
 # хендлер сам сознательно пропускает.
-CASE_INVEST_CB = "city_case_invest"
+CASE_GUESS_CB = "city_case_guess"
 
 # ═══════════════════════════════════════════════════════════
 #  РЕЕСТР ЧАТОВ (для рассылки анонса и общей карточки)
@@ -191,78 +194,78 @@ async def get_all_chats() -> list[tuple[int, str]]:
 
 
 # ═══════════════════════════════════════════════════════════
-#  ГЛОБАЛЬНОЕ СОСТОЯНИЕ СУНДУКА — ОДНО НА ВЕСЬ БОТ
+#  ГЛОБАЛЬНОЕ СОСТОЯНИЕ ИВЕНТА — ОДНО НА ВЕСЬ БОТ
 # ═══════════════════════════════════════════════════════════
 #
 # _CASE = {
 #   "running":            bool,  # ивент запущен командой /startcase и ещё не закрылся
-#   "active":             bool,  # сундук сейчас открыт (принимает вклады)
-#   "bank":               int,   # копится только в режиме приза "монеты"
-#   "expires_at":         float, # unix ts закрытия текущего сундука
-#   "window_seconds":     int,   # длина текущего окна (для прогресс-бара)
-#   "last_uid":           int | None,
-#   "last_name":          str | None,
-#   "cooldowns":          {uid: last_invest_ts},   # общий кулдаун на весь бот
-#   "paused_until":        float | None,  # оставлено для совместимости, больше не используется —
-#                                          # автоматического рестарта после закрытия больше нет,
-#                                          # новый ивент начинается ТОЛЬКО командой /startcase
-#   "last_winner_name":    str | None,
-#   "last_winner_amount":  int | None,   # для "монет" — сумма; для остальных призов — None
-#   "last_prize_type":     str | None,   # чем был награждён ПОСЛЕДНИЙ закрытый сундук
-#   "last_prize_label":     str | None,  # готовая подпись приза для текста "прошлого победителя"
+#   "active":             bool,  # число загадано, приём ответов идёт
+#   "secret_number":      int | None,           # загаданное число (1..999), скрыто до раскрытия
+#   "started_at":         float,                # unix ts запуска текущего ивента
+#   "expires_at":         float,                # unix ts раскрытия (started_at + 24ч)
+#   "guesses":            {uid: {"name": str, "number": int, "ts": float}},
+#                                                # ответы копятся молча, никому не показываются
 #
-#   ---- Настройки ТЕКУЩЕГО ивента (задаются админом в /startcase и
-#        живут, пока цикл не остановлен /stopcase — при авто-рестарте
-#        нового сундука после паузы используются те же настройки) ----
-#   "deposit":              int,          # сумма одного вклада (выбирает админ)
-#   "prize_type":           str,          # "coins" | "artifact" | "status"
-#   "prize_artifact_key":   str | None,
-#   "prize_artifact_name":  str | None,
-#   "prize_artifact_mult":  float | None,
+#   ---- Настройки ТЕКУЩЕГО/ПОСЛЕДНЕГО ивента (задаются админом в /startcase) ----
+#   "prize_type":            str,          # "coins" | "artifact" | "status"
+#   "prize_amount":          int | None,   # для "coins" — сумма приза
+#   "prize_artifact_key":    str | None,
+#   "prize_artifact_name":   str | None,
+#   "prize_artifact_mult":   float | None,
 #   "prize_artifact_emoji_id": str | None,  # custom-эмодзи артефакта (если есть у него в пуле)
 #   "prize_artifact_emoji":    str | None,  # обычный юникод-эмодзи (фолбэк/аргумент tg-emoji)
-#   "prize_status_tier":    str | None,   # "vip" | "premium"
+#   "prize_status_tier":     str | None,   # "vip" | "premium"
+#
+#   ---- Итоги ПОСЛЕДНЕГО завершившегося ивента (для текста карточки в простое) ----
+#   "last_secret_number":  int | None,
+#   "last_winner_name":    str | None,
+#   "last_winner_number":  int | None,   # какое число назвал победитель
+#   "last_exact":          bool | None,  # True — угадал точно, False — ближайший
+#   "last_participants":   int | None,
+#   "last_prize_type":     str | None,
+#   "last_prize_label":    str | None,
 # }
 _CASE: dict = {
     "running":            False,
     "active":             False,
-    "bank":               0,
+    "secret_number":      None,
+    "started_at":         0.0,
     "expires_at":         0.0,
-    "window_seconds":     CASE_FIRST_DEPOSIT_SECONDS,
-    "last_uid":           None,
-    "last_name":          None,
-    "cooldowns":          {},
-    "paused_until":       None,
-    "last_winner_name":   None,
-    "last_winner_amount": None,
-    "last_prize_type":    None,
-    "last_prize_label":   None,
+    "guesses":            {},
 
-    "deposit":             CASE_DEPOSIT,
-    "prize_type":          "coins",
-    "prize_artifact_key":  None,
-    "prize_artifact_name": None,
-    "prize_artifact_mult": None,
+    "prize_type":           "coins",
+    "prize_amount":         None,
+    "prize_artifact_key":   None,
+    "prize_artifact_name":  None,
+    "prize_artifact_mult":  None,
     "prize_artifact_emoji_id": None,
     "prize_artifact_emoji":    None,
-    "prize_status_tier":   None,
+    "prize_status_tier":    None,
+
+    "last_secret_number":  None,
+    "last_winner_name":    None,
+    "last_winner_number":  None,
+    "last_exact":          None,
+    "last_participants":   None,
+    "last_prize_type":     None,
+    "last_prize_label":    None,
 
     # Картинка ивента (см. /photo в main.py) — file_id фото, которое
-    # прикрепляется к карточке сундука вместо простого текстового
-    # сообщения. Живёт поверх пересоздания сундука/остановки цикла,
-    # пока админ не пришлёт новое фото командой /photo.
+    # прикрепляется к карточке вместо простого текстового сообщения.
+    # Живёт поверх пересоздания ивента, пока админ не пришлёт новое
+    # фото командой /photo.
     "photo_file_id":       None,
 }
 
 
 def get_case_state() -> dict:
-    """Возвращает глобальное состояние сундука (одно на весь бот)."""
+    """Возвращает глобальное состояние ивента (одно на весь бот)."""
     return _CASE
 
 
 def set_event_photo(file_id: str | None) -> None:
     """Задаёт (или сбрасывает, если file_id=None) картинку ивента —
-    после этого карточка сундука отправляется как фото с текстом-подписью
+    после этого карточка отправляется как фото с текстом-подписью
     вместо обычного текстового сообщения. См. команду /photo в main.py."""
     _CASE["photo_file_id"] = file_id
 
@@ -275,50 +278,40 @@ def _esc(s) -> str:
     return _html.escape(str(s or ""))
 
 
-def _spawn_chest(state: dict) -> None:
-    """Открывает новый сундук с нуля: стартовый банк (только для приза
-    "монеты" — для "артефакт"/"статус" банк не используется, приз
-    фиксирован заранее) и увеличенный таймер на ПЕРВЫЙ вклад (15 минут —
-    чтобы игроки успели заметить и зайти в любом из чатов бота). Как
-    только кто-то вложится первым — таймер начинает работать в обычном
-    режиме (см. try_invest). Настройки приза/вклада (deposit, prize_*)
-    НЕ трогаем — они живут поверх пересоздания сундука, пока цикл не
-    остановлен /stopcase."""
-    state["active"]         = True
-    state["bank"]            = CASE_INITIAL_BANK if state["prize_type"] == "coins" else 0
-    state["expires_at"]      = time.time() + CASE_FIRST_DEPOSIT_SECONDS
-    state["window_seconds"]  = CASE_FIRST_DEPOSIT_SECONDS
-    state["last_uid"]        = None
-    state["last_name"]       = None
-    state["cooldowns"]       = {}
-    state["paused_until"]    = None
+def _spawn_event(state: dict) -> None:
+    """Открывает новый ивент с нуля: загадывает число 1..999 и ставит
+    таймер на 24 часа. Настройки приза (prize_*) НЕ трогаем — их задаёт
+    start_case() перед вызовом этой функции."""
+    now = time.time()
+    state["active"]        = True
+    state["secret_number"] = random.randint(NUMBER_MIN, NUMBER_MAX)
+    state["started_at"]    = now
+    state["expires_at"]    = now + EVENT_DURATION_SECONDS
+    state["guesses"]       = {}
 
 
-# ---------- Управление циклом (админ / автостарт) ----------
+# ---------- Управление циклом (админ) ----------
 
 def start_case(
-    deposit: int = CASE_DEPOSIT,
     prize_type: str = "coins",
+    prize_amount: int | None = None,
     prize_artifact: dict | None = None,
     prize_status_tier: str | None = None,
 ) -> bool:
-    """/startcase — запускает общий цикл сундука (на весь бот). False, если уже запущен.
+    """/startcase — запускает ивент (на весь бот). False, если уже запущен.
 
-    deposit            — сумма одного вклада, выбирает админ в мастере настройки.
-    prize_type          — "coins" (обычный растущий банк), "artifact" (фиксированный
-                          артефакт) или "status" (фиксированный VIP/Premium).
-    prize_artifact       — для prize_type="artifact": {"key", "name", "multiplier",
-                          "emoji_id" (опц., custom-эмодзи), "emoji" (опц., юникод-фолбэк)}.
-    prize_status_tier    — для prize_type="status": "vip" | "premium".
-
-    Настройки сохраняются в _CASE и действуют для ВСЕХ сундуков этого
-    запуска цикла (в т.ч. авто-рестартующихся после паузы), пока админ
-    не остановит ивент /stopcase и не запустит заново с другими настройками."""
+    prize_type    — "coins" (фиксированная сумма монет), "artifact" (фиксированный
+                     артефакт) или "status" (фиксированный VIP/Premium).
+    prize_amount  — для prize_type="coins": сколько монет получит победитель.
+    prize_artifact — для prize_type="artifact": {"key", "name", "multiplier",
+                     "emoji_id" (опц., custom-эмодзи), "emoji" (опц., юникод-фолбэк)}.
+    prize_status_tier — для prize_type="status": "vip" | "premium".
+    """
     if _CASE["running"]:
         return False
 
-    _CASE["deposit"]    = max(1, int(deposit))
-    _CASE["prize_type"] = prize_type
+    _CASE["prize_type"]   = prize_type
+    _CASE["prize_amount"] = max(1, int(prize_amount)) if prize_type == "coins" else None
 
     if prize_type == "artifact" and prize_artifact:
         _CASE["prize_artifact_key"]      = prize_artifact.get("key")
@@ -336,21 +329,17 @@ def start_case(
     _CASE["prize_status_tier"] = prize_status_tier if prize_type == "status" else None
 
     _CASE["running"] = True
-    _spawn_chest(_CASE)
+    _spawn_event(_CASE)
     return True
 
 
 async def stop_case(bot) -> bool:
     """
     /stopcase — останавливает ивент. False, если он и так не запущен.
-
-    ВАЖНО: раньше (до отмены авто-рестарта через 30 минут) эта функция
-    работала только в паузе между сундуками. Паузы больше нет — сундук
-    открывается СРАЗУ при /startcase и живёт, пока сам не закроется по
-    таймеру или его не остановят руками. Поэтому если сундук на момент
-    /stopcase ещё активен, закрываем его немедленно — ТЕМ ЖЕ путём, что
-    и обычное закрытие по таймеру (последний вкладчик получает приз,
-    карточка обновляется во всех чатах) — просто раньше срока.
+    Если на момент /stopcase число ещё не раскрыто — раскрываем его
+    немедленно ТЕМ ЖЕ путём, что и обычное закрытие по таймеру
+    (считаем победителя по уже собранным ответам, карточка обновляется
+    во всех чатах) — просто раньше срока.
     """
     if not _CASE["running"]:
         return False
@@ -361,50 +350,38 @@ async def stop_case(bot) -> bool:
     return True
 
 
-# ---------- Вклад игрока ----------
+# ---------- Ответ игрока ----------
 
-async def try_invest(uid: int, name: str) -> dict:
+async def try_guess(uid: int, name: str, number: int) -> dict:
     """
-    Пытается сделать вклад за игрока uid в ОБЩИЙ сундук (не важно, из
-    какого чата пришёл вклад — банк и кулдаун одни на весь бот).
+    Пытается засчитать ответ игрока uid в ОБЩЕМ ивенте (не важно, из
+    какого чата пришёл ответ — состояние одно на весь бот). У каждого
+    игрока только одна попытка за весь ивент.
+
     Возвращает dict:
-      {"ok": True, "bank": int, "deposit": int}
-      {"ok": False, "reason": "no_active" | "cooldown" | "insufficient",
-       "wait": int (для cooldown), "balance": int (для insufficient),
-       "deposit": int (для insufficient — сколько было нужно)}
+      {"ok": True, "number": int, "count": int}
+      {"ok": False, "reason": "no_active"}
+      {"ok": False, "reason": "bad_range"}
+      {"ok": False, "reason": "already_guessed", "number": int}  — что игрок уже называл
     """
     if not _CASE["active"]:
         return {"ok": False, "reason": "no_active"}
 
-    now     = time.time()
-    last_ts = _CASE["cooldowns"].get(uid, 0)
-    elapsed = now - last_ts
-    if elapsed < PLAYER_COOLDOWN_SECONDS:
-        return {"ok": False, "reason": "cooldown", "wait": int(PLAYER_COOLDOWN_SECONDS - elapsed) + 1}
+    if not (NUMBER_MIN <= number <= NUMBER_MAX):
+        return {"ok": False, "reason": "bad_range"}
 
-    deposit = _CASE["deposit"]
+    existing = _CASE["guesses"].get(uid)
+    if existing is not None:
+        return {"ok": False, "reason": "already_guessed", "number": existing["number"]}
 
-    # Атомарное списание — та же гарантия, что и везде в проекте:
-    # если баланса не хватает, change_balance просто вернёт None и
-    # ничего не спишет (см. database.change_balance).
-    new_balance = await aio_change_balance(uid, -deposit, min_balance=0)
-    if new_balance is None:
-        u = await aio_get_user(uid)
-        balance = u.get("balance", 0) if u else 0
-        return {"ok": False, "reason": "insufficient", "balance": balance, "deposit": deposit}
+    _CASE["guesses"][uid] = {"name": name, "number": number, "ts": time.time()}
 
-    # Банк копится ВСЕГДА, независимо от типа приза: для "монет" это и
-    # есть сам приз, а для "артефакта"/"статуса" — это дополнительный
-    # бонус, который винер получит ПОВЕРХ фиксированного приза (см.
-    # _close_chest) — золото, накопленное на фоне вкладов, не пропадает.
-    _CASE["bank"] += deposit
-    _CASE["last_uid"]        = uid
-    _CASE["last_name"]       = name
-    _CASE["cooldowns"][uid]  = now
-    _CASE["expires_at"]      = now + CASE_TIMER_SECONDS
-    _CASE["window_seconds"]  = CASE_TIMER_SECONDS
+    return {"ok": True, "number": number, "count": len(_CASE["guesses"])}
 
-    return {"ok": True, "bank": _CASE["bank"], "deposit": deposit}
+
+def has_guessed(uid: int) -> bool:
+    """Уже называл ли этот игрок число в текущем ивенте."""
+    return uid in _CASE["guesses"]
 
 
 # ---------- Тексты и клавиатура ----------
@@ -413,52 +390,37 @@ DIVIDER = "▬▬▬▬▬▬▬▬▬▬▬▬▬"
 
 
 # ID premium custom-эмодзи, который рисуется ИКОНКОЙ слева на кнопке
-# "Вложить" (Bot API 9.4, поле icon_custom_emoji_id). Работает ТОЛЬКО если
+# "Угадать" (Bot API 9.4, поле icon_custom_emoji_id). Работает ТОЛЬКО если
 # у аккаунта бота есть активная Telegram Premium подписка (или куплен доп.
 # юзернейм на Fragment) — иначе Telegram эту иконку молча проигнорирует.
-# Как достать ID своего эмодзи — см. инструкцию в чате.
-CASE_INVEST_BUTTON_EMOJI_ID = "5377544787839521766"  # ← замени на свой ID
+CASE_GUESS_BUTTON_EMOJI_ID = "5377544787839521766"  # ← замени на свой ID
 
 
 def case_keyboard(active: bool) -> InlineKeyboardMarkup | None:
-    """Кнопка "Вложить" — только когда сундук активен, и прямо на кнопке
-    живой обратный отсчёт до закрытия (кнопка перерисовывается вместе с
-    карточкой на каждом тике, так что таймер на ней тоже "тикает").
-    Кнопки "Обновить" больше нет: карточка обновляется сама.
+    """Кнопка "Угадать" — только пока идёт приём ответов, с обратным
+    отсчётом до раскрытия числа прямо на кнопке (кнопка перерисовывается
+    вместе с карточкой на каждом тике, так что таймер на ней тоже "тикает").
 
-    Вид: [premium-иконка] 50К | ⏳ ММ:СС — иконка задаётся отдельным полем
-    icon_custom_emoji_id, а не эмодзи внутри text (Telegram не рендерит
-    custom-эмодзи как символ текста на кнопках, только как icon)."""
+    Вид: [premium-иконка] 🔮 Угадать | ⏳ ЧЧ:ММ — иконка задаётся отдельным
+    полем icon_custom_emoji_id, а не эмодзи внутри text (Telegram не
+    рендерит custom-эмодзи как символ текста на кнопках, только как icon)."""
     if not active:
         return None
     from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-    remaining  = max(0, int(_CASE["expires_at"] - time.time()))
-    mins, secs = divmod(remaining, 60)
+    remaining = max(0, int(_CASE["expires_at"] - time.time()))
+    hrs, rem  = divmod(remaining, 3600)
+    mins, _s  = divmod(rem, 60)
 
     builder = InlineKeyboardBuilder()
     builder.button(
-        text=f"{format_amount(_CASE['deposit'])} | ⏳ {mins:02d}:{secs:02d}",
-        callback_data=CASE_INVEST_CB,
-        icon_custom_emoji_id=CASE_INVEST_BUTTON_EMOJI_ID,
+        text=f"🔮 Угадать | ⏳ {hrs:02d}:{mins:02d}",
+        callback_data=CASE_GUESS_CB,
+        icon_custom_emoji_id=CASE_GUESS_BUTTON_EMOJI_ID,
         style="primary",  # синяя кнопка; варианты: "success" (зелёная), "danger" (красная)
     )
     builder.adjust(1)
     return builder.as_markup()
-
-
-def _bonus_bank_line(state: dict) -> str:
-    """Доп. строка "золото в трюме" для призов "артефакт"/"статус" — банк
-    копится на фоне вкладов (см. try_invest) и достаётся победителю ПОВЕРХ
-    фиксированного приза (см. _close_chest). Пустая строка, пока в банке
-    ещё ничего нет (первый вклад в новом сундуке ещё не сделан)."""
-    if state["bank"] <= 0:
-        return ""
-    bank_str = format_amount(state["bank"])
-    return (
-        f'\n<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> '
-        f'<b><i>Плюс золото в трюме: <code>{bank_str}</code>{COIN}</i></b>'
-    )
 
 
 def _artifact_icon(state: dict) -> str:
@@ -474,51 +436,49 @@ def _artifact_icon(state: dict) -> str:
 
 
 def _active_prize_line(state: dict) -> str:
-    """Строка "что лежит в сундуке" для карточки, пока сундук открыт —
-    зависит от режима приза, выбранного админом в /startcase."""
+    """Строка "что достанется победителю" для карточки, пока приём ответов
+    идёт — зависит от режима приза, выбранного админом в /startcase."""
     if state["prize_type"] == "artifact":
         name = _esc(state["prize_artifact_name"] or "?")
         mult = state["prize_artifact_mult"]
         mult_str = f" (×{mult})" if mult else ""
-        return (
-            f'{_artifact_icon(state)} <b><i>В сундуке артефакт: {name}{mult_str}</i></b>'
-            f'{_bonus_bank_line(state)}'
-        )
+        return f'{_artifact_icon(state)} <b><i>Приз: {name}{mult_str}</i></b>'
     if state["prize_type"] == "status":
         label = "VIP" if state["prize_status_tier"] == "vip" else "Premium"
         return (
             f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> '
-            f'<b><i>В сундуке статус: {label} (30 дней)</i></b>'
-            f'{_bonus_bank_line(state)}'
+            f'<b><i>Приз: статус {label} (30 дней)</i></b>'
         )
-    bank_str = format_amount(state["bank"])
+    amount_str = format_amount(state["prize_amount"] or 0)
     return (
         f'<tg-emoji emoji-id="5278467510604160626">🌟</tg-emoji> '
-        f'<b><i>Золота в трюме: <code>{bank_str}</code>{COIN}</i></b>'
+        f'<b><i>Приз: <code>{amount_str}</code>{COIN}</i></b>'
     )
 
 
 def case_status_text() -> str:
-    """Единый текст карточки сундука — используется ВЕЗДЕ: и когда бот
+    """Единый текст карточки ивента — используется ВЕЗДЕ: и когда бот
     впервые анонсирует ивент по /startcase, и на обычных обновлениях
-    карточки. Никакого отдельного "текста для старта" больше нет.
+    карточки. Никакого отдельного "текста для старта" нет.
 
     Весь текст (кроме иконок-эмодзи) — жирным И курсивом одновременно."""
     state = _CASE
     now   = time.time()
 
     if state["active"]:
-        remaining  = max(0, int(state["expires_at"] - now))
-        mins, secs = divmod(remaining, 60)
-        timer_str  = f"{mins:02d}:{secs:02d}"
+        remaining = max(0, int(state["expires_at"] - now))
+        hrs, rem  = divmod(remaining, 3600)
+        mins, secs = divmod(rem, 60)
+        timer_str  = f"{hrs:02d}:{mins:02d}:{secs:02d}"
 
-        if state["last_uid"]:
-            last_line = (
+        count = len(state["guesses"])
+        if count:
+            players_line = (
                 f'<tg-emoji emoji-id="5402477260982731644">🌟</tg-emoji> '
-                f'<b><i>Последний, кто рискнул: {_esc(state["last_name"])}</i></b>'
+                f'<b><i>Уже рискнули: {count} {_players_word(count)}</i></b>'
             )
         else:
-            last_line = (
+            players_line = (
                 f'<tg-emoji emoji-id="5399913388845322366">🌟</tg-emoji> '
                 f'<b><i>Пока никто не рискнул — стань первым!</i></b>'
             )
@@ -526,28 +486,46 @@ def case_status_text() -> str:
         return (
             f'{EVENT_TITLE}\n'
             f'{DIVIDER}\n'
-            f'<b><i>Тишина... только скрип старого дерева и блеск золота во тьме.</i></b>\n\n'
+            f'<b><i>Капитан спрятал число от {NUMBER_MIN} до {NUMBER_MAX} на дне сундука. '
+            f'У каждого — только одна попытка назвать его.</i></b>\n\n'
             f'<blockquote>'
             f'{_active_prize_line(state)}\n'
             f'<tg-emoji emoji-id="5382194935057372936">🌟</tg-emoji> '
-            f'<b><i>Секунды утекают: <code>{timer_str}</code></i></b>\n'
-            f'{last_line}'
+            f'<b><i>До раскрытия: <code>{timer_str}</code></i></b>\n'
+            f'{players_line}'
             f'</blockquote>\n'
-            f'<b><i>Стань последним — и сундук навсегда твой.</i></b>\n'
+            f'<b><i>Назови число ближе всех к загаданному — и приз твой.</i></b>\n'
             f'<tg-emoji emoji-id="5397916757333654639">🌟</tg-emoji> '
-            f'<b><i>Вклад: {format_amount(state["deposit"])}{COIN}</i></b>'
+            f'<b><i>Участие бесплатное, один шанс на игрока.</i></b>'
         )
 
-    if state.get("last_winner_name"):
+    if state.get("last_secret_number") is not None:
+        secret_str = str(state["last_secret_number"])
+        if state.get("last_winner_name"):
+            exact = state.get("last_exact")
+            guess_line = (
+                f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> '
+                f'<b><i>Победитель: {_esc(state["last_winner_name"])} '
+                f'(назвал {state["last_winner_number"]}'
+                f'{" — точно в яблочко!" if exact else ""})</i></b>\n'
+            )
+            prize_line = (
+                f'<tg-emoji emoji-id="5438496463044752972">🌟</tg-emoji> '
+                f'<b><i>Забрал: {state.get("last_prize_label") or "—"}</i></b>'
+            )
+            result_block = guess_line + prize_line
+        else:
+            result_block = (
+                f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> '
+                f'<b><i>Никто не рискнул — приз остался на дне.</i></b>'
+            )
+
         return (
             f'{EVENT_TITLE}\n'
             f'{DIVIDER}\n'
-            f'<b><i>Пират растворился во тьме, унеся сундук с собой...</i></b>\n\n'
+            f'<b><i>Сундук раскрыт — загаданное число было: <code>{secret_str}</code></i></b>\n\n'
             f'<blockquote>'
-            f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> '
-            f'<b><i>Последний, кому повезло: {_esc(state["last_winner_name"])}</i></b>\n'
-            f'<tg-emoji emoji-id="5438496463044752972">🌟</tg-emoji> '
-            f'<b><i>Унёс с собой: {state.get("last_prize_label") or "—"}</i></b>'
+            f'{result_block}'
             f'</blockquote>\n'
             f'<i>Ждём, пока капитан не решит начать новый ивент.</i>'
         )
@@ -555,13 +533,25 @@ def case_status_text() -> str:
     return (
         f'{EVENT_TITLE}\n'
         f'{DIVIDER}\n'
-        f'<b><i>Тишина... сундук ещё не заброшен в эти воды.</i></b>'
+        f'<b><i>Тишина... сундук с загадкой ещё не заброшен в эти воды.</i></b>'
     )
+
+
+def _players_word(n: int) -> str:
+    """Русское склонение слова "игрок" под число (1 игрок / 2 игрока / 5 игроков)."""
+    n10, n100 = n % 10, n % 100
+    if 11 <= n100 <= 14:
+        return "игроков"
+    if n10 == 1:
+        return "игрок"
+    if 2 <= n10 <= 4:
+        return "игрока"
+    return "игроков"
 
 
 # ---------- Карточки: per-chat id сообщения ----------
 # ══════════════════════════════════════════════════════════════════════
-#  Банк/таймер общие на весь бот, но у КАЖДОГО чата своя карточка —
+#  Состояние ивента общее на весь бот, но у КАЖДОГО чата своя карточка —
 #  своё сообщение в Telegram, свой msg_id и свой способ обновления
 #  (edit в личке, delete+send в группе). Поэтому _CARDS хранит только
 #  это — id сообщения и тип чата — а не игровое состояние.
@@ -578,17 +568,17 @@ def get_card_state(chat_id: int) -> dict:
 
 def set_chat_type(chat_id: int, chat_type: str) -> None:
     """Запоминает тип чата ('private' / 'group' / 'supergroup') — от этого
-    зависит, как именно обновляется карточка сундука в этом чате."""
+    зависит, как именно обновляется карточка ивента в этом чате."""
     get_card_state(chat_id)["chat_type"] = chat_type
 
 
 # ══════════════════════════════════════════════════════════════════════
 #  ЛОК НА ЧАТ ДЛЯ ОБНОВЛЕНИЯ КАРТОЧКИ
 #
-#  bump_card/refresh/close теперь трогают карточки СРАЗУ во всех чатах
-#  (банк общий), но каждый чат по-прежнему обновляется независимо и
-#  сериализованно — лок и троттлинг остались per-chat, просто теперь
-#  запускаются параллельно (через asyncio.gather) для разных chat_id.
+#  bump_card/refresh/close теперь трогают карточки СРАЗУ во всех чатах,
+#  но каждый чат по-прежнему обновляется независимо и сериализованно —
+#  лок и троттлинг остались per-chat, просто теперь запускаются
+#  параллельно (через asyncio.gather) для разных chat_id.
 # ══════════════════════════════════════════════════════════════════════
 _CARD_LOCKS: dict[int, asyncio.Lock] = {}
 
@@ -608,7 +598,7 @@ _LAST_CARD_UPDATE_TS: dict[int, float] = {}
 # Время последнего delete+send карточки в ГРУППЕ (отдельно от
 # _LAST_CARD_UPDATE_TS) — используется тихим тиком (_refresh_chat_card),
 # чтобы поднимать карточку не чаще раза в GROUP_CARD_REFRESH_SECONDS.
-# Обновляется и значимыми событиями (_push_card), чтобы вклад/закрытие
+# Обновляется и значимыми событиями (_push_card), чтобы старт/раскрытие
 # прямо перед тиком не приводили к двойному перевыпуску подряд.
 _LAST_GROUP_REFRESH_TS: dict[int, float] = {}
 
@@ -730,13 +720,11 @@ async def _delete_and_resend(bot, chat_id: int, card: dict, text: str, active: b
 
 
 async def _push_card(bot, chat_id: int, text: str, active: bool):
-    """Обновляет карточку общего сундука в ОДНОМ конкретном чате на значимом
-    событии (вклад/закрытие/новый сундук) — И В ЛИЧКЕ, И В ГРУППЕ просто
-    редактирует текст на месте, без пересоздания сообщения. Пересоздание
-    (удалить старое + прислать новое) в группах происходит ТОЛЬКО на
-    тихом тике раз в GROUP_CARD_REFRESH_SECONDS (см. _refresh_chat_card) —
-    не на каждом вкладе, иначе группа заваливается новыми сообщениями при
-    частых вкладах."""
+    """Обновляет карточку ивента в ОДНОМ конкретном чате на значимом
+    событии (старт/раскрытие) — И В ЛИЧКЕ, И В ГРУППЕ просто редактирует
+    текст на месте, без пересоздания сообщения. Пересоздание (удалить
+    старое + прислать новое) в группах происходит ТОЛЬКО на тихом тике
+    раз в GROUP_CARD_REFRESH_SECONDS (см. _refresh_chat_card)."""
     card = get_card_state(chat_id)
     async with _get_card_lock(chat_id):
         await _throttle_card(chat_id)
@@ -745,11 +733,10 @@ async def _push_card(bot, chat_id: int, text: str, active: bool):
 
 async def _refresh_chat_card(bot, chat_id: int, text: str):
     """Тихий тик (раз в CARD_REFRESH_SECONDS): в личке просто обновляет
-    таймер на месте — дёшево, можно часто. В группе/супергруппе вместо
-    этого раз в GROUP_CARD_REFRESH_SECONDS удаляет старое сообщение и
-    шлёт новое — иначе отредактированная "на месте" карточка тихо тонет
-    под обычной перепиской и её никто не видит. Делаем это реже, чем сам
-    тик, чтобы не заспамить чат частыми новыми сообщениями."""
+    таймер/счётчик на месте — дёшево, можно часто. В группе/супергруппе
+    вместо этого раз в GROUP_CARD_REFRESH_SECONDS удаляет старое сообщение
+    и шлёт новое — иначе отредактированная "на месте" карточка тихо тонет
+    под обычной перепиской и её никто не видит."""
     card = get_card_state(chat_id)
     if not card.get("msg_id"):
         return
@@ -772,9 +759,8 @@ async def _refresh_chat_card(bot, chat_id: int, text: str):
 
 async def _broadcast(bot, text: str, active: bool):
     """Рассылает ОДИНАКОВЫЙ текст карточки во ВСЕ известные чаты параллельно
-    (с ограничением конкурентности), потому что банк общий и после любого
-    значимого события (вклад/закрытие/новый сундук) карточка должна
-    обновиться сразу везде, а не только там, где произошло событие."""
+    (с ограничением конкурентности) — используется на значимых событиях
+    (старт ивента / раскрытие числа)."""
     chats = await get_all_chats()
     if not chats:
         return
@@ -789,7 +775,7 @@ async def _broadcast(bot, text: str, active: bool):
 
 
 async def send_case_card(bot, chat_id: int):
-    """Отправляет свежую карточку общего сундука новым сообщением в ОДНОМ
+    """Отправляет свежую карточку ивента новым сообщением в ОДНОМ
     чате (например, по команде /startcase или /case) и запоминает её id."""
     card = get_card_state(chat_id)
     async with _get_card_lock(chat_id):
@@ -801,9 +787,11 @@ async def send_case_card(bot, chat_id: int):
 
 
 async def bump_card(bot):
-    """Обновление карточки на ЗНАЧИМЫХ событиях (новый вклад, закрытие,
-    открытие нового сундука) — рассылается СРАЗУ во ВСЕ чаты бота, потому
-    что банк один на всех и вклад в одном чате должен быть виден везде."""
+    """Обновление карточки на ЗНАЧИМЫХ событиях (старт ивента, раскрытие
+    числа) — рассылается СРАЗУ во ВСЕ чаты бота. Ответы игроков (см.
+    try_guess) карточку НЕ дёргают — они копятся молча и попадут в
+    счётчик "уже рискнули" только на следующем тихом тике, чтобы частая
+    отгадка не превращалась в спам обновлений на 24 часа вперёд."""
     await _broadcast(bot, case_status_text(), _CASE["active"])
 
 
@@ -811,22 +799,22 @@ async def bump_card(bot):
 
 async def broadcast_event_start(
     bot,
-    deposit: int = CASE_DEPOSIT,
     prize_type: str = "coins",
+    prize_amount: int | None = None,
     prize_artifact: dict | None = None,
     prize_status_tier: str | None = None,
 ):
     """Запускает ивент ПО КОМАНДЕ /startcase (после того, как админ прошёл
-    мастер выбора приза в main.py): открывает сундук и рассылает карточку
+    мастер выбора приза в main.py): загадывает число и рассылает карточку
     (тот же case_status_text(), что и везде — отдельного текста для
     "анонса" больше нет) во все известные чаты (личка + группы).
     Ошибки по отдельным чатам (бот заблокирован/выгнан) просто пропускаются.
 
-    deposit/prize_type/prize_artifact/prize_status_tier — см. start_case().
+    prize_type/prize_amount/prize_artifact/prize_status_tier — см. start_case().
 
     ВАЖНО: вызывается только из хендлера команды, НЕ на старте процесса —
     иначе ивент начинался бы сам по себе при каждом деплое/рестарте бота."""
-    if not start_case(deposit, prize_type, prize_artifact, prize_status_tier):
+    if not start_case(prize_type, prize_amount, prize_artifact, prize_status_tier):
         return False
 
     chats = await get_all_chats()
@@ -848,18 +836,6 @@ async def broadcast_event_start(
 
 
 # ---------- Выдача приза победителю (по типу) ----------
-
-async def _grant_bonus_bank(winner_uid: int, bank: int) -> str:
-    """Довыдаёт победителю приза "артефакт"/"статус" золото, накопленное
-    в банке на фоне вкладов (см. try_invest — банк теперь копится всегда,
-    а не только в режиме "монеты"). Возвращает готовый HTML-хвост для
-    prize_label ("" если банк пуст — например, был всего один вклад и
-    он же оказался последним)."""
-    if bank <= 0:
-        return ""
-    await aio_change_balance(winner_uid, bank)
-    return f' <b>+</b> <code>{format_amount(bank)}</code>{COIN}'
-
 
 async def _grant_artifact_prize(winner_uid: int) -> str:
     """Выдаёт победителю зафиксированный артефакт-приз (см. state
@@ -910,62 +886,81 @@ async def _grant_status_prize(winner_uid: int) -> str:
     return f'статус <b>{label}</b> (30 дней)'
 
 
-# ---------- Фоновый цикл (закрытие сундука / авто-рестарт) ----------
+# ---------- Определение победителя ----------
+
+def _determine_winner(state: dict) -> tuple[int | None, dict | None]:
+    """Выбирает победителя по уже собранным ответам:
+    1) если есть точные совпадения с secret_number — среди них побеждает
+       тот, кто ответил РАНЬШЕ по времени;
+    2) иначе — среди ВСЕХ ответов побеждает ближайший по модулю разницы
+       (при равенстве разницы — снова кто раньше ответил).
+    Возвращает (uid, guess_dict) или (None, None), если ответов не было."""
+    guesses = state["guesses"]
+    if not guesses:
+        return None, None
+
+    secret = state["secret_number"]
+    exact  = [(uid, g) for uid, g in guesses.items() if g["number"] == secret]
+
+    if exact:
+        candidates = exact
+    else:
+        min_diff   = min(abs(g["number"] - secret) for g in guesses.values())
+        candidates = [(uid, g) for uid, g in guesses.items() if abs(g["number"] - secret) == min_diff]
+
+    candidates.sort(key=lambda item: item[1]["ts"])
+    winner_uid, winner_g = candidates[0]
+    return winner_uid, winner_g
+
+
+# ---------- Фоновый цикл (раскрытие числа) ----------
 
 async def _close_chest(bot):
-    state       = _CASE
-    winner_uid  = state["last_uid"]
-    winner_name = state["last_name"]
+    state  = _CASE
+    secret = state["secret_number"]
 
-    state["active"]       = False
-    state["running"]      = False
-    state["paused_until"] = None
+    winner_uid, winner_g = _determine_winner(state)
+    participants = len(state["guesses"])
+
+    state["active"]  = False
+    state["running"] = False
+
+    state["last_secret_number"] = secret
+    state["last_participants"]  = participants
 
     if winner_uid:
         prize_type = state["prize_type"]
         if prize_type == "artifact":
             prize_label = await _grant_artifact_prize(winner_uid)
-            prize_label += await _grant_bonus_bank(winner_uid, state["bank"])
         elif prize_type == "status":
             prize_label = await _grant_status_prize(winner_uid)
-            prize_label += await _grant_bonus_bank(winner_uid, state["bank"])
         else:
-            bank = state["bank"]
-            await aio_change_balance(winner_uid, bank)
-            prize_label = f'<code>{format_amount(bank)}</code>{COIN}'
+            amount = state["prize_amount"] or 0
+            await aio_change_balance(winner_uid, amount)
+            prize_label = f'<code>{format_amount(amount)}</code>{COIN}'
 
-        state["last_winner_name"]   = winner_name
-        state["last_winner_amount"] = state["bank"] if prize_type == "coins" else None
+        exact = winner_g["number"] == secret
+
+        state["last_winner_name"]   = winner_g["name"]
+        state["last_winner_number"] = winner_g["number"]
+        state["last_exact"]         = exact
         state["last_prize_type"]    = prize_type
         state["last_prize_label"]   = prize_label
-
-        text = (
-            f'{EVENT_TITLE}\n'
-            f'{DIVIDER}\n'
-            f'<i>Волны сомкнулись над сундуком — но не раньше, чем кто-то успел к нему прикоснуться.</i>\n\n'
-            f'<blockquote>'
-            f'<tg-emoji emoji-id="5217822164362739968">🌟</tg-emoji> <b>Победитель:</b> {_esc(winner_name)}\n'
-            f'<tg-emoji emoji-id="5402477260982731644">🌟</tg-emoji> <b>Забрал:</b> {prize_label}'
-            f'</blockquote>\n'
-            f'<b>Ивент завершён. Новый сундук капитан спрячет, когда решит начать заново.</b>'
-        )
     else:
-        text = (
-            f'{EVENT_TITLE}\n'
-            f'{DIVIDER}\n'
-            f'<i>Никто не решился подойти — сундук исчез в тумане так же тихо, как появился.</i>\n\n'
-            f'<blockquote>Приз утонул вместе с сундуком.</blockquote>\n'
-            f'<b>Ивент завершён. Новый сундук появится, когда капитан решит начать заново.</b>'
-        )
+        state["last_winner_name"]   = None
+        state["last_winner_number"] = None
+        state["last_exact"]         = None
+        state["last_prize_type"]    = None
+        state["last_prize_label"]   = None
 
-    await _broadcast(bot, text, active=False)
+    await _broadcast(bot, case_status_text(), active=False)
 
 
 async def case_tick_loop(bot):
     """
     Единый фоновый тик (по аналогии с остальными циклами проекта, например
-    _duel_timer_loop в mainhelp.py). Раз в секунду проверяет ОБЩИЙ сундук:
-    закрывает истёкший и автоматически открывает новый после паузы —
+    _duel_timer_loop в mainhelp.py). Раз в секунду проверяет ивент:
+    как только истекли 24 часа — раскрывает число, определяет победителя
     и рассылает карточку сразу во все чаты бота."""
     while True:
         try:
@@ -985,9 +980,11 @@ async def _tick_once(bot):
 
 async def case_card_refresh_loop(bot):
     """Отдельный фоновый тик: раз в CARD_REFRESH_SECONDS молча обновляет
-    таймер на карточках во всех чатах, пока сундук активен — без кнопки
-    "Обновить", без пересоздания сообщений (это только для значимых
-    событий, см. bump_card)."""
+    таймер и счётчик участников на карточках во всех чатах, пока ивент
+    активен — без кнопки "Обновить", без пересоздания сообщений (это
+    только для значимых событий, см. bump_card). Именно здесь, а не
+    сразу при каждом ответе, карточка узнаёт о новых участниках —
+    ответы копятся "на фоне" и не дёргают рассылку немедленно."""
     while True:
         try:
             if _CASE["active"]:
