@@ -496,7 +496,7 @@ def case_status_text() -> str:
             f'</blockquote>\n'
             f'<b><i>Назови число ближе всех к загаданному — и приз твой.</i></b>\n'
             f'<tg-emoji emoji-id="5397916757333654639">🌟</tg-emoji> '
-            f'<b><i>Участие бесплатное, один шанс на игрока.</i></b>'
+            f'<b><i>Участие бесплатное, один шанс на игрока. Отвечай боту в личку.</i></b>'
         )
 
     if state.get("last_secret_number") is not None:
