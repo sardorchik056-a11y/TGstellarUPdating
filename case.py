@@ -57,10 +57,18 @@ CASE_ARTIFACT_DUPLICATE_COMPENSATION_PER_MULT = 200_000
 CASE_TIMER_SECONDS          = 60        # таймер сундука (сбрасывается при каждом вкладе)
 CASE_FIRST_DEPOSIT_SECONDS  = 15 * 60   # время на ПЕРВЫЙ вклад в новом сундуке — 15 минут
 PLAYER_COOLDOWN_SECONDS     = 15        # кулдаун игрока между вкладами (общий, на весь бот)
-PAUSE_SECONDS                = 30 * 60   # пауза после закрытия сундука (авто-рестарт)
 CARD_REFRESH_SECONDS         = 3         # частота "тихого" авто-обновления карточек
                                           # (было 2 — увеличили, чтобы оставить запас
                                           # лимита Telegram на карточки, дёргаемые вкладами)
+
+# В группах тихий тик НЕ просто редактирует карточку на месте (там она может
+# затеряться под обычной перепиской), а раз в этот интервал удаляет старое
+# сообщение и шлёт новое — карточка "поднимается" наверх чата. Делаем это
+# РЕЖЕ, чем сам тик (CARD_REFRESH_SECONDS), потому что delete+send — это два
+# запроса к Telegram на чат, и слишком частые перевыпуски засоряли бы чат
+# постоянно мелькающими новыми сообщениями ("спам", см. личное сообщение
+# от erreu). В личке этого ограничения нет — там всегда дешёвый edit-in-place.
+GROUP_CARD_REFRESH_SECONDS   = 15
 
 # Минимальный интервал между ЛЮБЫМИ запросами к Telegram (edit/delete/send),
 # которые трогают карточку ОДНОГО чата. Telegram даёт группе примерно
@@ -167,6 +175,7 @@ async def forget_chat(chat_id: int):
     except Exception as e:
         print(f"[case.forget_chat] {e}")
     _CARDS.pop(chat_id, None)
+    _LAST_GROUP_REFRESH_TS.pop(chat_id, None)
 
 
 def _get_all_chats_sync() -> list[tuple[int, str]]:
@@ -186,7 +195,7 @@ async def get_all_chats() -> list[tuple[int, str]]:
 # ═══════════════════════════════════════════════════════════
 #
 # _CASE = {
-#   "running":            bool,  # цикл запущен (вручную или автостартом) и не остановлен
+#   "running":            bool,  # ивент запущен командой /startcase и ещё не закрылся
 #   "active":             bool,  # сундук сейчас открыт (принимает вклады)
 #   "bank":               int,   # копится только в режиме приза "монеты"
 #   "expires_at":         float, # unix ts закрытия текущего сундука
@@ -194,7 +203,9 @@ async def get_all_chats() -> list[tuple[int, str]]:
 #   "last_uid":           int | None,
 #   "last_name":          str | None,
 #   "cooldowns":          {uid: last_invest_ts},   # общий кулдаун на весь бот
-#   "paused_until":        float | None,
+#   "paused_until":        float | None,  # оставлено для совместимости, больше не используется —
+#                                          # автоматического рестарта после закрытия больше нет,
+#                                          # новый ивент начинается ТОЛЬКО командой /startcase
 #   "last_winner_name":    str | None,
 #   "last_winner_amount":  int | None,   # для "монет" — сумма; для остальных призов — None
 #   "last_prize_type":     str | None,   # чем был награждён ПОСЛЕДНИЙ закрытый сундук
@@ -329,15 +340,24 @@ def start_case(
     return True
 
 
-def stop_case() -> bool:
+async def stop_case(bot) -> bool:
     """
-    /stopcase — останавливает общий цикл. Работает ТОЛЬКО в паузе
-    (сундук закрыт). Если сундук активен или цикл не запущен — False.
+    /stopcase — останавливает ивент. False, если он и так не запущен.
+
+    ВАЖНО: раньше (до отмены авто-рестарта через 30 минут) эта функция
+    работала только в паузе между сундуками. Паузы больше нет — сундук
+    открывается СРАЗУ при /startcase и живёт, пока сам не закроется по
+    таймеру или его не остановят руками. Поэтому если сундук на момент
+    /stopcase ещё активен, закрываем его немедленно — ТЕМ ЖЕ путём, что
+    и обычное закрытие по таймеру (последний вкладчик получает приз,
+    карточка обновляется во всех чатах) — просто раньше срока.
     """
-    if not _CASE["running"] or _CASE["active"]:
+    if not _CASE["running"]:
         return False
-    _CASE["running"]      = False
-    _CASE["paused_until"] = None
+    if _CASE["active"]:
+        await _close_chest(bot)  # уже сам выставляет running/active в False
+    else:
+        _CASE["running"] = False
     return True
 
 
@@ -518,28 +538,18 @@ def case_status_text() -> str:
             f'<b><i>Вклад: {format_amount(state["deposit"])}{COIN}</i></b>'
         )
 
-    if state["running"]:
-        remaining  = max(0, int(state["paused_until"] - now)) if state["paused_until"] else 0
-        mins, secs = divmod(remaining, 60)
-
-        winner_block = ""
-        if state.get("last_winner_name"):
-            winner_block = (
-                f'\n\n<blockquote>'
-                f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> '
-                f'<b><i>Последний, кому повезло: {_esc(state["last_winner_name"])}</i></b>\n'
-                f'<tg-emoji emoji-id="5438496463044752972">🌟</tg-emoji> '
-                f'<b><i>Унёс с собой: {state.get("last_prize_label") or "—"}</i></b>'
-                f'</blockquote>'
-            )
-
+    if state.get("last_winner_name"):
         return (
             f'{EVENT_TITLE}\n'
             f'{DIVIDER}\n'
-            f'<b><i>Пират растворился во тьме, унеся сундук с собой... но он вернётся.</i></b>\n\n'
-            f'<blockquote><tg-emoji emoji-id="5303479226882603449">🌟</tg-emoji> '
-            f'<b><i>Новый сундук всплывёт через: <code>{mins:02d}:{secs:02d}</code></i></b></blockquote>'
-            f'{winner_block}'
+            f'<b><i>Пират растворился во тьме, унеся сундук с собой...</i></b>\n\n'
+            f'<blockquote>'
+            f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> '
+            f'<b><i>Последний, кому повезло: {_esc(state["last_winner_name"])}</i></b>\n'
+            f'<tg-emoji emoji-id="5438496463044752972">🌟</tg-emoji> '
+            f'<b><i>Унёс с собой: {state.get("last_prize_label") or "—"}</i></b>'
+            f'</blockquote>\n'
+            f'<i>Ждём, пока капитан не решит начать новый ивент.</i>'
         )
 
     return (
@@ -594,6 +604,13 @@ def _get_card_lock(chat_id: int) -> asyncio.Lock:
 # Время последнего реального запроса к Telegram по карточке этого чата —
 # используется троттлингом ниже (_throttle_card), чтобы не словить flood control.
 _LAST_CARD_UPDATE_TS: dict[int, float] = {}
+
+# Время последнего delete+send карточки в ГРУППЕ (отдельно от
+# _LAST_CARD_UPDATE_TS) — используется тихим тиком (_refresh_chat_card),
+# чтобы поднимать карточку не чаще раза в GROUP_CARD_REFRESH_SECONDS.
+# Обновляется и значимыми событиями (_push_card), чтобы вклад/закрытие
+# прямо перед тиком не приводили к двойному перевыпуску подряд.
+_LAST_GROUP_REFRESH_TS: dict[int, float] = {}
 
 
 async def _throttle_card(chat_id: int) -> None:
@@ -691,42 +708,63 @@ async def _send_or_edit(bot, chat_id: int, card: dict, text: str, active: bool):
         print(f"[case] send FAILED chat_id={chat_id}: {e}")
 
 
+async def _delete_and_resend(bot, chat_id: int, card: dict, text: str, active: bool, what: str):
+    """Удаляет старую карточку и присылает новую — общий кусок для
+    _push_card (значимые события в группах) и _refresh_chat_card (тихий
+    "подъём" карточки в группах раз в GROUP_CARD_REFRESH_SECONDS).
+    Вызывающий уже держит _get_card_lock(chat_id) и прошёл _throttle_card."""
+    old_id = card.get("msg_id")
+    if old_id:
+        try:
+            await _tg_call_with_retry(
+                lambda: bot.delete_message(chat_id, old_id),
+                chat_id, f"{what}.delete_message",
+            )
+        except Exception as e:
+            print(f"[case] {what}: delete_message FAILED chat_id={chat_id} msg_id={old_id}: {e}")
+    try:
+        sent = await _send_card_new(bot, chat_id, text, active)
+        card["msg_id"] = sent.message_id
+    except Exception as e:
+        print(f"[case] {what}: send FAILED chat_id={chat_id}: {e}")
+
+
 async def _push_card(bot, chat_id: int, text: str, active: bool):
-    """Обновляет карточку общего сундука в ОДНОМ конкретном чате: в личке
-    редактирует сообщение на месте, в группе/супергруппе — удаляет старое
-    и присылает новое (чтобы карточка "поднималась" в чате). Используется
-    и для значимых событий (вклад/закрытие/новый сундук), и для рассылки
-    анонса на старте."""
+    """Обновляет карточку общего сундука в ОДНОМ конкретном чате на значимом
+    событии (вклад/закрытие/новый сундук) — И В ЛИЧКЕ, И В ГРУППЕ просто
+    редактирует текст на месте, без пересоздания сообщения. Пересоздание
+    (удалить старое + прислать новое) в группах происходит ТОЛЬКО на
+    тихом тике раз в GROUP_CARD_REFRESH_SECONDS (см. _refresh_chat_card) —
+    не на каждом вкладе, иначе группа заваливается новыми сообщениями при
+    частых вкладах."""
     card = get_card_state(chat_id)
     async with _get_card_lock(chat_id):
         await _throttle_card(chat_id)
-
-        if card.get("chat_type") == "private":
-            await _send_or_edit(bot, chat_id, card, text, active)
-            return
-
-        old_id = card.get("msg_id")
-        if old_id:
-            try:
-                await _tg_call_with_retry(
-                    lambda: bot.delete_message(chat_id, old_id),
-                    chat_id, "_push_card.delete_message",
-                )
-            except Exception as e:
-                print(f"[case] _push_card: delete_message FAILED chat_id={chat_id} msg_id={old_id}: {e}")
-        try:
-            sent = await _send_card_new(bot, chat_id, text, active)
-            card["msg_id"] = sent.message_id
-        except Exception as e:
-            print(f"[case] _push_card: send FAILED chat_id={chat_id}: {e}")
+        await _send_or_edit(bot, chat_id, card, text, active)
 
 
 async def _refresh_chat_card(bot, chat_id: int, text: str):
-    """Тихий тик (раз в CARD_REFRESH_SECONDS): просто обновляет таймер на месте
-    в одном чате, и в личке, и в группе — без пересоздания сообщения."""
+    """Тихий тик (раз в CARD_REFRESH_SECONDS): в личке просто обновляет
+    таймер на месте — дёшево, можно часто. В группе/супергруппе вместо
+    этого раз в GROUP_CARD_REFRESH_SECONDS удаляет старое сообщение и
+    шлёт новое — иначе отредактированная "на месте" карточка тихо тонет
+    под обычной перепиской и её никто не видит. Делаем это реже, чем сам
+    тик, чтобы не заспамить чат частыми новыми сообщениями."""
     card = get_card_state(chat_id)
     if not card.get("msg_id"):
         return
+
+    if card.get("chat_type") in ("group", "supergroup"):
+        now  = time.time()
+        last = _LAST_GROUP_REFRESH_TS.get(chat_id, 0.0)
+        if now - last < GROUP_CARD_REFRESH_SECONDS:
+            return
+        async with _get_card_lock(chat_id):
+            await _throttle_card(chat_id)
+            await _delete_and_resend(bot, chat_id, card, text, True, "_refresh_chat_card")
+        _LAST_GROUP_REFRESH_TS[chat_id] = time.time()
+        return
+
     async with _get_card_lock(chat_id):
         await _throttle_card(chat_id)
         await _send_or_edit(bot, chat_id, card, text, active=True)
@@ -880,7 +918,8 @@ async def _close_chest(bot):
     winner_name = state["last_name"]
 
     state["active"]       = False
-    state["paused_until"] = time.time() + PAUSE_SECONDS
+    state["running"]      = False
+    state["paused_until"] = None
 
     if winner_uid:
         prize_type = state["prize_type"]
@@ -908,7 +947,7 @@ async def _close_chest(bot):
             f'<tg-emoji emoji-id="5217822164362739968">🌟</tg-emoji> <b>Победитель:</b> {_esc(winner_name)}\n'
             f'<tg-emoji emoji-id="5402477260982731644">🌟</tg-emoji> <b>Забрал:</b> {prize_label}'
             f'</blockquote>\n'
-            f'<b>Новый сундук пират спрячет через 30 минут.</b>'
+            f'<b>Ивент завершён. Новый сундук капитан спрячет, когда решит начать заново.</b>'
         )
     else:
         text = (
@@ -916,7 +955,7 @@ async def _close_chest(bot):
             f'{DIVIDER}\n'
             f'<i>Никто не решился подойти — сундук исчез в тумане так же тихо, как появился.</i>\n\n'
             f'<blockquote>Приз утонул вместе с сундуком.</blockquote>\n'
-            f'<b>Новый сундук появится через 30 минут.</b>'
+            f'<b>Ивент завершён. Новый сундук появится, когда капитан решит начать заново.</b>'
         )
 
     await _broadcast(bot, text, active=False)
@@ -942,14 +981,6 @@ async def _tick_once(bot):
 
     if state["active"] and now >= state["expires_at"]:
         await _close_chest(bot)
-    elif (
-        not state["active"]
-        and state["running"]
-        and state["paused_until"] is not None
-        and now >= state["paused_until"]
-    ):
-        _spawn_chest(state)
-        await bump_card(bot)
 
 
 async def case_card_refresh_loop(bot):
