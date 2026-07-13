@@ -562,7 +562,7 @@ async def cb_case_guess(call: CallbackQuery, state: FSMContext):
 
     await state.set_state(GuessInput.waiting_number)
     await call.message.answer(
-        f"<tg-emoji emoji-id="5197269100878907942">🌟</tg-emoji> <i><b>Напиши число от {NUMBER_MIN} до {NUMBER_MAX}</b> одним сообщением — "
+        f'<tg-emoji emoji-id="5197269100878907942">🌟</tg-emoji> <i><b>Напиши число от {NUMBER_MIN} до {NUMBER_MAX}</b> одним сообщением — '
         f"это твоя единственная попытка в этом ивенте.</i>",
         parse_mode="HTML",
     )
@@ -574,7 +574,7 @@ async def msg_case_guess_number(message: Message, state: FSMContext):
     text = (message.text or "").strip()
     if not text.lstrip("-").isdigit():
         await message.reply(
-            f"<tg-emoji emoji-id="5334544901428229844">🌟</tg-emoji> <i>Это не похоже на число. Пришли целое число от {NUMBER_MIN} до {NUMBER_MAX}.</i>",
+            f'<tg-emoji emoji-id="5334544901428229844">🌟</tg-emoji> <i>Это не похоже на число. Пришли целое число от {NUMBER_MIN} до {NUMBER_MAX}.</i>',
             parse_mode="HTML",
         )
         return  # состояние не сбрасываем — ждём корректный ввод
