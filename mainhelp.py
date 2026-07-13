@@ -6107,6 +6107,12 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer(result["msg"], show_alert=True)
                 return
             foe_uid = battle["p2_uid"] if battle["p1_uid"] == user.id else battle["p1_uid"]
+            # ВАЖНО: запоминаем msg_id соперника ДО возможного pop ниже —
+            # раньше это читалось ПОСЛЕ _battle_msgs.pop(foe_uid, ...), из-за
+            # чего при завершении боя (например, если соперника убивают
+            # этим же ударом) foe_msg всегда оказывался None и экран
+            # соперника с финальным результатом боя просто не обновлялся.
+            foe_msg = _battle_msgs.get(foe_uid)
             # Если бой завершён — сначала считаем награду и пишем в battle,
             # потом уже рендерим battle_text (чтобы reward отобразился)
             if battle.get("finished"):
@@ -6137,8 +6143,7 @@ async def handle_callback(call: CallbackQuery):
             # Обновляем message_id текущего игрока
             _battle_msgs[user.id] = (call.message.chat.id, call.message.message_id)
             await edit(battle_text(battle, user.id, lang), battle_keyboard(battle, user.id, lang))
-            # Обновляем сообщение соперника
-            foe_msg = _battle_msgs.get(foe_uid)
+            # Обновляем сообщение соперника (foe_msg взят ДО pop выше — см. комментарий)
             if foe_msg:
                 try:
                     await bot.edit_message_text(
