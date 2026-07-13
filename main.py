@@ -33,7 +33,7 @@ from case import (
     try_guess, has_guessed, case_status_text, case_keyboard,
     case_tick_loop, case_card_refresh_loop,
     set_chat_type, register_chat, forget_chat,
-    broadcast_event_start, get_case_state, get_card_state,
+    broadcast_event_start, get_case_state, get_card_state, set_card_msg_id,
     set_event_photo, get_event_photo,
     CASE_DEFAULT_COIN_PRIZE, CASE_GUESS_CB,
     NUMBER_MIN, NUMBER_MAX,
@@ -476,7 +476,7 @@ async def cmd_case(message: Message):
         parse_mode="HTML",
         reply_markup=case_keyboard(state["active"]),
     )
-    get_card_state(chat_id)["msg_id"] = sent.message_id
+    set_card_msg_id(chat_id, sent.message_id)
 
 
 # ══════════════════════════════════════════════════════════════════════
