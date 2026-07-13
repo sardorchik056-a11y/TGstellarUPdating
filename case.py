@@ -44,6 +44,7 @@ import time
 import random
 import asyncio
 import sqlite3
+import json
 import html as _html
 
 from aiogram.types import InlineKeyboardMarkup
@@ -121,6 +122,29 @@ def _chats_conn() -> sqlite3.Connection:
         )
         """
     )
+    # Состояние ивента (число, ответы, таймер, приз, картинка) — одна
+    # строка (id=1), сериализованная в JSON. Нужна, чтобы рестарт/деплой
+    # бота не сбрасывал уже запущенный ивент "Щедрый пират".
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS event_state (
+            id   INTEGER PRIMARY KEY CHECK (id = 1),
+            data TEXT NOT NULL
+        )
+        """
+    )
+    # id сообщения карточки в каждом чате — чтобы после рестарта бот
+    # продолжил редактировать УЖЕ отправленную карточку, а не плодил
+    # новую рядом со старой.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cards (
+            chat_id   INTEGER PRIMARY KEY,
+            msg_id    INTEGER,
+            chat_type TEXT
+        )
+        """
+    )
     return conn
 
 
@@ -130,7 +154,7 @@ def _init_chats_db_sync():
     conn.close()
 
 
-_init_chats_db_sync()  # создаём таблицу сразу при импорте модуля
+_init_chats_db_sync()  # создаём таблицы сразу при импорте модуля
 
 
 def _register_chat_sync(chat_id: int, chat_type: str, title: str | None):
@@ -162,6 +186,7 @@ async def register_chat(chat_id: int, chat_type: str, title: str | None = None):
 def _forget_chat_sync(chat_id: int):
     conn = _chats_conn()
     conn.execute("DELETE FROM known_chats WHERE chat_id = ?", (chat_id,))
+    conn.execute("DELETE FROM cards WHERE chat_id = ?", (chat_id,))
     conn.commit()
     conn.close()
 
@@ -185,6 +210,139 @@ def _get_all_chats_sync() -> list[tuple[int, str]]:
 async def get_all_chats() -> list[tuple[int, str]]:
     """Список (chat_id, chat_type) всех чатов, где бота когда-либо видели."""
     return await asyncio.to_thread(_get_all_chats_sync)
+
+
+# ═══════════════════════════════════════════════════════════
+#  СОХРАНЕНИЕ/ВОССТАНОВЛЕНИЕ СОСТОЯНИЯ ПОСЛЕ РЕСТАРТА
+# ═══════════════════════════════════════════════════════════
+#
+#  Раньше состояние ивента (_CASE) и карточки (_CARDS) жили только в
+#  памяти процесса и терялись при каждом рестарте/деплое бота — активный
+#  ивент приходилось запускать заново. Теперь оба сохраняются в ту же
+#  SQLite-базу, что и реестр чатов, и подтягиваются обратно при старте
+#  процесса (см. load_persisted_state(), вызывается один раз при импорте
+#  модуля — то есть ДО того, как бот начнёт принимать апдейты).
+#
+#  Пишем на диск СРАЗУ при каждом значимом изменении (а не раз в
+#  сколько-то секунд), чтобы не потерять данные, если процесс убьют
+#  неожиданно. Запись — обычный upsert одной строки, дешёвая операция.
+
+def _save_case_state_sync() -> None:
+    payload = dict(_CASE)
+    # ключи в guesses — int (uid), а JSON допускает только строковые ключи
+    payload["guesses"] = {str(uid): g for uid, g in _CASE["guesses"].items()}
+    data = json.dumps(payload, ensure_ascii=False)
+    conn = _chats_conn()
+    conn.execute(
+        "INSERT INTO event_state (id, data) VALUES (1, ?) "
+        "ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+        (data,),
+    )
+    conn.commit()
+    conn.close()
+
+
+async def _save_case_state() -> None:
+    """Awaitable-версия — используется там, где мы уже внутри async-функции
+    и хотим быть уверены, что запись на диск реально произошла."""
+    try:
+        await asyncio.to_thread(_save_case_state_sync)
+    except Exception as e:
+        print(f"[case._save_case_state] {e}")
+
+
+def _save_case_state_fire_and_forget() -> None:
+    """Не-async обёртка для вызова из синхронных функций (start_case,
+    set_event_photo) — запускает сохранение фоновой задачей, не блокируя
+    вызывающий код. Работает только если уже есть запущенный event loop
+    (то есть вызов происходит изнутри async-хендлера, как оно всегда и
+    бывает в этом боте)."""
+    try:
+        asyncio.create_task(_save_case_state())
+    except RuntimeError as e:
+        print(f"[case._save_case_state_fire_and_forget] нет запущенного loop: {e}")
+
+
+def _load_case_state_sync() -> dict | None:
+    conn = _chats_conn()
+    row = conn.execute("SELECT data FROM event_state WHERE id = 1").fetchone()
+    conn.close()
+    if not row:
+        return None
+    try:
+        payload = json.loads(row[0])
+        payload["guesses"] = {int(uid): g for uid, g in payload.get("guesses", {}).items()}
+        return payload
+    except Exception as e:
+        print(f"[case._load_case_state_sync] повреждённые данные, игнорирую: {e}")
+        return None
+
+
+def _save_card_sync(chat_id: int, msg_id: int | None, chat_type: str | None) -> None:
+    conn = _chats_conn()
+    conn.execute(
+        """
+        INSERT INTO cards (chat_id, msg_id, chat_type) VALUES (?, ?, ?)
+        ON CONFLICT(chat_id) DO UPDATE SET
+            msg_id    = excluded.msg_id,
+            chat_type = excluded.chat_type
+        """,
+        (chat_id, msg_id, chat_type),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _save_card(chat_id: int) -> None:
+    """Сохраняет карточку ОДНОГО чата фоновой задачей (fire-and-forget,
+    по аналогии с register_chat) — вызывается на каждое изменение msg_id
+    или chat_type у карточки."""
+    card = get_card_state(chat_id)
+    msg_id, chat_type = card.get("msg_id"), card.get("chat_type")
+
+    async def _runner():
+        try:
+            await asyncio.to_thread(_save_card_sync, chat_id, msg_id, chat_type)
+        except Exception as e:
+            print(f"[case._save_card] {e}")
+
+    try:
+        asyncio.create_task(_runner())
+    except RuntimeError as e:
+        print(f"[case._save_card] нет запущенного loop: {e}")
+
+
+def _load_cards_sync() -> dict[int, dict]:
+    conn = _chats_conn()
+    rows = conn.execute("SELECT chat_id, msg_id, chat_type FROM cards").fetchall()
+    conn.close()
+    return {chat_id: {"msg_id": msg_id, "chat_type": chat_type} for chat_id, msg_id, chat_type in rows}
+
+
+def set_card_msg_id(chat_id: int, msg_id: int) -> None:
+    """Запоминает id сообщения карточки для чата и тут же сохраняет это на
+    диск — используй ВМЕСТО прямого присваивания get_card_state(chat_id)
+    ["msg_id"] = ..., чтобы рестарт бота не терял ссылку на уже
+    отправленную карточку."""
+    get_card_state(chat_id)["msg_id"] = msg_id
+    _save_card(chat_id)
+
+
+def load_persisted_state() -> None:
+    """Восстанавливает ивент и карточки с диска. Вызывается ОДИН раз при
+    импорте модуля (см. низ файла) — то есть ещё ДО старта бота и его
+    фоновых циклов, так что case_tick_loop/case_card_refresh_loop сразу
+    видят уже восстановленное состояние."""
+    saved = _load_case_state_sync()
+    if saved:
+        _CASE.update(saved)
+        print(
+            f"[case] восстановлен ивент с диска: running={_CASE['running']}, "
+            f"active={_CASE['active']}, участников={len(_CASE['guesses'])}"
+        )
+    _CARDS.update(_load_cards_sync())
+    if _CARDS:
+        print(f"[case] восстановлено карточек: {len(_CARDS)}")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -262,6 +420,7 @@ def set_event_photo(file_id: str | None) -> None:
     после этого карточка отправляется как фото с текстом-подписью
     вместо обычного текстового сообщения. См. команду /photo в main.py."""
     _CASE["photo_file_id"] = file_id
+    _save_case_state_fire_and_forget()
 
 
 def get_event_photo() -> str | None:
@@ -324,6 +483,7 @@ def start_case(
 
     _CASE["running"] = True
     _spawn_event(_CASE)
+    _save_case_state_fire_and_forget()
     return True
 
 
@@ -338,9 +498,10 @@ async def stop_case(bot) -> bool:
     if not _CASE["running"]:
         return False
     if _CASE["active"]:
-        await _close_chest(bot)  # уже сам выставляет running/active в False
+        await _close_chest(bot)  # уже сам выставляет running/active в False и сохраняет
     else:
         _CASE["running"] = False
+        await _save_case_state()
     return True
 
 
@@ -369,6 +530,7 @@ async def try_guess(uid: int, name: str, number: int) -> dict:
         return {"ok": False, "reason": "already_guessed", "number": existing["number"]}
 
     _CASE["guesses"][uid] = {"name": name, "number": number, "ts": time.time()}
+    await _save_case_state()
 
     return {"ok": True, "number": number, "count": len(_CASE["guesses"])}
 
@@ -564,6 +726,13 @@ def set_chat_type(chat_id: int, chat_type: str) -> None:
     """Запоминает тип чата ('private' / 'group' / 'supergroup') — от этого
     зависит, как именно обновляется карточка ивента в этом чате."""
     get_card_state(chat_id)["chat_type"] = chat_type
+    _save_card(chat_id)
+
+
+# Восстанавливаем ивент и карточки с диска ПРЯМО СЕЙЧАС, при импорте модуля —
+# то есть до того, как бот вообще начнёт что-либо делать. _CASE и _CARDS
+# к этому моменту уже определены (см. выше), так что update() безопасен.
+load_persisted_state()
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -695,7 +864,7 @@ async def _send_or_edit(bot, chat_id: int, card: dict, text: str, active: bool):
             # просто присылаем карточку заново ниже.
     try:
         sent = await _send_card_new(bot, chat_id, text, active)
-        card["msg_id"] = sent.message_id
+        set_card_msg_id(chat_id, sent.message_id)
         await _pin_card_message(bot, chat_id, sent.message_id, card.get("chat_type"))
     except Exception as e:
         print(f"[case] send FAILED chat_id={chat_id}: {e}")
@@ -753,7 +922,7 @@ async def send_case_card(bot, chat_id: int):
         await _throttle_card(chat_id)
         text = case_status_text()
         sent = await _send_card_new(bot, chat_id, text, _CASE["active"])
-        card["msg_id"] = sent.message_id
+        set_card_msg_id(chat_id, sent.message_id)
         await _pin_card_message(bot, chat_id, sent.message_id, card.get("chat_type"))
         return sent
 
@@ -794,10 +963,11 @@ async def broadcast_event_start(
     for chat_id, chat_type in chats:
         card = get_card_state(chat_id)
         card["chat_type"] = chat_type
+        _save_card(chat_id)
 
         try:
             sent = await _send_card_new(bot, chat_id, text, _CASE["active"])
-            card["msg_id"] = sent.message_id
+            set_card_msg_id(chat_id, sent.message_id)
             await _pin_card_message(bot, chat_id, sent.message_id, chat_type)
         except Exception as e:
             print(f"[broadcast_event_start] {chat_id}: {e}")
@@ -926,6 +1096,7 @@ async def _close_chest(bot):
         state["last_prize_type"]    = None
         state["last_prize_label"]   = None
 
+    await _save_case_state()
     await _broadcast(bot, case_status_text(), active=False)
 
 
