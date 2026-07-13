@@ -69,16 +69,11 @@ CASE_DEFAULT_COIN_PRIZE = 500_000
 # монеты-компенсацию: множитель_артефакта × эта константа.
 CASE_ARTIFACT_DUPLICATE_COMPENSATION_PER_MULT = 200_000
 
-CARD_REFRESH_SECONDS         = 15        # частота "тихого" авто-обновления карточек в личке
-                                          # (ивент идёт 24 часа — секундная точность таймера
-                                          # не нужна, а лишние запросы к Telegram ни к чему)
-
-# В группах тихий тик НЕ просто редактирует карточку на месте (там она может
-# затеряться под обычной перепиской), а раз в этот интервал удаляет старое
-# сообщение и шлёт новое — карточка "поднимается" наверх чата. При 24-часовом
-# ивенте поднимать её часто незачем — раз в несколько минут более чем
-# достаточно и не спамит чат.
-GROUP_CARD_REFRESH_SECONDS   = 180
+CARD_REFRESH_SECONDS         = 5         # частота "тихого" авто-обновления карточки
+                                          # (и в личке, и в группе — карточка в группах
+                                          # теперь закрепляется, поэтому "поднимать" её
+                                          # пересылкой больше не нужно, достаточно
+                                          # редактировать на месте так же часто, как в личке)
 
 # Минимальный интервал между ЛЮБЫМИ запросами к Telegram (edit/delete/send),
 # которые трогают карточку ОДНОГО чата — защита от flood control. Ответы
@@ -178,7 +173,6 @@ async def forget_chat(chat_id: int):
     except Exception as e:
         print(f"[case.forget_chat] {e}")
     _CARDS.pop(chat_id, None)
-    _LAST_GROUP_REFRESH_TS.pop(chat_id, None)
 
 
 def _get_all_chats_sync() -> list[tuple[int, str]]:
@@ -595,13 +589,6 @@ def _get_card_lock(chat_id: int) -> asyncio.Lock:
 # используется троттлингом ниже (_throttle_card), чтобы не словить flood control.
 _LAST_CARD_UPDATE_TS: dict[int, float] = {}
 
-# Время последнего delete+send карточки в ГРУППЕ (отдельно от
-# _LAST_CARD_UPDATE_TS) — используется тихим тиком (_refresh_chat_card),
-# чтобы поднимать карточку не чаще раза в GROUP_CARD_REFRESH_SECONDS.
-# Обновляется и значимыми событиями (_push_card), чтобы старт/раскрытие
-# прямо перед тиком не приводили к двойному перевыпуску подряд.
-_LAST_GROUP_REFRESH_TS: dict[int, float] = {}
-
 
 async def _throttle_card(chat_id: int) -> None:
     """Вызывается СРАЗУ после захвата _get_card_lock(chat_id), перед любым
@@ -628,6 +615,21 @@ async def _tg_call_with_retry(coro_factory, chat_id: int, what: str):
         print(f"[case] {what}: flood control chat_id={chat_id}, retry_after={e.retry_after}s — жду и повторяю")
         await asyncio.sleep(e.retry_after + 0.1)
         return await coro_factory()
+
+
+async def _pin_card_message(bot, chat_id: int, msg_id: int, chat_type: str | None):
+    """Закрепляет карточку ивента в группе/супергруппе, чтобы её было видно
+    сразу при входе в чат, даже без пересоздания сообщения — теперь карточка
+    просто редактируется на месте каждые CARD_REFRESH_SECONDS, а не
+    пересылается заново (см. _refresh_chat_card). В личке закреплять не
+    нужно. Если у бота нет прав на закрепление — просто молча пропускаем,
+    это не критично."""
+    if chat_type not in ("group", "supergroup"):
+        return
+    try:
+        await bot.pin_chat_message(chat_id, msg_id, disable_notification=True)
+    except Exception as e:
+        print(f"[case] pin_chat_message FAILED chat_id={chat_id} msg_id={msg_id}: {e}")
 
 
 async def _send_card_new(bot, chat_id: int, text: str, active: bool):
@@ -694,37 +696,16 @@ async def _send_or_edit(bot, chat_id: int, card: dict, text: str, active: bool):
     try:
         sent = await _send_card_new(bot, chat_id, text, active)
         card["msg_id"] = sent.message_id
+        await _pin_card_message(bot, chat_id, sent.message_id, card.get("chat_type"))
     except Exception as e:
         print(f"[case] send FAILED chat_id={chat_id}: {e}")
-
-
-async def _delete_and_resend(bot, chat_id: int, card: dict, text: str, active: bool, what: str):
-    """Удаляет старую карточку и присылает новую — общий кусок для
-    _push_card (значимые события в группах) и _refresh_chat_card (тихий
-    "подъём" карточки в группах раз в GROUP_CARD_REFRESH_SECONDS).
-    Вызывающий уже держит _get_card_lock(chat_id) и прошёл _throttle_card."""
-    old_id = card.get("msg_id")
-    if old_id:
-        try:
-            await _tg_call_with_retry(
-                lambda: bot.delete_message(chat_id, old_id),
-                chat_id, f"{what}.delete_message",
-            )
-        except Exception as e:
-            print(f"[case] {what}: delete_message FAILED chat_id={chat_id} msg_id={old_id}: {e}")
-    try:
-        sent = await _send_card_new(bot, chat_id, text, active)
-        card["msg_id"] = sent.message_id
-    except Exception as e:
-        print(f"[case] {what}: send FAILED chat_id={chat_id}: {e}")
 
 
 async def _push_card(bot, chat_id: int, text: str, active: bool):
     """Обновляет карточку ивента в ОДНОМ конкретном чате на значимом
     событии (старт/раскрытие) — И В ЛИЧКЕ, И В ГРУППЕ просто редактирует
-    текст на месте, без пересоздания сообщения. Пересоздание (удалить
-    старое + прислать новое) в группах происходит ТОЛЬКО на тихом тике
-    раз в GROUP_CARD_REFRESH_SECONDS (см. _refresh_chat_card)."""
+    текст на месте, без пересоздания сообщения (карточка в группах
+    закреплена, так что её и не нужно поднимать пересозданием)."""
     card = get_card_state(chat_id)
     async with _get_card_lock(chat_id):
         await _throttle_card(chat_id)
@@ -732,24 +713,14 @@ async def _push_card(bot, chat_id: int, text: str, active: bool):
 
 
 async def _refresh_chat_card(bot, chat_id: int, text: str):
-    """Тихий тик (раз в CARD_REFRESH_SECONDS): в личке просто обновляет
-    таймер/счётчик на месте — дёшево, можно часто. В группе/супергруппе
-    вместо этого раз в GROUP_CARD_REFRESH_SECONDS удаляет старое сообщение
-    и шлёт новое — иначе отредактированная "на месте" карточка тихо тонет
-    под обычной перепиской и её никто не видит."""
+    """Тихий тик (раз в CARD_REFRESH_SECONDS): молча обновляет таймер и
+    счётчик участников на карточке — одинаково и в личке, и в группе/
+    супергруппе, просто редактируя сообщение на месте. В группах карточка
+    закреплена (см. _pin_card_message), поэтому "поднимать" её наверх
+    чата пересозданием больше не требуется — она и так всегда на виду
+    в шапке чата."""
     card = get_card_state(chat_id)
     if not card.get("msg_id"):
-        return
-
-    if card.get("chat_type") in ("group", "supergroup"):
-        now  = time.time()
-        last = _LAST_GROUP_REFRESH_TS.get(chat_id, 0.0)
-        if now - last < GROUP_CARD_REFRESH_SECONDS:
-            return
-        async with _get_card_lock(chat_id):
-            await _throttle_card(chat_id)
-            await _delete_and_resend(bot, chat_id, card, text, True, "_refresh_chat_card")
-        _LAST_GROUP_REFRESH_TS[chat_id] = time.time()
         return
 
     async with _get_card_lock(chat_id):
@@ -783,6 +754,7 @@ async def send_case_card(bot, chat_id: int):
         text = case_status_text()
         sent = await _send_card_new(bot, chat_id, text, _CASE["active"])
         card["msg_id"] = sent.message_id
+        await _pin_card_message(bot, chat_id, sent.message_id, card.get("chat_type"))
         return sent
 
 
@@ -826,6 +798,7 @@ async def broadcast_event_start(
         try:
             sent = await _send_card_new(bot, chat_id, text, _CASE["active"])
             card["msg_id"] = sent.message_id
+            await _pin_card_message(bot, chat_id, sent.message_id, chat_type)
         except Exception as e:
             print(f"[broadcast_event_start] {chat_id}: {e}")
             continue
