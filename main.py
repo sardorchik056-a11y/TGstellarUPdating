@@ -388,17 +388,16 @@ async def cmd_stopcase(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return
 
-    if stop_case():
+    if await stop_case(bot):
         await message.reply(
-            "🛑 <b>Цикл сундуков остановлен.</b>\n"
-            "<blockquote>Чтобы запустить заново — <code>/startcase</code>.</blockquote>",
+            "🛑 <b>Ивент остановлен.</b>\n"
+            "<blockquote>Если сундук был активен — он закрылся немедленно (приз, если был "
+            "последний вкладчик, уже выдан). Чтобы запустить заново — <code>/startcase</code>.</blockquote>",
             parse_mode="HTML",
         )
     else:
         await message.reply(
-            "❌ <b>Нельзя остановить сейчас.</b>\n"
-            "<blockquote><code>/stopcase</code> работает только в паузе — "
-            "если сундук активен или цикл не запущен, команда игнорируется.</blockquote>",
+            "❌ <b>Ивент и так не запущен.</b>",
             parse_mode="HTML",
         )
 
