@@ -63,7 +63,7 @@ from green import (
     merge_cart_add, merge_cart_clear,
     expand_garden, ensure_garden, flower_label, FLOWERS_BY_KEY,
     GRAND_BLOOM_BONUS_ESSENCE, GRAND_BLOOM_BONUS_XP,
-    fmt_essence, ESSENCE_ICON, ESSENCE_NAME,
+    fmt_essence, ESSENCE_ICON, ESSENCE_NAME, fmt_time_left,
     PLOT_PAGES,
 )
 
@@ -328,7 +328,8 @@ async def cb_garden_grow(call: CallbackQuery):
         plot_detail_text(u, plot_idx), parse_mode="HTML",
         reply_markup=plot_detail_keyboard(u, plot_idx),
     )
-    await call.answer(f'⚡ Рост ускорен за {fmt_essence(result["cost"])}')
+    left_note = "Готов к сбору! ✅" if result["left"] <= 0 else f'осталось {fmt_time_left(result["left"])}'
+    await call.answer(f'⚡ Рост ускорен в 2 раза за {fmt_essence(result["cost"])} — {left_note}')
 
 
 @dp.callback_query(F.data == "garden_inventory")
