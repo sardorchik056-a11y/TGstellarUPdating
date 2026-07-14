@@ -55,7 +55,7 @@ import green
 from green import (
     garden_text, garden_keyboard,
     plot_detail_text, plot_detail_keyboard,
-    plant_menu_text, plant_menu_keyboard, plant_inventory_keyboard,
+    plant_menu_text, plant_menu_keyboard, plant_inventory_text, plant_inventory_keyboard,
     inventory_text, inventory_keyboard,
     flower_detail_text, flower_detail_keyboard,
     merge_menu_text, merge_menu_keyboard, merge_tier_text, merge_tier_keyboard,
@@ -192,7 +192,9 @@ async def cb_garden_plot(call: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("garden_plantmenu:"))
 async def cb_garden_plantmenu(call: CallbackQuery):
-    plot_idx = int(call.data.split(":")[1])
+    parts = call.data.split(":")
+    plot_idx = int(parts[1])
+    page = int(parts[2]) if len(parts) > 2 else 0
     uid = call.from_user.id
     u = await aio_get_user(uid)
     if not u:
@@ -200,15 +202,17 @@ async def cb_garden_plantmenu(call: CallbackQuery):
         return
     ensure_garden(u)
     await call.message.edit_text(
-        plant_menu_text(plot_idx), parse_mode="HTML",
-        reply_markup=plant_menu_keyboard(u, plot_idx),
+        plant_menu_text(plot_idx, page), parse_mode="HTML",
+        reply_markup=plant_menu_keyboard(u, plot_idx, page),
     )
     await call.answer()
 
 
 @dp.callback_query(F.data.startswith("garden_plantinv:"))
 async def cb_garden_plantinv(call: CallbackQuery):
-    plot_idx = int(call.data.split(":")[1])
+    parts = call.data.split(":")
+    plot_idx = int(parts[1])
+    page = int(parts[2]) if len(parts) > 2 else 0
     uid = call.from_user.id
     u = await aio_get_user(uid)
     if not u:
@@ -216,8 +220,8 @@ async def cb_garden_plantinv(call: CallbackQuery):
         return
     ensure_garden(u)
     await call.message.edit_text(
-        plant_menu_text(plot_idx), parse_mode="HTML",
-        reply_markup=plant_inventory_keyboard(u, plot_idx),
+        plant_inventory_text(u, plot_idx, page), parse_mode="HTML",
+        reply_markup=plant_inventory_keyboard(u, plot_idx, page),
     )
     await call.answer()
 
@@ -279,9 +283,10 @@ async def cb_garden_harvest(call: CallbackQuery):
         plot_detail_text(u, plot_idx), parse_mode="HTML",
         reply_markup=plot_detail_keyboard(u, plot_idx),
     )
+    jackpot_note = "\n🎰 ДЖЕКПОТ! Награда удвоена!" if result.get("jackpot") else ""
     await call.answer(
         f'🌾 Собрано: {flower_label(result["flower"])}\n'
-        f'+{fmt_essence(result["essence"])}  +{result["xp"]} XP',
+        f'+{fmt_essence(result["essence"])}  +{result["xp"]} XP{jackpot_note}',
         show_alert=True,
     )
 
@@ -440,13 +445,18 @@ async def cb_garden_mergeadd(call: CallbackQuery):
     surge_note = " · ✨ ПРОРЫВ!" if result["surge"] else ""
     mixed_note = " · 🎭 разные цветки" if result["mixed"] else ""
     consumed_label = ", ".join(f'{flower_label(f)} ×{c}' for f, c in result["consumed"])
+    saved_back = result.get("saved_back") or []
+    saved_note = ""
+    if saved_back:
+        saved_label = ", ".join(f'{flower_label(f)} ×{c}' for f, c in saved_back)
+        saved_note = f'\n🔁 Не сгорели в котле: {saved_label}'
 
     await call.message.edit_text(
         merge_menu_text(u), parse_mode="HTML",
         reply_markup=merge_menu_keyboard(u),
     )
     await call.answer(
-        f'🧬 Слияние: {consumed_label} → {flower_label(result["result"])}{surge_note}{mixed_note}',
+        f'🧬 Слияние: {consumed_label} → {flower_label(result["result"])}{surge_note}{mixed_note}{saved_note}',
         show_alert=True,
     )
 
