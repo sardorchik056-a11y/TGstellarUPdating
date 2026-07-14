@@ -19,6 +19,7 @@ from miner import (
     EMOJI_BTN_WORKSHOP,
     EMOJI_NOT_BOUGHT,
     EMOJI_SELECTED,
+    COIN,
 )
 
 
@@ -33,6 +34,14 @@ def _back_btn(cb: str, label: str = "Назад") -> InlineKeyboardButton:
 def _L(lang: str, ru: str, en: str) -> str:
     """Inline двуязычная строка без обращения к lang.py."""
     return en if lang == "en" else ru
+
+
+# Независимая от miner.py константа для отображения цены в Stars.
+# Кейсы артефактов оплачиваются Telegram Stars и не должны зависеть от
+# того, что происходит с покупкой кирок в miner.py (см. баг: убрали
+# кирки за звёзды из miner.py — заодно пропала общая константа STAR,
+# и кейсы перестали открываться после оплаты).
+STAR = '<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji>'
 
 
 _E = {
