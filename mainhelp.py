@@ -4993,37 +4993,26 @@ async def handle_callback(call: CallbackQuery):
             await edit(pickaxe_detail_text(data, pick_key, lang), pickaxe_detail_keyboard(data, pick_key, page, lang))
             return
 
-        # ===== КИРКИ: купить за звёзды (экран подтверждения + инвойс-кнопка) =====
+        # ===== КИРКИ: покупка за звёзды ОТКЛЮЧЕНА =====
+        # Кирки теперь покупаются только за монеты (cost_stars убран из
+        # PICKAXES в miner.py). Если где-то у пользователя осталась старая
+        # кнопка "pick_buy_stars_" (например, несвежий экран из старого
+        # сообщения) — просто мягко сообщаем и не даём упасть на
+        # p["cost_stars"], которого больше нет.
         if cd.startswith("pick_buy_stars_"):
             pick_key = cd.removeprefix("pick_buy_stars_")
-            p        = PICKAXES.get(pick_key)
-            if not p:
-                await call.answer(t(lang, "pick_unknown"), show_alert=True)
-                return
-            page = get_pickaxe_page(pick_key)
-            # Создаём ссылку на инвойс и сразу вставляем в кнопку
-            invoice_url = None
-            try:
-                invoice_url = await bot.create_invoice_link(
-                    title=p['name'],
-                    description=f"{p['name']} — {format_amount(p['dig_min'])}–{format_amount(p['dig_max'])} ударов за кампанию",
-                    payload=f"premium_pickaxe:{pick_key}",
-                    provider_token="",
-                    currency="XTR",
-                    prices=[LabeledPrice(label=p["name"], amount=p["cost_stars"])],
-                )
-            except Exception as e:
-                print(f"Invoice link error: {e}")
-                await call.answer("❌ Ошибка при создании инвойса.", show_alert=True)
-                return
-            # Сохраняем message_id чтобы обновить после оплаты
-            _pending_stars_msg[call.from_user.id] = (
-                call.message.chat.id,
-                call.message.message_id,
-                pick_key
+            p = PICKAXES.get(pick_key)
+            await call.answer(
+                "Покупка кирок за звёзды отключена — теперь кирки покупаются только за монеты."
+                if lang != "en" else
+                "Buying pickaxes with Stars is disabled — pickaxes are coins-only now.",
+                show_alert=True
             )
-            await edit(stars_confirm_text(p), stars_confirm_keyboard(pick_key, page, invoice_url=invoice_url))
+            if p:
+                page = get_pickaxe_page(pick_key)
+                await edit(pickaxe_detail_text(data, pick_key, lang), pickaxe_detail_keyboard(data, pick_key, page, lang))
             return
+
 
         # ===== КИРКИ: выбрать =====
         if cd.startswith("pick_select_"):
@@ -6356,8 +6345,25 @@ async def handle_successful_payment(message: Message):
 
     # ===== ОПЛАТА: Кейс Артефактов =====
     if payload == "artifact_case":
-        from miner import STAR
-        from database import aio_get_user, aio_save_user
+        try:
+            from shop import STAR
+            from database import aio_get_user, aio_save_user
+        except Exception as _imp_e:
+            # Импорт упал ДО того, как charge_id помечен обработанным — если
+            # промолчать здесь, деньги списаны, а пользователь не получит
+            # вообще ничего (см. историю бага "молчит после оплаты").
+            import traceback as _tb
+            print(f"[artifact_case] КРИТИЧНО: ошибка импорта в обработчике оплаты: {_imp_e!r}")
+            _tb.print_exc()
+            try:
+                await bot.send_message(
+                    message.chat.id,
+                    "⚠️ Оплата принята, но бот столкнулся с внутренней ошибкой. "
+                    "Напиши админу /support — начислим награду вручную."
+                )
+            except Exception:
+                pass
+            return
 
         # Проверяем сумму оплаты — защита от подмены инвойса
         paid_amount = message.successful_payment.total_amount
@@ -6382,22 +6388,30 @@ async def handle_successful_payment(message: Message):
         # исключения, без лога, без сообщения игроку. Именно так выглядит
         # "деньги списаны, а бот молчит". Убираю лок, выдаём напрямую —
         # ровно как /giveart.
-        data = await aio_get_user(uid)
-        if not data:
-            # Пользователь не найден в БД — создаём и пробуем снова
-            data = await aio_get_or_create_user(message.from_user)
-        data["id"] = uid  # подстраховка: ключ "id" должен совпадать с uid
-
-        _lang = data.get("lang", "ru")
-
-        # ВСЁ ниже — в одном try/except. Деньги уже списаны Telegram'ом,
-        # поэтому что бы ни случилось (баг в open_artifact_case, в
+        # ВСЁ ниже — в одном try/except, включая получение/создание юзера.
+        # Деньги уже списаны Telegram'ом И charge_id уже помечен как
+        # processed (см. выше), поэтому что бы ни случилось (ошибка в
+        # aio_get_user/aio_get_or_create_user, в open_artifact_case, в
         # check_achievements, в верстке текста) — пользователь должен
-        # получить хотя бы fallback-сообщение, а не тишину, как было
-        # раньше при необработанном исключении в середине блока.
+        # получить хотя бы fallback-сообщение, а не тишину. Раньше
+        # aio_get_user/aio_get_or_create_user были ВНЕ try/except: если
+        # там падало исключение, оно уходило в глобальный @dp.errors(),
+        # который просто логирует и глушит апдейт — юзер не получал
+        # вообще ничего, а повторная доставка апдейта от Telegram сразу
+        # же выходила по "charge уже processed" — тоже молча. Баг был
+        # "навсегда": деньги списаны, ни артефакта, ни компенсации.
+        _lang = "ru"
         chosen = None
         msg = ""
         try:
+            data = await aio_get_user(uid)
+            if not data:
+                # Пользователь не найден в БД — создаём и пробуем снова
+                data = await aio_get_or_create_user(message.from_user)
+            data["id"] = uid  # подстраховка: ключ "id" должен совпадать с uid
+
+            _lang = data.get("lang", "ru")
+
             ok, msg, chosen = open_artifact_case(data, _lang)
 
             # Сохраняем СРАЗУ, используя uid напрямую (не data["id"],
@@ -6569,14 +6583,31 @@ async def handle_successful_payment(message: Message):
 
     if payload.startswith("premium_pickaxe:"):
         pick_key = payload.split(":", 1)[1]
-        from miner import (
-            grant_premium_pickaxe, pickaxe_detail_text, pickaxe_detail_keyboard,
-            get_pickaxe_page, PICKAXES, TIER_LABELS, STAR
-        )
-        from database import aio_get_user, aio_save_user
+        try:
+            from miner import (
+                grant_premium_pickaxe, pickaxe_detail_text, pickaxe_detail_keyboard,
+                get_pickaxe_page, PICKAXES, TIER_LABELS, STAR
+            )
+            from database import aio_get_user, aio_save_user
 
-        # Проверяем сумму: должна совпадать с ценой кирки в Stars
-        from miner import PICKAXES as _PX
+            # Проверяем сумму: должна совпадать с ценой кирки в Stars
+            from miner import PICKAXES as _PX
+        except Exception as _imp_e:
+            # Тот же класс бага, что и в artifact_case: импорт до marking
+            # charge_id — если промолчать, деньги списаны, а пользователь
+            # не получит ничего.
+            import traceback as _tb
+            print(f"[premium_pickaxe] КРИТИЧНО: ошибка импорта в обработчике оплаты: {_imp_e!r}")
+            _tb.print_exc()
+            try:
+                await bot.send_message(
+                    message.chat.id,
+                    "⚠️ Оплата принята, но бот столкнулся с внутренней ошибкой. "
+                    "Напиши админу /support — начислим награду вручную."
+                )
+            except Exception:
+                pass
+            return
         _pick_entry = _PX.get(pick_key)
         paid_amount = message.successful_payment.total_amount
         if _pick_entry and _pick_entry.get("cost_stars") and paid_amount != _pick_entry["cost_stars"]:
