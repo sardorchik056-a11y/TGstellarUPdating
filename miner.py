@@ -18,6 +18,7 @@ EMOJI_SELECTED    = "5206607081334906820"
 EMOJI_BACK        = "6039539366177541657"
 
 EMOJI_COIN        = "5199552030615558774"
+EMOJI_STAR        = "5267500801240092311"
 
 EMOJI_BTN_START        = "5906891238270834298"
 EMOJI_BTN_COLLECT      = "5310278924616356636"
@@ -47,6 +48,7 @@ def _emoji_btn(emoji_id: str, fallback: str) -> str:
 
 
 COIN = f'<tg-emoji emoji-id="{EMOJI_COIN}">🪙</tg-emoji>'
+STAR = f'<tg-emoji emoji-id="{EMOJI_STAR}">⭐</tg-emoji>'
 
 MAX_LEVEL = 150
 
