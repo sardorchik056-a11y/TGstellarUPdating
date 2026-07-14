@@ -1,9 +1,11 @@
 # ============================================================
 #  green.py — «Мистический Сад» 🌺
-#  Вся ЛОГИКА и ДАННЫЕ раздела: 40 цветков, посадка, рост во
-#  времени, сбор урожая, ЭВОЛЮЦИЯ через СЛИЯНИЕ (3 одинаковых
-#  цветка -> случайный цветок следующего тира), продажа, тексты
-#  и клавиатуры.
+#  Вся ЛОГИКА и ДАННЫЕ раздела: 220 цветков, посадка, рост во
+#  времени, сбор урожая, ЭВОЛЮЦИЯ через СЛИЯНИЕ (3 цветка одного
+#  тира — одинаковых ИЛИ разных — превращаются в случайный
+#  цветок следующего тира), продажа, уникальные бонусы у КАЖДОГО
+#  цветка, собственная мистическая валюта сада, тексты и
+#  клавиатуры.
 #
 #  ХЕНДЛЕРЫ (команды/кнопки) сюда НЕ кладём — они в main.py,
 #  ровно как это уже сделано с парой case.py <-> main.py.
@@ -13,8 +15,45 @@
 
 import time
 import random
+import itertools
 
 from database import format_amount
+
+# ──────────────────────────────────────────────────────────────
+#  МИСТИЧЕСКАЯ ВАЛЮТА САДА
+# ──────────────────────────────────────────────────────────────
+#  Сад больше не завязан на обычные монеты (data["balance"]) —
+#  у него своя собственная валюта, которая копится ТОЛЬКО через
+#  сад (урожай, продажа цветков) и тратится ТОЛЬКО в саду (семена,
+#  ускорение роста, новые грядки).
+
+ESSENCE_NAME  = "Мистическая Пыльца"
+ESSENCE_SHORT = "Пыльца"
+ESSENCE_ICON  = "✨"
+
+
+def get_essence(data: dict) -> int:
+    g = ensure_garden(data)
+    return g.get("essence", 0)
+
+
+def add_essence(data: dict, amount: int) -> int:
+    g = ensure_garden(data)
+    g["essence"] = g.get("essence", 0) + max(0, int(amount))
+    return g["essence"]
+
+
+def spend_essence(data: dict, amount: int) -> bool:
+    g = ensure_garden(data)
+    if g.get("essence", 0) < amount:
+        return False
+    g["essence"] -= amount
+    return True
+
+
+def fmt_essence(amount: int) -> str:
+    return f"{format_amount(amount)} {ESSENCE_ICON}"
+
 
 # ──────────────────────────────────────────────────────────────
 #  ТИРЫ
@@ -51,11 +90,11 @@ GROW_SECONDS = {
     8: 24 * 60 * 60,
 }
 
-# Стоимость семени тира 1 (единственный тир, который можно купить
-# напрямую за монеты — остальные добываются только слиянием)
+# Стоимость семени тира 1 в мистической пыльце (единственный тир,
+# который можно купить напрямую — остальные добываются только слиянием)
 SEED_COST_TIER1 = 500
 
-# Награда монетами за сбор урожая (диапазон) по тиру
+# Награда пыльцой за сбор урожая (диапазон) по тиру
 HARVEST_REWARD = {
     1: (200, 400),
     2: (500, 900),
@@ -73,38 +112,42 @@ XP_REWARD = {
     5: 280, 6: 500, 7: 900, 8: 1600,
 }
 
-# Цена продажи одного цветка из инвентаря (без слияния) по тиру
+# Цена продажи одного цветка из инвентаря (без слияния) по тиру, в пыльце
 SELL_PRICE = {
     1: 150, 2: 400, 3: 900, 4: 2000,
     5: 4500, 6: 10000, 7: 22000, 8: 50000,
 }
 
-# Сколько одинаковых цветков нужно для слияния (эволюции)
+# Сколько цветков нужно для слияния (эволюции) — теперь можно мешать разные
 MERGE_COUNT = 3
-# Шанс "прорыва" — слияние сразу перескакивает через тир
+# Базовый шанс "прорыва" — слияние сразу перескакивает через тир
 MERGE_SURGE_CHANCE = 0.08
+# Небольшой доп.бонус к шансу прорыва, если в котле разные цветки
+MERGE_MIX_SURGE_BONUS = 0.03
 
-# Грядки
+# Грядки: 4 на страницу, 3 страницы = 12 грядок максимум
 PLOT_BASE = 3
 PLOT_MAX = 12
+PLOTS_PER_PAGE = 4
+PLOT_PAGES = 3
 
 
 def plot_expand_cost(next_count: int) -> int:
-    """Стоимость расширения сада до next_count грядок (next_count-я грядка)."""
+    """Стоимость открытия грядки №next_count, в мистической пыльце."""
     return int(4000 * (1.8 ** (next_count - PLOT_BASE - 1)))
 
 
 def fertilizer_cost(remaining_seconds: int) -> int:
-    """Стоимость мгновенного ускорения роста — 1 монета за ~1.2 сек оставшегося времени, минимум 100."""
+    """Стоимость мгновенного ускорения роста в пыльце — ~0.9 пыльцы за
+    секунду оставшегося времени, минимум 100."""
     return max(100, int(remaining_seconds * 0.9))
 
 
 # ──────────────────────────────────────────────────────────────
-#  40 ЦВЕТКОВ
+#  40 ИМЕННЫХ ("СИГНАТУРНЫХ") ЦВЕТКОВ — авторские, с уникальным лором
 # ──────────────────────────────────────────────────────────────
-# key, name, tier, emoji, lore (короткая строка атмосферы)
 
-FLOWERS = [
+FLOWERS_HANDCRAFTED = [
     # ---- Тир 1 · Обычный ----
     {"key": "sun_lotus",    "name": "Солнечный Лотос",     "tier": 1, "emoji": "🌼", "lore": "Раскрывается только на рассвете."},
     {"key": "amber_iris",   "name": "Янтарный Ирис",       "tier": 1, "emoji": "🌻", "lore": "Хранит тепло дня в лепестках."},
@@ -162,17 +205,167 @@ FLOWERS = [
     {"key": "ashen_phoenix_flower","name": "Цветок Пепельного Феникса","tier": 8, "emoji": "🐦‍🔥", "lore": "Каждую ночь сгорает, каждое утро расцветает вновь."},
 ]
 
+# ──────────────────────────────────────────────────────────────
+#  ГЕНЕРАЦИЯ ОСТАЛЬНЫХ 180 ЦВЕТКОВ (итого 220)
+#  Каждый тир получает свою тематику (слова + эмодзи), из которой
+#  комбинаторно собираются уникальные названия. У каждого цветка —
+#  собственный, отличный от других, пассивный бонус.
+# ──────────────────────────────────────────────────────────────
+
+_TIER_THEMES = {
+    1: {
+        "adjectives": ["Росистый", "Пыльный", "Тихий", "Полевой", "Утренний", "Летний", "Дикий", "Ясный", "Мягкий", "Простой"],
+        "nouns": ["Клевер", "Ромашка", "Гвоздика", "Вьюнок", "Мак", "Колокольчик", "Подсолнух", "Ландыш", "Пион", "Астра"],
+        "emojis": ["🌼", "🌻", "🌸", "🏵️", "🌷", "🪷", "💐", "🌾"],
+    },
+    2: {
+        "adjectives": ["Зеркальный", "Стеклянный", "Морозный", "Шёпчущий", "Сумрачный", "Жемчужный", "Туманный", "Певучий", "Бархатный", "Искристый"],
+        "nouns": ["Ирис", "Гладиолус", "Хризантема", "Лилия", "Гортензия", "Азалия", "Камелия", "Орхидея", "Фиалка", "Тюльпан"],
+        "emojis": ["💮", "❄️", "🌺", "🥀", "🖤", "🔔", "🌙", "🫧"],
+    },
+    3: {
+        "adjectives": ["Призрачный", "Звёздный", "Полынный", "Забытый", "Костяной", "Пепельный", "Немой", "Хрустальный", "Мерцающий", "Блуждающий"],
+        "nouns": ["Эдельвейс", "Нарцисс", "Пион", "Мак", "Орхидея", "Хризантема", "Ирис", "Лотос", "Тюльпан", "Астра"],
+        "emojis": ["👻", "⭐", "❤️", "🌚", "🌑", "🕯️", "🩶", "🌫️"],
+    },
+    4: {
+        "adjectives": ["Проклятый", "Терновый", "Адский", "Кровавый", "Демонический", "Обугленный", "Ядовитый", "Багровый", "Треснувший", "Клятвенный"],
+        "nouns": ["Роза", "Астра", "Камелия", "Лилия", "Орхидея", "Гортензия", "Бутон", "Шип", "Венец", "Плющ"],
+        "emojis": ["🥀", "🕳️", "🔥", "🌹", "😈", "⚔️", "🩸", "🖤"],
+    },
+    5: {
+        "adjectives": ["Бездонный", "Кровавый", "Забытый", "Пепельный", "Могильный", "Теневой", "Скорбный", "Ледяной", "Тлеющий", "Утопший"],
+        "nouns": ["Лотос", "Лилия", "Магнолия", "Цветок", "Орхидея", "Роза", "Венец", "Бутон", "Шип", "Корона"],
+        "emojis": ["🩸", "🖤", "🌫️", "💀", "⚰️", "🕸️", "🩶", "🌪️"],
+    },
+    6: {
+        "adjectives": ["Хаотичный", "Роковой", "Всепоглощающий", "Коронованный", "Вечный", "Изменчивый", "Пожирающий", "Многоликий", "Судьбоносный", "Безымянный"],
+        "nouns": ["Орхидея", "Цветок", "Венец", "Корона", "Клинок", "Пламя", "Тень", "Печать", "Оракул", "Страж"],
+        "emojis": ["🐉", "🌀", "🔱", "👑", "🕯️", "🔮", "🎭", "⚡"],
+    },
+    7: {
+        "adjectives": ["Вечный", "Древний", "Эфирный", "Небесный", "Нетленный", "Священный", "Ледяной", "Пылающий", "Первородный", "Незримый"],
+        "nouns": ["Лилия", "Цветок", "Орхидея", "Сердце", "Храм", "Алтарь", "Реликвия", "Слеза", "Корона", "Пламя"],
+        "emojis": ["🧊", "🏛️", "🌫️", "💚", "☄️", "🕊️", "✨", "🌟"],
+    },
+    8: {
+        "adjectives": ["Вечный", "Бессмертный", "Изначальный", "Божественный", "Демонический", "Пепельный", "Сансарический", "Абсолютный", "Нерождённый", "Всевидящий"],
+        "nouns": ["Лепесток", "Цветок", "Орхидея", "Феникс", "Свет", "Исток", "Зов", "Оракул", "Трон", "Разлом"],
+        "emojis": ["♾️", "🌟", "🕊️", "🔥", "🐦‍🔥", "☠️", "👁️", "💫"],
+    },
+}
+
+_LORE_TEMPLATES = [
+    "Говорят, этот цветок раскрывается лишь тогда, когда рядом никого нет.",
+    "Его лепестки помнят каждое прикосновение садовника.",
+    "Ни один травник так и не смог объяснить, откуда берётся его сила.",
+    "Считается, что он растёт только там, где однажды случилось что-то важное.",
+    "Аромат этого цветка чувствуют даже те, кто давно потерял обоняние.",
+    "Легенда гласит, что он вырос из осколка чужой мечты.",
+    "Никто не видел, как он увядает — будто у него нет конца.",
+    "Его корни уходят глубже, чем кажется на первый взгляд.",
+    "Он словно помнит времена, которых сад никогда не видел.",
+    "Пчёлы облетают его стороной, а мотыльки — наоборот, тянутся к нему.",
+    "Говорят, если загадать желание рядом с ним, оно услышит первым.",
+    "Его лепестки холодные даже в самый жаркий полдень.",
+    "Существует поверье, что он выбирает своего хозяина сам.",
+    "Ботаники до сих пор спорят, стоит ли вообще называть его цветком.",
+    "Он цветёт ровно один раз за сезон — и то не для всех.",
+    "Некоторые уверяют, что слышали, как он шепчет по ночам.",
+    "Его семена не тонут в воде и не горят в огне.",
+    "Он будто бы знает, кто к нему подходит — друг или чужак.",
+    "Садовники передают истории о нём из поколения в поколение.",
+    "Иногда кажется, что он смотрит в ответ.",
+    "Он растёт быстрее там, где недавно кто-то плакал.",
+    "Его тень всегда чуть длиннее, чем должна быть.",
+    "Он вянет от лжи и расцветает от честного слова.",
+    "О нём не пишут в книгах — только передают из уст в уста.",
+    "Он единственный, кто помнит, каким был сад до сада.",
+]
+
+_BONUS_TYPES = ["growth", "yield", "xp", "luck", "discount"]
+
+_BONUS_RANGE_BY_TIER = {
+    1: (0.03, 0.06), 2: (0.05, 0.09), 3: (0.08, 0.13), 4: (0.12, 0.18),
+    5: (0.16, 0.24), 6: (0.22, 0.32), 7: (0.30, 0.42), 8: (0.40, 0.55),
+}
+
+_BONUS_LABELS = {
+    "growth":   ("⏱ <b>Ускорение роста</b>", lambda v: f"рост быстрее на <b>{v * 100:.1f}%</b>"),
+    "yield":    ("✨ <b>Щедрый урожай</b>", lambda v: f"пыльцы за сбор больше на <b>{v * 100:.1f}%</b>"),
+    "xp":       ("🧬 <b>Прилив опыта</b>", lambda v: f"опыта за сбор больше на <b>{v * 100:.1f}%</b>"),
+    "luck":     ("🍀 <b>Счастливая эволюция</b>", lambda v: f"шанс прорыва при слиянии выше на <b>{v * 100:.1f}%</b>"),
+    "discount": ("💠 <b>Экономный рост</b>", lambda v: f"ускорение роста дешевле на <b>{v * 100:.1f}%</b>"),
+}
+
+
+def _make_bonus(tier: int, rng: random.Random) -> dict:
+    btype = rng.choice(_BONUS_TYPES)
+    lo, hi = _BONUS_RANGE_BY_TIER[tier]
+    if btype == "luck":
+        lo, hi = lo * 0.4, hi * 0.4
+    value = round(rng.uniform(lo, hi), 3)
+    return {"type": btype, "value": value}
+
+
+def _generate_extra_flowers() -> list:
+    # Сколько сгенерировать сверх «сигнатурных» 5 на тир, чтобы в сумме
+    # по всем 8 тирам получилось 220 цветков.
+    generated_per_tier = {1: 25, 2: 24, 3: 23, 4: 23, 5: 22, 6: 21, 7: 21, 8: 21}
+    rng = random.Random(20260714)  # фиксированный seed — набор цветков стабилен между запусками
+    extra = []
+    for tier in range(TIER_MIN, TIER_MAX + 1):
+        theme = _TIER_THEMES[tier]
+        combos = list(itertools.product(theme["adjectives"], theme["nouns"]))
+        rng.shuffle(combos)
+        existing_names = {f["name"] for f in FLOWERS_HANDCRAFTED if f["tier"] == tier}
+        need = generated_per_tier[tier]
+        picked, seen = [], set()
+        for adj, noun in combos:
+            name = f"{adj} {noun}"
+            if name in existing_names or name in seen:
+                continue
+            seen.add(name)
+            picked.append((adj, noun))
+            if len(picked) >= need:
+                break
+        for i, (adj, noun) in enumerate(picked):
+            name = f"{adj} {noun}"
+            key = f"gen_t{tier}_{i:03d}"
+            emoji = theme["emojis"][i % len(theme["emojis"])]
+            lore = _LORE_TEMPLATES[(i + tier * 7) % len(_LORE_TEMPLATES)]
+            bonus = _make_bonus(tier, rng)
+            extra.append({"key": key, "name": name, "tier": tier, "emoji": emoji, "lore": lore, "bonus": bonus})
+    return extra
+
+
+def _build_all_flowers() -> list:
+    generated = _generate_extra_flowers()
+    all_flowers = [dict(f) for f in FLOWERS_HANDCRAFTED] + generated
+    rng = random.Random(999331)
+    for f in all_flowers:
+        if "bonus" not in f:
+            f["bonus"] = _make_bonus(f["tier"], rng)
+    return all_flowers
+
+
+FLOWERS = _build_all_flowers()
 FLOWERS_BY_KEY = {f["key"]: f for f in FLOWERS}
 FLOWERS_BY_TIER = {tier: [f for f in FLOWERS if f["tier"] == tier] for tier in range(TIER_MIN, TIER_MAX + 1)}
 
 # Ключи всех цветков верхнего тира — нужны для бонуса "Полное цветение"
 _TOP_TIER_KEYS = {f["key"] for f in FLOWERS_BY_TIER[TIER_MAX]}
-GRAND_BLOOM_BONUS_COINS = 1_000_000
-GRAND_BLOOM_BONUS_XP    = 5_000
+GRAND_BLOOM_BONUS_ESSENCE = 1_000_000
+GRAND_BLOOM_BONUS_XP      = 5_000
 
 
 def flower_label(flower: dict) -> str:
     return f'{flower["emoji"]} {flower["name"]}'
+
+
+def bonus_line(flower: dict) -> str:
+    label, fmt = _BONUS_LABELS[flower["bonus"]["type"]]
+    return f'{label} — <i>{fmt(flower["bonus"]["value"])}</i>'
 
 
 def _now() -> int:
@@ -205,7 +398,9 @@ def ensure_garden(data: dict) -> dict:
     while len(plots) < g["plot_count"]:
         plots.append(None)
 
+    g.setdefault("essence", 0)          # мистическая пыльца — валюта сада
     g.setdefault("inventory", {})       # flower_key -> количество собранных/полученных цветков
+    g.setdefault("merge_cart", {"tier": None, "items": {}})  # текущий "котёл" слияния
     g.setdefault("stats", {
         "harvested": 0,
         "merges": 0,
@@ -222,13 +417,16 @@ def ensure_garden(data: dict) -> dict:
 
 def plot_state(plot: dict | None, now: int | None = None):
     """Возвращает (stage, progress, flower|None, seconds_left).
-    stage: 'empty' | 'growing' | 'ready'"""
+    stage: 'empty' | 'growing' | 'ready'.
+    Учитывает персональный бонус цветка "⏱ Ускорение роста"."""
     if plot is None:
         return "empty", 0.0, None, 0
 
     now = now or _now()
     flower = FLOWERS_BY_KEY[plot["key"]]
     total = GROW_SECONDS[flower["tier"]]
+    if flower["bonus"]["type"] == "growth":
+        total = max(30, int(total * (1 - flower["bonus"]["value"])))
     elapsed = now - plot["planted_at"]
     left = max(0, total - elapsed)
 
@@ -260,9 +458,8 @@ def plant_flower(data: dict, plot_idx: int, flower_key: str) -> dict:
 
     if flower["tier"] == 1:
         cost = SEED_COST_TIER1
-        if data.get("balance", 0) < cost:
-            return {"ok": False, "reason": "no_coins", "cost": cost}
-        data["balance"] = data.get("balance", 0) - cost
+        if not spend_essence(data, cost):
+            return {"ok": False, "reason": "no_essence", "cost": cost}
     else:
         have = g["inventory"].get(flower_key, 0)
         if have < 1:
@@ -274,14 +471,14 @@ def plant_flower(data: dict, plot_idx: int, flower_key: str) -> dict:
 
 
 def _check_grand_bloom(data: dict, g: dict) -> bool:
-    """Проверяет и выдаёт единоразовый бонус за то, что все 5 цветков
-    тира «Изначальный» когда-либо были получены. Возвращает True, если
-    бонус выдан только что."""
+    """Проверяет и выдаёт единоразовый бонус за то, что все 5 сигнатурных
+    цветков тира «Изначальный» когда-либо были получены. Возвращает True,
+    если бонус выдан только что."""
     if g["stats"]["grand_bloom"]:
         return False
     if _TOP_TIER_KEYS.issubset(set(g["stats"]["tier8_seen"])):
         g["stats"]["grand_bloom"] = True
-        data["balance"] = data.get("balance", 0) + GRAND_BLOOM_BONUS_COINS
+        add_essence(data, GRAND_BLOOM_BONUS_ESSENCE)
         return True
     return False
 
@@ -307,21 +504,27 @@ def harvest_plot(data: dict, plot_idx: int) -> dict:
         return {"ok": False, "reason": "not_ready"}
 
     tier = flower["tier"]
-    coins = random.randint(*HARVEST_REWARD[tier])
+    essence = random.randint(*HARVEST_REWARD[tier])
     xp = XP_REWARD[tier]
 
-    data["balance"] = data.get("balance", 0) + coins
+    bonus = flower["bonus"]
+    if bonus["type"] == "yield":
+        essence = int(essence * (1 + bonus["value"]))
+    elif bonus["type"] == "xp":
+        xp = int(xp * (1 + bonus["value"]))
+
+    add_essence(data, essence)
     _register_flower_gain(g, flower["key"])
     g["stats"]["harvested"] += 1
     g["plots"][plot_idx] = None
 
     grand_bloom = _check_grand_bloom(data, g)
 
-    return {"ok": True, "flower": flower, "coins": coins, "xp": xp, "grand_bloom": grand_bloom}
+    return {"ok": True, "flower": flower, "essence": essence, "xp": xp, "grand_bloom": grand_bloom}
 
 
 def instant_grow(data: dict, plot_idx: int) -> dict:
-    """Мгновенно завершает рост цветка на грядке за монеты (не бесплатно)."""
+    """Мгновенно завершает рост цветка на грядке за пыльцу (не бесплатно)."""
     g = ensure_garden(data)
     if not (0 <= plot_idx < g["plot_count"]):
         return {"ok": False, "reason": "bad_plot"}
@@ -335,33 +538,79 @@ def instant_grow(data: dict, plot_idx: int) -> dict:
         return {"ok": False, "reason": "already_ready"}
 
     cost = fertilizer_cost(left)
-    if data.get("balance", 0) < cost:
-        return {"ok": False, "reason": "no_coins", "cost": cost}
+    if flower["bonus"]["type"] == "discount":
+        cost = max(50, int(cost * (1 - flower["bonus"]["value"])))
 
-    data["balance"] = data.get("balance", 0) - cost
-    plot["planted_at"] = _now() - GROW_SECONDS[flower["tier"]]
+    if not spend_essence(data, cost):
+        return {"ok": False, "reason": "no_essence", "cost": cost}
+
+    effective_total = GROW_SECONDS[flower["tier"]]
+    if flower["bonus"]["type"] == "growth":
+        effective_total = max(30, int(effective_total * (1 - flower["bonus"]["value"])))
+    plot["planted_at"] = _now() - effective_total
     return {"ok": True, "cost": cost, "flower": flower}
 
 
-def merge_flowers(data: dict, flower_key: str) -> dict:
-    """Слияние (эволюция): MERGE_COUNT одинаковых цветков -> 1 случайный
-    цветок следующего тира (либо, с небольшим шансом, через тир — «прорыв»)."""
+# ── Слияние (эволюция) через "котёл": можно добавлять и одинаковые,
+# и РАЗНЫЕ цветки — как только в котле набирается MERGE_COUNT штук
+# одного тира, происходит автоматическое слияние в случайный цветок
+# следующего тира. ──
+
+def merge_cart_state(data: dict) -> dict:
+    g = ensure_garden(data)
+    return g["merge_cart"]
+
+
+def merge_cart_clear(data: dict) -> dict:
+    g = ensure_garden(data)
+    g["merge_cart"] = {"tier": None, "items": {}}
+    return {"ok": True}
+
+
+def merge_cart_add(data: dict, flower_key: str) -> dict:
     g = ensure_garden(data)
     flower = FLOWERS_BY_KEY.get(flower_key)
     if not flower:
         return {"ok": False, "reason": "unknown_flower"}
-
-    tier = flower["tier"]
-    if tier >= TIER_MAX:
+    if flower["tier"] >= TIER_MAX:
         return {"ok": False, "reason": "max_tier"}
 
+    cart = g["merge_cart"]
+    if cart["items"] and cart.get("tier") not in (None, flower["tier"]):
+        return {"ok": False, "reason": "tier_mismatch", "tier": cart["tier"]}
+
     have = g["inventory"].get(flower_key, 0)
-    if have < MERGE_COUNT:
-        return {"ok": False, "reason": "not_enough", "need": MERGE_COUNT, "have": have}
+    used = cart["items"].get(flower_key, 0)
+    if have <= used:
+        return {"ok": False, "reason": "not_enough"}
 
-    g["inventory"][flower_key] = have - MERGE_COUNT
+    cart["tier"] = flower["tier"]
+    cart["items"][flower_key] = used + 1
 
-    surge = tier <= TIER_MAX - 2 and random.random() < MERGE_SURGE_CHANCE
+    if sum(cart["items"].values()) >= MERGE_COUNT:
+        return _execute_merge(data, g)
+
+    return {"ok": True, "done": False, "cart": dict(cart["items"]), "tier": flower["tier"],
+            "need": MERGE_COUNT - sum(cart["items"].values())}
+
+
+def _execute_merge(data: dict, g: dict) -> dict:
+    cart = g["merge_cart"]
+    items = cart["items"]
+    tier = cart["tier"]
+
+    consumed = []
+    luck_bonus = 0.0
+    for key, cnt in items.items():
+        g["inventory"][key] = g["inventory"].get(key, 0) - cnt
+        f = FLOWERS_BY_KEY[key]
+        consumed.append((f, cnt))
+        if f["bonus"]["type"] == "luck":
+            luck_bonus += f["bonus"]["value"] * cnt
+
+    mixed = len(items) > 1
+    surge_chance = MERGE_SURGE_CHANCE + luck_bonus + (MERGE_MIX_SURGE_BONUS if mixed else 0.0)
+    surge = tier <= TIER_MAX - 2 and random.random() < surge_chance
     result_tier = min(TIER_MAX, tier + (2 if surge else 1))
     result = random.choice(FLOWERS_BY_TIER[result_tier])
 
@@ -370,9 +619,11 @@ def merge_flowers(data: dict, flower_key: str) -> dict:
     if surge:
         g["stats"]["surges"] += 1
 
+    g["merge_cart"] = {"tier": None, "items": {}}
     grand_bloom = _check_grand_bloom(data, g)
 
-    return {"ok": True, "consumed": flower, "result": result, "surge": surge, "grand_bloom": grand_bloom}
+    return {"ok": True, "done": True, "consumed": consumed, "result": result,
+            "surge": surge, "mixed": mixed, "grand_bloom": grand_bloom}
 
 
 def sell_flower(data: dict, flower_key: str, count: int = 1) -> dict:
@@ -387,20 +638,20 @@ def sell_flower(data: dict, flower_key: str, count: int = 1) -> dict:
 
     price = SELL_PRICE[flower["tier"]] * count
     g["inventory"][flower_key] = have - count
-    data["balance"] = data.get("balance", 0) + price
-    return {"ok": True, "coins": price, "count": count, "flower": flower}
+    add_essence(data, price)
+    return {"ok": True, "essence": price, "count": count, "flower": flower}
 
 
 def expand_garden(data: dict) -> dict:
+    """Открывает следующую по порядку грядку — за мистическую пыльцу."""
     g = ensure_garden(data)
     if g["plot_count"] >= PLOT_MAX:
         return {"ok": False, "reason": "max_plots"}
 
     cost = plot_expand_cost(g["plot_count"] + 1)
-    if data.get("balance", 0) < cost:
-        return {"ok": False, "reason": "no_coins", "cost": cost}
+    if not spend_essence(data, cost):
+        return {"ok": False, "reason": "no_essence", "cost": cost}
 
-    data["balance"] = data.get("balance", 0) - cost
     g["plot_count"] += 1
     g["plots"].append(None)
     return {"ok": True, "plot_count": g["plot_count"], "cost": cost}
@@ -412,16 +663,18 @@ def expand_garden(data: dict) -> dict:
 #  и case_keyboard используются из case.py)
 # ──────────────────────────────────────────────────────────────
 
-def garden_text(data: dict) -> str:
+def garden_text(data: dict, page: int = 0) -> str:
     g = ensure_garden(data)
     lines = [
         '🌺 <b>МИСТИЧЕСКИЙ САД</b>',
-        f'<blockquote>Выращивай цветки, собирай урожай и сливай по {MERGE_COUNT} '
-        f'одинаковых, чтобы получить более редкий — от {TIER_ICON[1]} обычного '
-        f'до {TIER_ICON[8]} изначального.</blockquote>',
+        f'<blockquote><i>Выращивай цветки, собирай урожай и сливай в котле по '
+        f'{MERGE_COUNT} шт. — одинаковых или даже разных — чтобы получить более '
+        f'редкий цветок: от {TIER_ICON[1]} обычного до {TIER_ICON[8]} изначального. '
+        f'Всего в саду <b>{len(FLOWERS)}</b> видов цветов.</i></blockquote>',
         '',
-        f'🪴 Грядок: <b>{g["plot_count"]}/{PLOT_MAX}</b>',
-        f'💰 Баланс: <b>{format_amount(data.get("balance", 0))}</b>',
+        f'🪴 Грядок открыто: <b>{g["plot_count"]}/{PLOT_MAX}</b>',
+        f'📄 Страница: <b>{page + 1}/{PLOT_PAGES}</b>',
+        f'{ESSENCE_ICON} {ESSENCE_NAME}: <b>{format_amount(get_essence(data))}</b>',
     ]
     return "\n".join(lines)
 
@@ -436,20 +689,43 @@ def _plot_button_label(idx: int, plot: dict | None) -> str:
     return f"{idx + 1}. {flower['emoji']} {pct}% ({_fmt_time(left)})"
 
 
-def garden_keyboard(data: dict):
+def garden_keyboard(data: dict, page: int = 0):
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
 
     g = ensure_garden(data)
+    page = max(0, min(PLOT_PAGES - 1, page))
+    start = page * PLOTS_PER_PAGE
+    end = start + PLOTS_PER_PAGE
+
     b = InlineKeyboardBuilder()
-    for idx, plot in enumerate(g["plots"]):
-        b.row(InlineKeyboardButton(
-            text=_plot_button_label(idx, plot),
-            callback_data=f"garden_plot:{idx}",
-        ))
+    for idx in range(start, min(end, PLOT_MAX)):
+        if idx < g["plot_count"]:
+            plot = g["plots"][idx]
+            b.row(InlineKeyboardButton(
+                text=_plot_button_label(idx, plot),
+                callback_data=f"garden_plot:{idx}",
+            ))
+        elif idx == g["plot_count"]:
+            cost = plot_expand_cost(idx + 1)
+            b.row(InlineKeyboardButton(
+                text=f"🔓 Открыть грядку №{idx + 1} — {format_amount(cost)} {ESSENCE_ICON}",
+                callback_data="garden_expand",
+            ))
+        else:
+            b.row(InlineKeyboardButton(text=f"{idx + 1}. 🔒 Заблокировано", callback_data="garden_noop"))
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="◀️", callback_data=f"garden_page:{page - 1}"))
+    nav.append(InlineKeyboardButton(text=f"· {page + 1}/{PLOT_PAGES} ·", callback_data="garden_noop"))
+    if page < PLOT_PAGES - 1:
+        nav.append(InlineKeyboardButton(text="▶️", callback_data=f"garden_page:{page + 1}"))
+    b.row(*nav)
+
     b.row(
         InlineKeyboardButton(text="🎒 Инвентарь", callback_data="garden_inventory"),
-        InlineKeyboardButton(text="➕ Расширить сад", callback_data="garden_expand"),
+        InlineKeyboardButton(text="🧬 Слияние", callback_data="garden_merge"),
     )
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu"))
     return b.as_markup()
@@ -463,20 +739,22 @@ def plot_detail_text(data: dict, plot_idx: int) -> str:
     if stage == "empty":
         return (
             f'🪴 <b>Грядка №{plot_idx + 1}</b>\n'
-            f'<blockquote>Грядка свободна. Посади семя.</blockquote>'
+            f'<blockquote><i>Грядка свободна. Посади семя.</i></blockquote>'
         )
     if stage == "ready":
         return (
             f'🪴 <b>Грядка №{plot_idx + 1}</b>\n'
-            f'<blockquote>{flower_label(flower)} · {TIER_NAMES[flower["tier"]]}\n'
-            f'<i>{flower["lore"]}</i>\n\n'
+            f'<blockquote>{flower_label(flower)} · <b>{TIER_NAMES[flower["tier"]]}</b>\n'
+            f'<i>{flower["lore"]}</i>\n'
+            f'{bonus_line(flower)}\n\n'
             f'✅ <b>Готов к сбору!</b></blockquote>'
         )
     return (
         f'🪴 <b>Грядка №{plot_idx + 1}</b>\n'
-        f'<blockquote>{flower_label(flower)} · {TIER_NAMES[flower["tier"]]}\n'
-        f'<i>{flower["lore"]}</i>\n\n'
-        f'{_progress_bar(progress)} {int(progress * 100)}%\n'
+        f'<blockquote>{flower_label(flower)} · <b>{TIER_NAMES[flower["tier"]]}</b>\n'
+        f'<i>{flower["lore"]}</i>\n'
+        f'{bonus_line(flower)}\n\n'
+        f'{_progress_bar(progress)} <b>{int(progress * 100)}%</b>\n'
         f'⏳ Осталось: <b>{_fmt_time(left)}</b></blockquote>'
     )
 
@@ -496,8 +774,10 @@ def plot_detail_keyboard(data: dict, plot_idx: int):
         b.row(InlineKeyboardButton(text="🌾 Собрать урожай", callback_data=f"garden_harvest:{plot_idx}"))
     else:
         cost = fertilizer_cost(left)
+        if flower["bonus"]["type"] == "discount":
+            cost = max(50, int(cost * (1 - flower["bonus"]["value"])))
         b.row(InlineKeyboardButton(
-            text=f"⚡ Ускорить за {format_amount(cost)}",
+            text=f"⚡ Ускорить за {format_amount(cost)} {ESSENCE_ICON}",
             callback_data=f"garden_grow:{plot_idx}",
         ))
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden"))
@@ -507,8 +787,8 @@ def plot_detail_keyboard(data: dict, plot_idx: int):
 def plant_menu_text(plot_idx: int) -> str:
     return (
         f'🌱 <b>Выбор семени — грядка №{plot_idx + 1}</b>\n'
-        f'<blockquote>Обычные семена продаются за монеты. Семена более редких '
-        f'цветков появляются в инвентаре только после слияния.</blockquote>'
+        f'<blockquote><i>Обычные семена продаются за {ESSENCE_NAME.lower()}. Семена более редких '
+        f'цветков появляются в инвентаре только после слияния.</i></blockquote>'
     )
 
 
@@ -521,7 +801,7 @@ def plant_menu_keyboard(data: dict, plot_idx: int):
 
     for f in FLOWERS_BY_TIER[1]:
         b.row(InlineKeyboardButton(
-            text=f'{flower_label(f)} — {format_amount(SEED_COST_TIER1)}',
+            text=f'{flower_label(f)} — {format_amount(SEED_COST_TIER1)} {ESSENCE_ICON}',
             callback_data=f"garden_plant:{plot_idx}:{f['key']}",
         ))
 
@@ -557,7 +837,7 @@ def inventory_text(data: dict) -> str:
     if not have:
         return (
             '🎒 <b>Инвентарь сада</b>\n'
-            '<blockquote>Пока пусто. Собери первый урожай!</blockquote>'
+            '<blockquote><i>Пока пусто. Собери первый урожай!</i></blockquote>'
         )
 
     lines = ['🎒 <b>Инвентарь сада</b>', '<blockquote>']
@@ -602,16 +882,18 @@ def flower_detail_text(data: dict, flower_key: str) -> str:
         f'{flower_label(f)}',
         f'<blockquote><i>{f["lore"]}</i>\n\n'
         f'Тир: <b>{TIER_ICON[tier]} {TIER_NAMES[tier]}</b>\n'
+        f'{bonus_line(f)}\n'
         f'В инвентаре: <b>×{cnt}</b>\n'
-        f'Цена продажи: <b>{format_amount(SELL_PRICE[tier])}</b> за штуку</blockquote>',
+        f'Цена продажи: <b>{format_amount(SELL_PRICE[tier])}</b> {ESSENCE_ICON} за штуку</blockquote>',
     ]
     if tier < TIER_MAX:
         lines.append(
-            f'<blockquote>🧬 Слей {MERGE_COUNT} шт., чтобы получить случайный цветок '
-            f'тира «{TIER_NAMES[tier + 1]}» (есть небольшой шанс «прорыва» сразу на 2 тира выше).</blockquote>'
+            f'<blockquote><i>🧬 Слияние доступно в меню сада: добавь {MERGE_COUNT} цветка этого тира '
+            f'в котёл (можно даже разных), чтобы получить случайный цветок '
+            f'тира «{TIER_NAMES[tier + 1]}» — есть шанс «прорыва» сразу на 2 тира выше.</i></blockquote>'
         )
     else:
-        lines.append('<blockquote>🏆 Это высший тир сада — дальше эволюционировать некуда.</blockquote>')
+        lines.append('<blockquote><i>🏆 Это высший тир сада — дальше эволюционировать некуда.</i></blockquote>')
     return "\n".join(lines)
 
 
@@ -620,16 +902,90 @@ def flower_detail_keyboard(data: dict, flower_key: str):
     from aiogram.types import InlineKeyboardButton
 
     g = ensure_garden(data)
-    f = FLOWERS_BY_KEY[flower_key]
     cnt = g["inventory"].get(flower_key, 0)
 
     b = InlineKeyboardBuilder()
-    if f["tier"] < TIER_MAX and cnt >= MERGE_COUNT:
-        b.row(InlineKeyboardButton(text=f"🧬 Слить ({MERGE_COUNT} шт.)", callback_data=f"garden_merge:{flower_key}"))
     if cnt >= 1:
         b.row(
             InlineKeyboardButton(text="💰 Продать 1", callback_data=f"garden_sell:{flower_key}:1"),
             InlineKeyboardButton(text="💰 Продать всё", callback_data=f"garden_sell:{flower_key}:all"),
         )
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden_inventory"))
+    return b.as_markup()
+
+
+# ── Меню СЛИЯНИЯ (в главном меню сада, не в инвентаре) ──
+
+def merge_menu_text(data: dict) -> str:
+    g = ensure_garden(data)
+    cart = g["merge_cart"]
+    lines = [
+        '🧬 <b>Слияние цветков</b>',
+        f'<blockquote><i>Выбери тир и добавляй цветки в котёл — одинаковые или '
+        f'разные, не важно. Как только наберётся {MERGE_COUNT} шт., слияние '
+        f'произойдёт автоматически и подарит случайный цветок следующего тира.</i></blockquote>',
+    ]
+    if cart["items"]:
+        parts = [f'{flower_label(FLOWERS_BY_KEY[k])} ×{c}' for k, c in cart["items"].items()]
+        total = sum(cart["items"].values())
+        lines.append(
+            f'\n🔥 <b>В котле</b> ({total}/{MERGE_COUNT}), тир «{TIER_NAMES[cart["tier"]]}»:\n'
+            f'<blockquote>{", ".join(parts)}</blockquote>'
+        )
+    return "\n".join(lines)
+
+
+def merge_menu_keyboard(data: dict):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    g = ensure_garden(data)
+    b = InlineKeyboardBuilder()
+    for tier in range(TIER_MIN, TIER_MAX):
+        total = sum(c for k, c in g["inventory"].items() if FLOWERS_BY_KEY[k]["tier"] == tier and c > 0)
+        if total <= 0:
+            continue
+        b.row(InlineKeyboardButton(
+            text=f'{TIER_ICON[tier]} {TIER_NAMES[tier]} — {total} шт. в саду',
+            callback_data=f"garden_mergetier:{tier}",
+        ))
+    if g["merge_cart"]["items"]:
+        b.row(InlineKeyboardButton(text="🗑 Очистить котёл", callback_data="garden_mergeclear"))
+    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden"))
+    return b.as_markup()
+
+
+def merge_tier_text(data: dict, tier: int) -> str:
+    g = ensure_garden(data)
+    cart = g["merge_cart"]
+    lines = [
+        f'{TIER_ICON[tier]} <b>Котёл — тир «{TIER_NAMES[tier]}»</b>',
+        f'<blockquote><i>Нажимай на цветок, чтобы бросить его в котёл. '
+        f'Нужно {MERGE_COUNT} шт. — не обязательно одинаковых.</i></blockquote>',
+    ]
+    if cart["items"] and cart.get("tier") == tier:
+        total = sum(cart["items"].values())
+        lines.append(f'\n🔥 В котле: <b>{total}/{MERGE_COUNT}</b>')
+    return "\n".join(lines)
+
+
+def merge_tier_keyboard(data: dict, tier: int):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    g = ensure_garden(data)
+    cart = g["merge_cart"]
+    b = InlineKeyboardBuilder()
+    for f in FLOWERS_BY_TIER[tier]:
+        cnt = g["inventory"].get(f["key"], 0)
+        if cnt <= 0:
+            continue
+        in_cart = cart["items"].get(f["key"], 0) if cart.get("tier") == tier else 0
+        avail = cnt - in_cart
+        label = f'{flower_label(f)} · доступно {avail}' + (f' · в котле {in_cart}' if in_cart else '')
+        b.row(InlineKeyboardButton(
+            text=label,
+            callback_data=f"garden_mergeadd:{f['key']}" if avail > 0 else "garden_noop",
+        ))
+    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden_merge"))
     return b.as_markup()
