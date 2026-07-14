@@ -101,7 +101,7 @@ _orig_main_reply_keyboard = mainhelp.main_reply_keyboard
 def _garden_main_reply_keyboard(lang: str = "ru"):
     kb = _orig_main_reply_keyboard(lang)
     garden_btn = KeyboardButton(
-        text="🌺 Сад" if lang == "ru" else "🌺 Garden",
+        text="🌺 Мистический Сад" if lang == "ru" else "🌺 Mystic Garden",
         style="primary",
     )
     if kb.keyboard:
@@ -122,7 +122,10 @@ async def _garden_open(uid: int, u: dict):
 
 
 @dp.message(Command("garden", "сад", "mysticgarden"))
-@dp.message(_text_in("сад", "garden", "мистический сад", "mystic garden", "🌺 сад", "🌺 garden"))
+@dp.message(_text_in(
+    "сад", "garden", "мистический сад", "mystic garden",
+    "🌺 сад", "🌺 garden", "🌺 мистический сад", "🌺 mystic garden",
+))
 async def cmd_garden(message: Message):
     u = await aio_get_or_create_user(message.from_user)
     await aio_track_user(message.from_user.id)
@@ -434,6 +437,29 @@ async def cb_garden_expand(call: CallbackQuery):
         reply_markup=garden_keyboard(u),
     )
     await call.answer(f'🪴 Сад расширен! Теперь грядок: {result["plot_count"]}')
+
+
+# По той же причине, что и с текстовыми хендлерами сада выше (см.
+# _prioritize_message_handlers) — если где-то в mainhelp.py раньше
+# зарегистрирован «широкий» callback_query-хендлер (например, общий
+# обработчик неизвестных/старых callback'ов), он мог перехватывать
+# инлайн-кнопки сада раньше, чем до них доходила очередь, и кнопки
+# "молчали" (call.answer() не приходил / ничего не происходило).
+# Переставляем ВСЕ callback-хендлеры сада в начало списка dp.callback_query,
+# ничего в mainhelp.py при этом не трогая.
+def _prioritize_callback_handlers(*callbacks) -> None:
+    wanted    = list(callbacks)
+    moved     = [h for h in dp.callback_query.handlers if h.callback in wanted]
+    remaining = [h for h in dp.callback_query.handlers if h.callback not in wanted]
+    moved.sort(key=lambda h: wanted.index(h.callback))
+    dp.callback_query.handlers[:] = moved + remaining
+
+
+_prioritize_callback_handlers(
+    cb_garden_main, cb_garden_plot, cb_garden_plantmenu, cb_garden_plantinv,
+    cb_garden_plant, cb_garden_harvest, cb_garden_grow, cb_garden_inventory,
+    cb_garden_flower, cb_garden_merge, cb_garden_sell, cb_garden_expand,
+)
 
 
 # ══════════════════════════════════════════════════════════════════════
