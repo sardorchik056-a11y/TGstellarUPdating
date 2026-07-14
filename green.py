@@ -125,11 +125,16 @@ MERGE_SURGE_CHANCE = 0.08
 # Небольшой доп.бонус к шансу прорыва, если в котле разные цветки
 MERGE_MIX_SURGE_BONUS = 0.03
 
-# Грядки: 4 на страницу, 3 страницы = 12 грядок максимум
-PLOT_BASE = 3
+# Грядки: 4 на страницу, 3 страницы = 12 грядок максимум.
+# Стартуют игроки всего с 1 открытой грядкой — остальные открывают сами
+# за мистическую пыльцу по мере игры.
+PLOT_BASE = 1
 PLOT_MAX = 12
 PLOTS_PER_PAGE = 4
 PLOT_PAGES = 3
+
+# Стартовый запас мистической пыльцы, который выдаётся новому саду один раз.
+STARTING_ESSENCE = 1500
 
 # Семена при посадке: тоже разбиваем на страницы — в тире 1 их 30 штук,
 # а в инвентаре со временем может скопиться много разных редких семян.
@@ -142,9 +147,14 @@ def plot_expand_cost(next_count: int) -> int:
 
 
 def fertilizer_cost(remaining_seconds: int) -> int:
-    """Стоимость мгновенного ускорения роста в пыльце — ~0.9 пыльцы за
-    секунду оставшегося времени, минимум 100."""
-    return max(100, int(remaining_seconds * 0.9))
+    """Стоимость ускорения роста в 2 РАЗА (не мгновенного завершения) —
+    ровно половина цены полного мгновенного завершения (~0.45 пыльцы за
+    секунду оставшегося времени), минимум 60. Ускорять можно несколько
+    раз подряд, каждый раз вдвое сокращая остаток времени, а не сразу
+    целиком."""
+    remaining_seconds = max(0, int(remaining_seconds))
+    full_instant_price = max(100, int(remaining_seconds * 0.9))
+    return max(60, int(full_instant_price * 0.5))
 
 
 # ──────────────────────────────────────────────────────────────
@@ -395,6 +405,11 @@ def _fmt_time(seconds: int) -> str:
     return f"{s}с"
 
 
+def fmt_time_left(seconds: int) -> str:
+    """Публичная обёртка над _fmt_time — для использования в хендлерах main.py."""
+    return _fmt_time(seconds)
+
+
 # ──────────────────────────────────────────────────────────────
 #  СОСТОЯНИЕ САДА ПОЛЬЗОВАТЕЛЯ (хранится в data["garden"])
 # ──────────────────────────────────────────────────────────────
@@ -410,7 +425,7 @@ def ensure_garden(data: dict) -> dict:
     while len(plots) < g["plot_count"]:
         plots.append(None)
 
-    g.setdefault("essence", 0)          # мистическая пыльца — валюта сада
+    g.setdefault("essence", STARTING_ESSENCE)  # мистическая пыльца — валюта сада (стартовый дар — STARTING_ESSENCE)
     g.setdefault("inventory", {})       # flower_key -> количество собранных/полученных цветков
     g.setdefault("merge_cart", {"tier": None, "items": {}})  # текущий "котёл" слияния
     g.setdefault("stats", {
@@ -447,10 +462,14 @@ def plot_state(plot: dict | None, now: int | None = None):
     return "growing", min(1.0, elapsed / total), flower, left
 
 
-def _progress_bar(progress: float, length: int = 10) -> str:
+def _progress_bar(progress: float, length: int = 12) -> str:
+    """Полоса прогресса роста — сегментированная, другого стиля, чем раньше
+    (тонкие блоки вместо квадратов-эмодзи)."""
+    progress = max(0.0, min(1.0, progress))
     filled = int(round(progress * length))
     filled = max(0, min(length, filled))
-    return "🟩" * filled + "⬜" * (length - filled)
+    bar = "▰" * filled + "▱" * (length - filled)
+    return f"[{bar}]"
 
 
 # ──────────────────────────────────────────────────────────────
@@ -542,7 +561,11 @@ def harvest_plot(data: dict, plot_idx: int) -> dict:
 
 
 def instant_grow(data: dict, plot_idx: int) -> dict:
-    """Мгновенно завершает рост цветка на грядке за пыльцу (не бесплатно)."""
+    """Ускоряет рост цветка на грядке В 2 РАЗА за пыльцу — то есть сокращает
+    оставшееся время ВДВОЕ, а не завершает выращивание мгновенно целиком.
+    Стоит 50% от цены полного мгновенного завершения. Можно применять
+    несколько раз подряд, каждый раз оплачивая новый (меньший) остаток —
+    рост ускоряется постепенно, а не сразу."""
     g = ensure_garden(data)
     if not (0 <= plot_idx < g["plot_count"]):
         return {"ok": False, "reason": "bad_plot"}
@@ -557,16 +580,18 @@ def instant_grow(data: dict, plot_idx: int) -> dict:
 
     cost = fertilizer_cost(left)
     if flower["bonus"]["type"] == "discount":
-        cost = max(50, int(cost * (1 - flower["bonus"]["value"])))
+        cost = max(30, int(cost * (1 - flower["bonus"]["value"])))
 
     if not spend_essence(data, cost):
         return {"ok": False, "reason": "no_essence", "cost": cost}
 
-    effective_total = GROW_SECONDS[flower["tier"]]
-    if flower["bonus"]["type"] == "growth":
-        effective_total = max(30, int(effective_total * (1 - flower["bonus"]["value"])))
-    plot["planted_at"] = _now() - effective_total
-    return {"ok": True, "cost": cost, "flower": flower}
+    # Сокращаем оставшееся время вдвое, сдвигая момент посадки в прошлое —
+    # минимум на 1 секунду, чтобы клик всегда давал заметный эффект.
+    shift = max(1, left // 2)
+    plot["planted_at"] -= shift
+
+    _, _, _, new_left = plot_state(plot)
+    return {"ok": True, "cost": cost, "flower": flower, "left": new_left}
 
 
 # ── Слияние (эволюция) через "котёл": можно добавлять и одинаковые,
@@ -802,9 +827,9 @@ def plot_detail_keyboard(data: dict, plot_idx: int):
     else:
         cost = fertilizer_cost(left)
         if flower["bonus"]["type"] == "discount":
-            cost = max(50, int(cost * (1 - flower["bonus"]["value"])))
+            cost = max(30, int(cost * (1 - flower["bonus"]["value"])))
         b.row(InlineKeyboardButton(
-            text=f"⚡ Ускорить за {format_amount(cost)} {ESSENCE_ICON}",
+            text=f"⚡ Ускорить в 2 раза за {format_amount(cost)} {ESSENCE_ICON}",
             callback_data=f"garden_grow:{plot_idx}",
         ))
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden"))
