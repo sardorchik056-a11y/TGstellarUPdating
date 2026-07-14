@@ -14,7 +14,7 @@ from aiogram import F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery, Update, ChatMemberUpdated
+from aiogram.types import Message, CallbackQuery, Update, ChatMemberUpdated, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from mainhelp import bot, dp, run_bot, ADMIN_IDS
@@ -38,7 +38,30 @@ from case import (
     CASE_DEFAULT_COIN_PRIZE, CASE_GUESS_CB,
     NUMBER_MIN, NUMBER_MAX,
 )
-from database import format_amount
+from database import format_amount, aio_get_or_create_user, aio_get_user, aio_save_user
+
+# Ещё немного готовых хелперов из mainhelp.py — переиспользуем как есть:
+#  _check_onboarded — проверка/продолжение онбординга для message-хендлеров
+#  _get_user_lock    — персональный asyncio.Lock на пользователя (защита от гонок)
+#  _text_in          — регистронезависимый фильтр текста сообщения
+#  main_menu_keyboard — чтобы добавить кнопку в главное меню
+import mainhelp
+from mainhelp import _check_onboarded, _get_user_lock, _text_in, main_menu_keyboard
+from stats import aio_track_user
+
+# ── Раздел "Мистический сад" — вся логика (цветки, рост, слияние/эволюция,
+# продажа) вынесена в green.py, здесь только хендлеры команд/кнопок. ──
+import green
+from green import (
+    garden_text, garden_keyboard,
+    plot_detail_text, plot_detail_keyboard,
+    plant_menu_text, plant_menu_keyboard, plant_inventory_keyboard,
+    inventory_text, inventory_keyboard,
+    flower_detail_text, flower_detail_keyboard,
+    plant_flower, harvest_plot, instant_grow, merge_flowers, sell_flower,
+    expand_garden, ensure_garden, flower_label, FLOWERS_BY_KEY,
+    GRAND_BLOOM_BONUS_COINS, GRAND_BLOOM_BONUS_XP,
+)
 
 # ──────────────────────────────────────────────────────────────────────────
 # 👇 ДОБАВЛЯЙ СВОИ НОВЫЕ КОМАНДЫ/ХЕНДЛЕРЫ НИЖЕ ЭТОЙ СТРОКИ 👇
@@ -52,6 +75,364 @@ from database import format_amount
 # @dp.message(Command("hello"))
 # async def cmd_hello(message: Message):
 #     await message.answer("Привет! Это новая команда из main.py 👋")
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  РАЗДЕЛ "МИСТИЧЕСКИЙ САД" 🌺
+#  (/garden, /сад, кнопка в главном меню, вся логика — в green.py)
+#
+#  Грядки (по умолчанию 3, можно расширять за монеты) — на каждую
+#  сажается семя (тир 1 покупается за монеты, остальные тиры — только
+#  семена, полученные слиянием). Цветок растёт реальное время, затем
+#  собирается: даёт монеты + опыт + попадает в инвентарь сада. Три
+#  одинаковых цветка можно СЛИТЬ (эволюция) — получится случайный
+#  цветок следующего тира (с маленьким шансом "прорыва" сразу через
+#  тир). Всего 8 тиров редкости, 40 цветков. Собравшим все 5 цветков
+#  высшего тира — единоразовый бонус "Полное цветение".
+# ══════════════════════════════════════════════════════════════════════
+
+# ── Кнопка "Мистический сад" в главном меню.
+# main_menu_keyboard уже используется ВНУТРИ mainhelp.py (например, в
+# хендлере "back_to_menu" и в /start) как обычное имя в глобалах модуля —
+# подмена mainhelp.main_menu_keyboard здесь добавляет кнопку сразу везде,
+# без единой правки внутри самого mainhelp.py. ──
+_orig_main_menu_keyboard = mainhelp.main_menu_keyboard
+
+
+def _garden_main_menu_keyboard(lang: str = "ru"):
+    kb = _orig_main_menu_keyboard(lang)
+    kb.inline_keyboard.append([
+        InlineKeyboardButton(
+            text="🌺 Мистический сад" if lang == "ru" else "🌺 Mystic Garden",
+            callback_data="garden",
+        )
+    ])
+    return kb
+
+
+mainhelp.main_menu_keyboard = _garden_main_menu_keyboard
+
+
+async def _garden_open(uid: int, u: dict):
+    """Общая точка входа: гарантирует структуру сада и возвращает (text, keyboard)."""
+    ensure_garden(u)
+    await aio_save_user(uid, u)
+    return garden_text(u), garden_keyboard(u)
+
+
+@dp.message(Command("garden", "сад", "mysticgarden"))
+@dp.message(_text_in("сад", "garden", "мистический сад", "mystic garden"))
+async def cmd_garden(message: Message):
+    u = await aio_get_or_create_user(message.from_user)
+    await aio_track_user(message.from_user.id)
+    if await _check_onboarded(message, u):
+        return
+    text, kb = await _garden_open(message.from_user.id, u)
+    await message.reply(text, parse_mode="HTML", reply_markup=kb)
+
+
+@dp.callback_query(F.data == "garden")
+async def cb_garden_main(call: CallbackQuery):
+    uid = call.from_user.id
+    u = await aio_get_user(uid)
+    if not u:
+        await call.answer()
+        return
+    text, kb = await _garden_open(uid, u)
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("garden_plot:"))
+async def cb_garden_plot(call: CallbackQuery):
+    plot_idx = int(call.data.split(":")[1])
+    uid = call.from_user.id
+    u = await aio_get_user(uid)
+    if not u:
+        await call.answer()
+        return
+    ensure_garden(u)
+    await call.message.edit_text(
+        plot_detail_text(u, plot_idx), parse_mode="HTML",
+        reply_markup=plot_detail_keyboard(u, plot_idx),
+    )
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("garden_plantmenu:"))
+async def cb_garden_plantmenu(call: CallbackQuery):
+    plot_idx = int(call.data.split(":")[1])
+    uid = call.from_user.id
+    u = await aio_get_user(uid)
+    if not u:
+        await call.answer()
+        return
+    ensure_garden(u)
+    await call.message.edit_text(
+        plant_menu_text(plot_idx), parse_mode="HTML",
+        reply_markup=plant_menu_keyboard(u, plot_idx),
+    )
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("garden_plantinv:"))
+async def cb_garden_plantinv(call: CallbackQuery):
+    plot_idx = int(call.data.split(":")[1])
+    uid = call.from_user.id
+    u = await aio_get_user(uid)
+    if not u:
+        await call.answer()
+        return
+    ensure_garden(u)
+    await call.message.edit_text(
+        plant_menu_text(plot_idx), parse_mode="HTML",
+        reply_markup=plant_inventory_keyboard(u, plot_idx),
+    )
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("garden_plant:"))
+async def cb_garden_plant(call: CallbackQuery):
+    _, plot_idx_s, flower_key = call.data.split(":", 2)
+    plot_idx = int(plot_idx_s)
+    uid = call.from_user.id
+
+    async with await _get_user_lock(uid):
+        u = await aio_get_user(uid)
+        if not u:
+            await call.answer()
+            return
+        result = plant_flower(u, plot_idx, flower_key)
+        if not result["ok"]:
+            reasons = {
+                "occupied": "🪴 Грядка уже занята.",
+                "unknown_flower": "❌ Неизвестное семя.",
+                "no_coins": f'💰 Не хватает монет (нужно {format_amount(result.get("cost", 0))}).',
+                "no_seed": "🎒 В инвентаре нет такого семени.",
+                "bad_plot": "❌ Некорректная грядка.",
+            }
+            await call.answer(reasons.get(result["reason"], "❌ Не удалось посадить."), show_alert=True)
+            return
+        await aio_save_user(uid, u)
+
+    await call.message.edit_text(
+        plot_detail_text(u, plot_idx), parse_mode="HTML",
+        reply_markup=plot_detail_keyboard(u, plot_idx),
+    )
+    await call.answer(f'🌱 Посажено: {flower_label(result["flower"])}')
+
+
+@dp.callback_query(F.data.startswith("garden_harvest:"))
+async def cb_garden_harvest(call: CallbackQuery):
+    plot_idx = int(call.data.split(":")[1])
+    uid = call.from_user.id
+
+    async with await _get_user_lock(uid):
+        u = await aio_get_user(uid)
+        if not u:
+            await call.answer()
+            return
+        result = harvest_plot(u, plot_idx)
+        if not result["ok"]:
+            reasons = {
+                "empty": "🪴 Грядка пуста.",
+                "not_ready": "⏳ Цветок ещё не вырос.",
+                "bad_plot": "❌ Некорректная грядка.",
+            }
+            await call.answer(reasons.get(result["reason"], "❌ Не удалось собрать."), show_alert=True)
+            return
+        mainhelp._apply_xp(u, result["xp"])
+        await aio_save_user(uid, u)
+
+    await call.message.edit_text(
+        plot_detail_text(u, plot_idx), parse_mode="HTML",
+        reply_markup=plot_detail_keyboard(u, plot_idx),
+    )
+    await call.answer(
+        f'🌾 Собрано: {flower_label(result["flower"])}\n'
+        f'+{format_amount(result["coins"])} 🪙  +{result["xp"]} XP',
+        show_alert=True,
+    )
+
+    if result.get("grand_bloom"):
+        try:
+            await call.message.answer(
+                '🏆 <b>ПОЛНОЕ ЦВЕТЕНИЕ!</b>\n'
+                '<blockquote>Ты когда-либо собрал все 5 цветков высшего тира '
+                f'«Изначальный»! Награда: <b>+{format_amount(GRAND_BLOOM_BONUS_COINS)}</b> 🪙</blockquote>',
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+
+@dp.callback_query(F.data.startswith("garden_grow:"))
+async def cb_garden_grow(call: CallbackQuery):
+    plot_idx = int(call.data.split(":")[1])
+    uid = call.from_user.id
+
+    async with await _get_user_lock(uid):
+        u = await aio_get_user(uid)
+        if not u:
+            await call.answer()
+            return
+        result = instant_grow(u, plot_idx)
+        if not result["ok"]:
+            reasons = {
+                "empty": "🪴 Грядка пуста.",
+                "already_ready": "✅ Цветок уже готов к сбору!",
+                "no_coins": f'💰 Не хватает монет (нужно {format_amount(result.get("cost", 0))}).',
+                "bad_plot": "❌ Некорректная грядка.",
+            }
+            await call.answer(reasons.get(result["reason"], "❌ Не удалось ускорить."), show_alert=True)
+            return
+        await aio_save_user(uid, u)
+
+    await call.message.edit_text(
+        plot_detail_text(u, plot_idx), parse_mode="HTML",
+        reply_markup=plot_detail_keyboard(u, plot_idx),
+    )
+    await call.answer(f'⚡ Рост ускорен за {format_amount(result["cost"])} 🪙')
+
+
+@dp.callback_query(F.data == "garden_inventory")
+async def cb_garden_inventory(call: CallbackQuery):
+    uid = call.from_user.id
+    u = await aio_get_user(uid)
+    if not u:
+        await call.answer()
+        return
+    ensure_garden(u)
+    await call.message.edit_text(
+        inventory_text(u), parse_mode="HTML",
+        reply_markup=inventory_keyboard(u),
+    )
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("garden_flower:"))
+async def cb_garden_flower(call: CallbackQuery):
+    flower_key = call.data.split(":", 1)[1]
+    uid = call.from_user.id
+    u = await aio_get_user(uid)
+    if not u or flower_key not in FLOWERS_BY_KEY:
+        await call.answer()
+        return
+    ensure_garden(u)
+    await call.message.edit_text(
+        flower_detail_text(u, flower_key), parse_mode="HTML",
+        reply_markup=flower_detail_keyboard(u, flower_key),
+    )
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("garden_merge:"))
+async def cb_garden_merge(call: CallbackQuery):
+    flower_key = call.data.split(":", 1)[1]
+    uid = call.from_user.id
+
+    async with await _get_user_lock(uid):
+        u = await aio_get_user(uid)
+        if not u:
+            await call.answer()
+            return
+        result = merge_flowers(u, flower_key)
+        if not result["ok"]:
+            reasons = {
+                "max_tier": "🏆 Это уже высший тир — сливать дальше некуда.",
+                "not_enough": f'🧬 Нужно минимум {result.get("need", 3)} шт. одинаковых цветков.',
+                "unknown_flower": "❌ Неизвестный цветок.",
+            }
+            await call.answer(reasons.get(result["reason"], "❌ Не удалось слить."), show_alert=True)
+            return
+        await aio_save_user(uid, u)
+
+    surge_note = "\n✨ <b>ПРОРЫВ!</b> Цветок перескочил сразу через тир!" if result["surge"] else ""
+    await call.message.edit_text(
+        flower_detail_text(u, result["result"]["key"]) if u["garden"]["inventory"].get(result["result"]["key"], 0) > 0
+        else inventory_text(u),
+        parse_mode="HTML",
+        reply_markup=(
+            flower_detail_keyboard(u, result["result"]["key"])
+            if u["garden"]["inventory"].get(result["result"]["key"], 0) > 0
+            else inventory_keyboard(u)
+        ),
+    )
+    await call.answer(
+        f'🧬 Слияние: {flower_label(result["consumed"])} × {green.MERGE_COUNT} → '
+        f'{flower_label(result["result"])}{surge_note.replace(chr(10), " ")}',
+        show_alert=True,
+    )
+
+    if result.get("grand_bloom"):
+        try:
+            await call.message.answer(
+                '🏆 <b>ПОЛНОЕ ЦВЕТЕНИЕ!</b>\n'
+                '<blockquote>Ты когда-либо собрал все 5 цветков высшего тира '
+                f'«Изначальный»! Награда: <b>+{format_amount(GRAND_BLOOM_BONUS_COINS)}</b> 🪙</blockquote>',
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+
+@dp.callback_query(F.data.startswith("garden_sell:"))
+async def cb_garden_sell(call: CallbackQuery):
+    _, flower_key, count_s = call.data.split(":", 2)
+    uid = call.from_user.id
+
+    async with await _get_user_lock(uid):
+        u = await aio_get_user(uid)
+        if not u:
+            await call.answer()
+            return
+        ensure_garden(u)
+        have = u["garden"]["inventory"].get(flower_key, 0)
+        count = have if count_s == "all" else 1
+        result = sell_flower(u, flower_key, count)
+        if not result["ok"]:
+            await call.answer("❌ Нечего продавать.", show_alert=True)
+            return
+        await aio_save_user(uid, u)
+
+    still_have = u["garden"]["inventory"].get(flower_key, 0) > 0
+    if still_have:
+        await call.message.edit_text(
+            flower_detail_text(u, flower_key), parse_mode="HTML",
+            reply_markup=flower_detail_keyboard(u, flower_key),
+        )
+    else:
+        await call.message.edit_text(
+            inventory_text(u), parse_mode="HTML",
+            reply_markup=inventory_keyboard(u),
+        )
+    await call.answer(f'💰 Продано {result["count"]} шт. за {format_amount(result["coins"])} 🪙')
+
+
+@dp.callback_query(F.data == "garden_expand")
+async def cb_garden_expand(call: CallbackQuery):
+    uid = call.from_user.id
+
+    async with await _get_user_lock(uid):
+        u = await aio_get_user(uid)
+        if not u:
+            await call.answer()
+            return
+        result = expand_garden(u)
+        if not result["ok"]:
+            reasons = {
+                "max_plots": "🪴 Достигнут максимум грядок.",
+                "no_coins": f'💰 Не хватает монет (нужно {format_amount(result.get("cost", 0))}).',
+            }
+            await call.answer(reasons.get(result["reason"], "❌ Не удалось расширить сад."), show_alert=True)
+            return
+        await aio_save_user(uid, u)
+
+    await call.message.edit_text(
+        garden_text(u), parse_mode="HTML",
+        reply_markup=garden_keyboard(u),
+    )
+    await call.answer(f'🪴 Сад расширен! Теперь грядок: {result["plot_count"]}')
 
 
 # ══════════════════════════════════════════════════════════════════════
