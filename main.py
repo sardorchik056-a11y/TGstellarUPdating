@@ -14,7 +14,7 @@ from aiogram import F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery, Update, ChatMemberUpdated, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, Update, ChatMemberUpdated, InlineKeyboardButton, KeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from mainhelp import bot, dp, run_bot, ADMIN_IDS
@@ -113,6 +113,28 @@ def _garden_main_menu_keyboard(lang: str = "ru"):
 mainhelp.main_menu_keyboard = _garden_main_menu_keyboard
 
 
+# ── Кнопка "🌺 Сад" в нижней (persistent) клавиатуре — рядом с Меню /
+# Клан / Город / Достижения. Тот же приём: подменяем mainhelp.main_reply_keyboard,
+# оригинал mainhelp.py не трогаем. ──
+_orig_main_reply_keyboard = mainhelp.main_reply_keyboard
+
+
+def _garden_main_reply_keyboard(lang: str = "ru"):
+    kb = _orig_main_reply_keyboard(lang)
+    garden_btn = KeyboardButton(
+        text="🌺 Сад" if lang == "ru" else "🌺 Garden",
+        style="primary",
+    )
+    if kb.keyboard:
+        kb.keyboard[-1].append(garden_btn)
+    else:
+        kb.keyboard.append([garden_btn])
+    return kb
+
+
+mainhelp.main_reply_keyboard = _garden_main_reply_keyboard
+
+
 async def _garden_open(uid: int, u: dict):
     """Общая точка входа: гарантирует структуру сада и возвращает (text, keyboard)."""
     ensure_garden(u)
@@ -121,7 +143,7 @@ async def _garden_open(uid: int, u: dict):
 
 
 @dp.message(Command("garden", "сад", "mysticgarden"))
-@dp.message(_text_in("сад", "garden", "мистический сад", "mystic garden"))
+@dp.message(_text_in("сад", "garden", "мистический сад", "mystic garden", "🌺 сад", "🌺 garden"))
 async def cmd_garden(message: Message):
     u = await aio_get_or_create_user(message.from_user)
     await aio_track_user(message.from_user.id)
