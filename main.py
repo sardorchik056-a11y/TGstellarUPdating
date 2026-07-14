@@ -14,7 +14,7 @@ from aiogram import F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery, Update, ChatMemberUpdated, InlineKeyboardButton, KeyboardButton
+from aiogram.types import Message, CallbackQuery, Update, ChatMemberUpdated, KeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from mainhelp import bot, dp, run_bot, ADMIN_IDS
@@ -91,31 +91,10 @@ from green import (
 #  высшего тира — единоразовый бонус "Полное цветение".
 # ══════════════════════════════════════════════════════════════════════
 
-# ── Кнопка "Мистический сад" в главном меню.
-# main_menu_keyboard уже используется ВНУТРИ mainhelp.py (например, в
-# хендлере "back_to_menu" и в /start) как обычное имя в глобалах модуля —
-# подмена mainhelp.main_menu_keyboard здесь добавляет кнопку сразу везде,
-# без единой правки внутри самого mainhelp.py. ──
-_orig_main_menu_keyboard = mainhelp.main_menu_keyboard
-
-
-def _garden_main_menu_keyboard(lang: str = "ru"):
-    kb = _orig_main_menu_keyboard(lang)
-    kb.inline_keyboard.append([
-        InlineKeyboardButton(
-            text="🌺 Мистический сад" if lang == "ru" else "🌺 Mystic Garden",
-            callback_data="garden",
-        )
-    ])
-    return kb
-
-
-mainhelp.main_menu_keyboard = _garden_main_menu_keyboard
-
-
 # ── Кнопка "🌺 Сад" в нижней (persistent) клавиатуре — рядом с Меню /
-# Клан / Город / Достижения. Тот же приём: подменяем mainhelp.main_reply_keyboard,
-# оригинал mainhelp.py не трогаем. ──
+# Клан / Город / Достижения. Приём тот же, что и раньше в проекте:
+# подменяем mainhelp.main_reply_keyboard, оригинал mainhelp.py не трогаем.
+# (В инлайн-меню кнопку специально НЕ добавляем — только сюда.) ──
 _orig_main_reply_keyboard = mainhelp.main_reply_keyboard
 
 
@@ -1021,7 +1000,12 @@ async def _submit_guess(uid: int, name: str, number: int, message: Message):
 # регистрируются здесь — уже ПОСЛЕ того, как обе функции определены выше
 # (см. подробное объяснение зачем это нужно рядом с определением
 # _prioritize_message_handlers).
-_prioritize_message_handlers(msg_case_admin_amount, msg_case_guess_number)
+#
+# cmd_garden — туда же и по той же причине: нажатие кнопки "🌺 Сад" на
+# нижней клавиатуре шлёт обычное текстовое сообщение без "/", а его
+# перехватывает раньше catch-all handle_captcha_answer в mainhelp.py
+# (это и была причина, почему кнопка "молчала"/бот как будто игнорил её).
+_prioritize_message_handlers(msg_case_admin_amount, msg_case_guess_number, cmd_garden)
 
 
 # ──────────────────────────────────────────────────────────────────────────
