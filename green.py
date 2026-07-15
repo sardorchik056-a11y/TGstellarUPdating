@@ -799,11 +799,11 @@ def garden_text(data: dict, page: int = 0) -> str:
 def _plot_button_label(idx: int, plot: dict | None) -> str:
     stage, progress, flower, left = plot_state(plot)
     if stage == "empty":
-        return f"{idx + 1}. ➕ Пусто"
+        return "➕ Пусто"
     if stage == "ready":
-        return f"{idx + 1}. ✅ {flower_label(flower)}"
+        return f"✅ {flower_label(flower)}"
     pct = int(progress * 100)
-    return f"{idx + 1}. {flower['emoji']} {pct}% ({_fmt_time(left)})"
+    return f"{flower['emoji']} {pct}% ({_fmt_time(left)})"
 
 
 def garden_keyboard(data: dict, page: int = 0):
@@ -832,13 +832,13 @@ def garden_keyboard(data: dict, page: int = 0):
         elif idx == g["plot_count"]:
             cost = plot_expand_cost(idx + 1)
             b.row(InlineKeyboardButton(
-                text=f"Открыть грядку №{idx + 1} — {format_amount(cost)} {ESSENCE_ICON}",
+                text=f"Открыть грядку — {format_amount(cost)} {ESSENCE_ICON}",
                 icon_custom_emoji_id=EXPAND_PLOT_ICON_EMOJI_ID,
                 callback_data="garden_expand",
             ))
         else:
             b.row(InlineKeyboardButton(
-                text=f"{idx + 1}. Заблокировано",
+                text="Заблокировано",
                 icon_custom_emoji_id=LOCKED_ICON_EMOJI_ID,
                 callback_data="garden_noop",
             ))
@@ -1239,8 +1239,6 @@ def collection_menu_keyboard(data: dict):
         }
         if found == total:
             btn_kwargs["style"] = "success"
-        elif found == 0:
-            btn_kwargs["icon_custom_emoji_id"] = LOCKED_ICON_EMOJI_ID
         b.row(InlineKeyboardButton(**btn_kwargs))
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden"))
     return b.as_markup()
