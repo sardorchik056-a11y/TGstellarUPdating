@@ -977,9 +977,9 @@ def plot_detail_text(data: dict, plot_idx: int) -> str:
     level = g["plot_levels"][plot_idx]
     level_mult = PLOT_UPGRADE_MULT.get(level, 1.0)
     stage, progress, flower, left = plot_state(plot, level_mult)
-    level_line = f'🛠 Уровень грядки: <b>{level}/{PLOT_UPGRADE_MAX}</b> (скорость ×{level_mult:g})'
 
     if stage == "empty":
+        level_line = f'🛠 Уровень грядки: <b>{level}/{PLOT_UPGRADE_MAX}</b> (скорость ×{level_mult:g})'
         return (
             f'🪴 <b>Грядка №{plot_idx + 1}</b>\n'
             f'<blockquote><i>Грядка свободна. Посади семя.</i>\n\n{level_line}</blockquote>'
@@ -990,8 +990,7 @@ def plot_detail_text(data: dict, plot_idx: int) -> str:
             f'<blockquote>{flower_label(flower)} · <b>{TIER_NAMES[flower["tier"]]}</b>\n'
             f'<i>{flower["lore"]}</i>\n'
             f'{bonus_line(flower)}\n\n'
-            f'✅ <b>Готов к сбору!</b>\n'
-            f'{level_line}</blockquote>'
+            f'✅ <b>Готов к сбору!</b></blockquote>'
         )
     return (
         f'🪴 <b>Грядка №{plot_idx + 1}</b>\n'
@@ -999,8 +998,7 @@ def plot_detail_text(data: dict, plot_idx: int) -> str:
         f'<i>{flower["lore"]}</i>\n'
         f'{bonus_line(flower)}\n\n'
         f'{_progress_bar(progress)} <b>{int(progress * 100)}%</b>\n'
-        f'⏳ Осталось: <b>{_fmt_time(left)}</b>\n'
-        f'{level_line}</blockquote>'
+        f'⏳ Осталось: <b>{_fmt_time(left)}</b></blockquote>'
     )
 
 
@@ -1017,6 +1015,19 @@ def plot_detail_keyboard(data: dict, plot_idx: int):
     b = InlineKeyboardBuilder()
     if stage == "empty":
         b.row(InlineKeyboardButton(text="🌱 Посадить семя", callback_data=f"garden_plantmenu:{plot_idx}"))
+        up_cost = plot_upgrade_cost(level)
+        if up_cost is None:
+            b.row(InlineKeyboardButton(
+                text=f"🏆 Грядка макс. уровня (×{level_mult:g})",
+                style="success",
+                callback_data="garden_noop",
+            ))
+        else:
+            next_mult = PLOT_UPGRADE_MULT[level + 1]
+            b.row(InlineKeyboardButton(
+                text=f"⬆️ Улучшить грядку (ур.{level}→{level + 1}, ×{next_mult:g}) — {format_amount(up_cost)} {ESSENCE_ICON}",
+                callback_data=f"garden_plotup:{plot_idx}",
+            ))
     elif stage == "ready":
         b.row(InlineKeyboardButton(text="🌾 Собрать урожай", callback_data=f"garden_harvest:{plot_idx}"))
     else:
@@ -1033,20 +1044,6 @@ def plot_detail_keyboard(data: dict, plot_idx: int):
                 text=f"⚡ Ускорить в 2 раза за {format_amount(cost)} {ESSENCE_ICON}",
                 callback_data=f"garden_grow:{plot_idx}",
             ))
-
-    up_cost = plot_upgrade_cost(level)
-    if up_cost is None:
-        b.row(InlineKeyboardButton(
-            text=f"🏆 Грядка макс. уровня (×{level_mult:g})",
-            style="success",
-            callback_data="garden_noop",
-        ))
-    else:
-        next_mult = PLOT_UPGRADE_MULT[level + 1]
-        b.row(InlineKeyboardButton(
-            text=f"⬆️ Улучшить грядку (ур.{level}→{level + 1}, ×{next_mult:g}) — {format_amount(up_cost)} {ESSENCE_ICON}",
-            callback_data=f"garden_plotup:{plot_idx}",
-        ))
 
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden"))
     return b.as_markup()
