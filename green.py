@@ -152,6 +152,9 @@ SEEDS_PER_PAGE = 6
 # случаях Telegram просто проигнорирует поле и покажет кнопку без иконки.
 LOCKED_ICON_EMOJI_ID = "5296369303661067030"
 
+# Кастомный эмодзи для кнопки "открыть новую грядку".
+EXPAND_PLOT_ICON_EMOJI_ID = "5305699699204837855"
+
 # Раздел «Коллекция»: сколько видов цветов на странице внутри тира.
 COLLECTION_PER_PAGE = 8
 
@@ -816,14 +819,21 @@ def garden_keyboard(data: dict, page: int = 0):
     for idx in range(start, min(end, PLOT_MAX)):
         if idx < g["plot_count"]:
             plot = g["plots"][idx]
-            b.row(InlineKeyboardButton(
-                text=_plot_button_label(idx, plot),
-                callback_data=f"garden_plot:{idx}",
-            ))
+            stage, _, _, _ = plot_state(plot)
+            btn_kwargs = {
+                "text": _plot_button_label(idx, plot),
+                "callback_data": f"garden_plot:{idx}",
+            }
+            if stage == "ready":
+                btn_kwargs["style"] = "success"   # выросло — зелёная
+            elif stage == "growing":
+                btn_kwargs["style"] = "primary"   # растёт — синяя
+            b.row(InlineKeyboardButton(**btn_kwargs))
         elif idx == g["plot_count"]:
             cost = plot_expand_cost(idx + 1)
             b.row(InlineKeyboardButton(
-                text=f"🔓 Открыть грядку №{idx + 1} — {format_amount(cost)} {ESSENCE_ICON}",
+                text=f"Открыть грядку №{idx + 1} — {format_amount(cost)} {ESSENCE_ICON}",
+                icon_custom_emoji_id=EXPAND_PLOT_ICON_EMOJI_ID,
                 callback_data="garden_expand",
             ))
         else:
