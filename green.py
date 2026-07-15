@@ -144,6 +144,14 @@ STARTING_ESSENCE = 1500
 # а в инвентаре со временем может скопиться много разных редких семян.
 SEEDS_PER_PAGE = 6
 
+# Кастомный эмодзи для "закрытых" элементов интерфейса — недоступных
+# грядок и неоткрытых видов в «Коллекции».
+# ВАЖНО: по правилам Telegram Bot API icon_custom_emoji_id на кнопках
+# показывается только у ботов, купивших доп. юзернейм на Fragment, либо
+# в чатах, где у владельца бота есть Telegram Premium — в остальных
+# случаях Telegram просто проигнорирует поле и покажет кнопку без иконки.
+LOCKED_ICON_EMOJI_ID = "5296369303661067030"
+
 # Раздел «Коллекция»: сколько видов цветов на странице внутри тира.
 COLLECTION_PER_PAGE = 8
 
@@ -819,7 +827,11 @@ def garden_keyboard(data: dict, page: int = 0):
                 callback_data="garden_expand",
             ))
         else:
-            b.row(InlineKeyboardButton(text=f"{idx + 1}. 🔒 Заблокировано", callback_data="garden_noop"))
+            b.row(InlineKeyboardButton(
+                text=f"{idx + 1}. Заблокировано",
+                icon_custom_emoji_id=LOCKED_ICON_EMOJI_ID,
+                callback_data="garden_noop",
+            ))
 
     nav = []
     if page > 0:
@@ -1173,6 +1185,14 @@ def _collection_pages(tier: int) -> int:
     return max(1, (len(FLOWERS_BY_TIER[tier]) + COLLECTION_PER_PAGE - 1) // COLLECTION_PER_PAGE)
 
 
+def _collection_sorted(tier: int, discovered: set) -> list:
+    """Открытые виды — вперёд списка, закрытые — следом. Внутри каждой
+    группы порядок сохраняется исходным (стабильная сортировка), чтобы
+    расположение не "прыгало" от открытия к открытию."""
+    tier_flowers = FLOWERS_BY_TIER[tier]
+    return sorted(tier_flowers, key=lambda f: f["key"] not in discovered)
+
+
 def collection_menu_text(data: dict) -> str:
     g = ensure_garden(data)
     discovered = set(g["stats"]["discovered"])
@@ -1203,11 +1223,15 @@ def collection_menu_keyboard(data: dict):
         tier_flowers = FLOWERS_BY_TIER[tier]
         found = sum(1 for f in tier_flowers if f["key"] in discovered)
         total = len(tier_flowers)
-        mark = "✅" if found == total else ("🔓" if found else "🔒")
-        b.row(InlineKeyboardButton(
-            text=f'{mark} {TIER_ICON[tier]} {TIER_NAMES[tier]} — {found}/{total}',
-            callback_data=f"garden_colltier:{tier}:0",
-        ))
+        btn_kwargs = {
+            "text": f'{TIER_ICON[tier]} {TIER_NAMES[tier]} — {found}/{total}',
+            "callback_data": f"garden_colltier:{tier}:0",
+        }
+        if found == total:
+            btn_kwargs["style"] = "success"
+        elif found == 0:
+            btn_kwargs["icon_custom_emoji_id"] = LOCKED_ICON_EMOJI_ID
+        b.row(InlineKeyboardButton(**btn_kwargs))
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden"))
     return b.as_markup()
 
@@ -1215,7 +1239,7 @@ def collection_menu_keyboard(data: dict):
 def collection_tier_text(data: dict, tier: int, page: int = 0) -> str:
     g = ensure_garden(data)
     discovered = set(g["stats"]["discovered"])
-    tier_flowers = FLOWERS_BY_TIER[tier]
+    tier_flowers = _collection_sorted(tier, discovered)
     found = sum(1 for f in tier_flowers if f["key"] in discovered)
     pages = _collection_pages(tier)
     page = max(0, min(pages - 1, page))
@@ -1241,7 +1265,7 @@ def collection_tier_keyboard(data: dict, tier: int, page: int = 0):
 
     g = ensure_garden(data)
     discovered = set(g["stats"]["discovered"])
-    tier_flowers = FLOWERS_BY_TIER[tier]
+    tier_flowers = _collection_sorted(tier, discovered)
     pages = _collection_pages(tier)
     page = max(0, min(pages - 1, page))
     start = page * COLLECTION_PER_PAGE
@@ -1251,10 +1275,15 @@ def collection_tier_keyboard(data: dict, tier: int, page: int = 0):
         if f["key"] in discovered:
             b.row(InlineKeyboardButton(
                 text=flower_label(f),
+                style="success",
                 callback_data=f"garden_collflower:{f['key']}:{page}",
             ))
         else:
-            b.row(InlineKeyboardButton(text="🔒 ???", callback_data="garden_noop"))
+            b.row(InlineKeyboardButton(
+                text="???",
+                icon_custom_emoji_id=LOCKED_ICON_EMOJI_ID,
+                callback_data="garden_noop",
+            ))
 
     nav = []
     if page > 0:
