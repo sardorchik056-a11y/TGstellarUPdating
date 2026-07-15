@@ -55,6 +55,16 @@ def fmt_essence(amount: int) -> str:
     return f"{format_amount(amount)} {ESSENCE_ICON}"
 
 
+def _can_afford_with_reserve(data: dict, cost: int, reserve: int = None) -> bool:
+    """Проверяет, что после траты cost на балансе останется СТРОГО БОЛЬШЕ
+    reserve (по умолчанию — стоимость семени тира 1, SEED_COST_TIER1).
+    Нужно, чтобы улучшение грядки / открытие новой грядки не съедало весь
+    запас пыльцы, оставляя игрока без возможности посадить новое семя."""
+    if reserve is None:
+        reserve = SEED_COST_TIER1
+    return get_essence(data) - cost > reserve
+
+
 # ──────────────────────────────────────────────────────────────
 #  ТИРЫ
 # ──────────────────────────────────────────────────────────────
@@ -732,6 +742,9 @@ def upgrade_plot(data: dict, plot_idx: int) -> dict:
     if cost is None:
         return {"ok": False, "reason": "max_level"}
 
+    if not _can_afford_with_reserve(data, cost):
+        return {"ok": False, "reason": "low_reserve", "cost": cost, "reserve": SEED_COST_TIER1}
+
     if not spend_essence(data, cost):
         return {"ok": False, "reason": "no_essence", "cost": cost}
 
@@ -875,6 +888,9 @@ def expand_garden(data: dict) -> dict:
         return {"ok": False, "reason": "max_plots"}
 
     cost = plot_expand_cost(g["plot_count"] + 1)
+    if not _can_afford_with_reserve(data, cost):
+        return {"ok": False, "reason": "low_reserve", "cost": cost, "reserve": SEED_COST_TIER1}
+
     if not spend_essence(data, cost):
         return {"ok": False, "reason": "no_essence", "cost": cost}
 
@@ -1023,9 +1039,8 @@ def plot_detail_keyboard(data: dict, plot_idx: int):
                 callback_data="garden_noop",
             ))
         else:
-            next_mult = PLOT_UPGRADE_MULT[level + 1]
             b.row(InlineKeyboardButton(
-                text=f"⬆️ Улучшить грядку (ур.{level}→{level + 1}, ×{next_mult:g}) — {format_amount(up_cost)} {ESSENCE_ICON}",
+                text=f"⬆️ Улучшить — {format_amount(up_cost)} {ESSENCE_ICON}",
                 callback_data=f"garden_plotup:{plot_idx}",
             ))
     elif stage == "ready":
