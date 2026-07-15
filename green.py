@@ -169,6 +169,9 @@ SEEDS_PER_PAGE = 6
 # случаях Telegram просто проигнорирует поле и покажет кнопку без иконки.
 LOCKED_ICON_EMOJI_ID = "5296369303661067030"
 
+# Кастомный эмодзи для кнопки "Назад" везде в разделе сада.
+BACK_ICON_EMOJI_ID = "6039539366177541657"
+
 # Кастомный эмодзи для кнопки "открыть новую грядку".
 EXPAND_PLOT_ICON_EMOJI_ID = "5305699699204837855"
 
@@ -1013,7 +1016,7 @@ def garden_keyboard(data: dict, page: int = 0):
         InlineKeyboardButton(text="🧬 Слияние", callback_data="garden_merge"),
     )
     b.row(InlineKeyboardButton(text="📖 Коллекция", callback_data="garden_collection"))
-    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu"))
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data="back_to_menu"))
     return b.as_markup()
 
 
@@ -1090,7 +1093,7 @@ def plot_detail_keyboard(data: dict, plot_idx: int):
                 callback_data=f"garden_grow:{plot_idx}",
             ))
 
-    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden"))
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data="garden"))
     return b.as_markup()
 
 
@@ -1140,7 +1143,7 @@ def plant_menu_keyboard(data: dict, plot_idx: int, page: int = 0):
     if seed_keys:
         b.row(InlineKeyboardButton(text="🎒 Посадить из инвентаря", callback_data=f"garden_plantinv:{plot_idx}:0"))
 
-    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"garden_plot:{plot_idx}"))
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data=f"garden_plot:{plot_idx}"))
     return b.as_markup()
 
 
@@ -1191,7 +1194,7 @@ def plant_inventory_keyboard(data: dict, plot_idx: int, page: int = 0):
             nav.append(InlineKeyboardButton(text="▶️", callback_data=f"garden_plantinv:{plot_idx}:{page + 1}"))
         b.row(*nav)
 
-    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"garden_plantmenu:{plot_idx}:0"))
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data=f"garden_plantmenu:{plot_idx}:0"))
     return b.as_markup()
 
 
@@ -1232,7 +1235,7 @@ def inventory_keyboard(data: dict):
                 text=f'{flower_label(f)} ×{cnt}',
                 callback_data=f"garden_flower:{f['key']}",
             ))
-    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden"))
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data="garden"))
     return b.as_markup()
 
 
@@ -1274,7 +1277,7 @@ def flower_detail_keyboard(data: dict, flower_key: str):
             InlineKeyboardButton(text="💰 Продать 1", callback_data=f"garden_sell:{flower_key}:1"),
             InlineKeyboardButton(text="💰 Продать всё", callback_data=f"garden_sell:{flower_key}:all"),
         )
-    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden_inventory"))
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data="garden_inventory"))
     return b.as_markup()
 
 
@@ -1315,7 +1318,7 @@ def merge_menu_keyboard(data: dict):
         ))
     if g["merge_cart"]["items"]:
         b.row(InlineKeyboardButton(text="🗑 Очистить котёл", callback_data="garden_mergeclear"))
-    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden"))
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data="garden"))
     return b.as_markup()
 
 
@@ -1353,7 +1356,7 @@ def merge_tier_keyboard(data: dict, tier: int):
             text=label,
             callback_data=f"garden_mergeadd:{f['key']}" if avail > 0 else "garden_noop",
         ))
-    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden_merge"))
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data="garden_merge"))
     return b.as_markup()
 
 
@@ -1421,7 +1424,7 @@ def collection_menu_keyboard(data: dict):
         if found == total:
             btn_kwargs["style"] = "success"
         b.row(InlineKeyboardButton(**btn_kwargs))
-    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden"))
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data="garden"))
     return b.as_markup()
 
 
@@ -1439,11 +1442,13 @@ def collection_tier_text(data: dict, tier: int, page: int = 0) -> str:
         '<blockquote>',
     ]
     start = page * COLLECTION_PER_PAGE
-    for f in tier_flowers[start:start + COLLECTION_PER_PAGE]:
-        if f["key"] in discovered:
+    page_flowers = tier_flowers[start:start + COLLECTION_PER_PAGE]
+    discovered_on_page = [f for f in page_flowers if f["key"] in discovered]
+    if discovered_on_page:
+        for f in discovered_on_page:
             lines.append(f'  {flower_label(f)}')
-        else:
-            lines.append('  🔒 ??? <i>(не открыто)</i>')
+    else:
+        lines.append('  Пока нет открытых видов на этой странице.')
     lines.append('</blockquote>')
     return "\n".join(lines)
 
@@ -1482,7 +1487,7 @@ def collection_tier_keyboard(data: dict, tier: int, page: int = 0):
         nav.append(InlineKeyboardButton(text="▶️", callback_data=f"garden_colltier:{tier}:{page + 1}"))
     b.row(*nav)
 
-    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden_collection"))
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data="garden_collection"))
     return b.as_markup()
 
 
@@ -1506,5 +1511,5 @@ def collection_flower_keyboard(data: dict, flower_key: str, page: int = 0):
 
     f = FLOWERS_BY_KEY[flower_key]
     b = InlineKeyboardBuilder()
-    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"garden_colltier:{f['tier']}:{page}"))
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data=f"garden_colltier:{f['tier']}:{page}"))
     return b.as_markup()
