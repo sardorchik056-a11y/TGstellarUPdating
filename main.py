@@ -38,7 +38,7 @@ from case import (
     CASE_DEFAULT_COIN_PRIZE, CASE_GUESS_CB,
     NUMBER_MIN, NUMBER_MAX,
 )
-from database import format_amount, aio_get_or_create_user, aio_get_user, aio_save_user
+from database import format_amount, aio_get_or_create_user, aio_get_user, aio_save_user, aio_get_all_users
 
 # Ещё немного готовых хелперов из mainhelp.py — переиспользуем как есть:
 #  _check_onboarded — проверка/продолжение онбординга для message-хендлеров
@@ -1336,6 +1336,64 @@ _prioritize_message_handlers(msg_case_admin_amount, msg_case_guess_number, cmd_g
 # ──────────────────────────────────────────────────────────────────────────
 
 
+# ──────────────────────────────────────────────────────────────────────────
+#  🌸 Фоновое уведомление о созревших растениях в "Мистическом саду"
+#
+#  Раз в GARDEN_NOTIFY_INTERVAL секунд сканирует сады ВСЕХ игроков и шлёт
+#  push-сообщение тем, у кого только что созрело растение (ещё не собранное
+#  и ещё не уведомлённое ранее — флаг plot["notified"], см. green.py).
+#
+#  Полностью асинхронно, БЕЗ синхронных/блокирующих обращений к БД:
+#   - aio_get_all_users() / aio_get_user() / aio_save_user() — все идут через
+#     asyncio.to_thread (см. database.py), event loop не подвисает;
+#   - на каждого пользователя берётся персональный _get_user_lock(uid),
+#     чтобы не столкнуться с параллельным действием игрока в этот же момент
+#     (например, он как раз собирает урожай через хендлер);
+#   - между итерациями скана — await asyncio.sleep(...), никакого busy-loop.
+# ──────────────────────────────────────────────────────────────────────────
+
+GARDEN_NOTIFY_INTERVAL = 30  # секунд между сканами всех садов
+
+
+async def garden_notify_loop(bot):
+    while True:
+        try:
+            users = await aio_get_all_users()
+            for snapshot in users:
+                garden = snapshot.get("garden")
+                if not isinstance(garden, dict) or not garden.get("plots"):
+                    continue
+                uid = snapshot.get("id")
+                if not uid:
+                    continue
+
+                async with await _get_user_lock(uid):
+                    # Перечитываем свежие данные ПОД ЛОКОМ — снапшот из
+                    # aio_get_all_users мог за время скана устареть из-за
+                    # параллельных действий игрока (сбор урожая и т.п.).
+                    fresh = await aio_get_user(uid)
+                    if not fresh:
+                        continue
+                    ready = green.check_ready_plots(fresh)
+                    if ready:
+                        await aio_save_user(uid, fresh)
+
+                for item in ready:
+                    flower = item["flower"]
+                    text = (
+                        f"🌸 В твоём Мистическом саду созрело растение — "
+                        f"<b>{flower_label(flower)}</b>!\n"
+                        f"Загляни собрать урожай 🌾"
+                    )
+                    try:
+                        await bot.send_message(uid, text, parse_mode="HTML")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        await asyncio.sleep(GARDEN_NOTIFY_INTERVAL)
+
+
 async def _entrypoint():
     # Фоновые задачи ивента:
     #  - case_tick_loop        — раз в 1 сек: раскрытие числа по истечении 24 часов
@@ -1347,6 +1405,7 @@ async def _entrypoint():
     # пока цикл не будет запущен (см. case._CASE["running"]).
     asyncio.create_task(case_tick_loop(bot))
     asyncio.create_task(case_card_refresh_loop(bot))
+    asyncio.create_task(garden_notify_loop(bot))
     await run_bot()
 
 
