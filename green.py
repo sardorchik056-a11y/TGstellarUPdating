@@ -55,14 +55,21 @@ def fmt_essence(amount: int) -> str:
     return f"{format_amount(amount)} {ESSENCE_ICON}"
 
 
-def _can_afford_with_reserve(data: dict, cost: int, reserve: int = None) -> bool:
-    """Проверяет, что после траты cost на балансе останется СТРОГО БОЛЬШЕ
-    reserve (по умолчанию — стоимость семени тира 1, SEED_COST_TIER1).
-    Нужно, чтобы улучшение грядки / открытие новой грядки не съедало весь
-    запас пыльцы, оставляя игрока без возможности посадить новое семя."""
+def _essence_shortfall(data: dict, cost: int, reserve: int = None):
+    """Проверяет возможность траты cost с учётом резерва на семя.
+    Возвращает None, если траты достаточно и резерв не нарушается.
+    Возвращает "no_essence", если пыльцы не хватает даже на саму покупку.
+    Возвращает "low_reserve", если пыльцы хватает на покупку, но после неё
+    останется reserve или меньше (по умолчанию — SEED_COST_TIER1), то есть
+    не хватит на семя тира 1."""
     if reserve is None:
         reserve = SEED_COST_TIER1
-    return get_essence(data) - cost > reserve
+    balance = get_essence(data)
+    if balance < cost:
+        return "no_essence"
+    if balance - cost <= reserve:
+        return "low_reserve"
+    return None
 
 
 # ──────────────────────────────────────────────────────────────
@@ -742,8 +749,9 @@ def upgrade_plot(data: dict, plot_idx: int) -> dict:
     if cost is None:
         return {"ok": False, "reason": "max_level"}
 
-    if not _can_afford_with_reserve(data, cost):
-        return {"ok": False, "reason": "low_reserve", "cost": cost, "reserve": SEED_COST_TIER1}
+    shortfall = _essence_shortfall(data, cost)
+    if shortfall is not None:
+        return {"ok": False, "reason": shortfall, "cost": cost, "reserve": SEED_COST_TIER1}
 
     if not spend_essence(data, cost):
         return {"ok": False, "reason": "no_essence", "cost": cost}
@@ -888,8 +896,9 @@ def expand_garden(data: dict) -> dict:
         return {"ok": False, "reason": "max_plots"}
 
     cost = plot_expand_cost(g["plot_count"] + 1)
-    if not _can_afford_with_reserve(data, cost):
-        return {"ok": False, "reason": "low_reserve", "cost": cost, "reserve": SEED_COST_TIER1}
+    shortfall = _essence_shortfall(data, cost)
+    if shortfall is not None:
+        return {"ok": False, "reason": shortfall, "cost": cost, "reserve": SEED_COST_TIER1}
 
     if not spend_essence(data, cost):
         return {"ok": False, "reason": "no_essence", "cost": cost}
