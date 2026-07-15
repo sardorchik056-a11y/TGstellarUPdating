@@ -144,6 +144,18 @@ STARTING_ESSENCE = 1500
 # а в инвентаре со временем может скопиться много разных редких семян.
 SEEDS_PER_PAGE = 6
 
+# Раздел «Коллекция»: сколько видов цветов на странице внутри тира.
+COLLECTION_PER_PAGE = 8
+
+# Разовая награда пыльцой за ПЕРВОЕ открытие каждого вида цветка в
+# коллекции — считается ТОЛЬКО для видов, полученных СЛИЯНИЕМ (тир 2 и
+# выше). Тир 1 сажается напрямую за пыльцу и виден целиком в меню посадки —
+# «открывать» его не нужно, туда награда не даётся.
+DISCOVERY_REWARD = {
+    2: 700, 3: 1500, 4: 3500,
+    5: 8000, 6: 18000, 7: 40000, 8: 100000,
+}
+
 
 def plot_expand_cost(next_count: int) -> int:
     """Стоимость открытия грядки №next_count, в мистической пыльце."""
@@ -438,9 +450,11 @@ def ensure_garden(data: dict) -> dict:
         "surges": 0,
         "tier8_seen": [],   # ключи тир-8 цветков, которые хоть раз были получены
         "grand_bloom": False,
+        "discovered": [],  # ключи ВСЕХ видов цветов, что игрок хоть раз получал — для «Коллекции»
     })
     g["stats"].setdefault("tier8_seen", [])
     g["stats"].setdefault("grand_bloom", False)
+    g["stats"].setdefault("discovered", [])
 
     data["garden"] = g
     return g
@@ -519,10 +533,24 @@ def _check_grand_bloom(data: dict, g: dict) -> bool:
 
 
 def _register_flower_gain(g: dict, flower_key: str, count: int = 1):
+    """Добавляет цветок в инвентарь — используется и при сборе урожая, и
+    при слиянии. Отслеживание «Коллекции» сюда НЕ входит (см.
+    _register_collection_discovery) — тир 1 сажается напрямую за пыльцу,
+    все его виды и так видны в меню посадки, «открывать» их незачем."""
     g["inventory"][flower_key] = g["inventory"].get(flower_key, 0) + count
     flower = FLOWERS_BY_KEY[flower_key]
     if flower["tier"] == TIER_MAX and flower_key not in g["stats"]["tier8_seen"]:
         g["stats"]["tier8_seen"].append(flower_key)
+
+
+def _register_collection_discovery(g: dict, flower_key: str) -> bool:
+    """Отмечает вид как открытый в «Коллекции». Вызывается ТОЛЬКО для
+    результатов слияния (тир 2+) — тир 1 в коллекции не участвует.
+    Возвращает True при первом открытии данного вида."""
+    if flower_key not in g["stats"]["discovered"]:
+        g["stats"]["discovered"].append(flower_key)
+        return True
+    return False
 
 
 def harvest_plot(data: dict, plot_idx: int) -> dict:
@@ -685,6 +713,11 @@ def _execute_merge(data: dict, g: dict) -> dict:
     result = random.choice(FLOWERS_BY_TIER[result_tier])
 
     _register_flower_gain(g, result["key"])
+    is_new = _register_collection_discovery(g, result["key"])
+    discovery_reward = 0
+    if is_new:
+        discovery_reward = DISCOVERY_REWARD[result_tier]
+        add_essence(data, discovery_reward)
     g["stats"]["merges"] += 1
     if surge:
         g["stats"]["surges"] += 1
@@ -693,7 +726,8 @@ def _execute_merge(data: dict, g: dict) -> dict:
     grand_bloom = _check_grand_bloom(data, g)
 
     return {"ok": True, "done": True, "consumed": consumed, "result": result,
-            "surge": surge, "mixed": mixed, "saved_back": saved_back, "grand_bloom": grand_bloom}
+            "surge": surge, "mixed": mixed, "saved_back": saved_back, "grand_bloom": grand_bloom,
+            "new_discovery": is_new, "discovery_reward": discovery_reward}
 
 
 def sell_flower(data: dict, flower_key: str, count: int = 1) -> dict:
@@ -799,6 +833,7 @@ def garden_keyboard(data: dict, page: int = 0):
         InlineKeyboardButton(text="🎒 Инвентарь", callback_data="garden_inventory"),
         InlineKeyboardButton(text="🧬 Слияние", callback_data="garden_merge"),
     )
+    b.row(InlineKeyboardButton(text="📖 Коллекция", callback_data="garden_collection"))
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu"))
     return b.as_markup()
 
@@ -1116,4 +1151,142 @@ def merge_tier_keyboard(data: dict, tier: int):
             callback_data=f"garden_mergeadd:{f['key']}" if avail > 0 else "garden_noop",
         ))
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden_merge"))
+    return b.as_markup()
+
+
+# ──────────────────────────────────────────────────────────────
+#  КОЛЛЕКЦИЯ — витрина всех 220 видов цветов сада. Неоткрытые виды
+#  показываются как "🔒 ???" (ни названия, ни бонуса не видно), а при
+#  первом получении вида (сбор урожая ИЛИ результат слияния — см.
+#  _register_flower_gain/harvest_plot/_execute_merge) начисляется разовая
+#  награда DISCOVERY_REWARD и запись остаётся в коллекции навсегда.
+# ──────────────────────────────────────────────────────────────
+
+# Тир 1 в «Коллекции» не участвует — он покупается напрямую за пыльцу и
+# весь целиком виден в меню посадки, «открывать» там нечего. Коллекция —
+# только про виды, которые могут выпасть случайно при слиянии (тир 2+).
+COLLECTION_TIER_MIN = 2
+_COLLECTION_FLOWERS = [f for f in FLOWERS if f["tier"] >= COLLECTION_TIER_MIN]
+
+
+def _collection_pages(tier: int) -> int:
+    return max(1, (len(FLOWERS_BY_TIER[tier]) + COLLECTION_PER_PAGE - 1) // COLLECTION_PER_PAGE)
+
+
+def collection_menu_text(data: dict) -> str:
+    g = ensure_garden(data)
+    discovered = set(g["stats"]["discovered"])
+    total = len(_COLLECTION_FLOWERS)
+    found = sum(1 for f in _COLLECTION_FLOWERS if f["key"] in discovered)
+    pct = int(found / total * 100) if total else 0
+    lines = [
+        '📖 <b>Коллекция цветков</b>',
+        f'<blockquote><i>Тир 1 покупается напрямую и весь виден в меню посадки — '
+        f'в коллекции его нет. А вот каждый новый вид, который выпадает при '
+        f'СЛИЯНИИ (тир 2 и выше), навсегда остаётся здесь, и за первое открытие '
+        f'вида даётся разовая награда {ESSENCE_ICON} пыльцой. Неоткрытые виды скрыты — '
+        f'их бонус и лор станут видны только после первой поимки.</i></blockquote>',
+        '',
+        f'🔓 <b>Открыто всего:</b> <b>{found}/{total}</b> ({pct}%)',
+    ]
+    return "\n".join(lines)
+
+
+def collection_menu_keyboard(data: dict):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    g = ensure_garden(data)
+    discovered = set(g["stats"]["discovered"])
+    b = InlineKeyboardBuilder()
+    for tier in range(COLLECTION_TIER_MIN, TIER_MAX + 1):
+        tier_flowers = FLOWERS_BY_TIER[tier]
+        found = sum(1 for f in tier_flowers if f["key"] in discovered)
+        total = len(tier_flowers)
+        mark = "✅" if found == total else ("🔓" if found else "🔒")
+        b.row(InlineKeyboardButton(
+            text=f'{mark} {TIER_ICON[tier]} {TIER_NAMES[tier]} — {found}/{total}',
+            callback_data=f"garden_colltier:{tier}:0",
+        ))
+    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden"))
+    return b.as_markup()
+
+
+def collection_tier_text(data: dict, tier: int, page: int = 0) -> str:
+    g = ensure_garden(data)
+    discovered = set(g["stats"]["discovered"])
+    tier_flowers = FLOWERS_BY_TIER[tier]
+    found = sum(1 for f in tier_flowers if f["key"] in discovered)
+    pages = _collection_pages(tier)
+    page = max(0, min(pages - 1, page))
+
+    lines = [
+        f'{TIER_ICON[tier]} <b>{TIER_NAMES[tier]}</b> — открыто {found}/{len(tier_flowers)}',
+        f'📄 Страница {page + 1}/{pages}',
+        '<blockquote>',
+    ]
+    start = page * COLLECTION_PER_PAGE
+    for f in tier_flowers[start:start + COLLECTION_PER_PAGE]:
+        if f["key"] in discovered:
+            lines.append(f'  {flower_label(f)}')
+        else:
+            lines.append('  🔒 ??? <i>(не открыто)</i>')
+    lines.append('</blockquote>')
+    return "\n".join(lines)
+
+
+def collection_tier_keyboard(data: dict, tier: int, page: int = 0):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    g = ensure_garden(data)
+    discovered = set(g["stats"]["discovered"])
+    tier_flowers = FLOWERS_BY_TIER[tier]
+    pages = _collection_pages(tier)
+    page = max(0, min(pages - 1, page))
+    start = page * COLLECTION_PER_PAGE
+
+    b = InlineKeyboardBuilder()
+    for f in tier_flowers[start:start + COLLECTION_PER_PAGE]:
+        if f["key"] in discovered:
+            b.row(InlineKeyboardButton(
+                text=flower_label(f),
+                callback_data=f"garden_collflower:{f['key']}:{page}",
+            ))
+        else:
+            b.row(InlineKeyboardButton(text="🔒 ???", callback_data="garden_noop"))
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="◀️", callback_data=f"garden_colltier:{tier}:{page - 1}"))
+    nav.append(InlineKeyboardButton(text=f"· {page + 1}/{pages} ·", callback_data="garden_noop"))
+    if page < pages - 1:
+        nav.append(InlineKeyboardButton(text="▶️", callback_data=f"garden_colltier:{tier}:{page + 1}"))
+    b.row(*nav)
+
+    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden_collection"))
+    return b.as_markup()
+
+
+def collection_flower_text(data: dict, flower_key: str) -> str:
+    f = FLOWERS_BY_KEY[flower_key]
+    tier = f["tier"]
+    lines = [
+        f'{flower_label(f)}',
+        f'<blockquote><i>{f["lore"]}</i>\n\n'
+        f'<b>Тир:</b> <b>{TIER_ICON[tier]} {TIER_NAMES[tier]}</b>\n'
+        f'{bonus_line(f)}</blockquote>',
+        '',
+        '<i>✅ Этот вид уже открыт в твоей коллекции.</i>',
+    ]
+    return "\n".join(lines)
+
+
+def collection_flower_keyboard(data: dict, flower_key: str, page: int = 0):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    f = FLOWERS_BY_KEY[flower_key]
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"garden_colltier:{f['tier']}:{page}"))
     return b.as_markup()
