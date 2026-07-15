@@ -410,6 +410,11 @@ async def cb_garden_plotup(call: CallbackQuery):
                 "max_level": "🏆 Грядка уже максимального уровня.",
                 "no_essence": f'{ESSENCE_ICON} Не хватает {ESSENCE_NAME.lower()} (нужно {fmt_essence(result.get("cost", 0))}).',
                 "bad_plot": "❌ Некорректная грядка.",
+                "low_reserve": (
+                    f'{ESSENCE_ICON} После улучшения должно остаться больше '
+                    f'{fmt_essence(result.get("reserve", 0))} — на семя. '
+                    f'Накопите ещё {ESSENCE_NAME.lower()}.'
+                ),
             }
             await call.answer(reasons.get(result["reason"], "❌ Не удалось улучшить грядку."), show_alert=True)
             return
@@ -710,6 +715,11 @@ async def cb_garden_expand(call: CallbackQuery):
             reasons = {
                 "max_plots": "🪴 Достигнут максимум грядок.",
                 "no_essence": f'{ESSENCE_ICON} Не хватает {ESSENCE_NAME.lower()} (нужно {fmt_essence(result.get("cost", 0))}).',
+                "low_reserve": (
+                    f'{ESSENCE_ICON} После открытия должно остаться больше '
+                    f'{fmt_essence(result.get("reserve", 0))} — на семя. '
+                    f'Накопите ещё {ESSENCE_NAME.lower()}.'
+                ),
             }
             await call.answer(reasons.get(result["reason"], "❌ Не удалось открыть грядку."), show_alert=True)
             return
