@@ -605,12 +605,26 @@ def merge_cart_state(data: dict) -> dict:
 
 
 def merge_cart_clear(data: dict) -> dict:
+    """Очищает котёл и ВОЗВРАЩАЕТ в инвентарь всё, что было в него
+    зарезервировано (см. merge_cart_add) — иначе цветки, брошенные в
+    котёл и не доведённые до слияния, просто пропадали бы."""
     g = ensure_garden(data)
+    cart = g["merge_cart"]
+    for key, cnt in cart["items"].items():
+        g["inventory"][key] = g["inventory"].get(key, 0) + cnt
     g["merge_cart"] = {"tier": None, "items": {}}
     return {"ok": True}
 
 
 def merge_cart_add(data: dict, flower_key: str) -> dict:
+    """Добавляет цветок в котёл. ВАЖНО: цветок сразу СПИСЫВАЕТСЯ из
+    инвентаря (резервируется), а не просто "помечается" — иначе между
+    добавлением в котёл и самим слиянием тот же цветок можно было бы
+    параллельно продать (garden_sell не знает про котёл): получить деньги
+    за продажу и всё равно довести слияние до конца за счёт других
+    цветков — инвентарь уходил в минус, а игрок получал дубликат ценности.
+    При очистке котла (merge_cart_clear) зарезервированное возвращается
+    обратно в инвентарь."""
     g = ensure_garden(data)
     flower = FLOWERS_BY_KEY.get(flower_key)
     if not flower:
@@ -623,12 +637,12 @@ def merge_cart_add(data: dict, flower_key: str) -> dict:
         return {"ok": False, "reason": "tier_mismatch", "tier": cart["tier"]}
 
     have = g["inventory"].get(flower_key, 0)
-    used = cart["items"].get(flower_key, 0)
-    if have <= used:
+    if have < 1:
         return {"ok": False, "reason": "not_enough"}
 
+    g["inventory"][flower_key] = have - 1
     cart["tier"] = flower["tier"]
-    cart["items"][flower_key] = used + 1
+    cart["items"][flower_key] = cart["items"].get(flower_key, 0) + 1
 
     if sum(cart["items"].values()) >= MERGE_COUNT:
         return _execute_merge(data, g)
@@ -638,6 +652,10 @@ def merge_cart_add(data: dict, flower_key: str) -> dict:
 
 
 def _execute_merge(data: dict, g: dict) -> dict:
+    """Цветки в котле уже списаны из инвентаря в момент merge_cart_add —
+    здесь их заново вычитать НЕЛЬЗЯ (см. комментарий там же), иначе
+    инвентарь снова уходит в минус. Единственное, что нужно сделать —
+    вернуть в инвентарь тех, кого "спас" бонус merge_saver."""
     cart = g["merge_cart"]
     items = cart["items"]
     tier = cart["tier"]
@@ -647,13 +665,11 @@ def _execute_merge(data: dict, g: dict) -> dict:
     luck_bonus = 0.0
     for key, cnt in items.items():
         f = FLOWERS_BY_KEY[key]
-        actual_consumed = cnt
         if f["bonus"]["type"] == "merge_saver":
             saved = sum(1 for _ in range(cnt) if random.random() < f["bonus"]["value"])
             if saved:
-                actual_consumed = cnt - saved
                 saved_back.append((f, saved))
-        g["inventory"][key] = g["inventory"].get(key, 0) - actual_consumed
+                g["inventory"][key] = g["inventory"].get(key, 0) + saved
         consumed.append((f, cnt))
         if f["bonus"]["type"] == "luck":
             luck_bonus += f["bonus"]["value"] * cnt
@@ -1083,11 +1099,13 @@ def merge_tier_keyboard(data: dict, tier: int):
     cart = g["merge_cart"]
     b = InlineKeyboardBuilder()
     for f in FLOWERS_BY_TIER[tier]:
-        cnt = g["inventory"].get(f["key"], 0)
-        if cnt <= 0:
-            continue
         in_cart = cart["items"].get(f["key"], 0) if cart.get("tier") == tier else 0
-        avail = cnt - in_cart
+        # g["inventory"] уже НЕ включает то, что зарезервировано в котле
+        # (merge_cart_add списывает сразу), поэтому avail — это просто
+        # текущий остаток в инвентаре, без повторного вычитания in_cart.
+        avail = g["inventory"].get(f["key"], 0)
+        if avail <= 0 and in_cart <= 0:
+            continue
         label = f'{flower_label(f)} · доступно {avail}' + (f' · в котле {in_cart}' if in_cart else '')
         b.row(InlineKeyboardButton(
             text=label,
