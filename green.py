@@ -617,6 +617,7 @@ def plant_flower(data: dict, plot_idx: int, flower_key: str) -> dict:
         "anchor_time": now,
         "anchor_progress": 0.0,
         "boost_stack": 1.0,
+        "notified": False,
     }
     return {"ok": True, "flower": flower}
 
@@ -653,6 +654,26 @@ def _register_collection_discovery(g: dict, flower_key: str) -> bool:
         g["stats"]["discovered"].append(flower_key)
         return True
     return False
+
+
+def check_ready_plots(data: dict) -> list[dict]:
+    """Проверяет ВСЕ грядки пользователя и возвращает список только что
+    созревших растений, которые ещё не были отправлены игроку уведомлением
+    (помечает их как уведомлённые прямо здесь, в data). Чистая функция —
+    никаких обращений к БД, вызывается из фонового async-цикла в main.py
+    (garden_notify_loop) под локом пользователя, после чего вызывающий код
+    сам сохраняет data через aio_save_user."""
+    g = ensure_garden(data)
+    ready = []
+    for idx, plot in enumerate(g["plots"]):
+        if plot is None or plot.get("notified"):
+            continue
+        level_mult = _plot_level_mult(g, idx)
+        stage, _, flower, _ = plot_state(plot, level_mult)
+        if stage == "ready":
+            plot["notified"] = True
+            ready.append({"plot_idx": idx, "flower": flower})
+    return ready
 
 
 def harvest_plot(data: dict, plot_idx: int) -> dict:
