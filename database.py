@@ -570,7 +570,12 @@ def level_to_rank(level: int, lang: str = "ru") -> str:
     if level < 35:  return t(lang, "rank_master")
     if level < 50:  return t(lang, "rank_expert")
     if level < 75:  return t(lang, "rank_elite")
-    return t(lang, "rank_legend")
+    if level < 100: return t(lang, "rank_legend")
+    if level < 150: return t(lang, "rank_mythic")
+    if level < 220: return t(lang, "rank_ascended")
+    if level < 300: return t(lang, "rank_transcendent")
+    if level < 400: return t(lang, "rank_celestial")
+    return t(lang, "rank_eternal")
 
 
 def status_from_level(level: int) -> str:
