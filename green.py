@@ -173,6 +173,36 @@ def plot_expand_cost(next_count: int) -> int:
     return int(4000 * (1.8 ** (next_count - PLOT_BASE - 1)))
 
 
+# ── Улучшение грядки (0..10 уровней) — постоянный апгрейд конкретного
+# СЛОТА (не цветка!), остаётся навсегда, даже после сбора урожая и
+# пересадки. Каждый уровень увеличивает СКОРОСТЬ роста (множитель
+# применяется к течению времени, а не мгновенно "перематывает" таймер —
+# см. plot_state) — от ×1.15 на 1 уровне до ×5.0 на максимальном 10-м,
+# плавной геометрической прогрессией.
+PLOT_UPGRADE_MAX = 10
+PLOT_UPGRADE_BASE_COST = 800
+PLOT_UPGRADE_COST_FACTOR = 2.0
+
+
+def _build_plot_upgrade_mult() -> dict:
+    lo, hi = 1.15, 5.0
+    mults = {0: 1.0}
+    for lvl in range(1, PLOT_UPGRADE_MAX + 1):
+        t = (lvl - 1) / (PLOT_UPGRADE_MAX - 1)
+        mults[lvl] = round(lo * (hi / lo) ** t, 3)
+    return mults
+
+
+PLOT_UPGRADE_MULT = _build_plot_upgrade_mult()
+
+
+def plot_upgrade_cost(current_level: int) -> int | None:
+    """Стоимость перехода на следующий уровень; None — уже максимум."""
+    if current_level >= PLOT_UPGRADE_MAX:
+        return None
+    return int(PLOT_UPGRADE_BASE_COST * (PLOT_UPGRADE_COST_FACTOR ** current_level))
+
+
 def fertilizer_cost(remaining_seconds: int) -> int:
     """Стоимость ускорения роста в 2 РАЗА (не мгновенного завершения) —
     ровно половина цены полного мгновенного завершения (~0.45 пыльцы за
@@ -452,6 +482,12 @@ def ensure_garden(data: dict) -> dict:
     while len(plots) < g["plot_count"]:
         plots.append(None)
 
+    # Уровни улучшения грядок (0..PLOT_UPGRADE_MAX) — параллельный список
+    # к plots, привязан к СЛОТУ, а не к посаженному цветку.
+    plot_levels = g.setdefault("plot_levels", [])
+    while len(plot_levels) < g["plot_count"]:
+        plot_levels.append(0)
+
     g.setdefault("essence", STARTING_ESSENCE)  # мистическая пыльца — валюта сада (стартовый дар — STARTING_ESSENCE)
     g.setdefault("inventory", {})       # flower_key -> количество собранных/полученных цветков
     g.setdefault("merge_cart", {"tier": None, "items": {}})  # текущий "котёл" слияния
@@ -471,10 +507,19 @@ def ensure_garden(data: dict) -> dict:
     return g
 
 
-def plot_state(plot: dict | None, now: int | None = None):
+def plot_state(plot: dict | None, level_mult: float = 1.0, now: int | None = None):
     """Возвращает (stage, progress, flower|None, seconds_left).
     stage: 'empty' | 'growing' | 'ready'.
-    Учитывает персональный бонус цветка "⏱ Ускорение роста"."""
+
+    level_mult — множитель скорости от уровня улучшения ГРЯДКИ
+    (PLOT_UPGRADE_MULT[level]); умножается на "стек" бустеров ускорения
+    (plot['boost_stack']), применённых к текущему посаженному цветку.
+    Важно: скорость роста ускоряется ПОСТЕПЕННО, а не мгновенным скачком
+    таймера — прогресс "замораживается" в момент изменения множителя
+    (см. instant_grow/upgrade_plot) и дальше копится уже по новой ставке,
+    поэтому шкала прогресса не дёргается рывком, а просто быстрее ползёт.
+    Учитывает и персональный бонус цветка "⏱ Ускорение роста" (действует
+    на общую длительность, а не на скорость течения времени)."""
     if plot is None:
         return "empty", 0.0, None, 0
 
@@ -483,12 +528,34 @@ def plot_state(plot: dict | None, now: int | None = None):
     total = GROW_SECONDS[flower["tier"]]
     if flower["bonus"]["type"] == "growth":
         total = max(30, int(total * (1 - flower["bonus"]["value"])))
-    elapsed = now - plot["planted_at"]
+
+    mult = max(0.01, level_mult) * plot.get("boost_stack", 1.0)
+    anchor_time = plot.get("anchor_time", plot["planted_at"])
+    anchor_progress = plot.get("anchor_progress", 0.0)
+    elapsed = anchor_progress + max(0, now - anchor_time) * mult
     left = max(0, total - elapsed)
 
     if elapsed >= total:
         return "ready", 1.0, flower, 0
-    return "growing", min(1.0, elapsed / total), flower, left
+    return "growing", min(1.0, elapsed / total), flower, int(round(left))
+
+
+def _plot_level_mult(g: dict, plot_idx: int) -> float:
+    level = g["plot_levels"][plot_idx] if 0 <= plot_idx < len(g["plot_levels"]) else 0
+    return PLOT_UPGRADE_MULT.get(level, 1.0)
+
+
+def _plot_freeze_progress(plot: dict, level_mult: float, now: int | None = None) -> None:
+    """Замораживает накопленный эффективный прогресс роста на СЕЙЧАС —
+    вызывается перед любым изменением множителя скорости (буст/апгрейд
+    грядки), чтобы дальнейшее ускорение не "перематывало" уже прошедшее
+    время, а лишь ускоряло течение времени вперёд."""
+    now = now or _now()
+    mult = max(0.01, level_mult) * plot.get("boost_stack", 1.0)
+    anchor_time = plot.get("anchor_time", plot["planted_at"])
+    anchor_progress = plot.get("anchor_progress", 0.0)
+    plot["anchor_progress"] = anchor_progress + max(0, now - anchor_time) * mult
+    plot["anchor_time"] = now
 
 
 def _progress_bar(progress: float, length: int = 12) -> str:
@@ -526,7 +593,14 @@ def plant_flower(data: dict, plot_idx: int, flower_key: str) -> dict:
             return {"ok": False, "reason": "no_seed"}
         g["inventory"][flower_key] = have - 1
 
-    g["plots"][plot_idx] = {"key": flower_key, "planted_at": _now()}
+    now = _now()
+    g["plots"][plot_idx] = {
+        "key": flower_key,
+        "planted_at": now,
+        "anchor_time": now,
+        "anchor_progress": 0.0,
+        "boost_stack": 1.0,
+    }
     return {"ok": True, "flower": flower}
 
 
@@ -573,7 +647,7 @@ def harvest_plot(data: dict, plot_idx: int) -> dict:
     if plot is None:
         return {"ok": False, "reason": "empty"}
 
-    stage, _, flower, _ = plot_state(plot)
+    stage, _, flower, _ = plot_state(plot, _plot_level_mult(g, plot_idx))
     if stage != "ready":
         return {"ok": False, "reason": "not_ready"}
 
@@ -604,11 +678,11 @@ def harvest_plot(data: dict, plot_idx: int) -> dict:
 
 
 def instant_grow(data: dict, plot_idx: int) -> dict:
-    """Ускоряет рост цветка на грядке В 2 РАЗА за пыльцу — то есть сокращает
-    оставшееся время ВДВОЕ, а не завершает выращивание мгновенно целиком.
-    Стоит 50% от цены полного мгновенного завершения. Можно применять
-    несколько раз подряд, каждый раз оплачивая новый (меньший) остаток —
-    рост ускоряется постепенно, а не сразу."""
+    """Ускоряет рост цветка на грядке — НЕ мгновенным скачком таймера, а
+    плавным удвоением скорости роста на будущее (прогресс замораживается
+    на текущем значении, дальше копится в 2 раза быстрее). Использовать
+    можно ТОЛЬКО ОДИН раз за один посаженный цветок — повторно, пока не
+    соберёшь урожай и не посадишь заново, буст не активировать."""
     g = ensure_garden(data)
     if not (0 <= plot_idx < g["plot_count"]):
         return {"ok": False, "reason": "bad_plot"}
@@ -617,7 +691,11 @@ def instant_grow(data: dict, plot_idx: int) -> dict:
     if plot is None:
         return {"ok": False, "reason": "empty"}
 
-    stage, _, flower, left = plot_state(plot)
+    if plot.get("boost_stack", 1.0) != 1.0:
+        return {"ok": False, "reason": "already_boosted"}
+
+    level_mult = _plot_level_mult(g, plot_idx)
+    stage, _, flower, left = plot_state(plot, level_mult)
     if stage == "ready":
         return {"ok": False, "reason": "already_ready"}
 
@@ -628,13 +706,44 @@ def instant_grow(data: dict, plot_idx: int) -> dict:
     if not spend_essence(data, cost):
         return {"ok": False, "reason": "no_essence", "cost": cost}
 
-    # Сокращаем оставшееся время вдвое, сдвигая момент посадки в прошлое —
-    # минимум на 1 секунду, чтобы клик всегда давал заметный эффект.
-    shift = max(1, left // 2)
-    plot["planted_at"] -= shift
+    # Замораживаем прогресс на текущий момент и удваиваем ставку роста —
+    # прогресс дальше ползёт вдвое быстрее, без рывка назад/вперёд по шкале.
+    now = _now()
+    _plot_freeze_progress(plot, level_mult, now)
+    plot["boost_stack"] = 2.0
 
-    _, _, _, new_left = plot_state(plot)
+    _, _, _, new_left = plot_state(plot, level_mult, now)
     return {"ok": True, "cost": cost, "flower": flower, "left": new_left}
+
+
+
+def upgrade_plot(data: dict, plot_idx: int) -> dict:
+    """Улучшает саму ГРЯДКУ (слот) на 1 уровень — постоянно, до 10 уровней.
+    В отличие от instant_grow (разовый бустер на текущий цветок), уровень
+    остаётся навсегда, даже после сбора урожая и новой посадки. Если на
+    грядке сейчас что-то растёт — ускорение применяется сразу же, без
+    рывка по прогрессу (прогресс замораживается перед сменой множителя)."""
+    g = ensure_garden(data)
+    if not (0 <= plot_idx < g["plot_count"]):
+        return {"ok": False, "reason": "bad_plot"}
+
+    level = g["plot_levels"][plot_idx]
+    cost = plot_upgrade_cost(level)
+    if cost is None:
+        return {"ok": False, "reason": "max_level"}
+
+    if not spend_essence(data, cost):
+        return {"ok": False, "reason": "no_essence", "cost": cost}
+
+    plot = g["plots"][plot_idx]
+    if plot is not None:
+        # Замораживаем прогресс ПО СТАРОМУ множителю, прежде чем менять уровень.
+        _plot_freeze_progress(plot, PLOT_UPGRADE_MULT.get(level, 1.0))
+
+    g["plot_levels"][plot_idx] = level + 1
+    new_mult = PLOT_UPGRADE_MULT[level + 1]
+    return {"ok": True, "level": level + 1, "cost": cost, "mult": new_mult}
+
 
 
 # ── Слияние (эволюция) через "котёл": можно добавлять и одинаковые,
@@ -771,6 +880,7 @@ def expand_garden(data: dict) -> dict:
 
     g["plot_count"] += 1
     g["plots"].append(None)
+    g["plot_levels"].append(0)
     return {"ok": True, "plot_count": g["plot_count"], "cost": cost}
 
 
@@ -796,8 +906,8 @@ def garden_text(data: dict, page: int = 0) -> str:
     return "\n".join(lines)
 
 
-def _plot_button_label(idx: int, plot: dict | None) -> str:
-    stage, progress, flower, left = plot_state(plot)
+def _plot_button_label(idx: int, plot: dict | None, level_mult: float = 1.0) -> str:
+    stage, progress, flower, left = plot_state(plot, level_mult)
     if stage == "empty":
         return "➕ Пусто"
     if stage == "ready":
@@ -819,9 +929,10 @@ def garden_keyboard(data: dict, page: int = 0):
     for idx in range(start, min(end, PLOT_MAX)):
         if idx < g["plot_count"]:
             plot = g["plots"][idx]
-            stage, _, _, _ = plot_state(plot)
+            level_mult = _plot_level_mult(g, idx)
+            stage, _, _, _ = plot_state(plot, level_mult)
             btn_kwargs = {
-                "text": _plot_button_label(idx, plot),
+                "text": _plot_button_label(idx, plot, level_mult),
                 "callback_data": f"garden_plot:{idx}",
             }
             if stage == "ready":
@@ -863,12 +974,15 @@ def garden_keyboard(data: dict, page: int = 0):
 def plot_detail_text(data: dict, plot_idx: int) -> str:
     g = ensure_garden(data)
     plot = g["plots"][plot_idx]
-    stage, progress, flower, left = plot_state(plot)
+    level = g["plot_levels"][plot_idx]
+    level_mult = PLOT_UPGRADE_MULT.get(level, 1.0)
+    stage, progress, flower, left = plot_state(plot, level_mult)
+    level_line = f'🛠 Уровень грядки: <b>{level}/{PLOT_UPGRADE_MAX}</b> (скорость ×{level_mult:g})'
 
     if stage == "empty":
         return (
             f'🪴 <b>Грядка №{plot_idx + 1}</b>\n'
-            f'<blockquote><i>Грядка свободна. Посади семя.</i></blockquote>'
+            f'<blockquote><i>Грядка свободна. Посади семя.</i>\n\n{level_line}</blockquote>'
         )
     if stage == "ready":
         return (
@@ -876,7 +990,8 @@ def plot_detail_text(data: dict, plot_idx: int) -> str:
             f'<blockquote>{flower_label(flower)} · <b>{TIER_NAMES[flower["tier"]]}</b>\n'
             f'<i>{flower["lore"]}</i>\n'
             f'{bonus_line(flower)}\n\n'
-            f'✅ <b>Готов к сбору!</b></blockquote>'
+            f'✅ <b>Готов к сбору!</b>\n'
+            f'{level_line}</blockquote>'
         )
     return (
         f'🪴 <b>Грядка №{plot_idx + 1}</b>\n'
@@ -884,7 +999,8 @@ def plot_detail_text(data: dict, plot_idx: int) -> str:
         f'<i>{flower["lore"]}</i>\n'
         f'{bonus_line(flower)}\n\n'
         f'{_progress_bar(progress)} <b>{int(progress * 100)}%</b>\n'
-        f'⏳ Осталось: <b>{_fmt_time(left)}</b></blockquote>'
+        f'⏳ Осталось: <b>{_fmt_time(left)}</b>\n'
+        f'{level_line}</blockquote>'
     )
 
 
@@ -894,7 +1010,9 @@ def plot_detail_keyboard(data: dict, plot_idx: int):
 
     g = ensure_garden(data)
     plot = g["plots"][plot_idx]
-    stage, _, flower, left = plot_state(plot)
+    level = g["plot_levels"][plot_idx]
+    level_mult = PLOT_UPGRADE_MULT.get(level, 1.0)
+    stage, _, flower, left = plot_state(plot, level_mult)
 
     b = InlineKeyboardBuilder()
     if stage == "empty":
@@ -902,13 +1020,34 @@ def plot_detail_keyboard(data: dict, plot_idx: int):
     elif stage == "ready":
         b.row(InlineKeyboardButton(text="🌾 Собрать урожай", callback_data=f"garden_harvest:{plot_idx}"))
     else:
-        cost = fertilizer_cost(left)
-        if flower["bonus"]["type"] == "discount":
-            cost = max(30, int(cost * (1 - flower["bonus"]["value"])))
+        if plot.get("boost_stack", 1.0) != 1.0:
+            b.row(InlineKeyboardButton(
+                text="⚡ Ускорение уже использовано",
+                callback_data="garden_noop",
+            ))
+        else:
+            cost = fertilizer_cost(left)
+            if flower["bonus"]["type"] == "discount":
+                cost = max(30, int(cost * (1 - flower["bonus"]["value"])))
+            b.row(InlineKeyboardButton(
+                text=f"⚡ Ускорить в 2 раза за {format_amount(cost)} {ESSENCE_ICON}",
+                callback_data=f"garden_grow:{plot_idx}",
+            ))
+
+    up_cost = plot_upgrade_cost(level)
+    if up_cost is None:
         b.row(InlineKeyboardButton(
-            text=f"⚡ Ускорить в 2 раза за {format_amount(cost)} {ESSENCE_ICON}",
-            callback_data=f"garden_grow:{plot_idx}",
+            text=f"🏆 Грядка макс. уровня (×{level_mult:g})",
+            style="success",
+            callback_data="garden_noop",
         ))
+    else:
+        next_mult = PLOT_UPGRADE_MULT[level + 1]
+        b.row(InlineKeyboardButton(
+            text=f"⬆️ Улучшить грядку (ур.{level}→{level + 1}, ×{next_mult:g}) — {format_amount(up_cost)} {ESSENCE_ICON}",
+            callback_data=f"garden_plotup:{plot_idx}",
+        ))
+
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="garden"))
     return b.as_markup()
 
