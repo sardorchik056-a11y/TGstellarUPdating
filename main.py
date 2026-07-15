@@ -61,7 +61,7 @@ from green import (
     merge_menu_text, merge_menu_keyboard, merge_tier_text, merge_tier_keyboard,
     plant_flower, harvest_plot, instant_grow, sell_flower,
     merge_cart_add, merge_cart_clear,
-    expand_garden, ensure_garden, flower_label, FLOWERS_BY_KEY,
+    expand_garden, ensure_garden, flower_label, FLOWERS_BY_KEY, FLOWERS_BY_TIER,
     GRAND_BLOOM_BONUS_ESSENCE, GRAND_BLOOM_BONUS_XP,
     fmt_essence, ESSENCE_ICON, ESSENCE_NAME, fmt_time_left,
     PLOT_PAGES,
@@ -122,6 +122,19 @@ def _garden_main_reply_keyboard(lang: str = "ru"):
 mainhelp.main_reply_keyboard = _garden_main_reply_keyboard
 
 
+def _safe_int(s: str, default: int = -1) -> int:
+    """callback_data — это обычная строка, и клиент (в том числе
+    модифицированный/не-официальный) технически может прислать в ней что
+    угодно, не обязательно то, что реально было на кнопке. Голый int()
+    на таком вводе роняет апдейт ValueError'ом. default=-1 специально
+    подобран так, что для всех индексов грядок/тиров он гарантированно
+    не проходит проверку диапазона (0 <= x < N) ниже по коду."""
+    try:
+        return int(s)
+    except (TypeError, ValueError):
+        return default
+
+
 async def _garden_open(uid: int, u: dict, page: int = 0):
     """Общая точка входа: гарантирует структуру сада и возвращает (text, keyboard)."""
     ensure_garden(u)
@@ -162,7 +175,11 @@ async def cb_garden_noop(call: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("garden_page:"))
 async def cb_garden_page(call: CallbackQuery):
-    page = int(call.data.split(":")[1])
+    parts = call.data.split(":")
+    if len(parts) < 2:
+        await call.answer()
+        return
+    page = _safe_int(parts[1])
     uid = call.from_user.id
     u = await aio_get_user(uid)
     if not u:
@@ -176,13 +193,24 @@ async def cb_garden_page(call: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("garden_plot:"))
 async def cb_garden_plot(call: CallbackQuery):
-    plot_idx = int(call.data.split(":")[1])
+    parts = call.data.split(":")
+    if len(parts) < 2:
+        await call.answer()
+        return
+    plot_idx = _safe_int(parts[1])
     uid = call.from_user.id
     u = await aio_get_user(uid)
     if not u:
         await call.answer()
         return
     ensure_garden(u)
+    # plot_detail_text/plot_detail_keyboard индексируют список грядок
+    # напрямую без внутренней проверки границ (в отличие от
+    # plant_flower/harvest_plot/instant_grow) — проверяем диапазон здесь,
+    # иначе поддельный callback_data вида "garden_plot:99999" роняет апдейт.
+    if not (0 <= plot_idx < u["garden"]["plot_count"]):
+        await call.answer()
+        return
     await call.message.edit_text(
         plot_detail_text(u, plot_idx), parse_mode="HTML",
         reply_markup=plot_detail_keyboard(u, plot_idx),
@@ -193,14 +221,20 @@ async def cb_garden_plot(call: CallbackQuery):
 @dp.callback_query(F.data.startswith("garden_plantmenu:"))
 async def cb_garden_plantmenu(call: CallbackQuery):
     parts = call.data.split(":")
-    plot_idx = int(parts[1])
-    page = int(parts[2]) if len(parts) > 2 else 0
+    if len(parts) < 2:
+        await call.answer()
+        return
+    plot_idx = _safe_int(parts[1])
+    page = _safe_int(parts[2], 0) if len(parts) > 2 else 0
     uid = call.from_user.id
     u = await aio_get_user(uid)
     if not u:
         await call.answer()
         return
     ensure_garden(u)
+    if not (0 <= plot_idx < u["garden"]["plot_count"]):
+        await call.answer()
+        return
     await call.message.edit_text(
         plant_menu_text(plot_idx, page), parse_mode="HTML",
         reply_markup=plant_menu_keyboard(u, plot_idx, page),
@@ -211,14 +245,20 @@ async def cb_garden_plantmenu(call: CallbackQuery):
 @dp.callback_query(F.data.startswith("garden_plantinv:"))
 async def cb_garden_plantinv(call: CallbackQuery):
     parts = call.data.split(":")
-    plot_idx = int(parts[1])
-    page = int(parts[2]) if len(parts) > 2 else 0
+    if len(parts) < 2:
+        await call.answer()
+        return
+    plot_idx = _safe_int(parts[1])
+    page = _safe_int(parts[2], 0) if len(parts) > 2 else 0
     uid = call.from_user.id
     u = await aio_get_user(uid)
     if not u:
         await call.answer()
         return
     ensure_garden(u)
+    if not (0 <= plot_idx < u["garden"]["plot_count"]):
+        await call.answer()
+        return
     await call.message.edit_text(
         plant_inventory_text(u, plot_idx, page), parse_mode="HTML",
         reply_markup=plant_inventory_keyboard(u, plot_idx, page),
@@ -228,8 +268,12 @@ async def cb_garden_plantinv(call: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("garden_plant:"))
 async def cb_garden_plant(call: CallbackQuery):
-    _, plot_idx_s, flower_key = call.data.split(":", 2)
-    plot_idx = int(plot_idx_s)
+    parts = call.data.split(":", 2)
+    if len(parts) < 3:
+        await call.answer()
+        return
+    plot_idx = _safe_int(parts[1])
+    flower_key = parts[2]
     uid = call.from_user.id
 
     async with await _get_user_lock(uid):
@@ -259,7 +303,11 @@ async def cb_garden_plant(call: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("garden_harvest:"))
 async def cb_garden_harvest(call: CallbackQuery):
-    plot_idx = int(call.data.split(":")[1])
+    parts = call.data.split(":")
+    if len(parts) < 2:
+        await call.answer()
+        return
+    plot_idx = _safe_int(parts[1])
     uid = call.from_user.id
 
     async with await _get_user_lock(uid):
@@ -304,7 +352,11 @@ async def cb_garden_harvest(call: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("garden_grow:"))
 async def cb_garden_grow(call: CallbackQuery):
-    plot_idx = int(call.data.split(":")[1])
+    parts = call.data.split(":")
+    if len(parts) < 2:
+        await call.answer()
+        return
+    plot_idx = _safe_int(parts[1])
     uid = call.from_user.id
 
     async with await _get_user_lock(uid):
@@ -380,7 +432,14 @@ async def cb_garden_merge_menu(call: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("garden_mergetier:"))
 async def cb_garden_mergetier(call: CallbackQuery):
-    tier = int(call.data.split(":")[1])
+    parts = call.data.split(":")
+    if len(parts) < 2:
+        await call.answer()
+        return
+    tier = _safe_int(parts[1])
+    if tier not in FLOWERS_BY_TIER:
+        await call.answer()
+        return
     uid = call.from_user.id
     u = await aio_get_user(uid)
     if not u:
@@ -475,7 +534,14 @@ async def cb_garden_mergeadd(call: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("garden_sell:"))
 async def cb_garden_sell(call: CallbackQuery):
-    _, flower_key, count_s = call.data.split(":", 2)
+    parts = call.data.split(":", 2)
+    if len(parts) < 3:
+        await call.answer()
+        return
+    _, flower_key, count_s = parts
+    if flower_key not in FLOWERS_BY_KEY:
+        await call.answer()
+        return
     uid = call.from_user.id
 
     async with await _get_user_lock(uid):
