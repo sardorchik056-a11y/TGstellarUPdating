@@ -62,6 +62,7 @@ from green import (
     plant_flower, harvest_plot, instant_grow, sell_flower,
     merge_cart_add, merge_cart_clear,
     expand_garden, ensure_garden, flower_label, FLOWERS_BY_KEY, FLOWERS_BY_TIER,
+    upgrade_plot,
     GRAND_BLOOM_BONUS_ESSENCE, GRAND_BLOOM_BONUS_XP,
     fmt_essence, ESSENCE_ICON, ESSENCE_NAME, fmt_time_left,
     PLOT_PAGES,
@@ -373,6 +374,7 @@ async def cb_garden_grow(call: CallbackQuery):
             reasons = {
                 "empty": "🪴 Грядка пуста.",
                 "already_ready": "✅ Цветок уже готов к сбору!",
+                "already_boosted": "⚡ Ускорение уже использовано для этого цветка — доступно только 1 раз за посадку.",
                 "no_essence": f'{ESSENCE_ICON} Не хватает {ESSENCE_NAME.lower()} (нужно {fmt_essence(result.get("cost", 0))}).',
                 "bad_plot": "❌ Некорректная грядка.",
             }
@@ -386,6 +388,42 @@ async def cb_garden_grow(call: CallbackQuery):
     )
     left_note = "Готов к сбору! ✅" if result["left"] <= 0 else f'осталось {fmt_time_left(result["left"])}'
     await call.answer(f'⚡ Рост ускорен в 2 раза за {fmt_essence(result["cost"])} — {left_note}')
+
+
+@dp.callback_query(F.data.startswith("garden_plotup:"))
+async def cb_garden_plotup(call: CallbackQuery):
+    parts = call.data.split(":")
+    if len(parts) < 2:
+        await call.answer()
+        return
+    plot_idx = _safe_int(parts[1])
+    uid = call.from_user.id
+
+    async with await _get_user_lock(uid):
+        u = await aio_get_user(uid)
+        if not u:
+            await call.answer()
+            return
+        result = upgrade_plot(u, plot_idx)
+        if not result["ok"]:
+            reasons = {
+                "max_level": "🏆 Грядка уже максимального уровня.",
+                "no_essence": f'{ESSENCE_ICON} Не хватает {ESSENCE_NAME.lower()} (нужно {fmt_essence(result.get("cost", 0))}).',
+                "bad_plot": "❌ Некорректная грядка.",
+            }
+            await call.answer(reasons.get(result["reason"], "❌ Не удалось улучшить грядку."), show_alert=True)
+            return
+        await aio_save_user(uid, u)
+
+    await call.message.edit_text(
+        plot_detail_text(u, plot_idx), parse_mode="HTML",
+        reply_markup=plot_detail_keyboard(u, plot_idx),
+    )
+    await call.answer(
+        f'⬆️ Грядка улучшена до уровня {result["level"]} (скорость ×{result["mult"]:g}) '
+        f'за {fmt_essence(result["cost"])}',
+        show_alert=True,
+    )
 
 
 @dp.callback_query(F.data == "garden_inventory")
@@ -704,7 +742,7 @@ def _prioritize_callback_handlers(*callbacks) -> None:
 _prioritize_callback_handlers(
     cb_garden_main, cb_garden_noop, cb_garden_page,
     cb_garden_plot, cb_garden_plantmenu, cb_garden_plantinv,
-    cb_garden_plant, cb_garden_harvest, cb_garden_grow, cb_garden_inventory,
+    cb_garden_plant, cb_garden_harvest, cb_garden_grow, cb_garden_plotup, cb_garden_inventory,
     cb_garden_flower, cb_garden_merge_menu, cb_garden_mergetier,
     cb_garden_mergeclear, cb_garden_mergeadd, cb_garden_sell, cb_garden_expand,
     cb_garden_collection, cb_garden_colltier, cb_garden_collflower,
