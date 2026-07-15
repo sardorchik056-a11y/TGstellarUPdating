@@ -65,6 +65,10 @@ from green import (
     GRAND_BLOOM_BONUS_ESSENCE, GRAND_BLOOM_BONUS_XP,
     fmt_essence, ESSENCE_ICON, ESSENCE_NAME, fmt_time_left,
     PLOT_PAGES,
+    collection_menu_text, collection_menu_keyboard,
+    collection_tier_text, collection_tier_keyboard,
+    collection_flower_text, collection_flower_keyboard,
+    COLLECTION_TIER_MIN,
 )
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -520,6 +524,17 @@ async def cb_garden_mergeadd(call: CallbackQuery):
         show_alert=True,
     )
 
+    if result.get("new_discovery"):
+        try:
+            await call.message.answer(
+                f'📖 <b>Новый вид в коллекции!</b>\n'
+                f'<blockquote>{flower_label(result["result"])} впервые добавлен в твою коллекцию.\n'
+                f'Награда за открытие: <b>+{fmt_essence(result["discovery_reward"])}</b></blockquote>',
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
     if result.get("grand_bloom"):
         try:
             await call.message.answer(
@@ -572,6 +587,77 @@ async def cb_garden_sell(call: CallbackQuery):
     await call.answer(f'💰 Продано {result["count"]} шт. за {fmt_essence(result["essence"])}')
 
 
+@dp.callback_query(F.data == "garden_collection")
+async def cb_garden_collection(call: CallbackQuery):
+    uid = call.from_user.id
+    u = await aio_get_user(uid)
+    if not u:
+        await call.answer()
+        return
+    ensure_garden(u)
+    await call.message.edit_text(
+        collection_menu_text(u), parse_mode="HTML",
+        reply_markup=collection_menu_keyboard(u),
+    )
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("garden_colltier:"))
+async def cb_garden_colltier(call: CallbackQuery):
+    parts = call.data.split(":")
+    if len(parts) < 2:
+        await call.answer()
+        return
+    tier = _safe_int(parts[1])
+    if tier not in FLOWERS_BY_TIER or tier < COLLECTION_TIER_MIN:
+        await call.answer()
+        return
+    page = _safe_int(parts[2], 0) if len(parts) > 2 else 0
+    uid = call.from_user.id
+    u = await aio_get_user(uid)
+    if not u:
+        await call.answer()
+        return
+    ensure_garden(u)
+    await call.message.edit_text(
+        collection_tier_text(u, tier, page), parse_mode="HTML",
+        reply_markup=collection_tier_keyboard(u, tier, page),
+    )
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("garden_collflower:"))
+async def cb_garden_collflower(call: CallbackQuery):
+    parts = call.data.split(":")
+    if len(parts) < 2:
+        await call.answer()
+        return
+    flower_key = parts[1]
+    if flower_key not in FLOWERS_BY_KEY:
+        await call.answer()
+        return
+    page = _safe_int(parts[2], 0) if len(parts) > 2 else 0
+    uid = call.from_user.id
+    u = await aio_get_user(uid)
+    if not u:
+        await call.answer()
+        return
+    ensure_garden(u)
+    # Открывать карточку цветка можно ТОЛЬКО если он уже есть в коллекции —
+    # иначе через подделанный callback_data ("garden_collflower:секретный_ключ")
+    # можно было бы подсмотреть лор/бонус закрытого вида в обход самой
+    # механики коллекции (это не то же самое, что подделка индекса грядки:
+    # тут прямая утечка игрового контента, который должен быть скрыт).
+    if flower_key not in u["garden"]["stats"]["discovered"]:
+        await call.answer("🔒 Этот вид ещё не открыт.", show_alert=True)
+        return
+    await call.message.edit_text(
+        collection_flower_text(u, flower_key), parse_mode="HTML",
+        reply_markup=collection_flower_keyboard(u, flower_key, page),
+    )
+    await call.answer()
+
+
 @dp.callback_query(F.data == "garden_expand")
 async def cb_garden_expand(call: CallbackQuery):
     uid = call.from_user.id
@@ -621,6 +707,7 @@ _prioritize_callback_handlers(
     cb_garden_plant, cb_garden_harvest, cb_garden_grow, cb_garden_inventory,
     cb_garden_flower, cb_garden_merge_menu, cb_garden_mergetier,
     cb_garden_mergeclear, cb_garden_mergeadd, cb_garden_sell, cb_garden_expand,
+    cb_garden_collection, cb_garden_colltier, cb_garden_collflower,
 )
 
 
