@@ -173,6 +173,11 @@ _STRINGS.update({
     "rank_expert":  {"ru": "Эксперт", "en": "Expert"},
     "rank_elite":   {"ru": "Элита",   "en": "Elite"},
     "rank_legend":  {"ru": "Легенда", "en": "Legend"},
+    "rank_mythic":        {"ru": "Мифический",   "en": "Mythic"},
+    "rank_ascended":      {"ru": "Вознёсшийся",  "en": "Ascended"},
+    "rank_transcendent":  {"ru": "Трансцендент", "en": "Transcendent"},
+    "rank_celestial":     {"ru": "Небожитель",   "en": "Celestial"},
+    "rank_eternal":       {"ru": "Вечный",       "en": "Eternal"},
 
     "boost_pickaxe":   {"ru": "Кирка",      "en": "Pickaxe"},
     "boost_xp":        {"ru": "XP",         "en": "XP"},
