@@ -1639,12 +1639,20 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
     status_dmg_mult = _status_dmg_mult(data)
     status_crit_add = _status_crit_bonus(data) / 100.0
 
+    # Множитель реферального ивента (см. ivent.py) — глобальный бафф
+    # урона по боссу, если ивент активен и набран порог.
+    try:
+        from ivent import get_current_multiplier as _event_dmg_mult
+        event_mult = _event_dmg_mult()
+    except Exception:
+        event_mult = 1.0
+
     dmg = random.randint(sword["dmg_min"], sword["dmg_max"])
     crit = False
     if random.random() < sword["crit_chance"] + status_crit_add:
         dmg  = int(sword["dmg_max"] * sword["crit_mult"])
         crit = True
-    dmg = max(0, int(dmg * enh_mult * art_dmg_mult * status_dmg_mult))
+    dmg = max(0, int(dmg * enh_mult * art_dmg_mult * status_dmg_mult * event_mult))
 
     is_infinite = bool(data.get("infinite_dmg"))
     uid_str = str(data.get("id", 0))
