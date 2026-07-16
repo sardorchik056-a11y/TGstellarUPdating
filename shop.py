@@ -431,19 +431,23 @@ def _multiplier_label(mult: float) -> str:
 
 def _booster_name(b: dict, lang: str = "ru") -> str:
     dur = _dur_label(b['dur_key'], lang)
+    cnt = b.get("count", 1)
+    suffix = f" ×{cnt}" if cnt > 1 else ""
     if lang == "en":
-        return f"Booster {_multiplier_label(b['multiplier'])} for {dur}"
-    return f"Ускоритель {_multiplier_label(b['multiplier'])} на {dur}"
+        return f"Booster {_multiplier_label(b['multiplier'])} for {dur}{suffix}"
+    return f"Ускоритель {_multiplier_label(b['multiplier'])} на {dur}{suffix}"
 
 
 def _xp_item_name(item: dict, lang: str = "ru") -> str:
+    cnt = item.get("count", 1)
+    suffix = f" ×{cnt}" if cnt > 1 else ""
     if item["type"] == "xp_instant":
-        return f"{_pe('xp_instant', '✨')} {_fmt_num(item['xp'])} XP"
+        return f"{_pe('xp_instant', '✨')} {_fmt_num(item['xp'])} XP{suffix}"
     mult = _multiplier_label(item["multiplier"])
     dur  = _dur_label(item["dur_key"], lang)
     if lang == "en":
-        return f"{_pe('xp_boost', '🔮')} XP booster {mult} for {dur}"
-    return f"{_pe('xp_boost', '🔮')} XP-ускоритель {mult} на {dur}"
+        return f"{_pe('xp_boost', '🔮')} XP booster {mult} for {dur}{suffix}"
+    return f"{_pe('xp_boost', '🔮')} XP-ускоритель {mult} на {dur}{suffix}"
 
 
 def _enh_item_name(item: dict, lang: str = "ru") -> str:
@@ -458,12 +462,16 @@ def _enh_item_name(item: dict, lang: str = "ru") -> str:
         }
         pname = _poison_names_en.get(item["name"], item["name"]) if lang == "en" else item["name"]
         dmg_label = "dmg" if lang == "en" else "урона"
-        return f'{_pe("poison", "☠️")} {pname} — {dmg} {dmg_label}'
+        cnt = item.get("count", 1)
+        suffix = f" ×{cnt}" if cnt > 1 else ""
+        return f'{_pe("poison", "☠️")} {pname} — {dmg} {dmg_label}{suffix}'
     mult = _multiplier_label(item["multiplier"])
     dur  = _dur_label(item["dur_key"], lang)
+    cnt = item.get("count", 1)
+    suffix = f" ×{cnt}" if cnt > 1 else ""
     if lang == "en":
-        return f'{_pe("enh_boost", "⚡")} Damage booster {mult} for {dur}'
-    return f'{_pe("enh_boost", "⚡")} Усилитель {mult} на {dur}'
+        return f'{_pe("enh_boost", "⚡")} Damage booster {mult} for {dur}{suffix}'
+    return f'{_pe("enh_boost", "⚡")} Усилитель {mult} на {dur}{suffix}'
 
 
 def _enh_item_name_plain(item: dict, lang: str = "ru") -> str:
@@ -479,23 +487,29 @@ def _enh_item_name_plain(item: dict, lang: str = "ru") -> str:
         }
         pname = _poison_names_en.get(item["name"], item["name"]) if lang == "en" else item["name"]
         dmg_label = "dmg" if lang == "en" else "урона"
-        return f'{pname} — {dmg} {dmg_label}'
+        cnt = item.get("count", 1)
+        suffix = f" ×{cnt}" if cnt > 1 else ""
+        return f'{pname} — {dmg} {dmg_label}{suffix}'
     mult = _multiplier_label(item["multiplier"])
     dur  = _dur_label(item["dur_key"], lang)
+    cnt = item.get("count", 1)
+    suffix = f" ×{cnt}" if cnt > 1 else ""
     if lang == "en":
-        return f'Damage booster {mult} for {dur}'
-    return f'Усилитель {mult} на {dur}'
+        return f'Damage booster {mult} for {dur}{suffix}'
+    return f'Усилитель {mult} на {dur}{suffix}'
 
 
 def _xp_item_name_plain(item: dict, lang: str = "ru") -> str:
     """Без HTML-тегов — для текста кнопок клавиатуры."""
+    cnt = item.get("count", 1)
+    suffix = f" ×{cnt}" if cnt > 1 else ""
     if item["type"] == "xp_instant":
-        return f'{_fmt_num(item["xp"])} XP'
+        return f'{_fmt_num(item["xp"])} XP{suffix}'
     mult = _multiplier_label(item["multiplier"])
     dur  = _dur_label(item["dur_key"], lang)
     if lang == "en":
-        return f'XP booster {mult} for {dur}'
-    return f'XP-ускоритель {mult} на {dur}'
+        return f'XP booster {mult} for {dur}{suffix}'
+    return f'XP-ускоритель {mult} на {dur}{suffix}'
 
 
 def _now_ts() -> float:
@@ -515,6 +529,57 @@ def _fmt_time_left(seconds: float, lang: str = "ru") -> str:
     if h > 0:  return f"{h}ч {m:02d}м"
     if m > 0:  return f"{m}м {s:02d}с"
     return f"{s}с"
+
+
+# ============================================================
+#  СТЕКИНГ ПРЕДМЕТОВ ИНВЕНТАРЯ
+#  Одинаковые предметы (одинаковый key) хранятся ОДНОЙ записью
+#  с полем "count", а не отдельной записью на каждый дроп.
+#  Это предотвращает бесконечный рост data_json у активных игроков
+#  (раньше каждый кейс добавлял новую запись — за месяцы игры
+#  набирались тысячи записей и JSON разрастался до мегабайт).
+# ============================================================
+
+def _add_or_stack(inv: list, key: str, build_instance, qty: int = 1) -> dict:
+    """
+    Добавляет qty предметов в инвентарь со стекингом по key.
+    Если предмет с таким key уже есть — увеличивает его count.
+    Иначе создаёт новую запись через build_instance() (dict без
+    instance_id/count) с count=qty.
+    Возвращает актуальный объект стопки.
+    """
+    existing = next((x for x in inv if x.get("key") == key), None)
+    if existing is not None:
+        existing["count"] = existing.get("count", 1) + qty
+        return existing
+    instance = build_instance()
+    instance["instance_id"] = f"stack_{key}"
+    instance["count"] = qty
+    inv.append(instance)
+    return instance
+
+
+def _remove_qty_by_key(inv: list, key: str, qty: int = 1) -> list:
+    """
+    Убирает qty штук предметов с данным key из инвентаря.
+    Совместимо и со старыми (не застекованными, по одной записи на
+    предмет) данными, и с новыми (с полем count) — считает их
+    эквивалентно, работает по общему количеству.
+    """
+    new_inv = []
+    left = qty
+    for item in inv:
+        if item.get("key") == key and left > 0:
+            cnt = item.get("count", 1)
+            if cnt <= left:
+                left -= cnt
+                continue
+            item["count"] = cnt - left
+            left = 0
+            new_inv.append(item)
+        else:
+            new_inv.append(item)
+    return new_inv
 
 
 # ============================================================
@@ -542,45 +607,44 @@ def open_case(data: dict, case_key: str, lang: str = "ru") -> tuple:
     rnd = random.randint(1000, 9999)
     instance_id = f"{dropped['key']}_{ts}_{rnd}"
     if case["type"] == "booster":
-        instance = {
-            "instance_id":  instance_id,
+        instance = _add_or_stack(inv, dropped["key"], lambda: {
             "key":          dropped["key"],
             "multiplier":   dropped["multiplier"],
             "dur_key":      dropped["dur_key"],
             "duration_sec": _DUR[dropped["dur_key"]],
             "chance":       dropped["chance"],
-        }
-        inv.append(instance)
+        })
         name     = f"{_pe('boost', '⚡')} {_booster_name(dropped, lang)}"
-        inv_line = f"{_L(lang, 'В инвентаре', 'In inventory')}: {len(inv)}"
+        inv_line = f"{_L(lang, 'В инвентаре', 'In inventory')}: {sum(x.get('count', 1) for x in inv)}"
     elif case["type"] == "enhancer":
-        instance = {
-            "instance_id": instance_id,
-            "key":         dropped["key"],
-            "type":        dropped["type"],
-            "chance":      dropped["chance"],
-        }
-        if dropped["type"] == "poison":
-            instance["name"]       = dropped["name"]
-            instance["damage"]     = dropped["damage"]
-            instance["dur_key"]    = dropped["dur_key"]
-            instance["duration_sec"] = _DUR[dropped["dur_key"]]
-        else:
-            instance["multiplier"]   = dropped["multiplier"]
-            instance["dur_key"]      = dropped["dur_key"]
-            instance["duration_sec"] = _DUR[dropped["dur_key"]]
-        inv.append(instance)
+        def _build_enh():
+            inst = {
+                "key":    dropped["key"],
+                "type":   dropped["type"],
+                "chance": dropped["chance"],
+            }
+            if dropped["type"] == "poison":
+                inst["name"]         = dropped["name"]
+                inst["damage"]       = dropped["damage"]
+                inst["dur_key"]      = dropped["dur_key"]
+                inst["duration_sec"] = _DUR[dropped["dur_key"]]
+            else:
+                inst["multiplier"]   = dropped["multiplier"]
+                inst["dur_key"]      = dropped["dur_key"]
+                inst["duration_sec"] = _DUR[dropped["dur_key"]]
+            return inst
+        instance = _add_or_stack(inv, dropped["key"], _build_enh)
         name     = _enh_item_name(instance, lang)
-        inv_line = f"{_L(lang, 'В инвентаре усилителей', 'Enhancer inventory')}: {len(inv)}"
+        inv_line = f"{_L(lang, 'В инвентаре усилителей', 'Enhancer inventory')}: {sum(x.get('count', 1) for x in inv)}"
     else:
-        instance = {
-            "instance_id": instance_id,
-            "key":         dropped["key"],
-            "type":        dropped["type"],
-            "chance":      dropped["chance"],
-        }
         if dropped["type"] == "xp_instant":
-            instance["xp"] = dropped["xp"]
+            instance = {
+                "instance_id": instance_id,
+                "key":         dropped["key"],
+                "type":        dropped["type"],
+                "chance":      dropped["chance"],
+                "xp":          dropped["xp"],
+            }
             name = _xp_item_name(dropped, lang)
             # xp_instant применяется сразу — не кладём в инвентарь
             from miner import xp_for_level, MAX_LEVEL
@@ -617,12 +681,18 @@ def open_case(data: dict, case_key: str, lang: str = "ru") -> tuple:
             )
             return True, msg, instance
         else:
-            instance["multiplier"]   = dropped["multiplier"]
-            instance["dur_key"]      = dropped["dur_key"]
-            instance["duration_sec"] = _DUR[dropped["dur_key"]]
+            def _build_xp():
+                return {
+                    "key":          dropped["key"],
+                    "type":         dropped["type"],
+                    "chance":       dropped["chance"],
+                    "multiplier":   dropped["multiplier"],
+                    "dur_key":      dropped["dur_key"],
+                    "duration_sec": _DUR[dropped["dur_key"]],
+                }
+            instance = _add_or_stack(inv, dropped["key"], _build_xp)
             name = _xp_item_name(dropped, lang)
-        inv.append(instance)
-        inv_line = f"{_L(lang, 'В XP-инвентаре', 'XP inventory')}: {len(inv)}"
+        inv_line = f"{_L(lang, 'В XP-инвентаре', 'XP inventory')}: {sum(x.get('count', 1) for x in inv)}"
     data["cases_total_opened"] = data.get("cases_total_opened", 0) + 1
     data["cases_total_spent"]  = data.get("cases_total_spent",  0) + cost
     msg = (
@@ -748,7 +818,7 @@ def activate_booster(data: dict, instance_id: str, force: bool = False, lang: st
     has_active = active and active.get("ends_at", 0) > _now_ts()
     if has_active and not force:
         return False, f"CONFIRM_REPLACE:{instance_id}"
-    data["boosters_inventory"] = [x for x in inv if x["instance_id"] != instance_id]
+    data["boosters_inventory"] = _remove_qty_by_key(inv, item["key"], 1)
     ends_at = _now_ts() + item["duration_sec"]
     data["active_booster"] = {
         "key": item["key"], "multiplier": item["multiplier"],
@@ -769,7 +839,7 @@ def sell_booster(data: dict, instance_id: str, lang: str = "ru") -> tuple:
     if not item:
         return False, _L(lang, "❌ Ускоритель не найден.", "❌ Booster not found."), 0
     price = get_sell_price(item)
-    data["boosters_inventory"] = [x for x in inv if x["instance_id"] != instance_id]
+    data["boosters_inventory"] = _remove_qty_by_key(inv, item["key"], 1)
     data["balance"] = data.get("balance", 0) + price
     return True, (
         f"<blockquote>{_pe('sell', '💸')} <b><i>{_L(lang, 'Ускоритель продан!', 'Booster sold!')}</i></b>\n"
@@ -789,7 +859,7 @@ def use_xp_item(data: dict, instance_id: str, force: bool = False, lang: str = "
         has_active = active and active.get("ends_at", 0) > _now_ts()
         if has_active and not force:
             return False, f"CONFIRM_REPLACE_XP:{instance_id}"
-        data["xp_inventory"] = [x for x in inv if x["instance_id"] != instance_id]
+        data["xp_inventory"] = _remove_qty_by_key(inv, item["key"], 1)
         ends_at = _now_ts() + item["duration_sec"]
         data["active_xp_booster"] = {
             "key": item["key"], "multiplier": item["multiplier"],
@@ -803,7 +873,7 @@ def use_xp_item(data: dict, instance_id: str, force: bool = False, lang: str = "
         )
     from miner import xp_for_level, MAX_LEVEL
     gained = item["xp"]
-    data["xp_inventory"] = [x for x in inv if x["instance_id"] != instance_id]
+    data["xp_inventory"] = _remove_qty_by_key(inv, item["key"], 1)
     level   = data.get("level", 1)
     xp      = data.get("xp", 0) + gained
     xp_max  = data.get("xp_max", xp_for_level(level))
@@ -840,7 +910,7 @@ def sell_xp_item(data: dict, instance_id: str, lang: str = "ru") -> tuple:
     if not item:
         return False, _L(lang, "❌ Предмет не найден.", "❌ Item not found."), 0
     price = get_xp_sell_price(item)
-    data["xp_inventory"] = [x for x in inv if x["instance_id"] != instance_id]
+    data["xp_inventory"] = _remove_qty_by_key(inv, item["key"], 1)
     data["balance"] = data.get("balance", 0) + price
     return True, (
         f"<blockquote>{_pe('sell', '💸')} <b><i>{_L(lang, 'Продано!', 'Sold!')}</i></b>\n"
@@ -935,7 +1005,7 @@ def use_poison(data: dict, instance_id: str, force: bool = False, lang: str = "r
     has_active = active is not None
     if has_active and not force:
         return False, f"CONFIRM_REPLACE_POISON:{instance_id}"
-    data["enh_inventory"] = [x for x in inv if x["instance_id"] != instance_id]
+    data["enh_inventory"] = _remove_qty_by_key(inv, item["key"], 1)
     duration = item.get("duration_sec") or _DUR.get(item.get("dur_key", ""), 30 * 60)
     ends_at = _now_ts() + duration
     data["active_poison"] = {
@@ -970,7 +1040,7 @@ def sell_enh_item(data: dict, instance_id: str, lang: str = "ru") -> tuple:
     if not item:
         return False, _L(lang, "❌ Предмет не найден.", "❌ Item not found."), 0
     price = get_enh_sell_price(item)
-    data["enh_inventory"] = [x for x in inv if x["instance_id"] != instance_id]
+    data["enh_inventory"] = _remove_qty_by_key(inv, item["key"], 1)
     data["balance"] = data.get("balance", 0) + price
     return True, (
         f'{_pe("sell", "💸")} <b><i>{_L(lang, "Продано!", "Sold!")}</i></b>\n'
@@ -993,7 +1063,7 @@ def activate_enh_boost(data: dict, instance_id: str, force: bool = False, lang: 
     has_active = active and active.get("ends_at", 0) > _now_ts()
     if has_active and not force:
         return False, f"CONFIRM_REPLACE_ENH:{instance_id}"
-    data["enh_inventory"] = [x for x in inv if x["instance_id"] != instance_id]
+    data["enh_inventory"] = _remove_qty_by_key(inv, item["key"], 1)
     duration = item.get("duration_sec") or _DUR.get(item.get("dur_key", ""), 30 * 60)
     ends_at = _now_ts() + duration
     data["active_enh_booster"] = {
@@ -1831,19 +1901,19 @@ def get_unified_inventory(data: dict) -> list:
         k = item["key"]
         if k not in stacks:
             stacks[k] = {"count": 0, "item_sample": item, "type": "boost"}
-        stacks[k]["count"] += 1
+        stacks[k]["count"] += item.get("count", 1)
 
     for item in data.get("xp_inventory", []):
         k = item["key"]
         if k not in stacks:
             stacks[k] = {"count": 0, "item_sample": item, "type": item.get("type", "xp_boost")}
-        stacks[k]["count"] += 1
+        stacks[k]["count"] += item.get("count", 1)
 
     for item in data.get("enh_inventory", []):
         k = item["key"]
         if k not in stacks:
             stacks[k] = {"count": 0, "item_sample": item, "type": item.get("type", "enh_boost")}
-        stacks[k]["count"] += 1
+        stacks[k]["count"] += item.get("count", 1)
 
     result = []
     for key, stack in stacks.items():
@@ -2180,7 +2250,7 @@ def sell_item_by_slot_id(data: dict, slot_id: int, qty: int = 1, lang: str = "ru
         return False, f"❌ {err}"
 
     inv = data[inv_key]
-    available = sum(1 for i in inv if i["key"] == key)
+    available = sum(i.get("count", 1) for i in inv if i["key"] == key)
 
     if qty < 1:
         err = "Количество должно быть ≥ 1." if lang == "ru" else "Quantity must be ≥ 1."
@@ -2195,15 +2265,8 @@ def sell_item_by_slot_id(data: dict, slot_id: int, qty: int = 1, lang: str = "ru
     price_each = sell_price_fn(item_sample)
     total_earn = price_each * qty
 
-    # Убираем qty предметов из инвентаря
-    removed = 0
-    new_inv = []
-    for i in inv:
-        if i["key"] == key and removed < qty:
-            removed += 1
-        else:
-            new_inv.append(i)
-    data[inv_key] = new_inv
+    # Убираем qty предметов из инвентаря (учитывает стекинг через "count")
+    data[inv_key] = _remove_qty_by_key(inv, key, qty)
 
     # Если стопка полностью продана — убираем slot_id
     remaining = available - qty
@@ -2215,6 +2278,7 @@ def sell_item_by_slot_id(data: dict, slot_id: int, qty: int = 1, lang: str = "ru
 
     # Название предмета
     itype = item_sample.get("type", "boost")
+    item_sample = {k2: v2 for k2, v2 in item_sample.items() if k2 != "count"}
     if itype == "boost":
         name = _booster_name(item_sample)
     elif itype in ("xp_boost", "xp_instant"):
@@ -2290,7 +2354,7 @@ def transfer_item_by_slot_id(
 
     # ── Проверяем наличие ──────────────────────────────────────────────
     sender_inv = sender_data[inv_key]
-    available  = sum(1 for i in sender_inv if i["key"] == key)
+    available  = sum(i.get("count", 1) for i in sender_inv if i["key"] == key)
 
     if qty < 1:
         err = "Количество должно быть ≥ 1." if lang == "ru" else "Quantity must be ≥ 1."
@@ -2302,28 +2366,23 @@ def transfer_item_by_slot_id(
         )
         return False, f"❌ {err}", ""
 
-    # ── Перемещаем предметы ────────────────────────────────────────────
-    transferred = []
-    remaining   = []
-    for item in sender_inv:
-        if item["key"] == key and len(transferred) < qty:
-            transferred.append(item)
-        else:
-            remaining.append(item)
-
-    sender_data[inv_key] = remaining
+    # ── Перемещаем предметы (учитывает стекинг через "count") ──────────
+    sender_data[inv_key] = _remove_qty_by_key(sender_inv, key, qty)
 
     # Если стопка опустела — убираем slot_id
     if available - qty == 0:
         slot_map.pop(key, None)
         sender_data["inv_slot_ids"] = slot_map
 
-    # Добавляем получателю
+    # Добавляем получателю: если у него уже есть такой предмет — просто
+    # увеличиваем count существующей стопки, иначе создаём новую.
     recipient_inv = recipient_data.setdefault(inv_key, [])
-    recipient_inv.extend(transferred)
+    _sample = {k2: v2 for k2, v2 in item_sample.items() if k2 not in ("instance_id", "count")}
+    _add_or_stack(recipient_inv, key, lambda: dict(_sample), qty=qty)
 
-    # ── Формируем имя предмета ─────────────────────────────────────────
-    name = item_name_fn(item_sample)
+    # ── Формируем имя предмета (без count — qty уже показан отдельно) ──
+    _sample_for_name = {k2: v2 for k2, v2 in item_sample.items() if k2 != "count"}
+    name = item_name_fn(_sample_for_name)
 
     qty_str = f"{qty} шт. " if qty > 1 else ""
 
