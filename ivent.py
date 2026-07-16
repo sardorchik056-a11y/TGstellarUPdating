@@ -75,10 +75,10 @@ def _tg(eid: str, fb: str = "") -> str:
     return f'<tg-emoji emoji-id="{eid}">{fb}</tg-emoji>'
 
 
-E_ROCKET  = "🚀"
-E_PARTY   = "🎉"
+E_ROCKET  = _tg("5195033767969839232", "🔒")
+E_PARTY   = _tg("5461151367559141950", "🔒")
 E_FIRE    = "🔥"
-E_GLOBE   = "🌍"
+E_GLOBE   = _tg("5303479226882603449", "🔒")
 E_CHECK   = "✅"
 E_LOCKED  = _tg("5296369303661067030", "🔒")
 E_TARGET  = _tg("5310278924616356636", "🎯")
