@@ -7026,96 +7026,126 @@ async def _cdl_payout_loop():
             print(f"[cdl_payout_loop] {_e}")
 
 
-async def _mine_notify_loop():
-    """Фоновая задача: уведомляет игрока, когда шахта успешно завершила
-    копание (сессия истекла, но руда ещё не забрана), чтобы не нужно было
-    самому заходить и проверять таймер. Шлётся один раз за сессию —
-    отслеживаем через mine_last_notified_start (сравниваем с текущим
-    mine_start, чтобы новая сессия снова могла получить уведомление)."""
-    from database import get_all_users, save_user as _sv
-
-    while True:
-        try:
-            # Полный скан таблицы — в поток, чтобы не морозить бота
-            # остальным пользователям на время чтения БД (как в pets/poison).
-            for _d in await asyncio.to_thread(get_all_users):
-                if _d.get("mine_start") is None or _d.get("mine_collected"):
-                    continue
-                if _d.get("mine_last_notified_start") == _d["mine_start"]:
-                    continue
-                prog = calc_mine_progress(_d)
-                if not prog["finished"]:
-                    continue
-
-                _lang = _d.get("lang", "ru")
-                msg_text = mine_finished_notify_text(_d, _lang)
-                try:
-                    await bot.send_message(_d["id"], msg_text, parse_mode="HTML")
-                except Exception:
-                    pass
-                _d["mine_last_notified_start"] = _d["mine_start"]
-                await asyncio.to_thread(_sv, _d["id"], _d)
-        except Exception as _e:
-            print(f"[mine_notify_loop] {_e}")
-        await asyncio.sleep(60)
+_PETS_INTERVAL_ONE  = 12 * 3600
+_PETS_INTERVAL_MANY =  6 * 3600
+_USERS_SCAN_INTERVAL = 30  # секунд — определяется самой частой нуждой (сад)
 
 
-async def _pets_loop():
-    """Фоновая задача: уведомления и доход питомцев.
-    1 питомец  → сообщение каждые 12 ч от него.
-    2+ питомца → каждые 6 ч случайный питомец шлёт сообщение + начисляет доход.
+async def _users_scan_loop():
+    """Объединённый фоновый цикл: шахта + питомцы + сад.
+
+    РАНЬШЕ это были три (фактически четыре, считая garden_notify_loop в
+    main.py) НЕЗАВИСИМЫХ цикла, каждый из которых сам делал полный скан
+    таблицы users (get_all_users() -> json.loads на каждую строку) на
+    своём таймере (60с / 15мин / 30с). Из-за несинхронизированных
+    таймеров сканы периодически накладывались друг на друга по времени,
+    и в такие моменты в памяти одновременно жили 2-3 полные копии всей
+    таблицы (парсинг + промежуточные объекты в каждом потоке) — это и
+    давало резкие скачки RSS процесса.
+
+    Теперь полный скан делается ОДИН раз за тик (раз в 30 сек — под
+    самую частую потребность, сад), и в рамках одного прохода по уже
+    загрученным данным проверяются все три системы. Условия по времени
+    (mine_last_notified_start, pet_last_group_notify) остаются внутри —
+    они просто пропускают пользователя, если его час/минута ещё не
+    настали, реального доп. нагрузки от более частого тика это не даёт,
+    т.к. сама проверка — это дешёвое сравнение в памяти, а не поход в БД.
     """
     from database import get_all_users, save_user as _sv
     import random as _rnd
-
-    INTERVAL_ONE  = 12 * 3600
-    INTERVAL_MANY =  6 * 3600
+    import datetime as _dt
+    import green as _green
 
     while True:
         try:
-            # Как и в poison/hp-циклах: полный скан таблицы уводим в поток,
-            # чтобы не морозить бота для всех пользователей на время чтения БД.
             for _d in await asyncio.to_thread(get_all_users):
+                uid = _d.get("id")
+                if not uid:
+                    continue
+                changed = False
+
+                # ---------- Шахта: уведомление о завершении копки ----------
+                if _d.get("mine_start") is not None and not _d.get("mine_collected"):
+                    if _d.get("mine_last_notified_start") != _d["mine_start"]:
+                        prog = calc_mine_progress(_d)
+                        if prog["finished"]:
+                            _lang = _d.get("lang", "ru")
+                            msg_text = mine_finished_notify_text(_d, _lang)
+                            try:
+                                await bot.send_message(uid, msg_text, parse_mode="HTML")
+                            except Exception:
+                                pass
+                            _d["mine_last_notified_start"] = _d["mine_start"]
+                            changed = True
+
+                # ---------- Питомцы: доход + уведомление ----------
                 owned = _d.get("owned_pets", [])
-                if not owned:
-                    continue
+                if owned:
+                    now = int(_dt.datetime.now(_dt.timezone.utc).timestamp())
+                    last_all = _d.get("pet_last_group_notify", 0)
+                    interval = _PETS_INTERVAL_ONE if len(owned) == 1 else _PETS_INTERVAL_MANY
 
-                now      = int(__import__("datetime").datetime.now(
-                               __import__("datetime").timezone.utc).timestamp())
-                last_all = _d.get("pet_last_group_notify", 0)
-                interval = INTERVAL_ONE if len(owned) == 1 else INTERVAL_MANY
+                    if now - last_all >= interval:
+                        pk  = _rnd.choice(owned)
+                        pet = __import__("pets").PETS_BY_KEY.get(pk)
+                        if pet:
+                            amount = _rnd.randint(pet["income_min"], pet["income_max"])
+                            try:
+                                from shop import get_artifact_pets_multiplier as _apt_mult
+                                amount = int(amount * _apt_mult(_d))
+                            except Exception:
+                                pass
+                            _d["balance"] = _d.get("balance", 0) + amount
+                            _d["ref_income"] = _d.get("ref_income", 0) + amount
+                            _d["pet_last_group_notify"] = now
 
-                if now - last_all < interval:
-                    continue
+                            msgs       = __import__("pets")._NOTIFICATIONS.get(pk, [])
+                            notif_text = _rnd.choice(msgs) if msgs else ""
+                            msg_text   = pet_income_text(pk, amount, notif_text)
+                            try:
+                                await bot.send_message(uid, msg_text, parse_mode="HTML")
+                            except Exception:
+                                pass
+                            changed = True
 
-                # Выбираем рандомного питомца
-                pk  = _rnd.choice(owned)
-                pet = __import__("pets").PETS_BY_KEY.get(pk)
-                if not pet:
-                    continue
+                # ---------- Сад: проверка созревших грядок ----------
+                # Сад защищаем персональным локом и перечитываем свежие
+                # данные ПОД локом перед сохранением — снапшот из общего
+                # скана мог устареть из-за параллельного действия игрока
+                # (сбор урожая и т.п.). Это сохраняет ту же гарантию,
+                # что была в прежнем отдельном garden_notify_loop.
+                garden = _d.get("garden")
+                if isinstance(garden, dict) and garden.get("plots"):
+                    from database import get_user as _gu_fresh
+                    async with await _get_user_lock(uid):
+                        # Перечитываем свежие данные ПОД локом — снапшот из
+                        # общего скана мог устареть из-за параллельного
+                        # действия игрока (сбор урожая и т.п.), как и в
+                        # прежнем отдельном garden_notify_loop.
+                        fresh = await asyncio.to_thread(_gu_fresh, uid)
+                        ready = _green.check_ready_plots(fresh) if fresh else []
+                        if ready:
+                            await asyncio.to_thread(_sv, uid, fresh)
 
-                amount        = _rnd.randint(pet["income_min"], pet["income_max"])
-                # Множитель артефактов к добыче питомцов
-                try:
-                    from shop import get_artifact_pets_multiplier as _apt_mult
-                    amount = int(amount * _apt_mult(_d))
-                except Exception:
-                    pass
-                _d["balance"] = _d.get("balance", 0) + amount
-                _d["ref_income"] = _d.get("ref_income", 0) + amount
-                _d["pet_last_group_notify"] = now
+                    for item in ready:
+                        flower = item["flower"]
+                        text = (
+                            f"🌸 В твоём Мистическом саду созрело растение — "
+                            f"<b>{_green.flower_label(flower)}</b>!\n"
+                            f"Загляни собрать урожай 🌾"
+                        )
+                        try:
+                            await bot.send_message(uid, text, parse_mode="HTML")
+                        except Exception:
+                            pass
+                    # Сад сохраняется отдельной веткой выше (под локом,
+                    # на свежих данных) — в общий `_d`/`changed` не мешаем.
 
-                msgs       = __import__("pets")._NOTIFICATIONS.get(pk, [])
-                notif_text = _rnd.choice(msgs) if msgs else ""
-                msg_text   = pet_income_text(pk, amount, notif_text)
-                try:
-                    await bot.send_message(_d["id"], msg_text, parse_mode="HTML")
-                except Exception:
-                    pass
-                await asyncio.to_thread(_sv, _d["id"], _d)
+                if changed:
+                    await asyncio.to_thread(_sv, uid, _d)
         except Exception as _e:
-            print(f"[pets_loop] {_e}")
-        await asyncio.sleep(15 * 60)
+            print(f"[users_scan_loop] {_e}")
+        await asyncio.sleep(_USERS_SCAN_INTERVAL)
 
 
 async def _poison_loop():
@@ -7354,9 +7384,9 @@ async def run_bot():
     # ── Запускаем фоновую задачу вкладов (авто-выплаты) ──
     asyncio.create_task(_cdl_payout_loop())
 
-    # ── Запускаем фоновую задачу питомцев ──
-    asyncio.create_task(_pets_loop())
-    asyncio.create_task(_mine_notify_loop())
+    # ── Объединённый скан: шахта + питомцы + сад (один full-table scan
+    #    вместо трёх/четырёх независимых) ──
+    asyncio.create_task(_users_scan_loop())
 
     # ── Запускаем фоновую задачу яда ──
     asyncio.create_task(_poison_loop())
