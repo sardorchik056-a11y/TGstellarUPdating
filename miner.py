@@ -1161,7 +1161,7 @@ def mine_finished_notify_text(data: dict, lang: str = "ru") -> str:
     """
     Текст push-уведомления, когда шахта успешно завершила копание
     (сессия закончилась, но игрок ещё не забрал руду). Отправляется
-    один раз фоновым циклом — см. _mine_notify_loop в mainhelp.py.
+    один раз фоновым циклом — см. _users_scan_loop в mainhelp.py.
     """
     prog = calc_mine_progress(data)
     if lang == "en":
