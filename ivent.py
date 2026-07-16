@@ -69,7 +69,6 @@ _E_COIN    = "5199552030615558774"
 _E_STAR    = "5267500801240092311"
 _E_LEVEL   = "5375338737028841420"
 
-from miner import EMOJI_BACK  # тот же back-icon, что и во всём проекте
 
 
 def _tg(eid: str, fb: str = "") -> str:
@@ -81,8 +80,8 @@ E_PARTY   = "🎉"
 E_FIRE    = "🔥"
 E_GLOBE   = "🌍"
 E_CHECK   = "✅"
-E_LOCKED  = "🔒"
-E_TARGET  = "🎯"
+E_LOCKED  = _tg("5296369303661067030", "🔒")
+E_TARGET  = _tg("5310278924616356636", "🎯")
 E_CLOCK   = _tg(_E_TIMER, "⏳")
 E_PEOPLE  = _tg(_E_FRIENDS, "👥")
 E_COINI   = _tg(_E_COIN, "🪙")
@@ -242,11 +241,11 @@ def get_current_multiplier() -> float:
 
 def _progress_bar(value: int, total: int, length: int = 12) -> str:
     if total <= 0:
-        return "█" * length
+        return "■" * length
     ratio  = max(0.0, min(1.0, value / total))
     filled = int(round(ratio * length))
     filled = min(length, max(0, filled))
-    return "█" * filled + "░" * (length - filled)
+    return "■" * filled + "□" * (length - filled)
 
 
 def _fmt_timedelta(seconds: int) -> str:
@@ -307,10 +306,10 @@ def _tier_scale_lines(count: int, lang: str = "ru") -> list[str]:
             lower = lower_of[threshold]
             span  = threshold - lower
             done  = max(0, count - lower)
-            bar   = _progress_bar(done, span, length=14)
+            bar   = _progress_bar(done, span, length=11)
             pct   = int(round(100 * done / span)) if span else 100
-            lines.append(f"{branch}{E_TARGET} <b>x{mult:g}</b>  —  {E_PEOPLE} {threshold}")
-            lines.append(f"│    [{bar}] {count}/{threshold} · {pct}%")
+            lines.append(f"{branch}{E_TARGET} <b>x{mult:g}</b>  —  {E_PEOPLE} {count}/{threshold}")
+            lines.append(f"│    [{bar}] {pct}%")
         else:
             lines.append(f"{branch}{E_LOCKED} <b>x{mult:g}</b>  —  {E_PEOPLE} {threshold}+")
 
@@ -456,34 +455,11 @@ def _ru_word_refs(n: int) -> str:
 
 
 # ─────────────────────────────────────────
-#  КЛАВИАТУРА
-# ─────────────────────────────────────────
-
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-
-
-def ivent_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text=("🔄 Refresh" if lang == "en" else "🔄 Обновить"),
-        callback_data="ivent_refresh",
-    ))
-    builder.row(InlineKeyboardButton(
-        text=("‹ Back" if lang == "en" else "‹ Назад"),
-        callback_data="main_menu",
-        icon_custom_emoji_id=EMOJI_BACK,
-    ))
-    return builder.as_markup()
-
-
-# ─────────────────────────────────────────
 #  ХЕНДЛЕРЫ (регистрируются на общий dp проекта)
 # ─────────────────────────────────────────
 
-from aiogram import F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message
 from mainhelp import dp, bot, ADMIN_IDS
 
 
@@ -503,24 +479,8 @@ async def cmd_event(message: Message):
     lang = _lang_of(message.from_user.id)
     await message.answer(
         ivent_text(lang),
-        reply_markup=ivent_keyboard(lang),
         parse_mode="HTML",
     )
-
-
-@dp.callback_query(F.data == "ivent_refresh")
-async def cb_ivent_refresh(call: CallbackQuery):
-    lang = _lang_of(call.from_user.id)
-    new_text = ivent_text(lang)
-    try:
-        await call.message.edit_text(
-            new_text,
-            reply_markup=ivent_keyboard(lang),
-            parse_mode="HTML",
-        )
-    except Exception:
-        pass
-    await call.answer("✅ Обновлено" if lang == "ru" else "✅ Updated")
 
 
 @dp.message(Command("startevent"))
