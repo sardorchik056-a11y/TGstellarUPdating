@@ -58,8 +58,8 @@ EVENT_TIERS: list[tuple[int, float]] = [
     (1000, 5.0),
 ]
 
-EVENT_TITLE_RU = "Реферальный марафон"
-EVENT_TITLE_EN = "Referral Marathon"
+EVENT_TITLE_RU = "Глобальный реферальный марафон"
+EVENT_TITLE_EN = "Global Referral Marathon"
 
 # Рабочие emoji-id (переиспользованы из refs.py / miner.py — те же, что
 # уже используются в проекте, чтобы стиль совпадал 1-в-1).
@@ -79,9 +79,10 @@ def _tg(eid: str, fb: str = "") -> str:
 E_ROCKET  = "🚀"
 E_PARTY   = "🎉"
 E_FIRE    = "🔥"
+E_GLOBE   = "🌍"
 E_CHECK   = "✅"
-E_ARROW   = "▶️"
-E_LOCK    = "⬜"
+E_LOCKED  = "🔒"
+E_TARGET  = "🎯"
 E_CLOCK   = _tg(_E_TIMER, "⏳")
 E_PEOPLE  = _tg(_E_FRIENDS, "👥")
 E_COINI   = _tg(_E_COIN, "🪙")
@@ -273,36 +274,48 @@ def _fmt_timedelta_en(seconds: int) -> str:
 
 
 def _tier_scale_lines(count: int, lang: str = "ru") -> list[str]:
-    """Строит красивую шкалу уровней с прогресс-баром на активном уровне."""
+    """
+    Строит шкалу-«лестницу» уровней сверху вниз (от максимального x5.0
+    до первого x1.3). У каждого уровня:
+      ✅ — уровень уже открыт для всех игроков
+      🎯 — ближайшая цель (единственная), под ней прогресс-бар со счётом
+      🔒 — уровень пока заблокирован
+    Рамка из "┌│├└" визуально собирает всё в единую лестницу.
+    """
+    tiers_desc = list(reversed(EVENT_TIERS))  # от 1000 к 25
+
+    # Ближайшая недостигнутая цель — САМЫЙ МАЛЕНЬКИЙ порог, который ещё
+    # не пройден (а не первый по счёту сверху при обходе по убыванию).
+    next_tier = get_next_tier(count)  # (threshold, mult) либо None
+
+    # Порог уровня, стоящего чуть НИЖЕ next_tier — нужен, чтобы прогресс-бар
+    # считался "от" него, а не от нуля.
+    lower_of = {}
+    prev = 0
+    for threshold, _ in EVENT_TIERS:
+        lower_of[threshold] = prev
+        prev = threshold
+
     lines: list[str] = []
-    prev_threshold = 0
-    next_shown = False
+    for idx, (threshold, mult) in enumerate(tiers_desc):
+        is_last = idx == len(tiers_desc) - 1
+        branch  = "└" if is_last else "├"
 
-    for threshold, mult in EVENT_TIERS:
         if count >= threshold:
-            # Уровень уже достигнут
-            lines.append(f"{E_CHECK} <b>{threshold}</b> {E_PEOPLE} → <b>x{mult:g}</b>")
-        elif not next_shown:
-            # Это ближайший недостигнутый уровень — показываем прогресс-бар
-            span = threshold - prev_threshold
-            done = count - prev_threshold
-            bar  = _progress_bar(done, span)
-            pct  = int(round(100 * done / span)) if span else 100
-            if lang == "en":
-                lines.append(
-                    f"{E_ARROW} <b>{threshold}</b> {E_PEOPLE} → <b>x{mult:g}</b>\n"
-                    f"    [{bar}] {count}/{threshold} ({pct}%)"
-                )
-            else:
-                lines.append(
-                    f"{E_ARROW} <b>{threshold}</b> {E_PEOPLE} → <b>x{mult:g}</b>\n"
-                    f"    [{bar}] {count}/{threshold} ({pct}%)"
-                )
-            next_shown = True
+            lines.append(f"{branch}{E_CHECK} <b>x{mult:g}</b>  —  {E_PEOPLE} {threshold}+")
+        elif next_tier is not None and threshold == next_tier[0]:
+            lower = lower_of[threshold]
+            span  = threshold - lower
+            done  = max(0, count - lower)
+            bar   = _progress_bar(done, span, length=14)
+            pct   = int(round(100 * done / span)) if span else 100
+            lines.append(f"{branch}{E_TARGET} <b>x{mult:g}</b>  —  {E_PEOPLE} {threshold}")
+            lines.append(f"│    [{bar}] {count}/{threshold} · {pct}%")
         else:
-            lines.append(f"{E_LOCK} <b>{threshold}</b> {E_PEOPLE} → <b>x{mult:g}</b>")
-        prev_threshold = threshold
+            lines.append(f"{branch}{E_LOCKED} <b>x{mult:g}</b>  —  {E_PEOPLE} {threshold}+")
 
+    if lines:
+        lines[0] = f"┌{lines[0][1:]}"
     return lines
 
 
@@ -318,14 +331,14 @@ def ivent_text(lang: str = "ru") -> str:
         if lang == "en":
             return (
                 f'<blockquote>'
-                f'{E_PARTY} <b>Referral Event</b>\n'
+                f'{E_GLOBE} <b>Global Referral Marathon</b>\n'
                 f'<i>No event is running right now.</i>\n'
                 f'Stay tuned — announcements will follow!'
                 f'</blockquote>'
             )
         return (
             f'<blockquote>'
-            f'{E_PARTY} <b>Реферальный ивент</b>\n'
+            f'{E_GLOBE} <b>Глобальный реферальный марафон</b>\n'
             f'<i>Сейчас ивент не запущен.</i>\n'
             f'Следи за анонсами — скоро стартуем!'
             f'</blockquote>'
@@ -347,9 +360,14 @@ def ivent_text(lang: str = "ru") -> str:
         )
         header = (
             f'<blockquote>'
-            f'{E_PARTY} <b>{name}</b>\n'
-            f'{status_line}\n'
-            f'{E_PEOPLE} <b>Total referrals invited:</b> {count}'
+            f'{E_GLOBE} <b>{name}</b>\n'
+            f'<i>One shared goal for the ENTIRE community — every referral '
+            f'from every player adds to the SAME counter below.</i>\n'
+            f'{status_line}'
+            f'</blockquote>\n'
+            f'<blockquote>'
+            f'{E_PEOPLE} <b>GLOBAL counter (all players combined):</b>\n'
+            f'<b>{count}</b> {"referrals" if lang == "en" else "рефералов"}'
             f'</blockquote>\n'
         )
     else:
@@ -360,17 +378,22 @@ def ivent_text(lang: str = "ru") -> str:
         )
         header = (
             f'<blockquote>'
-            f'{E_PARTY} <b>{name}</b>\n'
-            f'{status_line}\n'
-            f'{E_PEOPLE} <b>Всего приглашено рефералов:</b> {count}'
+            f'{E_GLOBE} <b>{name}</b>\n'
+            f'<i>Общая цель для ВСЕХ игроков сразу — каждый реферал '
+            f'от любого игрока пополняет ОДИН общий счётчик ниже.</i>\n'
+            f'{status_line}'
+            f'</blockquote>\n'
+            f'<blockquote>'
+            f'{E_PEOPLE} <b>ОБЩИЙ счётчик (сумма по всем игрокам):</b>\n'
+            f'<b>{count}</b> рефералов'
             f'</blockquote>\n'
         )
 
     scale_lines = _tier_scale_lines(count, lang)
-    scale_title = "Scale of bonuses" if lang == "en" else "Шкала бонусов"
+    scale_title = "Bonus ladder (shared for everyone)" if lang == "en" else "Лестница бонусов (общая для всех)"
     scale_block = (
         f'<blockquote>'
-        f'{E_STARI} <b>{scale_title}:</b>\n'
+        f'{E_STARI} <b>{scale_title}</b>\n'
         + "\n".join(scale_lines) +
         f'</blockquote>\n'
     )
@@ -380,30 +403,30 @@ def ivent_text(lang: str = "ru") -> str:
             if lang == "en":
                 boost_block = (
                     f'<blockquote>'
-                    f'{E_FIRE} <b>Current mining boost: x{mult:g}</b>\n'
+                    f'{E_FIRE} <b>Boost live for EVERYONE right now: x{mult:g}</b>\n'
                 )
             else:
                 boost_block = (
                     f'<blockquote>'
-                    f'{E_FIRE} <b>Текущий бонус к добыче: x{mult:g}</b>\n'
+                    f'{E_FIRE} <b>Бонус уже действует у ВСЕХ игроков: x{mult:g}</b>\n'
                 )
         else:
             if lang == "en":
-                boost_block = f'<blockquote>{E_ROCKET} <b>No bonus yet — invite friends!</b>\n'
+                boost_block = f'<blockquote>{E_ROCKET} <b>No bonus yet — invite friends to unlock it for everyone!</b>\n'
             else:
-                boost_block = f'<blockquote>{E_ROCKET} <b>Бонус ещё не активен — приглашай друзей!</b>\n'
+                boost_block = f'<blockquote>{E_ROCKET} <b>Бонус ещё не открыт — приглашай друзей, чтобы включить его для всех!</b>\n'
 
         if nxt:
             need = nxt[0] - count
             if lang == "en":
-                boost_block += f'<i>{need} more referrals to reach x{nxt[1]:g}</i></blockquote>'
+                boost_block += f'<i>{need} more referrals (from anyone!) to unlock x{nxt[1]:g}</i></blockquote>'
             else:
-                boost_block += f'<i>Ещё {need} {_ru_word_refs(need)} до x{nxt[1]:g}</i></blockquote>'
+                boost_block += f'<i>Ещё {need} {_ru_word_refs(need)} (от кого угодно!) до x{nxt[1]:g}</i></blockquote>'
         else:
             if lang == "en":
-                boost_block += f'<i>Maximum tier reached — x5.0 unlocked!</i></blockquote>'
+                boost_block += f'<i>Maximum tier reached — x5.0 unlocked for everyone!</i></blockquote>'
             else:
-                boost_block += f'<i>Максимальный уровень достигнут — x5.0!</i></blockquote>'
+                boost_block += f'<i>Максимальный уровень открыт — x5.0 у всех игроков!</i></blockquote>'
     else:
         if lang == "en":
             boost_block = (
