@@ -177,6 +177,17 @@ def init_refs_db():
             c.execute(f"ALTER TABLE refs ADD COLUMN percent INTEGER DEFAULT {REF_PERCENT_NORMAL}")
         c.commit()
 
+        # ── Индексы для get_reftop() ──
+        # Без них GROUP BY r.inviter_uid + WHERE r.joined_ts >= ?
+        # заставляют SQLite делать полный скан + сортировку всей
+        # таблицы refs при каждом вызове.
+        c.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_refs_inviter_uid ON refs(inviter_uid);
+            CREATE INDEX IF NOT EXISTS idx_refs_joined_ts ON refs(joined_ts);
+            CREATE INDEX IF NOT EXISTS idx_refs_inviter_joined ON refs(inviter_uid, joined_ts);
+        """)
+        c.commit()
+
         _install_ref_income_trigger(c)
 
 
