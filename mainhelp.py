@@ -515,6 +515,13 @@ async def _distribute_boss_rewards(killer_uid: int, damage_rewards: dict):
         u = await aio_get_user(uid)
         if not u:
             continue
+        # Бонус за @TGStellarr_bot в bio — у каждого участника свой флаг,
+        # поэтому множитель считаем персонально по его же данным `u`.
+        try:
+            from bio_bonus import get_bio_bonus_multiplier as _bio_part_mult
+            coins = int(coins * _bio_part_mult(u))
+        except Exception:
+            pass
         u["balance"] = u.get("balance", 0) + coins
         u["ref_income"] = u.get("ref_income", 0) + coins
         _apply_xp(u, xp)
@@ -7402,6 +7409,11 @@ async def run_bot():
     asyncio.create_task(city_travel_loop(bot))
     asyncio.create_task(city_news_loop())
     asyncio.create_task(city_exchange_loop())
+
+    # ── Бонус за @TGStellarr_bot в описании профиля: раз в 30 минут сверяем
+    #    bio каждого игрока напрямую через Telegram API (см. bio_bonus.py) ──
+    from bio_bonus import bio_bonus_scan_loop
+    asyncio.create_task(bio_bonus_scan_loop(bot))
 
     print("🤖 Бот запущен! БД: tgstellar.db")
     await dp.start_polling(bot)
