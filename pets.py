@@ -326,6 +326,13 @@ def get_pending_income(data):
         status_mult = _status_pets_mult(data)
     except Exception:
         status_mult = 1.0
+    # Множитель реферального ивента (см. ivent.py) — глобальный бафф
+    # дохода питомцев, если ивент активен и набран порог.
+    try:
+        from ivent import get_current_multiplier as _event_pets_mult
+        event_mult = _event_pets_mult()
+    except Exception:
+        event_mult = 1.0
     result  = []
     for pk in owned:
         last = incomes.get(pk, now)
@@ -333,7 +340,7 @@ def get_pending_income(data):
             pet = PETS_BY_KEY.get(pk)
             if not pet:
                 continue
-            amount = int(random.randint(pet["income_min"], pet["income_max"]) * art_mult * status_mult)
+            amount = int(random.randint(pet["income_min"], pet["income_max"]) * art_mult * status_mult * event_mult)
             result.append((pk, amount))
             incomes[pk] = now
     return result
