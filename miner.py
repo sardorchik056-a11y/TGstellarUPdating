@@ -1088,7 +1088,14 @@ def collect_mine(data: dict, lang: str = "ru") -> tuple:
         return prog, ""
     from shop import get_active_booster_multiplier, get_active_booster_info, _multiplier_label, get_artifact_mine_multiplier
     from status import get_status_multiplier as _status_mine_mult
-    multiplier = get_active_booster_multiplier(data) * get_artifact_mine_multiplier(data) * _status_mine_mult(data)
+    # Множитель реферального ивента (см. ivent.py) — глобальный бафф
+    # скорости/объёма добычи руды, если ивент активен и набран порог.
+    try:
+        from ivent import get_current_multiplier as _event_mine_mult
+        event_mult = _event_mine_mult()
+    except Exception:
+        event_mult = 1.0
+    multiplier = get_active_booster_multiplier(data) * get_artifact_mine_multiplier(data) * _status_mine_mult(data) * event_mult
     pick_key = data.get("pickaxe", "wood_1")
     results      = {}
     # Глобальный счётчик ударов кирки — накапливается между всеми сессиями
