@@ -1647,12 +1647,21 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
     except Exception:
         event_mult = 1.0
 
+    # Бонус за @TGStellarr_bot в описании профиля (см. bio_bonus.py).
+    # Множитель выставляется ТОЛЬКО фоновой проверкой (bio_bonus_scan_loop),
+    # которая сама ходит в Telegram API — здесь просто читаем готовый флаг.
+    try:
+        from bio_bonus import get_bio_bonus_multiplier as _bio_dmg_mult
+        bio_mult = _bio_dmg_mult(data)
+    except Exception:
+        bio_mult = 1.0
+
     dmg = random.randint(sword["dmg_min"], sword["dmg_max"])
     crit = False
     if random.random() < sword["crit_chance"] + status_crit_add:
         dmg  = int(sword["dmg_max"] * sword["crit_mult"])
         crit = True
-    dmg = max(0, int(dmg * enh_mult * art_dmg_mult * status_dmg_mult * event_mult))
+    dmg = max(0, int(dmg * enh_mult * art_dmg_mult * status_dmg_mult * event_mult * bio_mult))
 
     is_infinite = bool(data.get("infinite_dmg"))
     uid_str = str(data.get("id", 0))
@@ -1822,6 +1831,16 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
             result["stunned_until"] = stunned_players[uid_str]
 
     if result["boss_killed"]:
+        # Бонус за @TGStellarr_bot в bio — применяется к самой выдаче добычи
+        # (монетам), а не к XP. Тот же множитель, что и на уроне выше.
+        try:
+            from bio_bonus import get_bio_bonus_multiplier as _bio_reward_mult
+            _reward_bio_mult = _bio_reward_mult(data)
+        except Exception:
+            _reward_bio_mult = 1.0
+        if _reward_bio_mult != 1.0:
+            result["reward"] = int(result["reward"] * _reward_bio_mult)
+
         # Начисляем убийце сразу (остальным — в main.py через damage_rewards)
         data["balance"] = data.get("balance", 0) + result["reward"]
         data["ref_income"] = data.get("ref_income", 0) + result["reward"]
