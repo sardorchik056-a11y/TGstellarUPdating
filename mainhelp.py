@@ -1616,9 +1616,13 @@ async def cmd_rass_cancel(message: Message):
     await rass_cancel(message, ADMIN_IDS)
 
 
-# ── /daily — ежедневный бонус ────────────────────────────────────────
+# ── /daily, "бонус", "bonus" — теперь это статус bio-бонуса ──────────
+#  Старая логика (случайные монеты раз в 24ч) убрана полностью.
+#  Команда больше НИЧЕГО не выдаёт — она только проверяет и показывает,
+#  активен ли бонус за @TGStellarr_bot в описании профиля.
+#  Сама проверка идёт напрямую в Telegram (bot.get_chat) — то есть
+#  подделать статус через клиент нельзя, ответ всегда авторитетный.
 
-_DAILY_COOLDOWN = 86400  # 24 часа в секундах
 _COIN_DAILY = '<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji>'
 
 @dp.message(Command("daily", "бонус", "bonus", ignore_case=True))
@@ -1632,64 +1636,94 @@ async def cmd_daily(message: Message):
         if not u.get("onboarded", True):
             return  # онбординг ещё не пройден — молча игнорируем
 
-        now      = now_ts()
-        last     = u.get("last_daily", 0)
-        elapsed  = now - last
-        cooldown = _DAILY_COOLDOWN
+        from bio_bonus import (
+            refresh_bio_bonus, get_bio_bonus_multiplier,
+            BOT_USERNAME, BIO_BONUS_MULTIPLIER,
+        )
 
-        if elapsed < cooldown:
-            left     = cooldown - elapsed
-            hours    = left // 3600
-            minutes  = (left % 3600) // 60
-            lang     = get_lang(u)
+        # Форсируем свежую проверку прямо сейчас (не ждём фоновый цикл раз
+        # в 30 мин) — так пользователь сразу видит актуальный статус после
+        # того, как вписал юзернейм в bio. Если Telegram API недоступен
+        # (флуд-контроль/ошибка) — просто покажем последний известный флаг,
+        # ничего не ломаем.
+        ok = await refresh_bio_bonus(bot, uid, u)
+        if ok:
+            await aio_save_user(uid, u)
+
+        active = get_bio_bonus_multiplier(u) > 1.0
+        lang   = get_lang(u)
+        mult_str = str(BIO_BONUS_MULTIPLIER).rstrip("0").rstrip(".")
+
+        _OK    = '<tg-emoji emoji-id="5206607081334906820">✅</tg-emoji>'
+        _GEM   = '<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji>'
+        _DMG   = '<tg-emoji emoji-id="5373173798633752502">⚔️</tg-emoji>'
+        _TROPHY = '<tg-emoji emoji-id="5449683594425410231">🏆</tg-emoji>'
+        _TIMER = '<tg-emoji emoji-id="5440621591387980068">⏱</tg-emoji>'
+        _LOCK  = '<tg-emoji emoji-id="5240241223632954241">🔒</tg-emoji>'
+        _STAR  = '<tg-emoji emoji-id="5262643974912355126">✨</tg-emoji>'
+
+        if active:
             if lang == "en":
-                await message.reply(
-                    f'<tg-emoji emoji-id="5382194935057372936">🪙</tg-emoji> <b>Daily bonus already claimed!</b>\n\n'
-                    f'<blockquote><tg-emoji emoji-id="5258203794772085854">🪙</tg-emoji>Come back in <b>{hours}h {minutes}m</b> — fortune favours the patient !</blockquote>',
-                    parse_mode="HTML",
+                text = (
+                    f'{_COIN_DAILY} <b>BIO BONUS — ACTIVE</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'{_OK} <b><i>@{BOT_USERNAME}</i></b> <i>found in your profile bio</i>\n\n'
+                    f'{_GEM} <b><i>+{mult_str}× to all ore mining loot</i></b>\n'
+                    f'{_DMG} <b><i>+{mult_str}× to boss damage</i></b>\n'
+                    f'{_TROPHY} <b><i>+{mult_str}× to boss kill rewards</i></b>'
+                    f'</blockquote>\n\n'
+                    f'{_TIMER} <i>Rechecked automatically every 30 minutes — '
+                    f'keep the tag in your bio and the bonus stays with you.</i>'
                 )
             else:
-                await message.reply(
-                    f'<tg-emoji emoji-id="5382194935057372936">🪙</tg-emoji> <b>Бонус уже получен!</b>\n\n'
-                    f'<blockquote><tg-emoji emoji-id="5258203794772085854">🪙</tg-emoji>Возвращайся через <b>{hours}ч {minutes}м</b> — удача любит терпеливых !</blockquote>',
-                    parse_mode="HTML",
+                text = (
+                    f'{_COIN_DAILY} <b>BIO-БОНУС — АКТИВЕН</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'{_OK} <b><i>@{BOT_USERNAME}</i></b> <i>найден в описании профиля</i>\n\n'
+                    f'{_GEM} <b><i>+{mult_str}× ко всей добыче руды</i></b>\n'
+                    f'{_DMG} <b><i>+{mult_str}× к урону по боссу</i></b>\n'
+                    f'{_TROPHY} <b><i>+{mult_str}× к награде за убийство босса</i></b>'
+                    f'</blockquote>\n\n'
+                    f'{_TIMER} <i>Статус обновляется автоматически каждые 30 минут — '
+                    f'держи метку в bio, и бонус останется с тобой.</i>'
                 )
-            return
-
-        import random as _rnd_daily
-        reward = _rnd_daily.randint(1000, 5000)
-        # Стрик: если бонус забран не позже чем через 48ч после предыдущего
-        # (т.е. не пропущен ни один день) — стрик растёт, иначе сбрасывается.
-        _STREAK_GRACE = 48 * 3600
-        if last and elapsed <= _STREAK_GRACE:
-            u["daily_streak"] = u.get("daily_streak", 0) + 1
         else:
-            u["daily_streak"] = 1
-        u["balance"]    = u.get("balance", 0) + reward
-        u["last_daily"] = now
-        _ach_newly = check_achievements(u)
-        await aio_save_user(uid, u)
-        await _notify_ach(uid, u, _ach_newly)
+            if lang == "en":
+                text = (
+                    f'{_LOCK} <b>BIO BONUS — NOT ACTIVE</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'<b><i>1.</i></b> <i>Open Telegram → Settings → Edit Profile</i>\n'
+                    f'<b><i>2.</i></b> <i>In the "Bio" field add:</i> <code>@{BOT_USERNAME}</code>\n'
+                    f'<b><i>3.</i></b> <i>Save changes</i>'
+                    f'</blockquote>\n\n'
+                    f'{_STAR} <b><i>Reward for it:</i></b>\n'
+                    f'{_GEM} <i>+{mult_str}× ore mining loot</i>\n'
+                    f'{_DMG} <i>+{mult_str}× boss damage</i>\n'
+                    f'{_TROPHY} <i>+{mult_str}× boss kill rewards</i>\n\n'
+                    f'{_TIMER} <i>Checked automatically every 30 minutes — or just '
+                    f'send /daily again right after editing your bio.</i>'
+                )
+            else:
+                text = (
+                    f'{_LOCK} <b>BIO-БОНУС — НЕ АКТИВЕН</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'<b><i>1.</i></b> <i>Открой Telegram → Настройки → Изменить профиль</i>\n'
+                    f'<b><i>2.</i></b> <i>В поле «О себе» (bio) добавь:</i> <code>@{BOT_USERNAME}</code>\n'
+                    f'<b><i>3.</i></b> <i>Сохрани изменения</i>'
+                    f'</blockquote>\n\n'
+                    f'{_STAR} <b><i>Награда за это:</i></b>\n'
+                    f'{_GEM} <i>+{mult_str}× к добыче руды</i>\n'
+                    f'{_DMG} <i>+{mult_str}× к урону по боссу</i>\n'
+                    f'{_TROPHY} <i>+{mult_str}× к награде за убийство босса</i>\n\n'
+                    f'{_TIMER} <i>Проверяется автоматически каждые 30 минут — либо '
+                    f'просто пришли /daily ещё раз сразу после правки bio.</i>'
+                )
 
-        lang = get_lang(u)
-        if lang == "en":
-            await message.reply(
-                f'<tg-emoji emoji-id="5222113468051629260">🪙</tg-emoji> <b>Daily bonus!</b>\n'
-                f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                f'<blockquote>'
-                f'<tg-emoji emoji-id="5397916757333654639">🪙</tg-emoji> <b><i>{format_amount(reward)} {_COIN_DAILY} — collected!</i></b>\n'
-                f'<b><i>Keep mining and come back tomorrow </i></b><tg-emoji emoji-id="5325547803936572038">🪙</tg-emoji></blockquote>',
-                parse_mode="HTML",
-            )
-        else:
-            await message.reply(
-                f'<tg-emoji emoji-id="5222113468051629260">🪙</tg-emoji> <b>Ежедневный бонус!</b>\n'
-                f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                f'<blockquote>'
-                f'<tg-emoji emoji-id="5397916757333654639">🪙</tg-emoji> <b><i>{format_amount(reward)} {_COIN_DAILY} — получено!</i></b>\n'
-                f'<b><i>Продолжай добывать и возвращайся завтра </i></b><tg-emoji emoji-id="5325547803936572038">🪙</tg-emoji></blockquote>',
-                parse_mode="HTML",
-            )
+        await message.reply(text, parse_mode="HTML")
 
 
 async def _send_onboarding_step(message: Message, uid: int) -> bool:
