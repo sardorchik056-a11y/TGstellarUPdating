@@ -1095,7 +1095,14 @@ def collect_mine(data: dict, lang: str = "ru") -> tuple:
         event_mult = _event_mine_mult()
     except Exception:
         event_mult = 1.0
-    multiplier = get_active_booster_multiplier(data) * get_artifact_mine_multiplier(data) * _status_mine_mult(data) * event_mult
+    # Бонус за @TGStellarr_bot в bio (см. bio_bonus.py) — тот же принцип,
+    # что и остальные множители: fail-safe 1.0, если модуль недоступен.
+    try:
+        from bio_bonus import get_bio_bonus_multiplier as _bio_mine_mult
+        bio_mult = _bio_mine_mult(data)
+    except Exception:
+        bio_mult = 1.0
+    multiplier = get_active_booster_multiplier(data) * get_artifact_mine_multiplier(data) * _status_mine_mult(data) * event_mult * bio_mult
     pick_key = data.get("pickaxe", "wood_1")
     results      = {}
     # Глобальный счётчик ударов кирки — накапливается между всеми сессиями
