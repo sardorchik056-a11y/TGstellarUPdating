@@ -200,6 +200,8 @@ from klan import (
     aio_register_clan_boss_kill as register_clan_boss_kill,
     aio_add_clan_mine_earnings as add_clan_mine_earnings,
     aio_get_daily_quests as get_daily_quests,
+    aio_add_clan_antimatter as add_clan_antimatter,
+    aio_level_up_clan as level_up_clan,
     klan_quests_text, klan_quests_keyboard,
     CREATE_COST, MIN_CLAN_NAME, MAX_CLAN_NAME,
     CLANS_PER_PAGE,
@@ -4166,6 +4168,38 @@ async def handle_callback(call: CallbackQuery):
             await call.answer()
             return
 
+        if cd == "klan_level_up":
+            m = await get_member(user.id)
+            if not m:
+                await call.answer()
+                return
+            res = await level_up_clan(user.id)
+            if res.get("ok"):
+                alert = (
+                    f'✅ Клан прокачан до {res["new_level"]} уровня! (-{res["cost"]} 🟣)'
+                    if lang == "ru" else
+                    f'✅ Clan leveled up to {res["new_level"]}! (-{res["cost"]} 🟣)'
+                )
+            else:
+                err = res.get("error")
+                if err == "not_creator":
+                    alert = "Только создатель клана может прокачивать уровень." if lang == "ru" else "Only the clan creator can level up the clan."
+                elif err == "max_level":
+                    alert = "Уже максимальный уровень клана." if lang == "ru" else "Clan is already at max level."
+                elif err == "not_enough_antimatter":
+                    alert = (
+                        f'Недостаточно антиматерии: {res.get("have", 0)}/{res.get("cost", 0)} 🟣'
+                        if lang == "ru" else
+                        f'Not enough antimatter: {res.get("have", 0)}/{res.get("cost", 0)} 🟣'
+                    )
+                else:
+                    alert = "Не удалось прокачать уровень, попробуй ещё раз." if lang == "ru" else "Couldn't level up, try again."
+            clan = await get_clan(m["clan_id"])
+            if clan:
+                await edit(klan_treasury_text(clan, lang), klan_treasury_keyboard(lang))
+            await call.answer(alert, show_alert=True)
+            return
+
         if cd == "klan_quests":
             m = await get_member(user.id)
             if not m:
@@ -5514,6 +5548,13 @@ async def handle_callback(call: CallbackQuery):
                         await add_clan_boss_damage(user.id, result["dmg"])
                     if result.get("boss_killed"):
                         await register_clan_boss_kill(user.id)
+                        # ── Антиматерия за убийство босса (по сложности) ──
+                        try:
+                            from hunt import _tier_for_slot as _tier_for_slot_fn
+                            _tier_key = _tier_for_slot_fn(slot).get("key")
+                            await add_clan_antimatter(user.id, _tier_key)
+                        except Exception as _ae:
+                            print(f"[klan] antimatter reward error: {_ae}")
                 except Exception as _qe:
                     print(f"[klan] daily quest error: {_qe}")
                 # ── Раздача наград остальным участникам урона ──
