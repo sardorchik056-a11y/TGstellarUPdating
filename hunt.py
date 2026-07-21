@@ -610,8 +610,7 @@ _HUNT_QUOTES = [
 # ─────────────────────────────────────────
 #  БОССЫ
 # ─────────────────────────────────────────
-BOSS_RESPAWN_SEC  = 30 * 60    # 30 минут после смерти — следующий босс в слоте
-ACTIVE_BOSS_SLOTS = 5          # одновременно активных боссов
+BOSS_RESPAWN_SEC  = 30 * 60    # 30 минут после смерти — следующий босс в этом же слоте
 
 # Блокировки на слот (защита от гонок при параллельных ударах/спавнах
 # в рамках одного процесса; на уровне БД та же атаку дополнительно
@@ -629,56 +628,64 @@ def _get_slot_lock(slot: int) -> threading.Lock:
 
 # ─────────────────────────────────────────
 #  УРОВНИ СЛОЖНОСТИ БОССОВ
-#  При каждом спавне случайно выбирается уровень (с весами), а внутри
-#  уровня — случайные HP и, соответственно, награда (линейно от HP
-#  внутри диапазона уровня — чем больше HP, тем больше награда).
+#  Каждый уровень имеет фиксированное число одновременно активных слотов
+#  (боссов). Слот всегда принадлежит одному и тому же уровню — тем самым
+#  в разделе "Простой" всегда 5 боссов, "Средний" — 3, "Сложный" — 1.
+#  Внутри уровня HP и, соответственно, награда — случайные (линейно от
+#  HP внутри диапазона уровня: чем больше HP, тем больше награда).
 # ─────────────────────────────────────────
 BOSS_TIERS = [
     {
         "key": "easy",
         "name": "Простой", "name_en": "Easy",
+        "slots":       5,
         "hp_min":      10_000_000,  "hp_max":      50_000_000,
         "reward_min":   5_000_000,  "reward_max":  15_000_000,
     },
     {
         "key": "medium",
         "name": "Средний", "name_en": "Medium",
+        "slots":       3,
         "hp_min":     150_000_000,  "hp_max":     400_000_000,
         "reward_min":  30_000_000,  "reward_max": 150_000_000,
     },
     {
         "key": "hard",
         "name": "Сложный", "name_en": "Hard",
+        "slots":       1,
         "hp_min":   1_000_000_000,  "hp_max":   5_000_000_000,
         "reward_min": 500_000_000,  "reward_max": 5_000_000_000,
     },
 ]
 BOSS_TIERS_BY_KEY = {t["key"]: t for t in BOSS_TIERS}
 
+# Раскладка слотов по уровням: каждому уровню отводится непрерывный
+# диапазон номеров слотов, например easy -> 0..4, medium -> 5..7, hard -> 8.
+TIER_SLOT_RANGES: dict[str, list[int]] = {}
+_slot_cursor = 0
+for _t in BOSS_TIERS:
+    TIER_SLOT_RANGES[_t["key"]] = list(range(_slot_cursor, _slot_cursor + _t["slots"]))
+    _slot_cursor += _t["slots"]
+del _t
+
+# Номер слота -> ключ уровня (обратный индекс, для скорости).
+SLOT_TO_TIER: dict[int, str] = {
+    slot: tier_key
+    for tier_key, slots in TIER_SLOT_RANGES.items()
+    for slot in slots
+}
+
+# Общее число активных слотов боссов (5 простых + 3 средних + 1 сложный = 9).
+ACTIVE_BOSS_SLOTS = _slot_cursor
+
+def _tier_for_slot(slot: int) -> dict:
+    """Возвращает уровень сложности, закреплённый за данным слотом."""
+    tier_key = SLOT_TO_TIER.get(slot)
+    return BOSS_TIERS_BY_KEY.get(tier_key, BOSS_TIERS[0])
+
 # Легаси-дефолт HP (используется только как fallback, если у состояния
 # по какой-то причине нет boss_max_hp — само по себе не должно происходить).
 BOSS_MAX_HP = BOSS_TIERS_BY_KEY["easy"]["hp_min"]
-
-# Веса выбора уровня следующего босса в зависимости от скорости убийства
-# предыдущего: чем быстрее убили предыдущего — тем выше шанс, что следующий
-# будет сложнее (и наоборот). Если данных нет (первый спавн) — веса по умолчанию.
-_TIER_WEIGHTS_DEFAULT = {"easy": 65, "medium": 28, "hard": 7}
-_TIER_WEIGHTS_FAST    = {"easy": 20, "medium": 50, "hard": 30}  # предыдущий убит <= 5 минут
-_TIER_WEIGHTS_MEDIUM  = {"easy": 45, "medium": 42, "hard": 13}  # предыдущий убит за 5-30 минут
-_TIER_WEIGHTS_SLOW    = {"easy": 72, "medium": 24, "hard": 4}   # предыдущий убит > 30 минут
-
-def _pick_boss_tier(kill_duration: int = None) -> dict:
-    """Выбирает уровень сложности следующего босса (случайно, с весами)."""
-    if kill_duration is None:
-        weights_map = _TIER_WEIGHTS_DEFAULT
-    elif kill_duration <= 5 * 60:
-        weights_map = _TIER_WEIGHTS_FAST
-    elif kill_duration <= 30 * 60:
-        weights_map = _TIER_WEIGHTS_MEDIUM
-    else:
-        weights_map = _TIER_WEIGHTS_SLOW
-    weights = [weights_map[t["key"]] for t in BOSS_TIERS]
-    return random.choices(BOSS_TIERS, weights=weights, k=1)[0]
 
 def _tier_for_hp(max_hp: int) -> dict:
     """Определяет уровень сложности по HP (для расчёта награды)."""
@@ -1506,9 +1513,10 @@ def _pick_random_boss(exclude_keys: list[str] = None) -> dict:
     return random.choice(pool)
 
 
-def _build_spawn_state(kill_duration: int = None, active_keys: list[str] = None) -> dict:
-    """Строит новое состояние случайного босса (без сохранения в БД)."""
-    tier    = _pick_boss_tier(kill_duration)
+def _build_spawn_state(slot: int, active_keys: list[str] = None) -> dict:
+    """Строит новое состояние случайного босса для конкретного слота
+    (без сохранения в БД). Уровень сложности жёстко закреплён за слотом."""
+    tier    = _tier_for_slot(slot)
     next_hp = random.randint(tier["hp_min"], tier["hp_max"])
 
     boss = _pick_random_boss(exclude_keys=active_keys or [])
@@ -1530,9 +1538,9 @@ def _build_spawn_state(kill_duration: int = None, active_keys: list[str] = None)
     }
 
 
-def _spawn_slot(slot: int, kill_duration: int = None, active_keys: list[str] = None):
-    """Спавнит нового случайного босса в слот."""
-    state = _build_spawn_state(kill_duration=kill_duration, active_keys=active_keys)
+def _spawn_slot(slot: int, active_keys: list[str] = None):
+    """Спавнит нового случайного босса в слот (уровень определяется слотом)."""
+    state = _build_spawn_state(slot, active_keys=active_keys)
     _save_slot(slot, state)
     return state
 
@@ -1553,14 +1561,13 @@ def revive_boss_with_potion(slot: int) -> tuple[bool, dict]:
             for st in [_load_slot(s)]
             if st.get("boss_alive")
         ]
-        kill_dur = state.get("boss_kill_duration")
-        new_state = _build_spawn_state(kill_duration=kill_dur, active_keys=active_keys)
+        new_state = _build_spawn_state(slot, active_keys=active_keys)
         return new_state, (True, new_state)
     return _atomic_slot_update(slot, _mutator)
 
 
 def _ensure_all_slots():
-    """При старте инициализирует все 5 слотов если пусты."""
+    """При старте инициализирует все слоты (5 простых + 3 средних + 1 сложный) если пусты."""
     used_keys = []
     for slot in range(ACTIVE_BOSS_SLOTS):
         st = _load_slot(slot)
@@ -1574,7 +1581,7 @@ def _ensure_all_slots():
 
 
 def get_all_slots() -> list[dict]:
-    """Возвращает все 5 слотов, обновляя мёртвых боссов если прошло 30 минут."""
+    """Возвращает все слоты (по всем уровням сложности), обновляя мёртвых боссов если прошло 30 минут."""
     now = _now_ts()
     slots = []
     active_keys = []
@@ -1594,8 +1601,7 @@ def get_all_slots() -> list[dict]:
         elif not st.get("boss_alive", True):
             died_at = st.get("boss_died_at", 0) or 0
             if now - died_at >= BOSS_RESPAWN_SEC:
-                kill_dur = st.get("boss_kill_duration")
-                st = _spawn_slot(slot, kill_duration=kill_dur, active_keys=active_keys)
+                st = _spawn_slot(slot, active_keys=active_keys)
                 if st.get("boss_alive"):
                     active_keys.append(st["boss_key"])
         result.append((slot, st))
@@ -2485,8 +2491,10 @@ def revival_pick_slot_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         if st.get("boss_alive"):
             continue
         any_dead = True
+        tier = _tier_for_slot(slot_idx)
+        tname = tier.get("name_en", tier["name"]) if lang == "en" else tier["name"]
         builder.row(InlineKeyboardButton(
-            text=f'#{slot_idx + 1}',
+            text=f'#{slot_idx + 1} ({tname})',
             callback_data=f'use_potion_revival_{slot_idx}',
             icon_custom_emoji_id=_E["dead"]
         ))
@@ -2745,45 +2753,100 @@ def my_swords_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-# ─── Экран выбора босса ───
+# ─── Экран выбора уровня сложности ───
 
-def boss_select_text(lang: str = "ru") -> str:
+def boss_tier_menu_text(lang: str = "ru") -> str:
     slots = get_all_slots()
+    counts_alive = {t["key"]: 0 for t in BOSS_TIERS}
+    for slot_idx, st in slots:
+        tier_key = SLOT_TO_TIER.get(slot_idx)
+        if tier_key and st.get("boss_alive"):
+            counts_alive[tier_key] += 1
+
+    lines = []
+    for t in BOSS_TIERS:
+        alive = counts_alive[t["key"]]
+        total = t["slots"]
+        tname = t.get("name_en", t["name"]) if lang == "en" else t["name"]
+        lines.append(f'{_tg(_E["skull"], "💀")} <b><i>{tname}</i></b> — {alive}/{total} 🔥')
+
+    body = "\n".join(lines)
+    if lang == "en":
+        return f'<blockquote>{_tg(_E["skull"], "💀")} <b><i>CHOOSE A DIFFICULTY</i></b>\n\n{body}\n</blockquote>'
+    return f'<blockquote>{_tg(_E["skull"], "💀")} <b><i>ВЫБОР УРОВНЯ СЛОЖНОСТИ</i></b>\n\n{body}\n</blockquote>'
+
+
+def boss_tier_menu_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    slots = get_all_slots()
+    counts_alive = {t["key"]: 0 for t in BOSS_TIERS}
+    for slot_idx, st in slots:
+        tier_key = SLOT_TO_TIER.get(slot_idx)
+        if tier_key and st.get("boss_alive"):
+            counts_alive[tier_key] += 1
+
+    for t in BOSS_TIERS:
+        tname = t.get("name_en", t["name"]) if lang == "en" else t["name"]
+        alive = counts_alive[t["key"]]
+        total = t["slots"]
+        builder.row(InlineKeyboardButton(
+            text=f" {tname} ({alive}/{total})",
+            callback_data=f"hunt_tier_{t['key']}",
+            icon_custom_emoji_id=_E["skull"]
+        ))
+
+    builder.row(InlineKeyboardButton(
+        text="Back" if lang == "en" else "Назад",
+        callback_data="hunt",
+        icon_custom_emoji_id=_E["back"]
+    ))
+    return builder.as_markup()
+
+
+# ─── Экран выбора конкретного босса внутри уровня сложности ───
+
+def boss_select_text(lang: str = "ru", tier_key: str = "easy") -> str:
+    tier = BOSS_TIERS_BY_KEY.get(tier_key, BOSS_TIERS[0])
+    tier_slots = TIER_SLOT_RANGES.get(tier["key"], [])
+    slots = [(s, st) for s, st in get_all_slots() if s in tier_slots]
     now   = _now_ts()
     lines = []
-    for slot_idx, st in slots:
+    for i, (slot_idx, st) in enumerate(slots, start=1):
         boss_key = st.get("boss_key")
         boss     = BOSSES_BY_KEY.get(boss_key)
         if st.get("boss_alive") and boss:
             bname = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
-            lines.append(f'{_tg(_E["boss"], "🔥")} <b><i>#{slot_idx+1} {bname}</i></b>')
+            lines.append(f'{_tg(_E["boss"], "🔥")} <b><i>#{i} {bname}</i></b>')
         else:
             died_at = st.get("boss_died_at", 0) or 0
             rem     = max(0, BOSS_RESPAWN_SEC - (now - died_at))
             m       = rem // 60
             if lang == "en":
-                lines.append(f'{_tg(_E["dead"], "💀")} <b><i>#{slot_idx+1}</i></b> — next in {m}m')
+                lines.append(f'{_tg(_E["dead"], "💀")} <b><i>#{i}</i></b> — next in {m}m')
             else:
-                lines.append(f'{_tg(_E["dead"], "💀")} <b><i>#{slot_idx+1}</i></b> — след. через {m}м')
+                lines.append(f'{_tg(_E["dead"], "💀")} <b><i>#{i}</i></b> — след. через {m}м')
 
     body = "\n".join(lines)
+    tname = tier.get("name_en", tier["name"]) if lang == "en" else tier["name"]
     if lang == "en":
-        return f'<blockquote>{_tg(_E["skull"], "💀")} <b><i>CHOOSE A BOSS</i></b>\n\n{body}\n</blockquote>'
-    return f'<blockquote>{_tg(_E["skull"], "💀")} <b><i>ВЫБОР БОССА</i></b>\n\n{body}\n</blockquote>'
+        return f'<blockquote>{_tg(_E["skull"], "💀")} <b><i>{tname.upper()} BOSSES</i></b>\n\n{body}\n</blockquote>'
+    return f'<blockquote>{_tg(_E["skull"], "💀")} <b><i>{tname.upper()} БОССЫ</i></b>\n\n{body}\n</blockquote>'
 
 
-def boss_select_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+def boss_select_keyboard(lang: str = "ru", tier_key: str = "easy") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    slots   = get_all_slots()
+    tier = BOSS_TIERS_BY_KEY.get(tier_key, BOSS_TIERS[0])
+    tier_slots = TIER_SLOT_RANGES.get(tier["key"], [])
+    slots = [(s, st) for s, st in get_all_slots() if s in tier_slots]
 
-    for slot_idx, st in slots:
+    for i, (slot_idx, st) in enumerate(slots, start=1):
         boss_key = st.get("boss_key")
         boss     = BOSSES_BY_KEY.get(boss_key)
         alive    = st.get("boss_alive", False)
         if alive and boss:
             bname = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
             builder.row(InlineKeyboardButton(
-                text=f" #{slot_idx+1} {bname}",
+                text=f" #{i} {bname}",
                 callback_data=f"hunt_boss_{slot_idx}",
                 icon_custom_emoji_id=_E["skull"]
             ))
@@ -2791,7 +2854,7 @@ def boss_select_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
             died_at = st.get("boss_died_at", 0) or 0
             rem     = max(0, BOSS_RESPAWN_SEC - (_now_ts() - died_at))
             m       = rem // 60
-            label   = f" #{slot_idx+1} — {m}м" if lang == "ru" else f" #{slot_idx+1} — {m}m"
+            label   = f" #{i} — {m}м" if lang == "ru" else f" #{i} — {m}m"
             builder.row(InlineKeyboardButton(
                 text=label,
                 callback_data="hunt_boss_dead",
@@ -2800,7 +2863,7 @@ def boss_select_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
 
     builder.row(InlineKeyboardButton(
         text="Back" if lang == "en" else "Назад",
-        callback_data="hunt",
+        callback_data="hunt_boss_select",
         icon_custom_emoji_id=_E["back"]
     ))
     return builder.as_markup()
@@ -3017,9 +3080,10 @@ def boss_attack_keyboard(data: dict, lang: str = "ru", slot: int = 0) -> InlineK
             style="danger" if is_stunned else "primary"
         ))
 
+    tier_key = SLOT_TO_TIER.get(slot, "easy")
     builder.row(InlineKeyboardButton(
         text="Back" if lang == "en" else "Назад",
-        callback_data="hunt_boss_select",
+        callback_data=f"hunt_tier_{tier_key}",
         icon_custom_emoji_id=_E["back"]
     ))
     return builder.as_markup()
@@ -3213,9 +3277,10 @@ def boss_strike_keyboard(data: dict, lang: str = "ru", slot: int = 0) -> InlineK
             style="danger" if is_stunned else "primary"
         ))
 
+    tier_key = SLOT_TO_TIER.get(slot, "easy")
     builder.row(InlineKeyboardButton(
         text="Back" if lang == "en" else "Назад",
-        callback_data="hunt_boss_select",
+        callback_data=f"hunt_tier_{tier_key}",
         icon_custom_emoji_id=_E["back"]
     ))
     return builder.as_markup()
