@@ -610,7 +610,6 @@ _HUNT_QUOTES = [
 # ─────────────────────────────────────────
 #  БОССЫ
 # ─────────────────────────────────────────
-BOSS_MAX_HP       = 10_000_000
 BOSS_RESPAWN_SEC  = 30 * 60    # 30 минут после смерти — следующий босс в слоте
 ACTIVE_BOSS_SLOTS = 5          # одновременно активных боссов
 
@@ -628,10 +627,74 @@ def _get_slot_lock(slot: int) -> threading.Lock:
             _SLOT_LOCKS[slot] = lock
         return lock
 
-# HP следующего босса в зависимости от скорости убийства предыдущего
-BOSS_HP_FAST   = 150_000_000  # убит за <= 5 минут
-BOSS_HP_MEDIUM =  50_000_000  # убит за 5-30 минут
-BOSS_HP_SLOW   =  10_000_000  # убит за > 30 минут (обычный)
+# ─────────────────────────────────────────
+#  УРОВНИ СЛОЖНОСТИ БОССОВ
+#  При каждом спавне случайно выбирается уровень (с весами), а внутри
+#  уровня — случайные HP и, соответственно, награда (линейно от HP
+#  внутри диапазона уровня — чем больше HP, тем больше награда).
+# ─────────────────────────────────────────
+BOSS_TIERS = [
+    {
+        "key": "easy",
+        "name": "Простой", "name_en": "Easy",
+        "hp_min":      10_000_000,  "hp_max":      50_000_000,
+        "reward_min":   5_000_000,  "reward_max":  15_000_000,
+    },
+    {
+        "key": "medium",
+        "name": "Средний", "name_en": "Medium",
+        "hp_min":     150_000_000,  "hp_max":     400_000_000,
+        "reward_min":  30_000_000,  "reward_max": 150_000_000,
+    },
+    {
+        "key": "hard",
+        "name": "Сложный", "name_en": "Hard",
+        "hp_min":   1_000_000_000,  "hp_max":   5_000_000_000,
+        "reward_min": 500_000_000,  "reward_max": 5_000_000_000,
+    },
+]
+BOSS_TIERS_BY_KEY = {t["key"]: t for t in BOSS_TIERS}
+
+# Легаси-дефолт HP (используется только как fallback, если у состояния
+# по какой-то причине нет boss_max_hp — само по себе не должно происходить).
+BOSS_MAX_HP = BOSS_TIERS_BY_KEY["easy"]["hp_min"]
+
+# Веса выбора уровня следующего босса в зависимости от скорости убийства
+# предыдущего: чем быстрее убили предыдущего — тем выше шанс, что следующий
+# будет сложнее (и наоборот). Если данных нет (первый спавн) — веса по умолчанию.
+_TIER_WEIGHTS_DEFAULT = {"easy": 65, "medium": 28, "hard": 7}
+_TIER_WEIGHTS_FAST    = {"easy": 20, "medium": 50, "hard": 30}  # предыдущий убит <= 5 минут
+_TIER_WEIGHTS_MEDIUM  = {"easy": 45, "medium": 42, "hard": 13}  # предыдущий убит за 5-30 минут
+_TIER_WEIGHTS_SLOW    = {"easy": 72, "medium": 24, "hard": 4}   # предыдущий убит > 30 минут
+
+def _pick_boss_tier(kill_duration: int = None) -> dict:
+    """Выбирает уровень сложности следующего босса (случайно, с весами)."""
+    if kill_duration is None:
+        weights_map = _TIER_WEIGHTS_DEFAULT
+    elif kill_duration <= 5 * 60:
+        weights_map = _TIER_WEIGHTS_FAST
+    elif kill_duration <= 30 * 60:
+        weights_map = _TIER_WEIGHTS_MEDIUM
+    else:
+        weights_map = _TIER_WEIGHTS_SLOW
+    weights = [weights_map[t["key"]] for t in BOSS_TIERS]
+    return random.choices(BOSS_TIERS, weights=weights, k=1)[0]
+
+def _tier_for_hp(max_hp: int) -> dict:
+    """Определяет уровень сложности по HP (для расчёта награды)."""
+    try:
+        max_hp = int(max_hp)
+    except (TypeError, ValueError):
+        max_hp = 0
+    for t in BOSS_TIERS:
+        if t["hp_min"] <= max_hp <= t["hp_max"]:
+            return t
+    # HP не попадает ни в один диапазон (например, старые/легаси данные) —
+    # берём ближайший по границе уровень, чтобы не сломаться.
+    return min(
+        BOSS_TIERS,
+        key=lambda t: min(abs(max_hp - t["hp_min"]), abs(max_hp - t["hp_max"])),
+    )
 
 # Опыт за участие в убийстве
 BOSS_XP_KILLER           = 25_000
@@ -639,14 +702,20 @@ BOSS_XP_PARTICIPANT_MAX  =  5_000
 BOSS_XP_PARTICIPANT_MIN  =    100
 
 def _reward_for_hp(max_hp: int) -> int:
-    """Полная награда пула за босса (делится пропорционально урону)."""
-    if max_hp >= 100_000_000:
-        return 25_000_000
-    if max_hp >= 50_000_000:
-        return 15_000_000
-    return 5_000_000
+    """
+    Полная награда пула за босса (делится пропорционально урону).
+    Награда масштабируется линейно внутри диапазона HP своего уровня
+    сложности: чем ближе HP босса к максимуму диапазона уровня — тем
+    ближе награда к reward_max этого уровня.
+    """
+    tier = _tier_for_hp(max_hp)
+    span = tier["hp_max"] - tier["hp_min"]
+    frac = (max_hp - tier["hp_min"]) / span if span > 0 else 0.0
+    frac = min(1.0, max(0.0, frac))
+    reward = tier["reward_min"] + frac * (tier["reward_max"] - tier["reward_min"])
+    return int(reward)
 
-BOSS_KILL_REWARD = 5_000_000   # дефолт для отображения в UI
+BOSS_KILL_REWARD = BOSS_TIERS_BY_KEY["easy"]["reward_min"]   # дефолт для отображения в UI
 
 # ─────────────────────────────────────────
 #  МЕХАНИКИ БОССА: ЗАГЛУШКА И ПОДАВЛЕНИЕ
@@ -1439,18 +1508,13 @@ def _pick_random_boss(exclude_keys: list[str] = None) -> dict:
 
 def _build_spawn_state(kill_duration: int = None, active_keys: list[str] = None) -> dict:
     """Строит новое состояние случайного босса (без сохранения в БД)."""
-    if kill_duration is None:
-        next_hp = BOSS_MAX_HP
-    elif kill_duration <= 5 * 60:
-        next_hp = BOSS_HP_FAST
-    elif kill_duration <= 30 * 60:
-        next_hp = BOSS_HP_MEDIUM
-    else:
-        next_hp = BOSS_HP_SLOW
+    tier    = _pick_boss_tier(kill_duration)
+    next_hp = random.randint(tier["hp_min"], tier["hp_max"])
 
     boss = _pick_random_boss(exclude_keys=active_keys or [])
     return {
         "boss_key":          boss["key"],
+        "boss_tier":         tier["key"],
         "boss_hp":           next_hp,
         "boss_max_hp":       next_hp,
         "boss_alive":        True,
