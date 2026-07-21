@@ -4196,7 +4196,8 @@ async def handle_callback(call: CallbackQuery):
                     alert = "Не удалось прокачать уровень, попробуй ещё раз." if lang == "ru" else "Couldn't level up, try again."
             clan = await get_clan(m["clan_id"])
             if clan:
-                await edit(klan_treasury_text(clan, lang), klan_treasury_keyboard(lang))
+                cnt = await get_member_count(m["clan_id"])
+                await edit(my_klan_text(clan, m, cnt, lang), await my_klan_keyboard(user.id, lang))
             await call.answer(alert, show_alert=True)
             return
 
