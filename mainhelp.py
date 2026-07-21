@@ -200,6 +200,8 @@ from klan import (
     aio_register_clan_boss_kill as register_clan_boss_kill,
     aio_add_clan_mine_earnings as add_clan_mine_earnings,
     aio_get_daily_quests as get_daily_quests,
+    aio_get_personal_quests as get_personal_quests,
+    aio_get_clan_mining_bonus_multiplier as get_clan_mining_bonus_multiplier,
     aio_add_clan_antimatter as add_clan_antimatter,
     aio_level_up_clan as level_up_clan,
     klan_quests_text, klan_quests_keyboard,
@@ -4206,9 +4208,13 @@ async def handle_callback(call: CallbackQuery):
             if not m:
                 await call.answer()
                 return
-            clan   = await get_clan(m["clan_id"])
-            quests = await get_daily_quests(m["clan_id"])
-            await edit(klan_quests_text(clan, quests, lang), klan_quests_keyboard(lang))
+            clan     = await get_clan(m["clan_id"])
+            quests   = await get_daily_quests(m["clan_id"])
+            personal = await get_personal_quests(user.id)
+            await edit(
+                klan_quests_text(clan, quests, lang, personal=personal, member=m),
+                klan_quests_keyboard(lang),
+            )
             await call.answer()
             return
 
@@ -5197,8 +5203,23 @@ async def handle_callback(call: CallbackQuery):
             if total == 0:
                 await call.answer(t(lang, "mine_sell_nothing"), show_alert=True)
                 return
-            if await get_member(user.id):
+            is_clan_member = bool(await get_member(user.id))
+            if is_clan_member:
                 data["clan_mine_contributed"] = data.get("clan_mine_contributed", 0) + total
+            # ── Клановый бонус на добычу (по уровню клана, только если
+            #    игрок выполнил личное клановое задание за последние 24ч) ──
+            bonus_mult  = 1.0
+            bonus_extra = 0
+            if is_clan_member:
+                try:
+                    bonus_mult = await get_clan_mining_bonus_multiplier(user.id)
+                except Exception as _be:
+                    print(f"[klan] mining bonus error: {_be}")
+                    bonus_mult = 1.0
+                if bonus_mult > 1.0:
+                    bonus_extra = int(total * (bonus_mult - 1))
+                    if bonus_extra > 0:
+                        data["balance"] = data.get("balance", 0) + bonus_extra
             _ach_newly = check_achievements(data)
             await aio_save_user(data["id"], data)
             await _notify_ach(data["id"], data, _ach_newly)
@@ -5206,11 +5227,16 @@ async def handle_callback(call: CallbackQuery):
                 await add_clan_mine_earnings(user.id, total)
             except Exception as _qe:
                 print(f"[klan] mine daily quest error: {_qe}")
+            bonus_line = (
+                f'\n🚀 <b>Клановый бонус ×{bonus_mult:g}:</b> +{format_amount(bonus_extra)} <tg-emoji emoji-id="5199552030615558774">🎟</tg-emoji>'
+                if bonus_extra > 0 else ""
+            )
             sell_text = (
                 f'<tg-emoji emoji-id="5206607081334906820">🎟</tg-emoji> <b>{t(lang, "mine_sell_success")}</b>\n'
                 f"━━━━━━━━━━━━━━━━━━━━\n\n"
                 f"{report}\n\n"
-                f'<tg-emoji emoji-id="5429651785352501917">🎟</tg-emoji> <b>{t(lang, "mine_sell_earned")}: {format_amount(total)}</b> <tg-emoji emoji-id="5199552030615558774">🎟</tg-emoji>\n'
+                f'<tg-emoji emoji-id="5429651785352501917">🎟</tg-emoji> <b>{t(lang, "mine_sell_earned")}: {format_amount(total)}</b> <tg-emoji emoji-id="5199552030615558774">🎟</tg-emoji>'
+                f'{bonus_line}\n'
                 f'<tg-emoji emoji-id="5278467510604160626">🎟</tg-emoji> <b>{t(lang, "mine_balance_lbl")}: {format_amount(data["balance"])}</b> <tg-emoji emoji-id="5199552030615558774">🎟</tg-emoji>'
             )
             await edit(sell_text, mine_keyboard(data, lang))
