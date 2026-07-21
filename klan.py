@@ -125,6 +125,7 @@ _E_STATUS  = "5438496463044752972"   # 🎟        — статус
 _E_HUNT    = "5424972470023104089"   # 🗡         — охота
 _E_LEAVE   = "5210952531676504517"   # 🚪        — из main.py кнопка
 _E_STATSE  = "5445355530111437729"
+_E_ANTIMATTER = "-5235611059909323996"   # 🟣 — антиматерия (ресурс уровня клана)
 # ── Emoji для топ-10 кланов (места/цифры) ───────────────────
 _E_RANK_1  = "5440539497383087970"   # 🥇 — 1 место
 _E_RANK_2  = "5447203607294265305"   # 🥈 — 2 место
@@ -199,8 +200,9 @@ def _fmt(n) -> str:
     return f"{sign}{val:.1f}{suffix}"
 
 
-COIN  = _e(_E_COIN,  "🪙")
-CROWN = _e(_E_CROWN, "👑")
+COIN       = _e(_E_COIN,  "🪙")
+CROWN      = _e(_E_CROWN, "👑")
+ANTIMATTER = _e(_E_ANTIMATTER, "🟣")
 
 MAX_CLAN_MEMBERS = 100
 MAX_CLAN_APPS    = 50
@@ -334,6 +336,39 @@ def _maybe_rank_up(c, clan_id: int) -> int:
     return new_rank
 
 
+# ── Антиматерия и уровень клана ─────────────────────────────
+# Отдельный ресурс клана (не казна). Копится на убийствах боссов и
+# тратится ТОЛЬКО на прокачку уровня клана (не влияет на ранг/задания
+# выше — это независимая система).
+#   простой (easy)   босс -> 1  антиматерия
+#   средний (medium) босс -> 3  антиматерии
+#   сложный (hard)   босс -> 10 антиматерий
+ANTIMATTER_REWARD_EASY   = 1
+ANTIMATTER_REWARD_MEDIUM = 3
+ANTIMATTER_REWARD_HARD   = 10
+ANTIMATTER_REWARD_BY_TIER = {
+    "easy":   ANTIMATTER_REWARD_EASY,
+    "medium": ANTIMATTER_REWARD_MEDIUM,
+    "hard":   ANTIMATTER_REWARD_HARD,
+}
+
+# Стоимость (в антиматерии) повышения уровня клана. Ключ — уровень,
+# ДО которого повышаемся (2, 3, 4, 5). Уровень 1 — стартовый, бесплатный.
+CLAN_LEVEL_UP_COST = {
+    2: 15,
+    3: 125,
+    4: 350,
+    5: 1000,
+}
+MAX_CLAN_LEVEL = max(CLAN_LEVEL_UP_COST)
+
+
+def get_clan_level_up_cost(level: int) -> int | None:
+    """Стоимость антиматерии для повышения СЛЕДУЮЩЕГО уровня клана
+    относительно текущего `level`. None, если уровень уже максимальный."""
+    return CLAN_LEVEL_UP_COST.get((level or 1) + 1)
+
+
 def get_clan_rank_progress(clan_id: int) -> dict:
     """
     Прогресс клана к следующему рангу — для UI (сколько участников/казны
@@ -421,6 +456,12 @@ def init_klan_db():
         # Миграция: ранг клана (система рангов, задания x2 за ранг)
         if "rank" not in clan_cols:
             c.execute("ALTER TABLE clans ADD COLUMN rank INTEGER DEFAULT 1")
+        # Миграция: антиматерия (ресурс за убийство боссов) и уровень
+        # клана (прокачивается за антиматерию, независимо от rank).
+        if "antimatter" not in clan_cols:
+            c.execute("ALTER TABLE clans ADD COLUMN antimatter INTEGER DEFAULT 0")
+        if "level" not in clan_cols:
+            c.execute("ALTER TABLE clans ADD COLUMN level INTEGER DEFAULT 1")
         # Миграция: добавляем новые колонки к существующей таблице, если их нет
         existing_cols = {row[1] for row in c.execute("PRAGMA table_info(clan_daily_quests)").fetchall()}
         for col, ddl in [
@@ -1203,6 +1244,70 @@ def register_clan_boss_kill(uid: int) -> dict:
     return {"ok": True, "clan_id": clan_id, "rewarded": rewarded, "reward": reward}
 
 
+def add_clan_antimatter(uid: int, tier_key: str) -> dict:
+    """
+    Вызывать каждый раз, когда игрок убивает босса — начисляет клану
+    антиматерию в зависимости от сложности убитого босса:
+      простой (easy)   -> 1  антиматерия
+      средний (medium) -> 3  антиматерии
+      сложный (hard)   -> 10 антиматерий
+    Антиматерия — отдельный ресурс клана (не казна), тратится только
+    на прокачку уровня клана через level_up_clan().
+    """
+    amount = ANTIMATTER_REWARD_BY_TIER.get(tier_key)
+    if not amount:
+        return {"ok": False, "error": "bad_tier"}
+    m = get_member(uid)
+    if not m:
+        return {"ok": False, "error": "not_in_clan"}
+    clan_id = m["clan_id"]
+    with _clan_lock(clan_id):
+        with _immediate_tx() as c:
+            c.execute("UPDATE clans SET antimatter=antimatter+? WHERE id=?", (amount, clan_id))
+    return {"ok": True, "clan_id": clan_id, "amount": amount}
+
+
+def level_up_clan(uid: int) -> dict:
+    """
+    Повышает уровень клана, списывая антиматерию из её баланса у клана.
+    Доступно только создателю клана. Стоимость по уровням:
+      2 уровень — 15 антиматерий
+      3 уровень — 125 антиматерий
+      4 уровень — 350 антиматерий
+      5 уровень — 1000 антиматерий (максимум)
+    Атомарно: UPDATE с проверкой level/antimatter в WHERE, чтобы
+    исключить дюп при параллельных нажатиях.
+    """
+    m = get_member(uid)
+    if not m or m["role"] != "creator":
+        return {"ok": False, "error": "not_creator"}
+    clan_id = m["clan_id"]
+    with _clan_lock(clan_id):
+        with _immediate_tx() as c:
+            row = c.execute(
+                "SELECT level, antimatter FROM clans WHERE id=?", (clan_id,)
+            ).fetchone()
+            if not row:
+                return {"ok": False, "error": "not_in_clan"}
+            cur_level  = row["level"] or 1
+            antimatter = row["antimatter"] or 0
+            cost = CLAN_LEVEL_UP_COST.get(cur_level + 1)
+            if cost is None:
+                return {"ok": False, "error": "max_level"}
+            if antimatter < cost:
+                return {
+                    "ok": False, "error": "not_enough_antimatter",
+                    "cost": cost, "have": antimatter,
+                }
+            cur = c.execute("""
+                UPDATE clans SET level=level+1, antimatter=antimatter-?
+                WHERE id=? AND level=? AND antimatter>=?
+            """, (cost, clan_id, cur_level, cost))
+            if cur.rowcount == 0:
+                return {"ok": False, "error": "race_condition"}
+    return {"ok": True, "clan_id": clan_id, "new_level": cur_level + 1, "cost": cost}
+
+
 # ---------- Async-обёртки ----------
 # sqlite3 в этом модуле синхронный (блокирующий), как и в database.py.
 # Прямой вызов любой из функций выше из async-хэндлера или фонового цикла
@@ -1324,6 +1429,14 @@ async def aio_register_clan_boss_kill(*args, **kwargs) -> dict:
 
 async def aio_get_daily_quests(*args, **kwargs) -> dict:
     return await asyncio.to_thread(get_daily_quests, *args, **kwargs)
+
+
+async def aio_add_clan_antimatter(*args, **kwargs) -> dict:
+    return await asyncio.to_thread(add_clan_antimatter, *args, **kwargs)
+
+
+async def aio_level_up_clan(*args, **kwargs) -> dict:
+    return await asyncio.to_thread(level_up_clan, *args, **kwargs)
 
 
 def _esc(s) -> str:
@@ -1600,29 +1713,58 @@ def klan_members_text(clan: dict, members: list[dict], lang: str = "ru") -> str:
     )
 
 
+def _clan_level_block(clan: dict, lang: str = "ru") -> str:
+    """Блок с уровнем клана, балансом антиматерии и стоимостью следующего уровня."""
+    level      = clan.get("level") or 1
+    antimatter = clan.get("antimatter") or 0
+    next_cost  = get_clan_level_up_cost(level)
+    if lang == "en":
+        if next_cost is None:
+            status = "<i>Max level</i>"
+        else:
+            status = f'<i>Next level {level + 1}: {antimatter}/{next_cost} {ANTIMATTER}</i>'
+        return (
+            f'{ANTIMATTER} <b>Level {level}/{MAX_CLAN_LEVEL}</b> · '
+            f'<b>Antimatter:</b> {_fmt(antimatter)}\n{status}'
+        )
+    if next_cost is None:
+        status = "<i>Максимальный уровень</i>"
+    else:
+        status = f'<i>Следующий уровень {level + 1}: {antimatter}/{next_cost} {ANTIMATTER}</i>'
+    return (
+        f'{ANTIMATTER} <b>Уровень {level}/{MAX_CLAN_LEVEL}</b> · '
+        f'<b>Антиматерия:</b> {_fmt(antimatter)}\n{status}'
+    )
+
+
 def klan_treasury_text(clan: dict, lang: str = "ru") -> str:
     name    = _esc(clan["name"])
     e_chest = _e(_E_CHEST, "💰")
     e_plus  = _e(_E_PLUS,  "➕")
     e_stats = _e(_E_STATS, "📊")
+    level_block = _clan_level_block(clan, lang)
     if lang == "en":
         return (
             f'{e_chest} <b>{name} — Treasury</b>\n'
             f'━━━━━━━━━━━━━━━━━━━━\n\n'
             f'<blockquote>'
             f'{e_chest} <b>Balance:</b> {_fmt(clan["treasury"])} {COIN}'
-            f'</blockquote>\n\n'
+            f'</blockquote>\n'
+            f'<blockquote>{level_block}</blockquote>\n\n'
             f'<i>{e_plus} Deposit to grow the treasury\n'
-            f'<tg-emoji emoji-id="5445355530111437729">⭐</tg-emoji> Withdrawals require creator approval</i>'
+            f'<tg-emoji emoji-id="5445355530111437729">⭐</tg-emoji> Withdrawals require creator approval\n'
+            f'{ANTIMATTER} Antimatter drops from bosses and levels up the clan</i>'
         )
     return (
         f'{e_chest} <b>{name} — Казна</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>'
         f'{e_chest} <b>Баланс:</b> {_fmt(clan["treasury"])} {COIN}'
-        f'</blockquote>\n\n'
+        f'</blockquote>\n'
+        f'<blockquote>{level_block}</blockquote>\n\n'
         f'<i>{e_plus} Пополни казну клана\n'
-        f'<tg-emoji emoji-id="5445355530111437729">⭐</tg-emoji> Вывод средств требует одобрения создателя</i>'
+        f'<tg-emoji emoji-id="5445355530111437729">⭐</tg-emoji> Вывод средств требует одобрения создателя\n'
+        f'{ANTIMATTER} Антиматерия падает с боссов и прокачивает уровень клана</i>'
     )
 
 
@@ -2071,11 +2213,13 @@ def klan_treasury_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
             _btn("Deposit",    "klan_deposit",  _E_PLUS),
             _btn("Withdrawal", "klan_withdraw", _E_STATSE),
         )
+        b.row(_btn("Level up clan", "klan_level_up", _E_ANTIMATTER))
     else:
         b.row(
             _btn("Пополнить",       "klan_deposit",  _E_PLUS),
             _btn("Запрос на вывод", "klan_withdraw", _E_STATSE),
         )
+        b.row(_btn("Прокачать уровень", "klan_level_up", _E_ANTIMATTER))
     b.row(_back_btn("klan_my", lang))
     return b.as_markup()
 
