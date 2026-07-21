@@ -639,6 +639,7 @@ BOSS_TIERS = [
         "key": "easy",
         "name": "Простой", "name_en": "Easy",
         "slots":       5,
+        "emoji_id":    "5242696171104775367",
         "hp_min":      10_000_000,  "hp_max":      50_000_000,
         "reward_min":   5_000_000,  "reward_max":  15_000_000,
     },
@@ -646,6 +647,7 @@ BOSS_TIERS = [
         "key": "medium",
         "name": "Средний", "name_en": "Medium",
         "slots":       3,
+        "emoji_id":    "5456620555018968261",
         "hp_min":     150_000_000,  "hp_max":     400_000_000,
         "reward_min":  30_000_000,  "reward_max": 150_000_000,
     },
@@ -653,6 +655,7 @@ BOSS_TIERS = [
         "key": "hard",
         "name": "Сложный", "name_en": "Hard",
         "slots":       1,
+        "emoji_id":    "5458610215798709571",
         "hp_min":   1_000_000_000,  "hp_max":   5_000_000_000,
         "reward_min": 500_000_000,  "reward_max": 5_000_000_000,
     },
@@ -2768,7 +2771,7 @@ def boss_tier_menu_text(lang: str = "ru") -> str:
         alive = counts_alive[t["key"]]
         total = t["slots"]
         tname = t.get("name_en", t["name"]) if lang == "en" else t["name"]
-        lines.append(f'{_tg(_E["skull"], "💀")} <b><i>{tname}</i></b> — {alive}/{total} 🔥')
+        lines.append(f'{_tg(t["emoji_id"], "💀")} <b><i>{tname}</i></b> — {alive}/{total} 🔥')
 
     body = "\n".join(lines)
     if lang == "en":
@@ -2792,7 +2795,7 @@ def boss_tier_menu_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         builder.row(InlineKeyboardButton(
             text=f" {tname} ({alive}/{total})",
             callback_data=f"hunt_tier_{t['key']}",
-            icon_custom_emoji_id=_E["skull"]
+            icon_custom_emoji_id=t["emoji_id"]
         ))
 
     builder.row(InlineKeyboardButton(
@@ -2816,7 +2819,7 @@ def boss_select_text(lang: str = "ru", tier_key: str = "easy") -> str:
         boss     = BOSSES_BY_KEY.get(boss_key)
         if st.get("boss_alive") and boss:
             bname = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
-            lines.append(f'{_tg(_E["boss"], "🔥")} <b><i>#{i} {bname}</i></b>')
+            lines.append(f'{_tg(tier["emoji_id"], "🔥")} <b><i>#{i} {bname}</i></b>')
         else:
             died_at = st.get("boss_died_at", 0) or 0
             rem     = max(0, BOSS_RESPAWN_SEC - (now - died_at))
@@ -2829,8 +2832,8 @@ def boss_select_text(lang: str = "ru", tier_key: str = "easy") -> str:
     body = "\n".join(lines)
     tname = tier.get("name_en", tier["name"]) if lang == "en" else tier["name"]
     if lang == "en":
-        return f'<blockquote>{_tg(_E["skull"], "💀")} <b><i>{tname.upper()} BOSSES</i></b>\n\n{body}\n</blockquote>'
-    return f'<blockquote>{_tg(_E["skull"], "💀")} <b><i>{tname.upper()} БОССЫ</i></b>\n\n{body}\n</blockquote>'
+        return f'<blockquote>{_tg(tier["emoji_id"], "💀")} <b><i>{tname.upper()} BOSSES</i></b>\n\n{body}\n</blockquote>'
+    return f'<blockquote>{_tg(tier["emoji_id"], "💀")} <b><i>{tname.upper()} БОССЫ</i></b>\n\n{body}\n</blockquote>'
 
 
 def boss_select_keyboard(lang: str = "ru", tier_key: str = "easy") -> InlineKeyboardMarkup:
@@ -2848,7 +2851,7 @@ def boss_select_keyboard(lang: str = "ru", tier_key: str = "easy") -> InlineKeyb
             builder.row(InlineKeyboardButton(
                 text=f" #{i} {bname}",
                 callback_data=f"hunt_boss_{slot_idx}",
-                icon_custom_emoji_id=_E["skull"]
+                icon_custom_emoji_id=tier["emoji_id"]
             ))
         else:
             died_at = st.get("boss_died_at", 0) or 0
@@ -3015,11 +3018,12 @@ def boss_attack_text(data: dict, lang: str = "ru", slot: int = 0) -> str:
     boss_name  = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
     boss_lore  = boss.get("lore_en", boss["lore"]) if lang == "en" else boss["lore"]
     sword_name = sword.get("name_en", sword["name"]) if lang == "en" else sword["name"]
+    tier       = _tier_for_slot(slot)
 
     if lang == "en":
         return (
             f'<blockquote>'
-            f'{_tg(_E["skull"], "💀")} <b><i>{boss_name}</i></b>\n'
+            f'{_tg(tier["emoji_id"], "💀")} <b><i>{boss_name}</i></b>\n'
             f'<b><i>{boss_lore}</i></b>'
             f'</blockquote>\n\n'
             f'<blockquote>'
@@ -3038,7 +3042,7 @@ def boss_attack_text(data: dict, lang: str = "ru", slot: int = 0) -> str:
         )
     return (
         f'<blockquote>'
-        f'{_tg(_E["skull"], "💀")} <b><i>{boss_name}</i></b>\n'
+        f'{_tg(tier["emoji_id"], "💀")} <b><i>{boss_name}</i></b>\n'
         f'<b><i>{boss_lore}</i></b>'
         f'</blockquote>\n\n'
         f'<blockquote>'
@@ -3094,6 +3098,7 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
     state    = _load_slot(result.get("slot", slot))
     boss_key = state.get("boss_key")
     boss     = BOSSES_BY_KEY.get(boss_key)
+    tier     = _tier_for_slot(result.get("slot", slot))
 
     if result.get("error") == "no_sword":
         return (
@@ -3223,7 +3228,7 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
     if lang == "en":
         return (
             f'<blockquote>'
-            f'{_tg(_E["skull"], "💀")} <b><i>{boss_name}</i></b>'
+            f'{_tg(tier["emoji_id"], "💀")} <b><i>{boss_name}</i></b>'
             f'</blockquote>\n\n'
             f'<blockquote>'
             f'{_tg(_E["dmg"], "💥")} <b><i>Your strike: {_fmt(dmg)}</i></b> {_tg(_E["dmg"], "💥")}{crit_line}{suppression_note}'
@@ -3238,7 +3243,7 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
         )
     return (
         f'<blockquote>'
-        f'{_tg(_E["skull"], "💀")} <b><i>{boss_name}</i></b>'
+        f'{_tg(tier["emoji_id"], "💀")} <b><i>{boss_name}</i></b>'
         f'</blockquote>\n\n'
         f'<blockquote>'
         f'{_tg(_E["dmg"], "💥")} <b><i>Твой удар: {_fmt(dmg)}</i></b> {_tg(_E["dmg"], "💥")}{crit_line}{suppression_note}'
