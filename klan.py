@@ -126,6 +126,7 @@ _E_HUNT    = "5424972470023104089"   # 🗡         — охота
 _E_LEAVE   = "5210952531676504517"   # 🚪        — из main.py кнопка
 _E_STATSE  = "5445355530111437729"
 _E_ANTIMATTER = "5235611059909323996"   # 🟣 — антиматерия (ресурс уровня клана)
+_E_CLAN_BONUS = "5449800250032143374"   # 🚀 — клановый бонус на добычу
 # ── Emoji для топ-10 кланов (места/цифры) ───────────────────
 _E_RANK_1  = "5440539497383087970"   # 🥇 — 1 место
 _E_RANK_2  = "5447203607294265305"   # 🥈 — 2 место
@@ -1927,7 +1928,7 @@ def _clan_bonus_block(clan: dict, member: dict, lang: str = "ru") -> str:
     """Блок статуса кланового бонуса на добычу (для my_klan_text)."""
     info      = get_clan_bonus_info(clan, member)
     mult_str  = f'{info["base_multiplier"]:g}'
-    e_boost   = "🚀"
+    e_boost   = _e(_E_CLAN_BONUS, "🚀")
     if lang == "en":
         title = f'{e_boost} <b>Clan bonus: ×{mult_str} mining</b>'
         if info["active"]:
