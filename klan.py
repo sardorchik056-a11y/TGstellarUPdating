@@ -125,7 +125,7 @@ _E_STATUS  = "5438496463044752972"   # 🎟        — статус
 _E_HUNT    = "5424972470023104089"   # 🗡         — охота
 _E_LEAVE   = "5210952531676504517"   # 🚪        — из main.py кнопка
 _E_STATSE  = "5445355530111437729"
-_E_ANTIMATTER = "-5235611059909323996"   # 🟣 — антиматерия (ресурс уровня клана)
+_E_ANTIMATTER = "5235611059909323996"   # 🟣 — антиматерия (ресурс уровня клана)
 # ── Emoji для топ-10 кланов (места/цифры) ───────────────────
 _E_RANK_1  = "5440539497383087970"   # 🥇 — 1 место
 _E_RANK_2  = "5447203607294265305"   # 🥈 — 2 место
@@ -1658,7 +1658,8 @@ def my_klan_text(clan: dict, member: dict, member_count: int, lang: str = "ru") 
         chat_line_ru = ""
         chat_line_en = ""
 
-    rank_block = _clan_rank_block(clan, member_count, lang)
+    rank_block  = _clan_rank_block(clan, member_count, lang)
+    level_block = _clan_level_block(clan, lang)
 
     if lang == "en":
         role_label = f'{e_crown} <b>Creator</b>' if member['role'] == 'creator' else '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji> <b>Member</b>'
@@ -1672,7 +1673,8 @@ def my_klan_text(clan: dict, member: dict, member_count: int, lang: str = "ru") 
             f'{e_plus} <b>Your contribution:</b> {_fmt(member["contributed"])} {COIN}'
             f'{chat_line_en}'
             f'</blockquote>\n'
-            f'<blockquote>{rank_block}</blockquote>'
+            f'<blockquote>{rank_block}</blockquote>\n'
+            f'<blockquote>{level_block}</blockquote>'
         )
     role_label = f'{e_crown} <b>Создатель</b>' if member['role'] == 'creator' else '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji> <b>Участник</b>'
     return (
@@ -1685,7 +1687,8 @@ def my_klan_text(clan: dict, member: dict, member_count: int, lang: str = "ru") 
         f'{e_plus} <b>Твой вклад:</b> {_fmt(member["contributed"])} {COIN}'
         f'{chat_line_ru}'
         f'</blockquote>\n'
-        f'<blockquote>{rank_block}</blockquote>'
+        f'<blockquote>{rank_block}</blockquote>\n'
+        f'<blockquote>{level_block}</blockquote>'
     )
 
 
@@ -2146,6 +2149,8 @@ async def my_klan_keyboard(uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
             _btn("Treasury", "klan_treasury", _E_CHEST),
         )
         b.row(_btn("Daily quests", "klan_quests", _E_HUNT))
+        if is_creator:
+            b.row(_btn("Level up clan", "klan_level_up", _E_ANTIMATTER))
         # Кнопка чата (если привязан — для всех, прямая URL-ссылка)
         if has_chat:
             chat_un  = clan.get("chat_username")
@@ -2177,6 +2182,8 @@ async def my_klan_keyboard(uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
             _btn("Казна",     "klan_treasury", _E_CHEST),
         )
         b.row(_btn("Ежедневные задания", "klan_quests", _E_HUNT))
+        if is_creator:
+            b.row(_btn("Прокачать уровень", "klan_level_up", _E_ANTIMATTER))
         # Кнопка чата (если привязан — для всех, прямая URL-ссылка)
         if has_chat:
             chat_un  = clan.get("chat_username")
