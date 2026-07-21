@@ -1,2 +1,0 @@
-# TGstellarUPdating
-Updating
