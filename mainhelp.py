@@ -4190,9 +4190,11 @@ async def handle_callback(call: CallbackQuery):
                     alert = "Уже максимальный уровень клана." if lang == "ru" else "Clan is already at max level."
                 elif err == "not_enough_antimatter":
                     alert = (
-                        f'Недостаточно антиматерии: {res.get("have", 0)}/{res.get("cost", 0)} 🟣'
+                        f'Недостаточно антиматерии: {res.get("have", 0)}/{res.get("cost", 0)} 🟣\n'
+                        f'Антиматерию можно получить, убивая боссов.'
                         if lang == "ru" else
-                        f'Not enough antimatter: {res.get("have", 0)}/{res.get("cost", 0)} 🟣'
+                        f'Not enough antimatter: {res.get("have", 0)}/{res.get("cost", 0)} 🟣\n'
+                        f'You can get antimatter by killing bosses.'
                     )
                 else:
                     alert = "Не удалось прокачать уровень, попробуй ещё раз." if lang == "ru" else "Couldn't level up, try again."
@@ -5228,7 +5230,7 @@ async def handle_callback(call: CallbackQuery):
             except Exception as _qe:
                 print(f"[klan] mine daily quest error: {_qe}")
             bonus_line = (
-                f'\n🚀 <b>Клановый бонус ×{bonus_mult:g}:</b> +{format_amount(bonus_extra)} <tg-emoji emoji-id="5199552030615558774">🎟</tg-emoji>'
+                f'\n<tg-emoji emoji-id="5449800250032143374">🚀</tg-emoji> <b>Клановый бонус ×{bonus_mult:g}:</b> +{format_amount(bonus_extra)} <tg-emoji emoji-id="5199552030615558774">🎟</tg-emoji>'
                 if bonus_extra > 0 else ""
             )
             sell_text = (
