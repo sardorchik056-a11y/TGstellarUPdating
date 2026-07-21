@@ -57,6 +57,7 @@ from hunt import (
     sword_detail_text, sword_detail_keyboard,
     my_swords_text, my_swords_keyboard,
     boss_select_text, boss_select_keyboard,
+    boss_tier_menu_text, boss_tier_menu_keyboard,
     boss_attack_text, boss_attack_keyboard,
     boss_strike_result_text, boss_strike_keyboard,
     buy_sword, equip_sword, attack_boss,
@@ -5263,10 +5264,23 @@ async def handle_callback(call: CallbackQuery):
             await edit(_txt, _kb)
             return
 
-        # ===== ОХОТА: экран выбора босса =====
+        # ===== ОХОТА: экран выбора уровня сложности =====
         if cd == "hunt_boss_select":
             _txt, _kb = await asyncio.to_thread(
-                lambda: (boss_select_text(lang), boss_select_keyboard(lang))
+                lambda: (boss_tier_menu_text(lang), boss_tier_menu_keyboard(lang))
+            )
+            await edit(_txt, _kb)
+            await call.answer()
+            return
+
+        # ===== ОХОТА: список боссов внутри выбранного уровня сложности =====
+        if cd.startswith("hunt_tier_"):
+            tier_key = cd.removeprefix("hunt_tier_")
+            if tier_key not in ("easy", "medium", "hard"):
+                await call.answer("❌ Неизвестный уровень." if lang == "ru" else "❌ Unknown tier.", show_alert=True)
+                return
+            _txt, _kb = await asyncio.to_thread(
+                lambda: (boss_select_text(lang, tier_key), boss_select_keyboard(lang, tier_key))
             )
             await edit(_txt, _kb)
             await call.answer()
