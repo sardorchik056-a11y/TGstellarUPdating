@@ -70,6 +70,10 @@ from green import (
     collection_tier_text, collection_tier_keyboard,
     collection_flower_text, collection_flower_keyboard,
     COLLECTION_TIER_MIN,
+    mass_actions_unlocked, has_empty_plots, mass_plant, mass_harvest,
+    mass_plant_menu_text, mass_plant_menu_keyboard,
+    mass_plant_inventory_text, mass_plant_inventory_keyboard,
+    MASS_ACTIONS_MIN_PLOTS,
 )
 
 # ── Реферальный ивент "Реферальный марафон" — глобальный бафф добычи
@@ -850,6 +854,157 @@ async def cb_garden_expand(call: CallbackQuery):
     await call.answer(f'🪴 Грядка открыта! Теперь их: {result["plot_count"]}')
 
 
+# ── Массовая посадка / массовый сбор урожая — работают только после
+# MASS_ACTIONS_MIN_PLOTS открытых грядок (см. mass_actions_unlocked в
+# green.py). Кнопки в garden_keyboard видны всегда, но до этого порога
+# нажатие на них даёт алерт с ошибкой, а не выполняет действие. ──
+
+def _mass_locked_alert(plot_count: int) -> str:
+    return (
+        f'🔒 Массовые действия открываются после {MASS_ACTIONS_MIN_PLOTS} '
+        f'открытых грядок (сейчас: {plot_count}/{MASS_ACTIONS_MIN_PLOTS}).'
+    )
+
+
+@dp.callback_query(F.data.startswith("garden_massplantinv:"))
+async def cb_garden_massplant_inv(call: CallbackQuery):
+    if not await _garden_owner_ok(call):
+        return
+    parts = call.data.split(":")
+    page = _safe_int(parts[1], 0) if len(parts) > 1 else 0
+    uid = call.from_user.id
+    u = await aio_get_user(uid)
+    if not u:
+        await call.answer()
+        return
+    ensure_garden(u)
+    if not mass_actions_unlocked(u["garden"]):
+        await call.answer(_mass_locked_alert(u["garden"]["plot_count"]), show_alert=True)
+        return
+    if not has_empty_plots(u["garden"]):
+        await call.answer("🪴 Нет свободных грядок для посадки.", show_alert=True)
+        return
+    await call.message.edit_text(
+        mass_plant_inventory_text(u, page), parse_mode="HTML",
+        reply_markup=mass_plant_inventory_keyboard(u, page),
+    )
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("garden_massplant:"))
+async def cb_garden_massplant_menu(call: CallbackQuery):
+    if not await _garden_owner_ok(call):
+        return
+    parts = call.data.split(":")
+    page = _safe_int(parts[1], 0) if len(parts) > 1 else 0
+    uid = call.from_user.id
+    u = await aio_get_user(uid)
+    if not u:
+        await call.answer()
+        return
+    ensure_garden(u)
+    if not mass_actions_unlocked(u["garden"]):
+        await call.answer(_mass_locked_alert(u["garden"]["plot_count"]), show_alert=True)
+        return
+    if not has_empty_plots(u["garden"]):
+        await call.answer("🪴 Нет свободных грядок для посадки.", show_alert=True)
+        return
+    await call.message.edit_text(
+        mass_plant_menu_text(u, page), parse_mode="HTML",
+        reply_markup=mass_plant_menu_keyboard(u, page),
+    )
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("garden_massplantdo:"))
+async def cb_garden_massplant_do(call: CallbackQuery):
+    if not await _garden_owner_ok(call):
+        return
+    parts = call.data.split(":", 1)
+    if len(parts) < 2:
+        await call.answer()
+        return
+    flower_key = parts[1]
+    uid = call.from_user.id
+
+    async with await _get_user_lock(uid):
+        u = await aio_get_user(uid)
+        if not u:
+            await call.answer()
+            return
+        result = mass_plant(u, flower_key)
+        if not result["ok"]:
+            reasons = {
+                "locked": _mass_locked_alert(u["garden"]["plot_count"]),
+                "no_empty": "🪴 Нет свободных грядок для посадки.",
+                "unknown_flower": "❌ Неизвестное семя.",
+                "no_essence": f'{ESSENCE_ICON} Не хватает {ESSENCE_NAME.lower()} даже на одно семя.',
+                "no_seed": "🎒 В инвентаре нет такого семени.",
+                "occupied": "🪴 Все грядки уже заняты.",
+                "bad_plot": "❌ Некорректная грядка.",
+            }
+            await call.answer(reasons.get(result["reason"], "❌ Не удалось посадить."), show_alert=True)
+            return
+        await aio_save_user(uid, u)
+        text, kb = await _garden_open(uid, u)
+
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+
+    stop_note = ""
+    if result.get("stop_reason") == "no_essence":
+        stop_note = f'\n{ESSENCE_ICON} Пыльца закончилась раньше, чем свободные грядки.'
+    elif result.get("stop_reason") == "no_seed":
+        stop_note = '\n🎒 Семена в инвентаре закончились раньше, чем свободные грядки.'
+    await call.answer(
+        f'🌱 Засажено грядок: {result["planted"]} × {flower_label(result["flower"])}{stop_note}',
+        show_alert=True,
+    )
+
+
+@dp.callback_query(F.data == "garden_massharvest")
+async def cb_garden_massharvest(call: CallbackQuery):
+    if not await _garden_owner_ok(call):
+        return
+    uid = call.from_user.id
+
+    async with await _get_user_lock(uid):
+        u = await aio_get_user(uid)
+        if not u:
+            await call.answer()
+            return
+        ensure_garden(u)
+        result = mass_harvest(u)
+        if not result["ok"]:
+            reasons = {
+                "locked": _mass_locked_alert(u["garden"]["plot_count"]),
+                "none_ready": "⏳ Пока нет готовых к сбору грядок.",
+            }
+            await call.answer(reasons.get(result["reason"], "❌ Не удалось собрать урожай."), show_alert=True)
+            return
+        mainhelp._apply_xp(u, result["xp"])
+        await aio_save_user(uid, u)
+        text, kb = await _garden_open(uid, u)
+
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    jackpot_note = f'\n🎰 Джекпотов: {result["jackpots"]}' if result.get("jackpots") else ""
+    await call.answer(
+        f'🌾 Собрано грядок: {result["count"]}\n'
+        f'+{fmt_essence(result["essence"])}  +{result["xp"]} XP{jackpot_note}',
+        show_alert=True,
+    )
+
+    if result.get("grand_bloom"):
+        try:
+            await call.message.answer(
+                '🏆 <b>ПОЛНОЕ ЦВЕТЕНИЕ!</b>\n'
+                '<blockquote><i>Ты когда-либо собрал все 5 сигнатурных цветков высшего тира '
+                f'«Изначальный»! Награда:</i> <b>+{fmt_essence(GRAND_BLOOM_BONUS_ESSENCE)}</b></blockquote>',
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+
 # По той же причине, что и с текстовыми хендлерами сада выше (см.
 # _prioritize_message_handlers) — если где-то в mainhelp.py раньше
 # зарегистрирован «широкий» callback_query-хендлер (например, общий
@@ -873,6 +1028,8 @@ _prioritize_callback_handlers(
     cb_garden_invtier, cb_garden_flower, cb_garden_merge_menu, cb_garden_mergetier,
     cb_garden_mergeclear, cb_garden_mergeadd, cb_garden_sell, cb_garden_expand,
     cb_garden_collection, cb_garden_colltier, cb_garden_collflower,
+    cb_garden_massplant_inv, cb_garden_massplant_menu, cb_garden_massplant_do,
+    cb_garden_massharvest,
 )
 
 
