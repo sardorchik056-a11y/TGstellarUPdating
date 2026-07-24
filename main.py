@@ -975,13 +975,9 @@ async def cb_garden_massplantgo(call: CallbackQuery):
         if not result["ok"]:
             reasons = {
                 "locked": _mass_locked_alert(u["garden"]["plot_count"]),
-                "no_pick": "🌱 Сначала выбери семя, которым будем сажать.",
+                "no_pick": "🌱 Сначала выбери хотя бы одно семя, которым будем сажать.",
                 "no_empty": "🪴 Нет свободных грядок для посадки.",
-                "unknown_flower": "❌ Неизвестное семя.",
-                "no_essence": f'{ESSENCE_ICON} Не хватает {ESSENCE_NAME.lower()} даже на одно семя.',
-                "no_seed": "🎒 В инвентаре нет такого семени.",
-                "occupied": "🪴 Все грядки уже заняты.",
-                "bad_plot": "❌ Некорректная грядка.",
+                "no_essence": f'{ESSENCE_ICON} Не хватает {ESSENCE_NAME.lower()}/семян даже на одну грядку.',
             }
             await call.answer(reasons.get(result["reason"], "❌ Не удалось посадить."), show_alert=True)
             return
@@ -990,13 +986,12 @@ async def cb_garden_massplantgo(call: CallbackQuery):
 
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
 
+    lines = [f'{flower_label(result["flowers"][key])} ×{cnt}' for key, cnt in result["counts"].items()]
     stop_note = ""
-    if result.get("stop_reason") == "no_essence":
-        stop_note = f'\n{ESSENCE_ICON} Пыльца закончилась раньше, чем свободные грядки.'
-    elif result.get("stop_reason") == "no_seed":
-        stop_note = '\n🎒 Семена в инвентаре закончились раньше, чем свободные грядки.'
+    if result.get("stop_reason") == "exhausted":
+        stop_note = f'\n{ESSENCE_ICON} Пыльца/семена закончились раньше, чем свободные грядки.'
     await call.answer(
-        f'🌱 Засажено грядок: {result["planted"]} × {flower_label(result["flower"])}{stop_note}',
+        f'🌱 Засажено грядок: {result["planted"]}\n' + "\n".join(lines) + stop_note,
         show_alert=True,
     )
 
