@@ -70,9 +70,10 @@ from green import (
     collection_tier_text, collection_tier_keyboard,
     collection_flower_text, collection_flower_keyboard,
     COLLECTION_TIER_MIN,
-    mass_actions_unlocked, has_empty_plots, mass_plant, mass_harvest,
+    mass_actions_unlocked, has_empty_plots, mass_harvest,
     mass_plant_menu_text, mass_plant_menu_keyboard,
     mass_plant_inventory_text, mass_plant_inventory_keyboard,
+    mass_plant_toggle_pick, mass_plant_confirm,
     MASS_ACTIONS_MIN_PLOTS,
 )
 
@@ -916,15 +917,16 @@ async def cb_garden_massplant_menu(call: CallbackQuery):
     await call.answer()
 
 
-@dp.callback_query(F.data.startswith("garden_massplantdo:"))
-async def cb_garden_massplant_do(call: CallbackQuery):
+@dp.callback_query(F.data.startswith("garden_masspick:"))
+async def cb_garden_masspick(call: CallbackQuery):
     if not await _garden_owner_ok(call):
         return
-    parts = call.data.split(":", 1)
-    if len(parts) < 2:
+    parts = call.data.split(":", 3)
+    if len(parts) < 4:
         await call.answer()
         return
-    flower_key = parts[1]
+    source, flower_key, page_raw = parts[1], parts[2], parts[3]
+    page = _safe_int(page_raw, 0)
     uid = call.from_user.id
 
     async with await _get_user_lock(uid):
@@ -932,10 +934,48 @@ async def cb_garden_massplant_do(call: CallbackQuery):
         if not u:
             await call.answer()
             return
-        result = mass_plant(u, flower_key)
+        ensure_garden(u)
+        result = mass_plant_toggle_pick(u, flower_key)
         if not result["ok"]:
             reasons = {
                 "locked": _mass_locked_alert(u["garden"]["plot_count"]),
+                "unknown_flower": "❌ Неизвестное семя.",
+                "not_affordable": f'{ESSENCE_ICON} Не хватает {ESSENCE_NAME.lower()} даже на одно семя.',
+            }
+            await call.answer(reasons.get(result["reason"], "❌ Не удалось выбрать."), show_alert=True)
+            return
+        await aio_save_user(uid, u)
+
+    if source == "inv":
+        await call.message.edit_text(
+            mass_plant_inventory_text(u, page), parse_mode="HTML",
+            reply_markup=mass_plant_inventory_keyboard(u, page),
+        )
+    else:
+        await call.message.edit_text(
+            mass_plant_menu_text(u, page), parse_mode="HTML",
+            reply_markup=mass_plant_menu_keyboard(u, page),
+        )
+    await call.answer()
+
+
+@dp.callback_query(F.data == "garden_massplantgo")
+async def cb_garden_massplantgo(call: CallbackQuery):
+    if not await _garden_owner_ok(call):
+        return
+    uid = call.from_user.id
+
+    async with await _get_user_lock(uid):
+        u = await aio_get_user(uid)
+        if not u:
+            await call.answer()
+            return
+        ensure_garden(u)
+        result = mass_plant_confirm(u)
+        if not result["ok"]:
+            reasons = {
+                "locked": _mass_locked_alert(u["garden"]["plot_count"]),
+                "no_pick": "🌱 Сначала выбери семя, которым будем сажать.",
                 "no_empty": "🪴 Нет свободных грядок для посадки.",
                 "unknown_flower": "❌ Неизвестное семя.",
                 "no_essence": f'{ESSENCE_ICON} Не хватает {ESSENCE_NAME.lower()} даже на одно семя.',
@@ -1028,8 +1068,8 @@ _prioritize_callback_handlers(
     cb_garden_invtier, cb_garden_flower, cb_garden_merge_menu, cb_garden_mergetier,
     cb_garden_mergeclear, cb_garden_mergeadd, cb_garden_sell, cb_garden_expand,
     cb_garden_collection, cb_garden_colltier, cb_garden_collflower,
-    cb_garden_massplant_inv, cb_garden_massplant_menu, cb_garden_massplant_do,
-    cb_garden_massharvest,
+    cb_garden_massplant_inv, cb_garden_massplant_menu, cb_garden_masspick,
+    cb_garden_massplantgo, cb_garden_massharvest,
 )
 
 
