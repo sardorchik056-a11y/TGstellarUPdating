@@ -813,9 +813,10 @@ def _mass_pick_affordable(data: dict, flower_key: str) -> bool:
 
 def mass_plant_toggle_pick(data: dict, flower_key: str) -> dict:
     """Переключает выбор вида для массовой посадки — тап по цветку в меню не
-    сажает сразу, а добавляет/убирает его из списка выбранных (можно выбрать
-    НЕСКОЛЬКО разных видов одновременно, каждый подсвечивается зелёным/success).
-    Сама посадка происходит позже, по кнопке «Посадить» (см. mass_plant_confirm).
+    сажает сразу, а выбирает его как ЕДИНСТВЕННЫЙ вид для посадки (повторный
+    тап по уже выбранному виду снимает выбор; тап по другому виду ЗАМЕНЯЕТ
+    предыдущий выбор, а не добавляет к нему). Сама посадка происходит позже,
+    по кнопке «Посадить» (см. mass_plant_confirm).
     Если пыльцы/семян не хватает даже на один экземпляр — выбрать нельзя вовсе
     (хендлер в main.py не даёт нажать такую кнопку, см. garden_noop)."""
     g = ensure_garden(data)
@@ -826,21 +827,19 @@ def mass_plant_toggle_pick(data: dict, flower_key: str) -> dict:
     if not _mass_pick_affordable(data, flower_key):
         return {"ok": False, "reason": "not_affordable"}
 
-    picks = g.setdefault("mass_plant_pick", [])
+    picks = g.get("mass_plant_pick") or []
     if flower_key in picks:
-        picks.remove(flower_key)
-        return {"ok": True, "picked": False, "picks": list(picks)}
+        g["mass_plant_pick"] = []
+        return {"ok": True, "picked": False, "picks": []}
 
-    picks.append(flower_key)
-    return {"ok": True, "picked": True, "picks": list(picks)}
+    g["mass_plant_pick"] = [flower_key]
+    return {"ok": True, "picked": True, "picks": [flower_key]}
 
 
 def mass_plant_confirm(data: dict) -> dict:
-    """Сажает ВСЕ выбранные виды (mass_plant_pick) сразу — по кнопке
-    «🌱 Посадить». Свободные грядки заполняются по очереди (round-robin) между
-    выбранными видами: 1-я грядка — первый выбранный вид, 2-я — второй, и
-    так по кругу, пока не кончатся либо свободные грядки, либо ресурсы
-    (пыльца/семена) у ВСЕХ выбранных видов разом."""
+    """Сажает ЕДИНСТВЕННЫЙ выбранный вид (mass_plant_pick) сразу во ВСЕ
+    свободные грядки — по кнопке «🌱 Посадить». Останавливается сама, если
+    закончились либо свободные грядки, либо пыльца/семена этого вида."""
     g = ensure_garden(data)
     if not mass_actions_unlocked(g):
         return {"ok": False, "reason": "locked", "need": MASS_ACTIONS_MIN_PLOTS, "have": g["plot_count"]}
@@ -1434,9 +1433,9 @@ def mass_plant_menu_text(data: dict, page: int = 0) -> str:
     page = max(0, min(total_pages - 1, page))
     lines = [
         '🌱 <b>Массовая посадка</b>',
-        f'<blockquote><i>Выбери один или несколько видов — они подсветятся зелёным. '
-        f'Нажми «Посадить», чтобы разом засадить ВСЕ свободные грядки ({empty} шт.), '
-        f'по очереди чередуя выбранные виды. Обычные семена покупаются за '
+        f'<blockquote><i>Выбери один вид — он подсветится зелёным. '
+        f'Нажми «Посадить», чтобы разом засадить им ВСЕ свободные грядки ({empty} шт.). '
+        f'Обычные семена покупаются за '
         f'{ESSENCE_NAME.lower()} — посадка остановится сама, если пыльца/семена '
         f'закончатся раньше грядок.</i></blockquote>',
         f'📄 Страница: <b>{page + 1}/{total_pages}</b>',
@@ -1444,7 +1443,7 @@ def mass_plant_menu_text(data: dict, page: int = 0) -> str:
     pick = g.get("mass_plant_pick") or []
     if pick:
         names = ", ".join(flower_label(FLOWERS_BY_KEY[k]) for k in pick if k in FLOWERS_BY_KEY)
-        lines.append(f'\n✅ <b>Выбрано ({len(pick)}):</b> {names}')
+        lines.append(f'\n✅ <b>Выбрано:</b> {names}')
     return "\n".join(lines)
 
 
@@ -1481,7 +1480,7 @@ def mass_plant_menu_keyboard(data: dict, page: int = 0):
     b.row(*nav)
 
     if pick:
-        b.row(InlineKeyboardButton(text=f'🌱 Посадить ({len(pick)} выбрано)',
+        b.row(InlineKeyboardButton(text='🌱 Посадить (выбрано)',
                                     style="primary", callback_data="garden_massplantgo"))
     else:
         b.row(InlineKeyboardButton(text="🌱 Посадить", style="primary", callback_data="garden_massplantgo"))
@@ -1503,9 +1502,9 @@ def mass_plant_inventory_text(data: dict, page: int = 0) -> str:
     if not seeds:
         body = '<i>В инвентаре пока нет редких семян — получи их через слияние в котле.</i>'
     else:
-        body = (f'<i>Выбери один или несколько семян — они подсветятся зелёным. Нажми «Посадить», '
-                f'чтобы разом засадить ими все свободные грядки ({empty} шт.), чередуя выбранные виды '
-                f'по очереди, пока не закончатся либо семена, либо грядки.</i>')
+        body = (f'<i>Выбери одно семя — оно подсветится зелёным. Нажми «Посадить», '
+                f'чтобы разом засадить им все свободные грядки ({empty} шт.), пока не '
+                f'закончатся либо семена, либо грядки.</i>')
     lines = [
         '🎒 <b>Массовая посадка из инвентаря</b>',
         f'<blockquote>{body}</blockquote>',
@@ -1515,7 +1514,7 @@ def mass_plant_inventory_text(data: dict, page: int = 0) -> str:
     picked_here = [k for k in pick if k in dict(seeds)]
     if picked_here:
         names = ", ".join(flower_label(FLOWERS_BY_KEY[k]) for k in picked_here)
-        lines.append(f'\n✅ <b>Выбрано ({len(pick)} всего):</b> {names}')
+        lines.append(f'\n✅ <b>Выбрано:</b> {names}')
     return "\n".join(lines)
 
 
@@ -1555,7 +1554,7 @@ def mass_plant_inventory_keyboard(data: dict, page: int = 0):
         b.row(*nav)
 
     if pick:
-        b.row(InlineKeyboardButton(text=f'🌱 Посадить ({len(pick)} выбрано)',
+        b.row(InlineKeyboardButton(text='🌱 Посадить (выбрано)',
                                     style="primary", callback_data="garden_massplantgo"))
     else:
         b.row(InlineKeyboardButton(text="🌱 Посадить", style="primary", callback_data="garden_massplantgo"))
