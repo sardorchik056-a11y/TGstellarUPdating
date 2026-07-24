@@ -157,6 +157,12 @@ PLOT_PAGES = 3
 # Стартовый запас мистической пыльцы, который выдаётся новому саду один раз.
 STARTING_ESSENCE = 1500
 
+# Массовые действия (посадка/сбор урожая сразу на всех грядках) открываются
+# только тогда, когда открыто хотя бы столько грядок — до этого кнопки в
+# меню сада ВИДНЫ, но нажатие на них даёт алерт с ошибкой (см. mass_plant/
+# mass_harvest ниже и хендлеры garden_massplant*/garden_massharvest в main.py).
+MASS_ACTIONS_MIN_PLOTS = 6
+
 # Семена при посадке: тоже разбиваем на страницы — в тире 1 их 30 штук,
 # а в инвентаре со временем может скопиться много разных редких семян.
 SEEDS_PER_PAGE = 6
@@ -723,6 +729,101 @@ def harvest_plot(data: dict, plot_idx: int) -> dict:
             "jackpot": jackpot, "grand_bloom": grand_bloom}
 
 
+# ── Массовые действия: посадка и сбор урожая сразу на ВСЕХ грядках.
+# Открываются только при MASS_ACTIONS_MIN_PLOTS открытых грядках — см.
+# mass_actions_unlocked. До этого функции ниже возвращают {"ok": False,
+# "reason": "locked", ...}, а кнопки в меню сада (garden_keyboard) остаются
+# видимыми, но нажатие на них даёт хендлеру main.py повод показать алерт. ──
+
+def mass_actions_unlocked(g: dict) -> bool:
+    return g.get("plot_count", 0) >= MASS_ACTIONS_MIN_PLOTS
+
+
+def has_empty_plots(g: dict) -> bool:
+    return any(p is None for p in g["plots"][:g["plot_count"]])
+
+
+def _empty_plot_indices(g: dict) -> list[int]:
+    return [idx for idx in range(g["plot_count"]) if g["plots"][idx] is None]
+
+
+def _ready_plot_indices(g: dict) -> list[int]:
+    idxs = []
+    for idx, plot in enumerate(g["plots"]):
+        if plot is None:
+            continue
+        stage, _, _, _ = plot_state(plot, _plot_level_mult(g, idx))
+        if stage == "ready":
+            idxs.append(idx)
+    return idxs
+
+
+def mass_harvest(data: dict) -> dict:
+    """Собирает урожай сразу со ВСЕХ готовых грядок. Каждая грядка проходит
+    через обычный harvest_plot (со всеми её бонусами/джекпотами/открытиями
+    коллекции), результаты просто суммируются."""
+    g = ensure_garden(data)
+    if not mass_actions_unlocked(g):
+        return {"ok": False, "reason": "locked", "need": MASS_ACTIONS_MIN_PLOTS, "have": g["plot_count"]}
+
+    ready = _ready_plot_indices(g)
+    if not ready:
+        return {"ok": False, "reason": "none_ready"}
+
+    total_essence = 0
+    total_xp = 0
+    jackpots = 0
+    grand_bloom = False
+    flowers = []
+    for idx in ready:
+        res = harvest_plot(data, idx)
+        if not res["ok"]:
+            continue
+        total_essence += res["essence"]
+        total_xp += res["xp"]
+        flowers.append(res["flower"])
+        if res.get("jackpot"):
+            jackpots += 1
+        if res.get("grand_bloom"):
+            grand_bloom = True
+
+    return {"ok": True, "count": len(flowers), "essence": total_essence, "xp": total_xp,
+            "jackpots": jackpots, "grand_bloom": grand_bloom, "flowers": flowers}
+
+
+def mass_plant(data: dict, flower_key: str) -> dict:
+    """Сажает ОДИН выбранный вид семени сразу во ВСЕ свободные грядки —
+    останавливается сама, если закончилась мистическая пыльца (для семян
+    тира 1) или запас семян в инвентаре (для тира 2+), не трогая при этом
+    уже засаженные в рамках этого же вызова грядки."""
+    g = ensure_garden(data)
+    if not mass_actions_unlocked(g):
+        return {"ok": False, "reason": "locked", "need": MASS_ACTIONS_MIN_PLOTS, "have": g["plot_count"]}
+
+    empty = _empty_plot_indices(g)
+    if not empty:
+        return {"ok": False, "reason": "no_empty"}
+
+    if not FLOWERS_BY_KEY.get(flower_key):
+        return {"ok": False, "reason": "unknown_flower"}
+
+    planted = 0
+    stop_reason = None
+    last_flower = None
+    for idx in empty:
+        result = plant_flower(data, idx, flower_key)
+        if not result["ok"]:
+            stop_reason = result["reason"]
+            break
+        planted += 1
+        last_flower = result["flower"]
+
+    if planted == 0:
+        return {"ok": False, "reason": stop_reason or "unknown_flower"}
+
+    return {"ok": True, "planted": planted, "flower": last_flower, "stop_reason": stop_reason}
+
+
 def instant_grow(data: dict, plot_idx: int) -> dict:
     """Ускоряет рост цветка на грядке — НЕ мгновенным скачком таймера, а
     плавным удвоением скорости роста на будущее (прогресс замораживается
@@ -1016,6 +1117,21 @@ def garden_keyboard(data: dict, page: int = 0):
         nav.append(InlineKeyboardButton(text="▶️", callback_data=f"garden_page:{page + 1}"))
     b.row(*nav)
 
+    # Массовые действия: кнопки видны ВСЕГДА, но пока не открыто
+    # MASS_ACTIONS_MIN_PLOTS грядок — подписаны замком, а нажатие на них
+    # обрабатывается хендлером в main.py как ошибка (алерт), а не действие.
+    unlocked = mass_actions_unlocked(g)
+    if unlocked:
+        mass_plant_label = "🌱 Массовая посадка"
+        mass_harvest_label = "🌾 Массовый сбор"
+    else:
+        mass_plant_label = f"🔒 Масс. посадка ({g['plot_count']}/{MASS_ACTIONS_MIN_PLOTS})"
+        mass_harvest_label = f"🔒 Масс. сбор ({g['plot_count']}/{MASS_ACTIONS_MIN_PLOTS})"
+    b.row(
+        InlineKeyboardButton(text=mass_plant_label, callback_data="garden_massplant:0"),
+        InlineKeyboardButton(text=mass_harvest_label, callback_data="garden_massharvest"),
+    )
+
     b.row(
         InlineKeyboardButton(text="🎒 Инвентарь", callback_data="garden_inventory"),
         InlineKeyboardButton(text="🧬 Слияние", callback_data="garden_merge"),
@@ -1200,6 +1316,112 @@ def plant_inventory_keyboard(data: dict, plot_idx: int, page: int = 0):
         b.row(*nav)
 
     b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data=f"garden_plantmenu:{plot_idx}:0"))
+    return b.as_markup()
+
+
+# ── Меню выбора семени для МАССОВОЙ посадки — по структуре повторяет
+# plant_menu_*/plant_inventory_*, но без привязки к одной грядке: выбранный
+# вид сажается сразу во все свободные грядки (см. mass_plant в хендлере
+# garden_massplantdo в main.py). ──
+
+def mass_plant_menu_text(data: dict, page: int = 0) -> str:
+    g = ensure_garden(data)
+    empty = len(_empty_plot_indices(g))
+    total_pages = _seed_pages(len(FLOWERS_BY_TIER[1]))
+    page = max(0, min(total_pages - 1, page))
+    return (
+        '🌱 <b>Массовая посадка</b>\n'
+        f'<blockquote><i>Выбери вид — им засадятся сразу ВСЕ свободные грядки '
+        f'({empty} шт.). Обычные семена покупаются за {ESSENCE_NAME.lower()} — '
+        f'посадка остановится сама, если пыльца закончится раньше грядок.</i></blockquote>\n'
+        f'📄 Страница: <b>{page + 1}/{total_pages}</b>'
+    )
+
+
+def mass_plant_menu_keyboard(data: dict, page: int = 0):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    g = ensure_garden(data)
+    tier1 = FLOWERS_BY_TIER[1]
+    total_pages = _seed_pages(len(tier1))
+    page = max(0, min(total_pages - 1, page))
+    start = page * SEEDS_PER_PAGE
+    end = start + SEEDS_PER_PAGE
+
+    b = InlineKeyboardBuilder()
+    for f in tier1[start:end]:
+        b.row(InlineKeyboardButton(
+            text=f'{flower_label(f)} — {format_amount(SEED_COST_TIER1)} {ESSENCE_ICON}/шт.',
+            callback_data=f"garden_massplantdo:{f['key']}",
+        ))
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="◀️", callback_data=f"garden_massplant:{page - 1}"))
+    nav.append(InlineKeyboardButton(text=f"· {page + 1}/{total_pages} ·", callback_data="garden_noop"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton(text="▶️", callback_data=f"garden_massplant:{page + 1}"))
+    b.row(*nav)
+
+    seed_keys = [k for k, cnt in g["inventory"].items() if cnt > 0 and FLOWERS_BY_KEY[k]["tier"] > 1]
+    if seed_keys:
+        b.row(InlineKeyboardButton(text="🎒 Засадить семенем из инвентаря", callback_data="garden_massplantinv:0"))
+
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data="garden"))
+    return b.as_markup()
+
+
+def mass_plant_inventory_text(data: dict, page: int = 0) -> str:
+    g = ensure_garden(data)
+    empty = len(_empty_plot_indices(g))
+    seeds = [(k, c) for k, c in g["inventory"].items() if c > 0 and FLOWERS_BY_KEY[k]["tier"] > 1]
+    total_pages = _seed_pages(len(seeds)) if seeds else 1
+    page = max(0, min(total_pages - 1, page))
+    if not seeds:
+        body = '<i>В инвентаре пока нет редких семян — получи их через слияние в котле.</i>'
+    else:
+        body = (f'<i>Выбери семя — им засадятся все свободные грядки ({empty} шт.), '
+                f'пока не закончатся либо семена, либо сами грядки.</i>')
+    return (
+        '🎒 <b>Массовая посадка из инвентаря</b>\n'
+        f'<blockquote>{body}</blockquote>\n'
+        f'📄 Страница: <b>{page + 1}/{total_pages}</b>'
+    )
+
+
+def mass_plant_inventory_keyboard(data: dict, page: int = 0):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    g = ensure_garden(data)
+    seeds = sorted(
+        [(k, c) for k, c in g["inventory"].items() if c > 0 and FLOWERS_BY_KEY[k]["tier"] > 1],
+        key=lambda kv: (FLOWERS_BY_KEY[kv[0]]["tier"], FLOWERS_BY_KEY[kv[0]]["name"]),
+    )
+    total_pages = _seed_pages(len(seeds)) if seeds else 1
+    page = max(0, min(total_pages - 1, page))
+    start = page * SEEDS_PER_PAGE
+    end = start + SEEDS_PER_PAGE
+
+    b = InlineKeyboardBuilder()
+    for key, cnt in seeds[start:end]:
+        f = FLOWERS_BY_KEY[key]
+        b.row(InlineKeyboardButton(
+            text=f'{flower_label(f)} ×{cnt}',
+            callback_data=f"garden_massplantdo:{key}",
+        ))
+
+    if seeds:
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton(text="◀️", callback_data=f"garden_massplantinv:{page - 1}"))
+        nav.append(InlineKeyboardButton(text=f"· {page + 1}/{total_pages} ·", callback_data="garden_noop"))
+        if page < total_pages - 1:
+            nav.append(InlineKeyboardButton(text="▶️", callback_data=f"garden_massplantinv:{page + 1}"))
+        b.row(*nav)
+
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data="garden_massplant:0"))
     return b.as_markup()
 
 
