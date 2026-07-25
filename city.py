@@ -130,7 +130,7 @@ BTN_EMOJI = {
     "exchange": "5402186569006210455",          # 🔁 Обмен
     "cart": "6334399977833366867",               # 🐎 Повозка
     "warehouse": "5337023862062208549",                            # 📦 Склад — вставить реальный icon_custom_emoji_id
-    "defense": None,           # 🛡 Защита от таможни — вставить реальный icon_custom_emoji_id, когда появится
+    "defense": "6050643982646513651",           # 🛡 Защита от таможни
 }
 
 TRAVEL_COST = 50
@@ -253,6 +253,25 @@ ALIAS_TO_CITY = {
 def _tge(key: str, fallback: str) -> str:
     """Возвращает <tg-emoji> тег с кастомным id, либо обычный эмодзи если id не задан."""
     eid = BTN_EMOJI.get(key)
+    if not eid:
+        return fallback
+    return f'<tg-emoji emoji-id="{eid}">{fallback}</tg-emoji>'
+
+
+# Кастомные эмодзи для товаров (ключ — item_type из ITEMS). Используются
+# только в HTML-сообщениях (message.reply/edit_text) — в алертах
+# call.answer(show_alert=True) кастомные эмодзи не отображаются, поэтому
+# там нужно использовать ITEMS[item]['emoji'] напрямую, без этой обёртки.
+ITEM_EMOJI_ID = {
+    "forbidden_scrolls": "5397797168264260168",
+    "caviar": "5920188899400879760",
+}
+
+
+def _item_emoji(item_type: str) -> str:
+    """Тег кастомного эмодзи для товара, либо обычный эмодзи из ITEMS, если id не задан."""
+    fallback = ITEMS[item_type]["emoji"]
+    eid = ITEM_EMOJI_ID.get(item_type)
     if not eid:
         return fallback
     return f'<tg-emoji emoji-id="{eid}">{fallback}</tg-emoji>'
@@ -729,7 +748,7 @@ def try_buy_protection(user_id: int, kind: str) -> tuple[bool, str]:
         if row[column]:
             return False, "✅ У вас уже куплена эта защита."
         if row["balance"] < cost:
-            return False, f"💸 Недостаточно {CURRENCY_NAME}. Нужно {_crystals(cost)}, у вас {_crystals(row['balance'])}."
+            return False, f"💸 Недостаточно {CURRENCY_NAME}. Нужно {_crystals_plain(cost)}, у вас {_crystals_plain(row['balance'])}."
         cur = conn.execute(
             f"UPDATE city_users SET balance = balance - ?, {column} = 1 "
             f"WHERE user_id=? AND {column}=0 AND balance>=?",
@@ -1212,6 +1231,12 @@ def _crystals(n: int) -> str:
     return f"{_fmt(n)} {_tge('currency', CURRENCY_EMOJI)} {CURRENCY_NAME}"
 
 
+def _crystals_plain(n: int) -> str:
+    """Как _crystals(), но без кастомного тега эмодзи — для алертов
+    (call.answer(show_alert=True)), которые не поддерживают HTML/кастомные эмодзи."""
+    return f"{_fmt(n)} {CURRENCY_EMOJI} {CURRENCY_NAME}"
+
+
 def _is_traveling(u: dict) -> bool:
     if u["status"] != "traveling":
         return False
@@ -1459,7 +1484,7 @@ def _profile_text(u: dict, inv: dict) -> str:
         f"{_tge('status', '📡')} Статус: {status_line}\n\n"
         "📦 <b><i>Склад</i></b>\n"
         + "".join(
-            f"  {info['emoji']} {info['name']} — <b><i>{inv.get(item, 0)}</i></b> <b><i>шт.</i></b>\n"
+            f"  {_item_emoji(item)} {info['name']} — <b><i>{inv.get(item, 0)}</i></b> <b><i>шт.</i></b>\n"
             for item, info in ITEMS.items()
         )
         + "\n"
@@ -1481,7 +1506,7 @@ async def _market_text() -> str:
         lines.append(f"{_city_emoji_tag(city)} <b><i>{city}</i></b>")
         for item, info in ITEMS.items():
             p = prices[city][item]
-            lines.append(f"   {info['emoji']} <b><i>{info['name']}</i></b> — <b><i>{p}</i></b> {_tge('currency', CURRENCY_EMOJI)}")
+            lines.append(f"   {_item_emoji(item)} <b><i>{info['name']}</i></b> — <b><i>{p}</i></b> {_tge('currency', CURRENCY_EMOJI)}")
         lines.append("")
     lines.append("━━━━━━━━━━━━━━━━━━━━")
     lines.append(f"{0} <b><i>Купить —</i></b> <code>/citybuy товар количество</code>".format(_tge("buy", "🛒")))
@@ -1546,7 +1571,7 @@ def _bag_text(inv: dict, u: dict | None = None, freshness: dict | None = None) -
 
     goods_lines = []
     for item, info in ITEMS.items():
-        line = f"{info['emoji']} {info['name']}: <b><i>{inv.get(item, 0)}</i></b> <b><i>шт.</i></b>"
+        line = f"{_item_emoji(item)} {info['name']}: <b><i>{inv.get(item, 0)}</i></b> <b><i>шт.</i></b>"
         if info.get("perishable") and inv.get(item, 0) > 0:
             left = freshness.get(item)
             if left is not None:
@@ -1704,7 +1729,7 @@ async def _route_text() -> str:
         f'<tg-emoji emoji-id="5422439311196834318">🌟</tg-emoji> <b><i>ЛУЧШИЙ ТОРГОВЫЙ МАРШРУТ</i></b>\n'
         "<b><i>Подсказка гильдии — где заработать прямо сейчас</i></b> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"{info['emoji']} Товар: <b><i>{info['name']}</i></b>\n\n"
+        f"{_item_emoji(best['item'])} Товар: <b><i>{info['name']}</i></b>\n\n"
         f"{_tge('buy', '🛒')} Купить в {_city_emoji_tag(best['buy_city'])} <b><i>{best['buy_city']}</i></b> — <b><i>{best['buy_price']}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
         f"{_tge('sell', '💰')} Продать в {_city_emoji_tag(best['sell_city'])} <b><i>{best['sell_city']}</i></b> — <b><i>{best['sell_price']}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
@@ -1767,11 +1792,11 @@ def _help_text() -> str:
         f"{_tge('help', '❓')} <code>/cityhelp</code> — <b><i>эта справка</i></b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "<b><i>📦 Товары</i></b>\n"
-        f"  {ITEMS['potions']['emoji']} Зелья — <b><i>дёшевы на Севере, дороги на Юге</i></b>\n"
-        f"  {ITEMS['scrolls']['emoji']} Свитки — <b><i>дёшевы на Юге, дороги на Севере</i></b>\n"
-        f"  {ITEMS['food']['emoji']} Еда — <b><i>дешевле на Юге, дороже на Севере</i></b>\n"
-        f"  {ITEMS['forbidden_scrolls']['emoji']} Запретные свитки — <b><i>дорогая контрабанда, шанс конфискации {int(ITEM_CUSTOMS_CHANCE['forbidden_scrolls'] * 100)}% вместо {int(CUSTOMS_CHANCE * 100)}%</i></b>\n"
-        f"  {ITEMS['caviar']['emoji']} Чёрная икра — <b><i>портится через {CAVIAR_FRESHNESS_SECONDS // 60} минут после покупки — не затягивайте с продажей</i></b>\n"
+        f"  {_item_emoji('potions')} Зелья — <b><i>дёшевы на Севере, дороги на Юге</i></b>\n"
+        f"  {_item_emoji('scrolls')} Свитки — <b><i>дёшевы на Юге, дороги на Севере</i></b>\n"
+        f"  {_item_emoji('food')} Еда — <b><i>дешевле на Юге, дороже на Севере</i></b>\n"
+        f"  {_item_emoji('forbidden_scrolls')} Запретные свитки — <b><i>дорогая контрабанда, шанс конфискации {int(ITEM_CUSTOMS_CHANCE['forbidden_scrolls'] * 100)}% вместо {int(CUSTOMS_CHANCE * 100)}%</i></b>\n"
+        f"  {_item_emoji('caviar')} Чёрная икра — <b><i>портится через {CAVIAR_FRESHNESS_SECONDS // 60} минут после покупки — не затягивайте с продажей</i></b>\n"
         f"  {_tge('city_capital', '🏛')} Столица — <b><i>всё дорого, но цены стабильнее</i></b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"<b><i>{_tge('travel', '🧭')} Путешествия</i></b>\n"
@@ -2079,7 +2104,7 @@ async def cmd_city_buy(message: Message):
         "✅ <b><i>СДЕЛКА СОВЕРШЕНА</i></b>\n"
         "<b><i>Покупка прошла успешно</i></b> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"{ITEMS[item]['emoji']} Куплено: <b><i>{qty} × {ITEMS[item]['name']}</i></b>\n"
+        f"{_item_emoji(item)} Куплено: <b><i>{qty} × {ITEMS[item]['name']}</i></b>\n"
         f"💵 Цена за шт.: <b><i>{price}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
         f"{_tge('currency', CURRENCY_EMOJI)} Списано: <b><i>{_fmt(total)}</i></b> <b><i>{CURRENCY_NAME}</i></b>\n"
         f"📍 Город: <b><i>{u['city']}</i></b>"
@@ -2140,7 +2165,7 @@ async def cmd_city_sell(message: Message):
         "✅ <b><i>СДЕЛКА СОВЕРШЕНА</i></b>\n"
         "<b><i>Продажа прошла успешно</i></b> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"{ITEMS[item]['emoji']} Продано: <b><i>{qty} × {ITEMS[item]['name']}</i></b>\n"
+        f"{_item_emoji(item)} Продано: <b><i>{qty} × {ITEMS[item]['name']}</i></b>\n"
         f"💵 Цена за шт.: <b><i>{price}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
         f"{_tge('currency', CURRENCY_EMOJI)} Получено: <b><i>{_fmt(total)}</i></b> <b><i>{CURRENCY_NAME}</i></b>\n"
         f"📍 Город: <b><i>{u['city']}</i></b>",
