@@ -272,6 +272,7 @@ def open_artifact_case(data: dict, lang: str = "ru") -> tuple:
 
     # Счётчик инкрементируется всегда — деньги потрачены в любом случае
     data["artifact_cases_opened"] = data.get("artifact_cases_opened", 0) + 1
+    _mark_case_opened(data)
 
     # ── 25% шанс: монеты вместо артефакта ──────────────────────────────
     if random.random() < 0.25:
@@ -516,6 +517,41 @@ def _now_ts() -> float:
     return datetime.now(timezone.utc).timestamp()
 
 
+# ============================================================
+#  АНТИСПАМ: ЛИМИТ НА ОТКРЫТИЕ КЕЙСОВ
+# ============================================================
+
+CASE_OPEN_COOLDOWN_BUTTON_SEC  = 1   # открытие кнопкой (одиночный кейс)
+CASE_OPEN_COOLDOWN_COMMAND_SEC = 10  # открытие текстовой командой (в т.ч. массовое)
+
+
+def _check_case_cooldown(data: dict, lang: str = "ru", via_command: bool = False) -> tuple[bool, str]:
+    """
+    Проверяет, прошло ли достаточно времени с последнего открытия кейса.
+    via_command=True — открытие через текстовую команду (10 сек),
+    via_command=False — открытие кнопкой (1 сек).
+    Возвращает (ok, сообщение_об_ошибке).
+    Метку времени ставит _mark_case_opened() ПОСЛЕ успешного открытия —
+    сама проверка data не меняет.
+    """
+    cooldown = CASE_OPEN_COOLDOWN_COMMAND_SEC if via_command else CASE_OPEN_COOLDOWN_BUTTON_SEC
+    last_ts = data.get("last_case_open_ts", 0)
+    elapsed = _now_ts() - last_ts
+    if elapsed < cooldown:
+        wait = int(cooldown - elapsed) + 1
+        err = (
+            f"Слишком быстро! Подожди ещё {wait} сек. перед открытием кейса."
+            if lang == "ru"
+            else f"Too fast! Wait {wait} more sec. before opening a case."
+        )
+        return False, f"⏳ {err}"
+    return True, ""
+
+
+def _mark_case_opened(data: dict) -> None:
+    data["last_case_open_ts"] = _now_ts()
+
+
 def _fmt_time_left(seconds: float, lang: str = "ru") -> str:
     seconds = int(seconds)
     if seconds <= 0:
@@ -586,10 +622,14 @@ def _remove_qty_by_key(inv: list, key: str, qty: int = 1) -> list:
 #  ЛОГИКА
 # ============================================================
 
-def open_case(data: dict, case_key: str, lang: str = "ru") -> tuple:
+def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool = True, via_command: bool = False) -> tuple:
     case = CASES.get(case_key)
     if not case:
         return False, _L(lang, "❌ Неизвестный кейс.", "❌ Unknown case."), None
+    if _check_cooldown:
+        ok_cd, err_cd = _check_case_cooldown(data, lang, via_command=via_command)
+        if not ok_cd:
+            return False, err_cd, None
     cost = case["cost"]
     if data.get("balance", 0) < cost:
         return False, f"❌ {_L(lang, 'Недостаточно монет!', 'Not enough coins!')}\n{_L(lang, 'Нужно', 'Need')}: {_fmt_num(cost)} {_pe('coin', '💰')}", None
@@ -679,6 +719,7 @@ def open_case(data: dict, case_key: str, lang: str = "ru") -> tuple:
                 f"\n<blockquote>{_pe('spent', '💸')} <b><i>{_L(lang, 'Потрачено', 'Spent')}: {_fmt_num(cost)}</i></b> {_pe('coin', '💰')}\n"
                 f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс', 'Balance')}: {_fmt_num(data['balance'])}</i></b> {_pe('coin', '💰')}</blockquote>"
             )
+            _mark_case_opened(data)
             return True, msg, instance
         else:
             def _build_xp():
@@ -702,6 +743,7 @@ def open_case(data: dict, case_key: str, lang: str = "ru") -> tuple:
         f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс', 'Balance')}: {_fmt_num(data['balance'])}</i></b> {_pe('coin', '💰')}\n"
         f"{_pe('inv', '🎒')} <b><i>{inv_line}</i></b></blockquote>"
     )
+    _mark_case_opened(data)
     return True, msg, instance
 
 
@@ -713,10 +755,12 @@ CASE_NUM_TO_KEY = {1: "common", 2: "xp", 3: "enhancer"}
 CASE_KEY_TO_NUM = {v: k for k, v in CASE_NUM_TO_KEY.items()}
 
 
-def open_case_multi(data: dict, case_num: int, qty: int, lang: str = "ru") -> tuple:
+def open_case_multi(data: dict, case_num: int, qty: int, lang: str = "ru", via_command: bool = True) -> tuple:
     """
     Открывает qty кейсов с номером case_num (#1/#2/#3).
     Команды: открыть #1 5  /купить #2 10  open #1 5  /open #3 3
+    via_command: True — вызов текстовой командой (кулдаун 10 сек, по умолчанию),
+                 False — вызов кнопкой (кулдаун 1 сек).
     Возвращает (ok, итоговое_сообщение).
     """
     case_key = CASE_NUM_TO_KEY.get(case_num)
@@ -733,6 +777,10 @@ def open_case_multi(data: dict, case_num: int, qty: int, lang: str = "ru") -> tu
     if qty > 100:
         err = "Максимум 100 кейсов за раз." if lang == "ru" else "Maximum 100 cases at once."
         return False, f"❌ {err}"
+
+    ok_cd, err_cd = _check_case_cooldown(data, lang, via_command=via_command)
+    if not ok_cd:
+        return False, err_cd
 
     case       = CASES[case_key]
     total_cost = case["cost"] * qty
@@ -757,7 +805,7 @@ def open_case_multi(data: dict, case_num: int, qty: int, lang: str = "ru") -> tu
     results: dict = {}  # item_key -> count
     opened_count  = 0
     for _ in range(qty):
-        ok, _msg, instance = open_case(data, case_key, lang=lang)
+        ok, _msg, instance = open_case(data, case_key, lang=lang, _check_cooldown=False)
         if not ok:
             break  # прерываем если закончились монеты в процессе
         if instance:
