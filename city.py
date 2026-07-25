@@ -90,13 +90,19 @@ ITEMS = {
     "potions": {"name": "Зелья", "emoji": "🧪", "base": 10},
     "scrolls": {"name": "Свитки", "emoji": "📜", "base": 12},
     "food":    {"name": "Еда",    "emoji": "🍖", "base": 8},
+    # ── Запретные свитки: контрабандный товар — дороже обычных свитков,
+    # но таможня проверяет их особенно тщательно (см. ITEM_CUSTOMS_CHANCE).
+    "forbidden_scrolls": {"name": "Запретные свитки", "emoji": "🔮", "base": 30},
+    # ── Чёрная икра: скоропортящийся товар — теряет свежесть через
+    # CAVIAR_FRESHNESS_SECONDS после покупки (см. get_inventory).
+    "caviar": {"name": "Чёрная икра", "emoji": "🐟", "base": 45, "perishable": True},
 }
 
 # Модификаторы базовой цены по городам
 CITY_MODIFIERS = {
-    "Северный": {"potions": 0.7, "scrolls": 1.3, "food": 1.3},
-    "Южный":    {"potions": 1.3, "scrolls": 0.7, "food": 0.7},
-    "Столица":  {"potions": 1.2, "scrolls": 1.2, "food": 1.2},
+    "Северный": {"potions": 0.7, "scrolls": 1.3, "food": 1.3, "forbidden_scrolls": 1.1, "caviar": 0.8},
+    "Южный":    {"potions": 1.3, "scrolls": 0.7, "food": 0.7, "forbidden_scrolls": 0.8, "caviar": 1.3},
+    "Столица":  {"potions": 1.2, "scrolls": 1.2, "food": 1.2, "forbidden_scrolls": 1.3, "caviar": 1.1},
 }
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -124,14 +130,47 @@ BTN_EMOJI = {
     "exchange": "5402186569006210455",          # 🔁 Обмен
     "cart": "6334399977833366867",               # 🐎 Повозка
     "warehouse": "5337023862062208549",                            # 📦 Склад — вставить реальный icon_custom_emoji_id
+    "defense": None,           # 🛡 Защита от таможни — вставить реальный icon_custom_emoji_id, когда появится
 }
 
 TRAVEL_COST = 50
 TRAVEL_MINUTES = 15
 TRAVEL_CANCEL_WINDOW = 120  # сек. — в течение скольких секунд после старта можно отменить поездку
 CUSTOMS_LIMIT = 200          # лимит единиц товара, выше которого возможна конфискация
-CUSTOMS_CHANCE = 0.30        # шанс конфискации
+CUSTOMS_CHANCE = 0.30        # базовый шанс конфискации (для обычных товаров)
 CUSTOMS_FINE = 50
+
+# ── Индивидуальный шанс конфискации по товарам. Если товара нет в словаре —
+# используется базовый CUSTOMS_CHANCE. Запретные свитки — контрабанда,
+# гильдия магов проверяет её вдвое тщательнее.
+ITEM_CUSTOMS_CHANCE = {
+    "forbidden_scrolls": 0.50,
+}
+
+# ── Свежесть чёрной икры: через столько секунд после покупки товар портится
+# и автоматически изымается (протухший товар не хранится и не провозится).
+CAVIAR_FRESHNESS_SECONDS = 20 * 60  # 20 минут
+
+# ──────────────────────────────────────────────────────────────────────────
+# МАГАЗИН ЗАЩИТЫ ОТ ТАМОЖНИ
+# Три вида защиты, снижающие шанс конфискации. Эффекты не складываются
+# наивно — фальшивые документы и сопровождение вместе дают отдельное,
+# меньшее чем сумма, совместное снижение; охрана добавляется поверх.
+# Итоговый шанс конфискации никогда не опускается ниже MIN_CUSTOMS_CHANCE
+# (при покупке всех трёх защит шанс падает ровно до этого минимума).
+# ──────────────────────────────────────────────────────────────────────────
+MIN_CUSTOMS_CHANCE = 0.15    # минимальный шанс конфискации даже с максимальной защитой
+
+FAKE_DOCS_COST = 15_000_000       # фальшивые документы
+FAKE_DOCS_REDUCTION = 0.15
+
+ESCORT_COST = 50_000_000          # сопроводительное письмо
+ESCORT_REDUCTION = 0.25
+
+FAKE_DOCS_AND_ESCORT_REDUCTION = 0.30   # совместный эффект (вместо наивных 0.15+0.25=0.40)
+
+SECURITY_COST = 8_000_000         # охрана каравана
+SECURITY_REDUCTION = 0.10
 
 # ── ПОВОЗКА: лимит суммарного количества товара, который можно везти за раз ──
 # Уровень 0 — базовая повозка, доступна всем бесплатно. Дальше — платная
@@ -197,6 +236,12 @@ ALIAS_TO_ITEM = {
     "зелья": "potions", "зелье": "potions", "potions": "potions", "potion": "potions",
     "свитки": "scrolls", "свиток": "scrolls", "scrolls": "scrolls", "scroll": "scrolls",
     "еда": "food", "food": "food",
+    "запретные свитки": "forbidden_scrolls", "запретный свиток": "forbidden_scrolls",
+    "запретныесвитки": "forbidden_scrolls", "запретныйсвиток": "forbidden_scrolls",
+    "запретный": "forbidden_scrolls", "forbidden_scrolls": "forbidden_scrolls",
+    "forbidden": "forbidden_scrolls",
+    "черная икра": "caviar", "чёрная икра": "caviar", "чернаяикра": "caviar",
+    "чёрнаяикра": "caviar", "икра": "caviar", "caviar": "caviar",
 }
 ALIAS_TO_CITY = {
     "северный": "Северный", "север": "Северный", "north": "Северный",
@@ -284,6 +329,13 @@ def init_city_db():
             conn.execute("ALTER TABLE city_users ADD COLUMN cart_level INTEGER NOT NULL DEFAULT 0")
         if "warehouse_level" not in cols:
             conn.execute("ALTER TABLE city_users ADD COLUMN warehouse_level INTEGER NOT NULL DEFAULT 0")
+        # Магазин защиты от таможни — три независимых флага защиты.
+        if "has_fake_docs" not in cols:
+            conn.execute("ALTER TABLE city_users ADD COLUMN has_fake_docs INTEGER NOT NULL DEFAULT 0")
+        if "has_escort" not in cols:
+            conn.execute("ALTER TABLE city_users ADD COLUMN has_escort INTEGER NOT NULL DEFAULT 0")
+        if "has_security" not in cols:
+            conn.execute("ALTER TABLE city_users ADD COLUMN has_security INTEGER NOT NULL DEFAULT 0")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_inventory (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -293,6 +345,11 @@ def init_city_db():
                 UNIQUE(user_id, item_type)
             )
         """)
+        # Миграция: колонка для отслеживания свежести скоропортящихся товаров
+        # (используется чёрной икрой) — timestamp последней "свежей" покупки.
+        inv_cols = [r["name"] for r in conn.execute("PRAGMA table_info(city_inventory)").fetchall()]
+        if "acquired_at" not in inv_cols:
+            conn.execute("ALTER TABLE city_inventory ADD COLUMN acquired_at INTEGER")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_prices (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -443,6 +500,7 @@ def add_crystals_to_user(user_id: int, amount: int, username: str = "") -> int:
 
 
 def get_inventory(user_id: int) -> dict:
+    _spoil_expired_perishables(user_id)
     with _conn() as conn:
         rows = conn.execute(
             "SELECT item_type, quantity FROM city_inventory WHERE user_id=?", (user_id,)
@@ -451,6 +509,61 @@ def get_inventory(user_id: int) -> dict:
     for r in rows:
         inv[r["item_type"]] = r["quantity"]
     return inv
+
+
+def _spoil_expired_perishables(user_id: int):
+    """Проверяет скоропортящиеся товары (сейчас — только чёрная икра) и
+    обнуляет их, если с момента покупки прошло больше CAVIAR_FRESHNESS_SECONDS.
+    Вызывается лениво из get_inventory, поэтому испорченный товар исчезает
+    сам собой при любом обращении к инвентарю (покупка, продажа, поездка,
+    просмотр сумки/склада) — отдельный фоновый цикл не нужен."""
+    now = int(time.time())
+    perishable_items = [k for k, v in ITEMS.items() if v.get("perishable")]
+    if not perishable_items:
+        return
+    with _conn() as conn:
+        placeholders = ",".join("?" * len(perishable_items))
+        rows = conn.execute(
+            f"SELECT item_type, quantity, acquired_at FROM city_inventory "
+            f"WHERE user_id=? AND item_type IN ({placeholders}) AND quantity>0",
+            (user_id, *perishable_items),
+        ).fetchall()
+        for r in rows:
+            if r["acquired_at"] and now - r["acquired_at"] > CAVIAR_FRESHNESS_SECONDS:
+                conn.execute(
+                    "UPDATE city_inventory SET quantity=0 "
+                    "WHERE user_id=? AND item_type=? AND quantity=?",
+                    (user_id, r["item_type"], r["quantity"]),
+                )
+        conn.commit()
+
+
+def refresh_item_freshness(user_id: int, item_type: str):
+    """Обновляет таймер свежести товара (вызывается при каждой покупке
+    скоропортящегося товара — новая партия считается свежей целиком)."""
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE city_inventory SET acquired_at=? WHERE user_id=? AND item_type=?",
+            (int(time.time()), user_id, item_type),
+        )
+        conn.commit()
+
+
+def get_item_freshness_left(user_id: int, item_type: str) -> int | None:
+    """Секунд до порчи товара, или None если товар не портится, отсутствует
+    в инвентаре, либо уже испорчен/списан."""
+    if not ITEMS.get(item_type, {}).get("perishable"):
+        return None
+    _spoil_expired_perishables(user_id)
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT quantity, acquired_at FROM city_inventory WHERE user_id=? AND item_type=?",
+            (user_id, item_type),
+        ).fetchone()
+    if not row or row["quantity"] <= 0 or not row["acquired_at"]:
+        return None
+    left = CAVIAR_FRESHNESS_SECONDS - (int(time.time()) - row["acquired_at"])
+    return max(0, left)
 
 
 def set_inventory_qty(user_id: int, item_type: str, qty: int):
@@ -561,6 +674,72 @@ def force_confiscate_inventory(user_id: int, item_type: str) -> int:
             conn.commit()
             return qty if cur.rowcount else 0
         return 0
+
+
+# ---------- магазин защиты от таможни ----------
+
+def get_customs_reduction(u: dict) -> float:
+    """Суммарное снижение шанса конфискации от купленных защит.
+    Фальшивые документы + сопровождение вместе дают фиксированные 30%
+    (не наивную сумму 15%+25%=40%); охрана добавляет ещё 10% поверх."""
+    has_docs = bool(u.get("has_fake_docs"))
+    has_escort = bool(u.get("has_escort"))
+    has_security = bool(u.get("has_security"))
+
+    if has_docs and has_escort:
+        reduction = FAKE_DOCS_AND_ESCORT_REDUCTION
+    elif has_docs:
+        reduction = FAKE_DOCS_REDUCTION
+    elif has_escort:
+        reduction = ESCORT_REDUCTION
+    else:
+        reduction = 0.0
+
+    if has_security:
+        reduction += SECURITY_REDUCTION
+
+    return reduction
+
+
+def get_customs_chance(item_type: str, u: dict) -> float:
+    """Итоговый шанс конфискации для конкретного товара с учётом купленной
+    защиты. Никогда не опускается ниже MIN_CUSTOMS_CHANCE."""
+    base = ITEM_CUSTOMS_CHANCE.get(item_type, CUSTOMS_CHANCE)
+    reduction = get_customs_reduction(u)
+    return max(MIN_CUSTOMS_CHANCE, base - reduction)
+
+
+def try_buy_protection(user_id: int, kind: str) -> tuple[bool, str]:
+    """Покупает один из видов защиты ('fake_docs' | 'escort' | 'security').
+    Атомарно: списывает кристаллы, только если хватает средств и защита
+    ещё не куплена. Возвращает (успех, текст-сообщение)."""
+    cost_map = {
+        "fake_docs": (FAKE_DOCS_COST, "has_fake_docs"),
+        "escort": (ESCORT_COST, "has_escort"),
+        "security": (SECURITY_COST, "has_security"),
+    }
+    if kind not in cost_map:
+        return False, "❌ Неизвестный вид защиты."
+    cost, column = cost_map[kind]
+
+    with _conn() as conn:
+        row = conn.execute(f"SELECT {column}, balance FROM city_users WHERE user_id=?", (user_id,)).fetchone()
+        if row is None:
+            return False, "❌ Профиль не найден."
+        if row[column]:
+            return False, "✅ У вас уже куплена эта защита."
+        if row["balance"] < cost:
+            return False, f"💸 Недостаточно {CURRENCY_NAME}. Нужно {_crystals(cost)}, у вас {_crystals(row['balance'])}."
+        cur = conn.execute(
+            f"UPDATE city_users SET balance = balance - ?, {column} = 1 "
+            f"WHERE user_id=? AND {column}=0 AND balance>=?",
+            (cost, user_id, cost),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return False, "❌ Не удалось совершить покупку. Попробуйте ещё раз."
+    log_crystal_event(user_id, -cost)
+    return True, "✅ Защита успешно приобретена."
 
 
 # ---------- повозка (лимит перевозки) ----------
@@ -953,6 +1132,18 @@ async def aio_force_confiscate_inventory(user_id: int, item_type: str) -> int:
     return await asyncio.to_thread(force_confiscate_inventory, user_id, item_type)
 
 
+async def aio_refresh_item_freshness(user_id: int, item_type: str):
+    return await asyncio.to_thread(refresh_item_freshness, user_id, item_type)
+
+
+async def aio_get_item_freshness_left(user_id: int, item_type: str) -> int | None:
+    return await asyncio.to_thread(get_item_freshness_left, user_id, item_type)
+
+
+async def aio_try_buy_protection(user_id: int, kind: str) -> tuple[bool, str]:
+    return await asyncio.to_thread(try_buy_protection, user_id, kind)
+
+
 async def aio_try_upgrade_cart(user_id: int) -> tuple[bool, str, dict | None]:
     return await asyncio.to_thread(try_upgrade_cart, user_id)
 
@@ -1102,6 +1293,9 @@ def city_main_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=" Склад", callback_data="city_nav_warehouse", icon_custom_emoji_id=BTN_EMOJI["warehouse"]),
         InlineKeyboardButton(text=" Топ кристаллов", callback_data="crystop_alltime", icon_custom_emoji_id=BTN_EMOJI["currency"]),
     )
+    builder.row(
+        InlineKeyboardButton(text=" Защита от таможни", callback_data="city_nav_defense", icon_custom_emoji_id=BTN_EMOJI["defense"]),
+    )
     return builder.as_markup()
 
 
@@ -1119,6 +1313,29 @@ def city_market_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=" Сумка", callback_data="city_nav_bag", icon_custom_emoji_id=BTN_EMOJI["bag"]),
         InlineKeyboardButton(text=" Маршрут", callback_data="city_nav_route", icon_custom_emoji_id=BTN_EMOJI["route"]),
     )
+    builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
+    return builder.as_markup()
+
+
+def city_defense_keyboard(u: dict) -> InlineKeyboardMarkup:
+    """Клавиатура магазина защиты — кнопка на каждый вид защиты, если он
+    ещё не куплен; уже купленные виды кнопкой не показываются."""
+    builder = InlineKeyboardBuilder()
+    if not u.get("has_fake_docs"):
+        builder.row(InlineKeyboardButton(
+            text=f" Фальшивые документы — {_fmt(FAKE_DOCS_COST)} 💎",
+            callback_data="city_buy_defense_fake_docs",
+        ))
+    if not u.get("has_escort"):
+        builder.row(InlineKeyboardButton(
+            text=f" Сопроводительное письмо — {_fmt(ESCORT_COST)} 💎",
+            callback_data="city_buy_defense_escort",
+        ))
+    if not u.get("has_security"):
+        builder.row(InlineKeyboardButton(
+            text=f" Охрана каравана — {_fmt(SECURITY_COST)} 💎",
+            callback_data="city_buy_defense_security",
+        ))
     builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
     return builder.as_markup()
 
@@ -1241,9 +1458,11 @@ def _profile_text(u: dict, inv: dict) -> str:
         f"{_city_emoji_tag(u['city'])} Город: <b><i>{u['city']}</i></b>\n"
         f"{_tge('status', '📡')} Статус: {status_line}\n\n"
         "📦 <b><i>Склад</i></b>\n"
-        f"  {ITEMS['potions']['emoji']} Зелья — <b><i>{inv['potions']}</i></b> <b><i>шт.</i></b>\n"
-        f"  {ITEMS['scrolls']['emoji']} Свитки — <b><i>{inv['scrolls']}</i></b> <b><i>шт.</i></b>\n"
-        f"  {ITEMS['food']['emoji']} Еда — <b><i>{inv['food']}</i></b> <b><i>шт.</i></b>\n\n"
+        + "".join(
+            f"  {info['emoji']} {info['name']} — <b><i>{inv.get(item, 0)}</i></b> <b><i>шт.</i></b>\n"
+            for item, info in ITEMS.items()
+        )
+        + "\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"🎁 <b><i>Ежедневный бонус +{DAILY_CRYSTALS} {CURRENCY_NAME} получен сегодня ✅ — заходи завтра за новым</i></b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
@@ -1270,13 +1489,53 @@ async def _market_text() -> str:
     return "\n".join(lines)
 
 
+def _defense_text(u: dict) -> str:
+    has_docs = bool(u.get("has_fake_docs"))
+    has_escort = bool(u.get("has_escort"))
+    has_security = bool(u.get("has_security"))
+
+    def _status(owned: bool) -> str:
+        return "✅ <b><i>куплено</i></b>" if owned else "❌ <b><i>не куплено</i></b>"
+
+    base_chance = int(CUSTOMS_CHANCE * 100)
+    forbidden_chance = int(ITEM_CUSTOMS_CHANCE.get("forbidden_scrolls", CUSTOMS_CHANCE) * 100)
+    effective_normal = int(round(get_customs_chance("potions", u) * 100))
+    effective_forbidden = int(round(get_customs_chance("forbidden_scrolls", u) * 100))
+
+    return (
+        f"🛡 <b><i>ЗАЩИТА ОТ ТАМОЖНИ</i></b>\n"
+        "<b><i>Снижайте риск конфискации товара</i></b> ✨\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📄 <b><i>Фальшивые документы</i></b> — {_fmt(FAKE_DOCS_COST)} {_tge('currency', CURRENCY_EMOJI)}\n"
+        f"   Снижает шанс конфискации на <b><i>{int(FAKE_DOCS_REDUCTION * 100)}%</i></b>\n"
+        f"   Статус: {_status(has_docs)}\n\n"
+        f"✉️ <b><i>Сопроводительное письмо</i></b> — {_fmt(ESCORT_COST)} {_tge('currency', CURRENCY_EMOJI)}\n"
+        f"   Снижает шанс конфискации на <b><i>{int(ESCORT_REDUCTION * 100)}%</i></b>\n"
+        f"   Вместе с документами — <b><i>{int(FAKE_DOCS_AND_ESCORT_REDUCTION * 100)}%</i></b>\n"
+        f"   Статус: {_status(has_escort)}\n\n"
+        f"💂 <b><i>Охрана каравана</i></b> — {_fmt(SECURITY_COST)} {_tge('currency', CURRENCY_EMOJI)}\n"
+        f"   Снижает шанс конфискации ещё на <b><i>{int(SECURITY_REDUCTION * 100)}%</i></b>\n"
+        f"   Статус: {_status(has_security)}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 <b><i>Базовый шанс конфискации:</i></b> обычный товар — <b><i>{base_chance}%</i></b>, "
+        f"запретные свитки — <b><i>{forbidden_chance}%</i></b>\n"
+        f"📊 <b><i>Ваш текущий шанс:</i></b> обычный товар — <b><i>{effective_normal}%</i></b>, "
+        f"запретные свитки — <b><i>{effective_forbidden}%</i></b>\n"
+        f"🏆 <b><i>При покупке всех трёх защит шанс падает до минимума —</i></b> <b><i>{int(MIN_CUSTOMS_CHANCE * 100)}%</i></b>"
+    )
+
+
 def _cart_bar(carried: int, capacity: int, length: int = 12) -> str:
     ratio = 0 if capacity <= 0 else min(1.0, carried / capacity)
     filled = round(ratio * length)
     return "▰" * filled + "▱" * (length - filled)
 
 
-def _bag_text(inv: dict, u: dict | None = None) -> str:
+def _bag_text(inv: dict, u: dict | None = None, freshness: dict | None = None) -> str:
+    """freshness: {item_type: seconds_left} для скоропортящихся товаров, которые
+    сейчас лежат в инвентаре (передаётся вызывающей стороной, т.к. это отдельный
+    async-запрос к БД)."""
+    freshness = freshness or {}
     total_items = sum(inv.values())
     capacity = get_cart_capacity(u) if u else CART_LEVELS[0]["capacity"]
     bar = _cart_bar(total_items, capacity)
@@ -1284,21 +1543,34 @@ def _bag_text(inv: dict, u: dict | None = None) -> str:
     wh_capacity = get_warehouse_capacity(u) if u else WAREHOUSE_LEVELS[0]["capacity"]
     wh_bar = _cart_bar(total_items, wh_capacity)
     wh_pct = 0 if wh_capacity <= 0 else min(100, round(total_items / wh_capacity * 100))
+
+    goods_lines = []
+    for item, info in ITEMS.items():
+        line = f"{info['emoji']} {info['name']}: <b><i>{inv.get(item, 0)}</i></b> <b><i>шт.</i></b>"
+        if info.get("perishable") and inv.get(item, 0) > 0:
+            left = freshness.get(item)
+            if left is not None:
+                m, s = left // 60, left % 60
+                line += f" — ⏳ <b><i>свежесть {m} мин {s} сек</i></b>"
+        goods_lines.append(line)
+    goods_block = "\n".join(goods_lines)
+
     return (
         f"{_tge('bag', '🎒')} <b><i>ИНВЕНТАРЬ ТОРГОВЦА</i></b>\n"
         "<b><i>Что лежит у вас на складе</i></b> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"{ITEMS['potions']['emoji']} Зелья: <b><i>{inv['potions']}</i></b> <b><i>шт.</i></b>\n"
-        f"{ITEMS['scrolls']['emoji']} Свитки: <b><i>{inv['scrolls']}</i></b> <b><i>шт.</i></b>\n"
-        f"{ITEMS['food']['emoji']} Еда: <b><i>{inv['food']}</i></b> <b><i>шт.</i></b>\n\n"
+        f"{goods_block}\n\n"
         f"🐎 <b><i>Повозка:</i></b> <b><i>{_fmt(total_items)} / {_fmt(capacity)}</i></b> <b><i>({pct}%)</i></b>\n"
         f"{bar}\n\n"
         f"📦 <b><i>Склад:</i></b> <b><i>{_fmt(total_items)} / {_fmt(wh_capacity)}</i></b> <b><i>({wh_pct}%)</i></b>\n"
         f"{wh_bar}\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"⚠️ <b><i>Провоз свыше {CUSTOMS_LIMIT} ед. одного товара рискует конфискацией на таможне.</i></b>\n"
+        f"⚠️ <b><i>Запретные свитки проверяют вдвое строже — шанс конфискации {int(ITEM_CUSTOMS_CHANCE.get('forbidden_scrolls', CUSTOMS_CHANCE) * 100)}%.</i></b>\n"
+        f"⏳ <b><i>Чёрная икра портится через {CAVIAR_FRESHNESS_SECONDS // 60} мин. после покупки.</i></b>\n"
         f"📝 <b><i>Прокачать повозку:</i></b> <code>/citycart</code>\n"
-        f"📝 <b><i>Прокачать склад:</i></b> <code>/citywarehouse</code>"
+        f"📝 <b><i>Прокачать склад:</i></b> <code>/citywarehouse</code>\n"
+        f"📝 <b><i>Снизить риск конфискации:</i></b> <code>/citydefense</code>"
     )
 
 
@@ -1491,12 +1763,15 @@ def _help_text() -> str:
         f"{_tge('news', '🗞')} <code>/citynews</code> — <b><i>слухи и прогнозы цен на 2 часа вперёд</i></b>\n"
         f"{_tge('route', '🗺')} <code>/cityroute</code> — <b><i>самый выгодный маршрут прямо сейчас</i></b>\n"
         f"{_tge('exchange', '🔁')} <code>/cityexchange количество</code> — <b><i>обменять кристаллы на монеты</i></b>\n"
+        f"{_tge('defense', '🛡')} <code>/citydefense</code> — <b><i>магазин защиты от таможни</i></b>\n"
         f"{_tge('help', '❓')} <code>/cityhelp</code> — <b><i>эта справка</i></b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "<b><i>📦 Товары</i></b>\n"
         f"  {ITEMS['potions']['emoji']} Зелья — <b><i>дёшевы на Севере, дороги на Юге</i></b>\n"
         f"  {ITEMS['scrolls']['emoji']} Свитки — <b><i>дёшевы на Юге, дороги на Севере</i></b>\n"
         f"  {ITEMS['food']['emoji']} Еда — <b><i>дешевле на Юге, дороже на Севере</i></b>\n"
+        f"  {ITEMS['forbidden_scrolls']['emoji']} Запретные свитки — <b><i>дорогая контрабанда, шанс конфискации {int(ITEM_CUSTOMS_CHANCE['forbidden_scrolls'] * 100)}% вместо {int(CUSTOMS_CHANCE * 100)}%</i></b>\n"
+        f"  {ITEMS['caviar']['emoji']} Чёрная икра — <b><i>портится через {CAVIAR_FRESHNESS_SECONDS // 60} минут после покупки — не затягивайте с продажей</i></b>\n"
         f"  {_tge('city_capital', '🏛')} Столица — <b><i>всё дорого, но цены стабильнее</i></b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"<b><i>{_tge('travel', '🧭')} Путешествия</i></b>\n"
@@ -1506,7 +1781,13 @@ def _help_text() -> str:
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"<b><i>{_tge('customs', '🧙‍♂️')} Таможня (Гильдия магов)</i></b>\n"
         f"  • <b><i>Провоз свыше</i></b> <b><i>{CUSTOMS_LIMIT}</i></b> <b><i>ед. одного товара рискует конфискацией</i></b>\n"
-        f"  • Шанс конфискации: <b><i>{int(CUSTOMS_CHANCE * 100)}%</i></b>, штраф <b><i>{CUSTOMS_FINE}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n\n"
+        f"  • Шанс конфискации: <b><i>{int(CUSTOMS_CHANCE * 100)}%</i></b> (обычный товар), "
+        f"<b><i>{int(ITEM_CUSTOMS_CHANCE['forbidden_scrolls'] * 100)}%</i></b> (запретные свитки), "
+        f"штраф <b><i>{CUSTOMS_FINE}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
+        f"  • <b><i>{_tge('defense', '🛡')} Магазин защиты</i></b> (<code>/citydefense</code>) снижает риск: "
+        f"фальшивые документы −{int(FAKE_DOCS_REDUCTION * 100)}%, сопроводительное письмо −{int(ESCORT_REDUCTION * 100)}% "
+        f"(вместе −{int(FAKE_DOCS_AND_ESCORT_REDUCTION * 100)}%), охрана −{int(SECURITY_REDUCTION * 100)}%\n"
+        f"  • <b><i>Все три защиты вместе снижают шанс конфискации до минимума —</i></b> <b><i>{int(MIN_CUSTOMS_CHANCE * 100)}%</i></b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"<b><i>{_tge('cart', '🐎')} Повозка (лимит перевозки)</i></b>\n"
         f"  • <b><i>Базовый лимит:</i></b> <b><i>{_fmt(CART_LEVELS[0]['capacity'])}</i></b> <b><i>ед. товара за раз</i></b>\n"
@@ -1602,6 +1883,27 @@ async def cmd_city_shop_noslash(message: Message):
     await cmd_city_shop(message)
 
 
+@router.message(Command("citydefense", "защита"))
+async def cmd_city_defense(message: Message):
+    if not await _city_level_ok(message):
+        return
+    u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
+    await message.reply(
+        _defense_text(u),
+        parse_mode="HTML",
+        reply_markup=city_defense_keyboard(u),
+    )
+
+
+@router.message(F.text.regexp(
+    r"^защита(?:\s|$)",
+    flags=__import__("re").IGNORECASE
+))
+async def cmd_city_defense_noslash(message: Message):
+    """Текстовый алиас магазина защиты без слеша."""
+    await cmd_city_defense(message)
+
+
 def _parse_crystal_amount(s: str) -> int | None:
     """
     Парсит число с суффиксами: 100м → 100000000, 1.5к → 1500, 2млрд → 2000000000.
@@ -1678,26 +1980,30 @@ async def cmd_city_addcrystal(message: Message):
 @router.message(Command("citybuy", "купить"))
 async def cmd_city_buy(message: Message):
     args = (message.text or "").split()[1:]
-    if len(args) != 2:
+    if len(args) < 2:
         await message.reply(
             "📝 Использование: <code>/citybuy [товар] [количество]</code>\n"
-            "<b><i>Например: /citybuy зелья 10</i></b>",
+            "<b><i>Например: /citybuy зелья 10 или /citybuy черная икра 5</i></b>",
             parse_mode="HTML",
         )
         return
+
+    # Последний токен — количество, всё до него — название товара
+    # (нужно для товаров из двух слов: "запретные свитки", "черная икра").
+    qty_raw, item_raw = args[-1], " ".join(args[:-1])
 
     u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
     if _is_traveling(u):
         await message.reply("🚶 Вы в пути — торговля недоступна до прибытия.")
         return
 
-    item = _parse_item(args[0])
+    item = _parse_item(item_raw)
     if not item:
-        await message.reply("❌ Неизвестный товар. Доступно: зелья, свитки, еда.")
+        await message.reply("❌ Неизвестный товар. Доступно: зелья, свитки, еда, запретные свитки, черная икра.")
         return
 
     try:
-        qty = int(args[1])
+        qty = int(qty_raw)
     except ValueError:
         await message.reply("❌ Количество должно быть числом.")
         return
@@ -1762,6 +2068,13 @@ async def cmd_city_buy(message: Message):
     await aio_register_trade(u["city"], item, "buy")
     await aio_log_trade_qty(u["user_id"], qty, "buy")
 
+    perishable_note = ""
+    if ITEMS[item].get("perishable"):
+        # Каждая новая покупка обновляет таймер свежести для всего товара на руках.
+        await aio_refresh_item_freshness(u["user_id"], item)
+        fresh_min = CAVIAR_FRESHNESS_SECONDS // 60
+        perishable_note = f"\n⏳ <b><i>Свежесть: {fresh_min} мин. — успейте продать или довезти!</i></b>"
+
     await message.reply(
         "✅ <b><i>СДЕЛКА СОВЕРШЕНА</i></b>\n"
         "<b><i>Покупка прошла успешно</i></b> ✨\n"
@@ -1769,7 +2082,8 @@ async def cmd_city_buy(message: Message):
         f"{ITEMS[item]['emoji']} Куплено: <b><i>{qty} × {ITEMS[item]['name']}</i></b>\n"
         f"💵 Цена за шт.: <b><i>{price}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
         f"{_tge('currency', CURRENCY_EMOJI)} Списано: <b><i>{_fmt(total)}</i></b> <b><i>{CURRENCY_NAME}</i></b>\n"
-        f"📍 Город: <b><i>{u['city']}</i></b>",
+        f"📍 Город: <b><i>{u['city']}</i></b>"
+        f"{perishable_note}",
         parse_mode="HTML",
         reply_markup=city_back_keyboard(),
     )
@@ -1778,26 +2092,28 @@ async def cmd_city_buy(message: Message):
 @router.message(Command("citysell", "продать"))
 async def cmd_city_sell(message: Message):
     args = (message.text or "").split()[1:]
-    if len(args) != 2:
+    if len(args) < 2:
         await message.reply(
             "📝 Использование: <code>/citysell [товар] [количество]</code>\n"
-            "<b><i>Например: /citysell свитки 5</i></b>",
+            "<b><i>Например: /citysell свитки 5 или /citysell черная икра 3</i></b>",
             parse_mode="HTML",
         )
         return
+
+    qty_raw, item_raw = args[-1], " ".join(args[:-1])
 
     u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
     if _is_traveling(u):
         await message.reply("🚶 Вы в пути — торговля недоступна до прибытия.")
         return
 
-    item = _parse_item(args[0])
+    item = _parse_item(item_raw)
     if not item:
-        await message.reply("❌ Неизвестный товар. Доступно: зелья, свитки, еда.")
+        await message.reply("❌ Неизвестный товар. Доступно: зелья, свитки, еда, запретные свитки, черная икра.")
         return
 
     try:
-        qty = int(args[1])
+        qty = int(qty_raw)
     except ValueError:
         await message.reply("❌ Количество должно быть числом.")
         return
@@ -1846,11 +2162,11 @@ async def _do_travel(user_id: int, username: str, dest: str):
 
     origin_city = u["city"]
 
-    inv = await aio_get_inventory(u["user_id"])
+    inv = await aio_get_inventory(u["user_id"])  # заодно спишет протухшую икру
     confiscated = []
     fine_total = 0
     for item, qty in inv.items():
-        if qty > CUSTOMS_LIMIT and random.random() < CUSTOMS_CHANCE:
+        if qty > CUSTOMS_LIMIT and random.random() < get_customs_chance(item, u):
             taken = await aio_force_confiscate_inventory(u["user_id"], item)
             if taken > 0:
                 confiscated.append(ITEMS[item]["name"])
@@ -1969,12 +2285,24 @@ async def cmd_city_cancel_travel(message: Message):
     await message.reply(text, parse_mode="HTML", reply_markup=city_back_keyboard())
 
 
+async def _get_perishables_freshness(user_id: int) -> dict:
+    """Собирает {item_type: секунд_до_порчи} по всем скоропортящимся товарам."""
+    result = {}
+    for item, info in ITEMS.items():
+        if info.get("perishable"):
+            left = await aio_get_item_freshness_left(user_id, item)
+            if left is not None:
+                result[item] = left
+    return result
+
+
 @router.message(Command("citybag", "сумка", "bag"))
 async def cmd_city_inventory(message: Message):
     u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
     inv = await aio_get_inventory(u["user_id"])
+    freshness = await _get_perishables_freshness(u["user_id"])
     await message.reply(
-        _bag_text(inv, u),
+        _bag_text(inv, u, freshness),
         parse_mode="HTML",
         reply_markup=city_bag_keyboard(),
     )
@@ -2170,8 +2498,9 @@ async def cb_city_bag(call: CallbackQuery):
         return
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
     inv = await aio_get_inventory(call.from_user.id)
+    freshness = await _get_perishables_freshness(call.from_user.id)
     await call.message.edit_text(
-        _bag_text(inv, u), parse_mode="HTML", reply_markup=city_bag_keyboard()
+        _bag_text(inv, u, freshness), parse_mode="HTML", reply_markup=city_bag_keyboard()
     )
     await call.answer()
 
@@ -2245,6 +2574,37 @@ async def cb_city_warehouse_upgrade(call: CallbackQuery):
     )
     await call.answer(f"✅ Склад прокачан до «{nxt['name']}»!", show_alert=True)
 
+
+@router.callback_query(F.data == "city_nav_defense")
+async def cb_city_defense(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    await call.message.edit_text(
+        _defense_text(u), parse_mode="HTML", reply_markup=city_defense_keyboard(u)
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data.in_({
+    "city_buy_defense_fake_docs", "city_buy_defense_escort", "city_buy_defense_security",
+}))
+async def cb_city_buy_defense(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    kind = call.data.removeprefix("city_buy_defense_")
+    ok, msg = await aio_try_buy_protection(call.from_user.id, kind)
+    if not ok:
+        await call.answer(msg, show_alert=True)
+        return
+
+    u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    await call.message.edit_text(
+        _defense_text(u), parse_mode="HTML", reply_markup=city_defense_keyboard(u)
+    )
+    await call.answer(msg, show_alert=True)
 
 
 @router.callback_query(F.data == "city_nav_news")
