@@ -123,6 +123,7 @@ BTN_EMOJI = {
     "status": "5400362079783770689",            # статус
     "exchange": "5402186569006210455",          # 🔁 Обмен
     "cart": "5386676074535597403",               # 🐎 Повозка
+    "warehouse": None,                            # 📦 Склад — вставить реальный icon_custom_emoji_id
 }
 
 TRAVEL_COST = 50
@@ -147,6 +148,27 @@ CART_LEVELS = [
     {"level": 5, "capacity": 1_000_000, "cost": 150_000, "name": "Королевский обоз"},
 ]
 CART_MAX_LEVEL = len(CART_LEVELS) - 1
+
+# ── СКЛАД: лимит ОБЩЕГО количества товара, которое можно ХРАНИТЬ (не путать
+# с повозкой — та ограничивает, сколько можно ВЕЗТИ за одну поездку). Это
+# отдельная механика хранения: если покупка превысит вместимость склада,
+# купить нельзя, даже если места в повозке достаточно.
+# Уровень 0 — базовый склад, доступен всем бесплатно. Дальше — платная
+# прокачка за кристаллы, всего 10 уровней (9 платных), от 10 000 до
+# 10 000 000 кристаллов, вместимость от 10 000 до 10 000 000 товаров.
+WAREHOUSE_LEVELS = [
+    {"level": 0, "capacity": 10_000,     "cost": 0,          "name": "Сарай"},
+    {"level": 1, "capacity": 25_000,     "cost": 10_000,     "name": "Погреб"},
+    {"level": 2, "capacity": 60_000,     "cost": 30_000,     "name": "Малый склад"},
+    {"level": 3, "capacity": 150_000,    "cost": 80_000,     "name": "Склад"},
+    {"level": 4, "capacity": 350_000,    "cost": 200_000,    "name": "Большой склад"},
+    {"level": 5, "capacity": 800_000,    "cost": 500_000,    "name": "Пакгауз"},
+    {"level": 6, "capacity": 1_800_000,  "cost": 1_200_000,  "name": "Хранилище"},
+    {"level": 7, "capacity": 3_500_000,  "cost": 2_800_000,  "name": "Логистический центр"},
+    {"level": 8, "capacity": 6_000_000,  "cost": 5_500_000,  "name": "Мега-хаб"},
+    {"level": 9, "capacity": 10_000_000, "cost": 10_000_000, "name": "Имперское хранилище"},
+]
+WAREHOUSE_MAX_LEVEL = len(WAREHOUSE_LEVELS) - 1
 
 NEWS_TRUE_CHANCE = 0.60      # вероятность, что подсказка сбудется
 NEWS_LIFETIME_HOURS = 2
@@ -260,6 +282,8 @@ def init_city_db():
             conn.execute("ALTER TABLE city_users ADD COLUMN last_daily TEXT")
         if "cart_level" not in cols:
             conn.execute("ALTER TABLE city_users ADD COLUMN cart_level INTEGER NOT NULL DEFAULT 0")
+        if "warehouse_level" not in cols:
+            conn.execute("ALTER TABLE city_users ADD COLUMN warehouse_level INTEGER NOT NULL DEFAULT 0")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_inventory (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -588,6 +612,54 @@ def total_inventory_qty(inv: dict) -> int:
     return sum(inv.values())
 
 
+# ---------- склад (лимит хранения) ----------
+# Отдельная механика от повозки: повозка ограничивает, сколько товара можно
+# ВЕЗТИ за одну поездку; склад ограничивает, сколько товара можно ХРАНИТЬ
+# вообще (используется при проверке лимита на покупку в cmd_city_buy).
+
+def get_warehouse_level(u: dict) -> int:
+    lvl = u.get("warehouse_level", 0) or 0
+    return max(0, min(lvl, WAREHOUSE_MAX_LEVEL))
+
+
+def get_warehouse_capacity(u: dict) -> int:
+    """Суммарный лимит товара (всех видов вместе), который можно хранить."""
+    return WAREHOUSE_LEVELS[get_warehouse_level(u)]["capacity"]
+
+
+def get_warehouse_next_tier(u: dict) -> dict | None:
+    """Следующий уровень склада, или None если уже максимум."""
+    lvl = get_warehouse_level(u)
+    if lvl >= WAREHOUSE_MAX_LEVEL:
+        return None
+    return WAREHOUSE_LEVELS[lvl + 1]
+
+
+def try_upgrade_warehouse(user_id: int) -> tuple[bool, str, dict | None]:
+    """Атомарно прокачивает склад на следующий уровень за кристаллы.
+    Возвращает (успех, текст_ошибки_или_пусто, данные_нового_уровня_или_None)."""
+    u = get_city_user(user_id)
+    nxt = get_warehouse_next_tier(u)
+    if nxt is None:
+        return False, "📦 Склад уже прокачан до максимума.", None
+
+    if not try_spend_balance(user_id, nxt["cost"]):
+        return False, f"💸 Недостаточно {CURRENCY_NAME} для прокачки склада.", None
+
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE city_users SET warehouse_level = ? WHERE user_id=? AND warehouse_level=?",
+            (nxt["level"], user_id, get_warehouse_level(u)),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            # кто-то параллельно уже прокачал склад — возвращаем кристаллы
+            add_balance(user_id, nxt["cost"])
+            return False, "⚠️ Склад уже был прокачан. Средства возвращены.", None
+
+    return True, "", nxt
+
+
 # ---------- цены ----------
 
 def get_price(city: str, item: str) -> int:
@@ -885,6 +957,10 @@ async def aio_try_upgrade_cart(user_id: int) -> tuple[bool, str, dict | None]:
     return await asyncio.to_thread(try_upgrade_cart, user_id)
 
 
+async def aio_try_upgrade_warehouse(user_id: int) -> tuple[bool, str, dict | None]:
+    return await asyncio.to_thread(try_upgrade_warehouse, user_id)
+
+
 async def aio_get_price(city: str, item: str) -> int:
     return await asyncio.to_thread(get_price, city, item)
 
@@ -1023,6 +1099,7 @@ def city_main_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=" Помощь", callback_data="city_nav_help", icon_custom_emoji_id=BTN_EMOJI["help"]),
     )
     builder.row(
+        InlineKeyboardButton(text=" Склад", callback_data="city_nav_warehouse", icon_custom_emoji_id=BTN_EMOJI["warehouse"]),
         InlineKeyboardButton(text=" Топ кристаллов", callback_data="crystop_alltime", icon_custom_emoji_id=BTN_EMOJI["currency"]),
     )
     return builder.as_markup()
@@ -1052,7 +1129,10 @@ def city_bag_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=" На рынок", callback_data="city_nav_market", icon_custom_emoji_id=BTN_EMOJI["market"]),
         InlineKeyboardButton(text=" В путь", callback_data="city_nav_travel", icon_custom_emoji_id=BTN_EMOJI["travel"]),
     )
-    builder.row(InlineKeyboardButton(text=" Повозка", callback_data="city_nav_cart", icon_custom_emoji_id=BTN_EMOJI["cart"]))
+    builder.row(
+        InlineKeyboardButton(text=" Повозка", callback_data="city_nav_cart", icon_custom_emoji_id=BTN_EMOJI["cart"]),
+        InlineKeyboardButton(text=" Склад", callback_data="city_nav_warehouse", icon_custom_emoji_id=BTN_EMOJI["warehouse"]),
+    )
     builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
     return builder.as_markup()
 
@@ -1061,6 +1141,18 @@ def city_cart_keyboard(can_upgrade: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if can_upgrade:
         builder.row(InlineKeyboardButton(text=" Прокачать повозку", callback_data="city_cart_upgrade", icon_custom_emoji_id=BTN_EMOJI["cart"]))
+    builder.row(
+        InlineKeyboardButton(text=" Сумка", callback_data="city_nav_bag", icon_custom_emoji_id=BTN_EMOJI["bag"]),
+        InlineKeyboardButton(text=" На рынок", callback_data="city_nav_market", icon_custom_emoji_id=BTN_EMOJI["market"]),
+    )
+    builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
+    return builder.as_markup()
+
+
+def city_warehouse_keyboard(can_upgrade: bool) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if can_upgrade:
+        builder.row(InlineKeyboardButton(text=" Прокачать склад", callback_data="city_warehouse_upgrade", icon_custom_emoji_id=BTN_EMOJI["warehouse"]))
     builder.row(
         InlineKeyboardButton(text=" Сумка", callback_data="city_nav_bag", icon_custom_emoji_id=BTN_EMOJI["bag"]),
         InlineKeyboardButton(text=" На рынок", callback_data="city_nav_market", icon_custom_emoji_id=BTN_EMOJI["market"]),
@@ -1189,6 +1281,9 @@ def _bag_text(inv: dict, u: dict | None = None) -> str:
     capacity = get_cart_capacity(u) if u else CART_LEVELS[0]["capacity"]
     bar = _cart_bar(total_items, capacity)
     pct = 0 if capacity <= 0 else min(100, round(total_items / capacity * 100))
+    wh_capacity = get_warehouse_capacity(u) if u else WAREHOUSE_LEVELS[0]["capacity"]
+    wh_bar = _cart_bar(total_items, wh_capacity)
+    wh_pct = 0 if wh_capacity <= 0 else min(100, round(total_items / wh_capacity * 100))
     return (
         f"{_tge('bag', '🎒')} <b><i>ИНВЕНТАРЬ ТОРГОВЦА</i></b>\n"
         "<b><i>Что лежит у вас на складе</i></b> ✨\n"
@@ -1198,9 +1293,12 @@ def _bag_text(inv: dict, u: dict | None = None) -> str:
         f"{ITEMS['food']['emoji']} Еда: <b><i>{inv['food']}</i></b> <b><i>шт.</i></b>\n\n"
         f"🐎 <b><i>Повозка:</i></b> <b><i>{_fmt(total_items)} / {_fmt(capacity)}</i></b> <b><i>({pct}%)</i></b>\n"
         f"{bar}\n\n"
+        f"📦 <b><i>Склад:</i></b> <b><i>{_fmt(total_items)} / {_fmt(wh_capacity)}</i></b> <b><i>({wh_pct}%)</i></b>\n"
+        f"{wh_bar}\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"⚠️ <b><i>Провоз свыше {CUSTOMS_LIMIT} ед. одного товара рискует конфискацией на таможне.</i></b>\n"
-        f"📝 <b><i>Прокачать повозку:</i></b> <code>/citycart</code>"
+        f"📝 <b><i>Прокачать повозку:</i></b> <code>/citycart</code>\n"
+        f"📝 <b><i>Прокачать склад:</i></b> <code>/citywarehouse</code>"
     )
 
 
@@ -1245,6 +1343,52 @@ def _cart_text(u: dict, inv: dict) -> str:
             f"<b><i>{_fmt(t['capacity'])} ед.</i></b>"
             + (f" <b><i>({_fmt(t['cost'])} {CURRENCY_NAME_SINGULAR})</i></b>" if t['cost'] else " <b><i>(база, бесплатно)</i></b>")
             for t in CART_LEVELS
+        )
+    )
+    return "\n".join(lines)
+
+
+def _warehouse_text(u: dict, inv: dict) -> str:
+    lvl = get_warehouse_level(u)
+    cur_tier = WAREHOUSE_LEVELS[lvl]
+    capacity = cur_tier["capacity"]
+    stored = total_inventory_qty(inv)
+    bar = _cart_bar(stored, capacity)
+    pct = 0 if capacity <= 0 else min(100, round(stored / capacity * 100))
+    nxt = get_warehouse_next_tier(u)
+
+    lines = [
+        "📦 <b><i>СКЛАД</i></b>",
+        "<b><i>Сколько товара можно хранить всего (не путать с повозкой)</i></b> ✨",
+        "━━━━━━━━━━━━━━━━━━━━\n",
+        f"🏬 Текущий склад: <b><i>{cur_tier['name']}</i></b> <b><i>(уровень {lvl})</i></b>\n",
+        f"📦 Хранится: <b><i>{_fmt(stored)} / {_fmt(capacity)}</i></b> <b><i>({pct}%)</i></b>\n"
+        f"{bar}\n",
+    ]
+
+    if nxt is None:
+        lines.append(
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"🏆 <b><i>Склад прокачан до максимума — {_fmt(WAREHOUSE_LEVELS[WAREHOUSE_MAX_LEVEL]['capacity'])} ед. товара!</i></b>"
+        )
+    else:
+        lines.append(
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"⬆️ <b><i>Следующий уровень:</i></b> <b><i>{nxt['name']}</i></b>\n"
+            f"📦 Новый лимит: <b><i>{_fmt(nxt['capacity'])}</i></b> <b><i>ед.</i></b>\n"
+            f"{_tge('currency', CURRENCY_EMOJI)} Цена прокачки: <b><i>{_fmt(nxt['cost'])}</i></b> <b><i>{CURRENCY_NAME}</i></b>\n\n"
+            f"{_tge('balance', CURRENCY_EMOJI)} Ваш баланс: <b><i>{_fmt(u['balance'])}</i></b> <b><i>{CURRENCY_NAME}</i></b>\n\n"
+            "📝 <b><i>Прокачать:</i></b> <code>/citywarehouseup</code>"
+        )
+
+    lines.append(
+        "\n━━━━━━━━━━━━━━━━━━━━\n"
+        "<b><i>Все уровни склада</i></b>\n" +
+        "\n".join(
+            f"  {'✅' if t['level'] <= lvl else '🔒'} <b><i>{t['name']}</i></b> — "
+            f"<b><i>{_fmt(t['capacity'])} ед.</i></b>"
+            + (f" <b><i>({_fmt(t['cost'])} {CURRENCY_NAME_SINGULAR})</i></b>" if t['cost'] else " <b><i>(база, бесплатно)</i></b>")
+            for t in WAREHOUSE_LEVELS
         )
     )
     return "\n".join(lines)
@@ -1342,6 +1486,8 @@ def _help_text() -> str:
         f"{_tge('bag', '🎒')} <code>/citybag</code> — <b><i>инвентарь</i></b>\n"
         f"{_tge('cart', '🐎')} <code>/citycart</code> — <b><i>статус повозки и прокачка</i></b>\n"
         f"{_tge('cart', '🐎')} <code>/citycartup</code> — <b><i>прокачать повозку на след. уровень</i></b>\n"
+        f"{_tge('warehouse', '📦')} <code>/citywarehouse</code> — <b><i>статус склада и прокачка</i></b>\n"
+        f"{_tge('warehouse', '📦')} <code>/citywarehouseup</code> — <b><i>прокачать склад на след. уровень</i></b>\n"
         f"{_tge('news', '🗞')} <code>/citynews</code> — <b><i>слухи и прогнозы цен на 2 часа вперёд</i></b>\n"
         f"{_tge('route', '🗺')} <code>/cityroute</code> — <b><i>самый выгодный маршрут прямо сейчас</i></b>\n"
         f"{_tge('exchange', '🔁')} <code>/cityexchange количество</code> — <b><i>обменять кристаллы на монеты</i></b>\n"
@@ -1366,6 +1512,12 @@ def _help_text() -> str:
         f"  • <b><i>Базовый лимит:</i></b> <b><i>{_fmt(CART_LEVELS[0]['capacity'])}</i></b> <b><i>ед. товара за раз</i></b>\n"
         f"  • <b><i>Максимум после прокачки:</i></b> <b><i>{_fmt(CART_LEVELS[CART_MAX_LEVEL]['capacity'])}</i></b> <b><i>ед.</i></b>\n"
         f"  • <b><i>Прокачивается за кристаллы, всего {CART_MAX_LEVEL} платных уровней</i></b>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"<b><i>{_tge('warehouse', '📦')} Склад (лимит хранения)</i></b>\n"
+        f"  • <b><i>Отдельно от повозки — если склад переполнен, купить товар нельзя</i></b>\n"
+        f"  • <b><i>Базовый лимит:</i></b> <b><i>{_fmt(WAREHOUSE_LEVELS[0]['capacity'])}</i></b> <b><i>ед. товара</i></b>\n"
+        f"  • <b><i>Максимум после прокачки:</i></b> <b><i>{_fmt(WAREHOUSE_LEVELS[WAREHOUSE_MAX_LEVEL]['capacity'])}</i></b> <b><i>ед.</i></b>\n"
+        f"  • <b><i>Прокачивается за кристаллы, всего {WAREHOUSE_MAX_LEVEL} платных уровней</i></b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         '<b><i><tg-emoji emoji-id="5231200819986047254">🌟</tg-emoji> Динамика цен</i></b>\n'
         "  • <b><i>Цены обновляются каждый час (±20% случайно)</i></b>\n"
@@ -1564,6 +1716,23 @@ async def cmd_city_buy(message: Message):
             f"📦 Уже везёте: <b><i>{_fmt(carried)}</i></b> <b><i>ед.</i></b>\n"
             f"📦 Свободно места: <b><i>{_fmt(free_space)}</i></b> <b><i>ед.</i></b>\n\n"
             f"<b><i>Прокачайте повозку командой</i></b> <code>/citycart</code> <b><i>, чтобы возить больше груза за раз.</i></b>",
+            parse_mode="HTML",
+        )
+        return
+
+    # ── Отдельная проверка: склад (лимит хранения) ─────────────────────
+    # Не путать с повозкой выше — склад ограничивает, сколько товара можно
+    # в принципе хранить, независимо от того, сколько влезает в повозку.
+    wh_capacity = get_warehouse_capacity(u)
+    stored = carried  # общее кол-во товара на руках — то же значение, что и carried
+    if stored + qty > wh_capacity:
+        free_space = max(0, wh_capacity - stored)
+        await message.reply(
+            f"📦 <b><i>Склад переполнен — столько не влезет!</i></b>\n"
+            f"📦 Лимит склада: <b><i>{_fmt(wh_capacity)}</i></b> <b><i>ед.</i></b>\n"
+            f"📦 Уже хранится: <b><i>{_fmt(stored)}</i></b> <b><i>ед.</i></b>\n"
+            f"📦 Свободно места: <b><i>{_fmt(free_space)}</i></b> <b><i>ед.</i></b>\n\n"
+            f"<b><i>Прокачайте склад командой</i></b> <code>/citywarehouse</code> <b><i>, чтобы хранить больше товара.</i></b>",
             parse_mode="HTML",
         )
         return
@@ -1842,6 +2011,37 @@ async def cmd_city_cart_upgrade(message: Message):
     )
 
 
+@router.message(Command("citywarehouse", "склад", "warehouse"))
+async def cmd_city_warehouse(message: Message):
+    u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
+    inv = await aio_get_inventory(u["user_id"])
+    await message.reply(
+        _warehouse_text(u, inv),
+        parse_mode="HTML",
+        reply_markup=city_warehouse_keyboard(get_warehouse_next_tier(u) is not None),
+    )
+
+
+@router.message(Command("citywarehouseup", "прокачатьсклад", "warehouseup"))
+async def cmd_city_warehouse_upgrade(message: Message):
+    ok, err, nxt = await aio_try_upgrade_warehouse(message.from_user.id)
+    if not ok:
+        await message.reply(err, parse_mode="HTML", reply_markup=city_back_keyboard())
+        return
+
+    u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
+    await message.reply(
+        "✅ <b><i>СКЛАД ПРОКАЧАН!</i></b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📦 Новый склад: <b><i>{nxt['name']}</i></b>\n"
+        f"📦 Новый лимит хранения: <b><i>{_fmt(nxt['capacity'])}</i></b> <b><i>ед.</i></b>\n"
+        f"{_tge('currency', CURRENCY_EMOJI)} Списано: <b><i>{_fmt(nxt['cost'])}</i></b> <b><i>{CURRENCY_NAME}</i></b>\n"
+        f"{_tge('balance', CURRENCY_EMOJI)} Остаток: <b><i>{_fmt(u['balance'])}</i></b> <b><i>{CURRENCY_NAME}</i></b>",
+        parse_mode="HTML",
+        reply_markup=city_back_keyboard(),
+    )
+
+
 @router.message(Command("citynews", "новости"))
 async def cmd_city_news(message: Message):
     await message.reply(
@@ -2009,6 +2209,42 @@ async def cb_city_cart_upgrade(call: CallbackQuery):
         reply_markup=city_cart_keyboard(get_cart_next_tier(u) is not None),
     )
     await call.answer(f"✅ Повозка прокачана до «{nxt['name']}»!", show_alert=True)
+
+
+@router.callback_query(F.data == "city_nav_warehouse")
+async def cb_city_warehouse(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    inv = await aio_get_inventory(u["user_id"])
+    await call.message.edit_text(
+        _warehouse_text(u, inv),
+        parse_mode="HTML",
+        reply_markup=city_warehouse_keyboard(get_warehouse_next_tier(u) is not None),
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "city_warehouse_upgrade")
+async def cb_city_warehouse_upgrade(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    ok, err, nxt = await aio_try_upgrade_warehouse(call.from_user.id)
+    if not ok:
+        await call.answer(err, show_alert=True)
+        return
+
+    u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    inv = await aio_get_inventory(u["user_id"])
+    await call.message.edit_text(
+        _warehouse_text(u, inv),
+        parse_mode="HTML",
+        reply_markup=city_warehouse_keyboard(get_warehouse_next_tier(u) is not None),
+    )
+    await call.answer(f"✅ Склад прокачан до «{nxt['name']}»!", show_alert=True)
+
 
 
 @router.callback_query(F.data == "city_nav_news")
