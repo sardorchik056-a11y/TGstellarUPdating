@@ -1729,12 +1729,22 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
     except Exception:
         bio_mult = 1.0
 
+    # Капсула урона (city.py, /citycapsules) — постоянный буст урона по боссу,
+    # пока активна соответствующая капсула. get_capsule_multiplier — синхронная
+    # функция (обычный блокирующий SQL-запрос), это безопасно, т.к. attack_boss
+    # сама всегда вызывается из mainhelp.py через asyncio.to_thread.
+    try:
+        from city import get_capsule_multiplier as _capsule_dmg_mult
+        capsule_mult = _capsule_dmg_mult(data.get("id"), "damage")
+    except Exception:
+        capsule_mult = 1.0
+
     dmg = random.randint(sword["dmg_min"], sword["dmg_max"])
     crit = False
     if random.random() < sword["crit_chance"] + status_crit_add:
         dmg  = int(sword["dmg_max"] * sword["crit_mult"])
         crit = True
-    dmg = max(0, int(dmg * enh_mult * art_dmg_mult * status_dmg_mult * event_mult * bio_mult))
+    dmg = max(0, int(dmg * enh_mult * art_dmg_mult * status_dmg_mult * event_mult * bio_mult * capsule_mult))
 
     is_infinite = bool(data.get("infinite_dmg"))
     uid_str = str(data.get("id", 0))
