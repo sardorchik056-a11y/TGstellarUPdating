@@ -131,7 +131,27 @@ BTN_EMOJI = {
     "cart": "6334399977833366867",               # 🐎 Повозка
     "warehouse": "5337023862062208549",                            # 📦 Склад — вставить реальный icon_custom_emoji_id
     "defense": "6050643982646513651",           # 🛡 Защита от таможни
+    "capsules": "5217620305194800391",          # 🔮 Капсулы усиления
 }
+
+# ──────────────────────────────────────────────────────────────────────────
+# КАСТОМНЫЕ ЭМОДЗИ СТАТУСОВ (переиспользованы из miner.py — тот же набор
+# premium-эмодзи, что и в магазине кирок/длительностей шахты). Используем
+# одинаковую логику отображения состояний "заблокировано / куплено /
+# активно" везде в боте, чтобы UI был единообразным.
+# ──────────────────────────────────────────────────────────────────────────
+EMOJI_LOCKED   = "5240241223632954241"   # 🔒 ещё не куплено
+EMOJI_OWNED    = "5391032818111363540"   # 📦 куплено, но не активировано / не выбрано
+EMOJI_ACTIVE   = "5206607081334906820"   # ✅ выбрано / активно сейчас
+EMOJI_BACK_ARR = "6039539366177541657"   # ⬅️ назад
+EMOJI_BUY_BTN  = "5199552030615558774"   # 🪙 купить (кнопка с ценой)
+EMOJI_USE_BTN  = "5397916757333654639"   # ✨ использовать / выбрать
+EMOJI_PICKAXE  = "5197371802136892976"   # ⛏ капсулы добычи
+
+
+def _stat_tge(emoji_id: str, fallback: str) -> str:
+    """Тег кастомного emoji по «сырому» id (не из BTN_EMOJI), с фолбэком."""
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
 
 TRAVEL_COST = 50
 TRAVEL_MINUTES = 15
@@ -189,7 +209,7 @@ CAPSULE_TIER_PRICE = [100_000_000, 500_000_000, 2_000_000_000, 6_000_000_000, 15
 CAPSULE_CATEGORIES = {
     "mining": {
         "title": "Капсулы добычи",
-        "emoji": "⛏",
+        "emoji": _stat_tge(EMOJI_PICKAXE, "⛏"),
         "noun": "добычи",
         "effect": "увеличивает добычу руды в шахте",
         "flavor": "Алхимический состав ускоряет резонанс кирки с рудной жилой — "
@@ -1543,70 +1563,106 @@ def city_market_keyboard() -> InlineKeyboardMarkup:
 
 def city_defense_keyboard(u: dict) -> InlineKeyboardMarkup:
     """Клавиатура магазина защиты — кнопка на каждый вид защиты, если он
-    ещё не куплен; уже купленные виды кнопкой не показываются."""
+    ещё не куплен; уже купленные виды кнопкой не показываются. Иконка и
+    цвет кнопки зависят от того, хватает ли баланса (как в мастерской
+    шахты: success — можно купить, danger — не хватает кристаллов)."""
+    balance = u.get("balance", 0)
     builder = InlineKeyboardBuilder()
     if not u.get("has_fake_docs"):
         builder.row(InlineKeyboardButton(
-            text=f" Фальшивые документы — {_fmt(FAKE_DOCS_COST)} 💎",
+            text=f"Фальшивые документы — {_fmt(FAKE_DOCS_COST)}",
             callback_data="city_buy_defense_fake_docs",
+            icon_custom_emoji_id=EMOJI_BUY_BTN,
+            style="success" if balance >= FAKE_DOCS_COST else "danger",
         ))
     if not u.get("has_escort"):
         builder.row(InlineKeyboardButton(
-            text=f" Сопроводительное письмо — {_fmt(ESCORT_COST)} 💎",
+            text=f"Сопроводительное письмо — {_fmt(ESCORT_COST)}",
             callback_data="city_buy_defense_escort",
+            icon_custom_emoji_id=EMOJI_BUY_BTN,
+            style="success" if balance >= ESCORT_COST else "danger",
         ))
     if not u.get("has_security"):
         builder.row(InlineKeyboardButton(
-            text=f" Охрана каравана — {_fmt(SECURITY_COST)} 💎",
+            text=f"Охрана каравана — {_fmt(SECURITY_COST)}",
             callback_data="city_buy_defense_security",
+            icon_custom_emoji_id=EMOJI_BUY_BTN,
+            style="success" if balance >= SECURITY_COST else "danger",
         ))
     builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
     return builder.as_markup()
 
 
-def city_capsules_menu_keyboard() -> InlineKeyboardMarkup:
-    """Главное окно капсул — по кнопке на каждую из 3 категорий."""
+def city_capsules_menu_keyboard(active: dict | None = None) -> InlineKeyboardMarkup:
+    """Главное окно капсул — по кнопке на каждую из 3 категорий.
+    active: {category: capsule_id или None} — если в категории есть
+    активная капсула, кнопка подсвечивается иконкой ✅, иначе — 🔒."""
+    active = active or {}
     builder = InlineKeyboardBuilder()
     for category, info in CAPSULE_CATEGORIES.items():
+        has_active = bool(active.get(category))
+        icon = EMOJI_ACTIVE if has_active else EMOJI_LOCKED
+        style = "success" if has_active else None
         builder.row(InlineKeyboardButton(
-            text=f"{info['emoji']} {info['title']}",
+            text=info["title"],
             callback_data=f"city_capsule_cat_{category}",
+            icon_custom_emoji_id=icon,
+            **({"style": style} if style else {}),
         ))
     builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
     return builder.as_markup()
 
 
-def city_capsule_category_keyboard(category: str) -> InlineKeyboardMarkup:
-    """Окно категории — отдельная кнопка на каждую из 5 капсул этой категории."""
+def city_capsule_category_keyboard(category: str, owned: dict | None = None, active_id: str | None = None) -> InlineKeyboardMarkup:
+    """Окно категории — отдельная кнопка на каждую из 5 капсул этой категории.
+    Иконка кнопки отражает статус (как в мастерской шахты):
+    ✅ активна / 📦 куплена, но не активна / 🔒 ещё не куплена."""
+    owned = owned or {}
     builder = InlineKeyboardBuilder()
     for i in range(1, 6):
         cid = f"{category}_{i}"
         cap = CAPSULES[cid]
+        if cid == active_id:
+            icon, style = EMOJI_ACTIVE, "success"
+        elif owned.get(cid, 0) > 0:
+            icon, style = EMOJI_OWNED, "success"
+        else:
+            icon, style = EMOJI_LOCKED, None
         builder.row(InlineKeyboardButton(
-            text=f"{CAPSULE_ROMAN[i - 1]} — ×{cap['mult']:g} — {_fmt(cap['price'])} 💎",
+            text=f"{CAPSULE_ROMAN[i - 1]} — ×{cap['mult']:g} — {_fmt(cap['price'])}",
             callback_data=f"city_capsule_view_{cid}",
+            icon_custom_emoji_id=icon,
+            **({"style": style} if style else {}),
         ))
-    builder.row(InlineKeyboardButton(text=" К капсулам", callback_data="city_nav_capsules"))
+    builder.row(InlineKeyboardButton(text=" К капсулам", callback_data="city_nav_capsules", icon_custom_emoji_id=EMOJI_BACK_ARR))
     return builder.as_markup()
 
 
-def city_capsule_detail_keyboard(capsule_id: str, owned: int) -> InlineKeyboardMarkup:
+def city_capsule_detail_keyboard(capsule_id: str, owned: int, is_active: bool = False, balance: int = 0) -> InlineKeyboardMarkup:
     """Отдельное окно одной капсулы — информация + кнопка «Купить», и
     «Использовать», если капсула уже куплена и лежит на складе.
     owned — количество этой капсулы на складе (передаётся вызывающей
     стороной, которая уже получила его асинхронным запросом к БД)."""
     cap = CAPSULES[capsule_id]
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text=f"🛒 Купить — {_fmt(cap['price'])} 💎",
-        callback_data=f"city_capsule_buy_{capsule_id}",
-    ))
-    if owned > 0:
+    if is_active:
+        builder.row(InlineKeyboardButton(text="Уже активна", callback_data="noop", icon_custom_emoji_id=EMOJI_ACTIVE))
+    else:
+        can_afford = balance >= cap["price"]
         builder.row(InlineKeyboardButton(
-            text=f"✨ Использовать ({owned} на складе)",
-            callback_data=f"city_capsule_use_{capsule_id}",
+            text=f"{_fmt(cap['price'])} ",
+            callback_data=f"city_capsule_buy_{capsule_id}",
+            icon_custom_emoji_id=EMOJI_BUY_BTN,
+            style="success" if can_afford else "danger",
         ))
-    builder.row(InlineKeyboardButton(text=" К категории", callback_data=f"city_capsule_cat_{cap['category']}"))
+    if owned > 0 and not is_active:
+        builder.row(InlineKeyboardButton(
+            text=f"Использовать ({owned} на складе)",
+            callback_data=f"city_capsule_use_{capsule_id}",
+            icon_custom_emoji_id=EMOJI_USE_BTN,
+            style="success",
+        ))
+    builder.row(InlineKeyboardButton(text=" К категории", callback_data=f"city_capsule_cat_{cap['category']}", icon_custom_emoji_id=EMOJI_BACK_ARR))
     return builder.as_markup()
 
 
@@ -1765,7 +1821,8 @@ def _defense_text(u: dict) -> str:
     has_security = bool(u.get("has_security"))
 
     def _status(owned: bool) -> str:
-        return "✅ <b><i>куплено</i></b>" if owned else "❌ <b><i>не куплено</i></b>"
+        icon, label = (EMOJI_ACTIVE, "куплено") if owned else (EMOJI_LOCKED, "не куплено")
+        return f"{_stat_tge(icon, '✅' if owned else '🔒')} <b><i>{label}</i></b>"
 
     base_chance = int(CUSTOMS_CHANCE * 100)
     forbidden_chance = int(ITEM_CUSTOMS_CHANCE.get("forbidden_scrolls", CUSTOMS_CHANCE) * 100)
@@ -1773,23 +1830,22 @@ def _defense_text(u: dict) -> str:
     effective_forbidden = int(round(get_customs_chance("forbidden_scrolls", u) * 100))
 
     return (
-        f"🛡 <b><i>ЗАЩИТА ОТ ТАМОЖНИ</i></b>\n"
+        f"{_tge('defense', '🛡')} <b><i>ЗАЩИТА ОТ ТАМОЖНИ</i></b>\n"
         "<b><i>Снижайте риск конфискации товара</i></b> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📄 <b><i>Фальшивые документы</i></b> — {_fmt(FAKE_DOCS_COST)} {_tge('currency', CURRENCY_EMOJI)}\n"
-        f"   Снижает шанс конфискации на <b><i>{int(FAKE_DOCS_REDUCTION * 100)}%</i></b>\n"
-        f"   Статус: {_status(has_docs)}\n\n"
-        f"✉️ <b><i>Сопроводительное письмо</i></b> — {_fmt(ESCORT_COST)} {_tge('currency', CURRENCY_EMOJI)}\n"
-        f"   Снижает шанс конфискации на <b><i>{int(ESCORT_REDUCTION * 100)}%</i></b>\n"
-        f"   Вместе с документами — <b><i>{int(FAKE_DOCS_AND_ESCORT_REDUCTION * 100)}%</i></b>\n"
-        f"   Статус: {_status(has_escort)}\n\n"
-        f"💂 <b><i>Охрана каравана</i></b> — {_fmt(SECURITY_COST)} {_tge('currency', CURRENCY_EMOJI)}\n"
-        f"   Снижает шанс конфискации ещё на <b><i>{int(SECURITY_REDUCTION * 100)}%</i></b>\n"
-        f"   Статус: {_status(has_security)}\n\n"
+        f"<blockquote>📄 <b><i>Фальшивые документы</i></b> — <b><i>{_fmt(FAKE_DOCS_COST)}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
+        f"<i>Снижает шанс конфискации на <b>{int(FAKE_DOCS_REDUCTION * 100)}%</b></i>\n"
+        f"{_status(has_docs)}</blockquote>\n\n"
+        f"<blockquote>✉️ <b><i>Сопроводительное письмо</i></b> — <b><i>{_fmt(ESCORT_COST)}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
+        f"<i>Снижает шанс конфискации на <b>{int(ESCORT_REDUCTION * 100)}%</b>, вместе с документами — <b>{int(FAKE_DOCS_AND_ESCORT_REDUCTION * 100)}%</b></i>\n"
+        f"{_status(has_escort)}</blockquote>\n\n"
+        f"<blockquote>💂 <b><i>Охрана каравана</i></b> — <b><i>{_fmt(SECURITY_COST)}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
+        f"<i>Снижает шанс конфискации ещё на <b>{int(SECURITY_REDUCTION * 100)}%</b></i>\n"
+        f"{_status(has_security)}</blockquote>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        f"📊 <b><i>Базовый шанс конфискации:</i></b> обычный товар — <b><i>{base_chance}%</i></b>, "
+        f"{_tge('status', '📊')} <i><b>Базовый шанс конфискации:</b></i> обычный товар — <b><i>{base_chance}%</i></b>, "
         f"запретные свитки — <b><i>{forbidden_chance}%</i></b>\n"
-        f"📊 <b><i>Ваш текущий шанс:</i></b> обычный товар — <b><i>{effective_normal}%</i></b>, "
+        f"{_tge('status', '📊')} <i><b>Ваш текущий шанс:</b></i> обычный товар — <b><i>{effective_normal}%</i></b>, "
         f"запретные свитки — <b><i>{effective_forbidden}%</i></b>\n"
         f"🏆 <b><i>При покупке всех трёх защит шанс падает до минимума —</i></b> <b><i>{int(MIN_CUSTOMS_CHANCE * 100)}%</i></b>"
     )
@@ -1798,18 +1854,21 @@ def _defense_text(u: dict) -> str:
 def _capsules_menu_text(active: dict) -> str:
     """active: {category: capsule_id или None} — активные капсулы игрока."""
     lines = [
-        "💊 <b><i>КАПСУЛЫ УСИЛЕНИЯ</i></b>",
-        "<b><i>Алхимия гильдии для тех, кто не привык ждать</i></b> ✨",
-        "━━━━━━━━━━━━━━━━━━━━\n",
+        f"{_tge('capsules', '🔮')} <b><i>КАПСУЛЫ УСИЛЕНИЯ</i></b>\n"
+        "<b><i>Алхимия гильдии для тех, кто не привык ждать</i></b> ✨\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
     ]
     for category, info in CAPSULE_CATEGORIES.items():
         cid = active.get(category)
         if cid:
             cap = CAPSULES[cid]
-            status = f"✅ <b><i>активна «{cap['name']}» (×{cap['mult']:g})</i></b>"
+            status = f"{_stat_tge(EMOJI_ACTIVE, '✅')} <b><i>активна «{cap['name']}» (×{cap['mult']:g})</i></b>"
         else:
-            status = "⭕ <b><i>нет активной капсулы</i></b>"
-        lines.append(f"{info['emoji']} <b><i>{info['title']}</i></b> — {info['effect']}\n   {status}")
+            status = f"{_stat_tge(EMOJI_LOCKED, '🔒')} <b><i>нет активной капсулы</i></b>"
+        lines.append(
+            f"<blockquote>{info['emoji']} <b><i>{info['title']}</i></b> — <i>{info['effect']}</i>\n"
+            f"{status}</blockquote>"
+        )
     lines.append(
         "━━━━━━━━━━━━━━━━━━━━\n"
         "<b><i>В каждой категории 5 капсул — от I до V, множитель растёт "
@@ -1824,20 +1883,25 @@ def _capsules_menu_text(active: dict) -> str:
 def _capsule_category_text(category: str, owned: dict, active_id: str | None) -> str:
     info = CAPSULE_CATEGORIES[category]
     lines = [
-        f"{info['emoji']} <b><i>{info['title'].upper()}</i></b>",
-        f"<i>{info['flavor']}</i>",
-        "━━━━━━━━━━━━━━━━━━━━\n",
+        f"{info['emoji']} <b><i>{info['title'].upper()}</i></b>\n"
+        f"<i>{info['flavor']}</i>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
     ]
     for i in range(1, 6):
         cid = f"{category}_{i}"
         cap = CAPSULES[cid]
         have = owned.get(cid, 0)
-        marker = " 🟢 <b><i>(активна)</i></b>" if cid == active_id else ""
+        if cid == active_id:
+            status = f"{_stat_tge(EMOJI_ACTIVE, '✅')} <b><i>активна</i></b>"
+        elif have > 0:
+            status = f"{_stat_tge(EMOJI_OWNED, '📦')} <b><i>на складе: {have} шт.</i></b>"
+        else:
+            status = f"{_stat_tge(EMOJI_LOCKED, '🔒')} <b><i>ещё не куплена</i></b>"
         lines.append(
-            f"<b><i>{CAPSULE_ROMAN[i - 1]}. {cap['name']}</i></b>{marker}\n"
-            f"   Множитель: <b><i>×{cap['mult']:g}</i></b> к {info['noun']}\n"
-            f"   Цена: <b><i>{_fmt(cap['price'])}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
-            f"   На складе: <b><i>{have}</i></b> шт."
+            f"<blockquote><b><i>{CAPSULE_ROMAN[i - 1]}. {cap['name']}</i></b>\n"
+            f"{_tge('currency', CURRENCY_EMOJI)} <i><b>×{cap['mult']:g}</b></i> к {info['noun']} "
+            f"— <i><b>{_fmt(cap['price'])}</b></i> {_tge('currency', CURRENCY_EMOJI)}\n"
+            f"{status}</blockquote>"
         )
     lines.append("━━━━━━━━━━━━━━━━━━━━\n<b><i>Выберите капсулу, чтобы посмотреть подробности и купить</i></b> 👇")
     return "\n\n".join(lines)
@@ -1846,15 +1910,20 @@ def _capsule_category_text(category: str, owned: dict, active_id: str | None) ->
 def _capsule_detail_text(capsule_id: str, owned: int, is_active: bool) -> str:
     cap = CAPSULES[capsule_id]
     info = CAPSULE_CATEGORIES[cap["category"]]
-    status = "🟢 <b><i>сейчас активна</i></b>" if is_active else ("📦 <b><i>лежит на складе, не активирована</i></b>" if owned > 0 else "❌ <b><i>не куплена</i></b>")
+    if is_active:
+        status = f"{_stat_tge(EMOJI_ACTIVE, '✅')} <b><i>сейчас активна</i></b>"
+    elif owned > 0:
+        status = f"{_stat_tge(EMOJI_OWNED, '📦')} <b><i>лежит на складе, не активирована</i></b>"
+    else:
+        status = f"{_stat_tge(EMOJI_LOCKED, '🔒')} <b><i>не куплена</i></b>"
     return (
         f"{info['emoji']} <b><i>{cap['name'].upper()}</i></b>\n"
         f"<i>{info['flavor']}</i>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📈 <b><i>Эффект:</i></b> {info['effect']} — множитель <b><i>×{cap['mult']:g}</i></b>\n"
-        f"💰 <b><i>Цена:</i></b> <b><i>{_fmt(cap['price'])}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
-        f"📦 <b><i>На складе:</i></b> <b><i>{owned}</i></b> шт.\n"
-        f"📡 <b><i>Статус:</i></b> {status}\n\n"
+        f"<blockquote>{_tge('capsules', '📈')} <i><b>Эффект:</b></i> {info['effect']} — множитель <b><i>×{cap['mult']:g}</i></b>\n"
+        f"{_tge('currency', CURRENCY_EMOJI)} <i><b>Цена:</b></i> <b><i>{_fmt(cap['price'])}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
+        f"{_stat_tge(EMOJI_OWNED, '📦')} <i><b>На складе:</b></i> <b><i>{owned}</i></b> шт.\n"
+        f"{_tge('status', '📡')} <i><b>Статус:</b></i> {status}</blockquote>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "⚠️ <b><i>Активной в этой категории может быть только одна капсула — "
         "использование новой заменит текущую.</i></b>"
@@ -2250,7 +2319,7 @@ async def cmd_city_capsules(message: Message):
     await message.reply(
         _capsules_menu_text(active),
         parse_mode="HTML",
-        reply_markup=city_capsules_menu_keyboard(),
+        reply_markup=city_capsules_menu_keyboard(active),
     )
 
 
@@ -2973,7 +3042,7 @@ async def cb_city_capsules(call: CallbackQuery):
         return
     active = await aio_get_active_capsules(call.from_user.id)
     await call.message.edit_text(
-        _capsules_menu_text(active), parse_mode="HTML", reply_markup=city_capsules_menu_keyboard()
+        _capsules_menu_text(active), parse_mode="HTML", reply_markup=city_capsules_menu_keyboard(active)
     )
     await call.answer()
 
@@ -2992,7 +3061,7 @@ async def cb_city_capsule_category(call: CallbackQuery):
     await call.message.edit_text(
         _capsule_category_text(category, owned, active.get(category)),
         parse_mode="HTML",
-        reply_markup=city_capsule_category_keyboard(category),
+        reply_markup=city_capsule_category_keyboard(category, owned, active.get(category)),
     )
     await call.answer()
 
@@ -3007,13 +3076,14 @@ async def cb_city_capsule_view(call: CallbackQuery):
         await call.answer("❌ Неизвестная капсула.", show_alert=True)
         return
     cap = CAPSULES[capsule_id]
+    u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
     owned = (await aio_get_capsules_owned(call.from_user.id)).get(capsule_id, 0)
     active = await aio_get_active_capsules(call.from_user.id)
     is_active = active.get(cap["category"]) == capsule_id
     await call.message.edit_text(
         _capsule_detail_text(capsule_id, owned, is_active),
         parse_mode="HTML",
-        reply_markup=city_capsule_detail_keyboard(capsule_id, owned),
+        reply_markup=city_capsule_detail_keyboard(capsule_id, owned, is_active, u["balance"]),
     )
     await call.answer()
 
@@ -3033,13 +3103,14 @@ async def cb_city_capsule_buy(call: CallbackQuery):
         return
 
     cap = CAPSULES[capsule_id]
+    u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
     owned = (await aio_get_capsules_owned(call.from_user.id)).get(capsule_id, 0)
     active = await aio_get_active_capsules(call.from_user.id)
     is_active = active.get(cap["category"]) == capsule_id
     await call.message.edit_text(
         _capsule_detail_text(capsule_id, owned, is_active),
         parse_mode="HTML",
-        reply_markup=city_capsule_detail_keyboard(capsule_id, owned),
+        reply_markup=city_capsule_detail_keyboard(capsule_id, owned, is_active, u["balance"]),
     )
     await call.answer(msg, show_alert=True)
 
@@ -3059,11 +3130,12 @@ async def cb_city_capsule_use(call: CallbackQuery):
         return
 
     cap = CAPSULES[capsule_id]
+    u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
     owned = (await aio_get_capsules_owned(call.from_user.id)).get(capsule_id, 0)
     await call.message.edit_text(
         _capsule_detail_text(capsule_id, owned, True),
         parse_mode="HTML",
-        reply_markup=city_capsule_detail_keyboard(capsule_id, owned),
+        reply_markup=city_capsule_detail_keyboard(capsule_id, owned, True, u["balance"]),
     )
     await call.answer(msg, show_alert=True)
 
