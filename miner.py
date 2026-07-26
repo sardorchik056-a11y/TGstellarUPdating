@@ -1102,7 +1102,16 @@ def collect_mine(data: dict, lang: str = "ru") -> tuple:
         bio_mult = _bio_mine_mult(data)
     except Exception:
         bio_mult = 1.0
-    multiplier = get_active_booster_multiplier(data) * get_artifact_mine_multiplier(data) * _status_mine_mult(data) * event_mult * bio_mult
+    # Капсула добычи (city.py, /citycapsules) — постоянный буст добычи руды,
+    # пока активна соответствующая капсула. get_capsule_multiplier — синхронная
+    # функция (обычный блокирующий SQL-запрос), это безопасно, т.к. collect_mine
+    # сама всегда вызывается из mainhelp.py через asyncio.to_thread.
+    try:
+        from city import get_capsule_multiplier as _capsule_mine_mult
+        capsule_mult = _capsule_mine_mult(data.get("id"), "mining")
+    except Exception:
+        capsule_mult = 1.0
+    multiplier = get_active_booster_multiplier(data) * get_artifact_mine_multiplier(data) * _status_mine_mult(data) * event_mult * bio_mult * capsule_mult
     pick_key = data.get("pickaxe", "wood_1")
     results      = {}
     # Глобальный счётчик ударов кирки — накапливается между всеми сессиями
