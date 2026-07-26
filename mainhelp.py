@@ -282,6 +282,7 @@ from city import (
     init_city_db,
     city_prices_loop, city_travel_loop, city_news_loop, city_exchange_loop,
     cmd_city_profile, cmd_city_shop,
+    aio_get_capsule_multiplier,
 )
 
 from rass import (
@@ -7219,6 +7220,12 @@ async def _users_scan_loop():
                                 amount = int(amount * _apt_mult(_d))
                             except Exception:
                                 pass
+                            try:
+                                _cap_mult = await aio_get_capsule_multiplier(uid, "pets")
+                                if _cap_mult > 1.0:
+                                    amount = int(amount * _cap_mult)
+                            except Exception as _cpe:
+                                print(f"[capsules] pets income boost error: {_cpe}")
                             _d["balance"] = _d.get("balance", 0) + amount
                             _d["ref_income"] = _d.get("ref_income", 0) + amount
                             _d["pet_last_group_notify"] = now
