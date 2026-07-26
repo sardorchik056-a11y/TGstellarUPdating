@@ -7,6 +7,7 @@ import time
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from lang import t
+from database import format_amount as _db_format_amount
 
 
 def _desc(entry: dict, lang: str = "ru") -> str:
@@ -1272,38 +1273,12 @@ def equipped_level(slot: str, user_data: dict) -> int:
     item = current_slot_item(slot, user_data)
     return item["level"] if item else 0
 
-_FMT_SUFFIXES = {
-    "ru": [
-        (1_000_000_000_000, "трлн"),
-        (1_000_000_000,     "млрд"),
-        (1_000_000,         "м"),
-        (1_000,             "к"),
-    ],
-    "en": [
-        (1_000_000_000_000, "T"),
-        (1_000_000_000,     "B"),
-        (1_000_000,         "M"),
-        (1_000,             "K"),
-    ],
-}
-
 def _fmt(n, lang: str = "ru") -> str:
-    """Сокращает число как format_amount в database.py: 1500->1.5к/1.5K, 2.3м/2.3M, 1.5млрд/1.5B."""
-    try:
-        n = float(n)
-    except (TypeError, ValueError):
-        return str(n)
-    sign = "-" if n < 0 else ""
-    n = abs(n)
-    if n < 1000:
-        return f"{sign}{int(n)}" if n == int(n) else f"{sign}{n:.1f}"
-    for threshold, suffix in _FMT_SUFFIXES.get(lang, _FMT_SUFFIXES["ru"]):
-        if n >= threshold:
-            value = int(n / threshold * 10) / 10
-            if value == int(value):
-                return f"{sign}{int(value)}{suffix}"
-            return f"{sign}{value:.1f}{suffix}"
-    return f"{sign}{int(n)}"
+    """Сокращает число ТОЧНО так же, как format_amount в database.py
+    (единая шкала и округление во всём боте): 1500->1.5K, 2.3M, 1.5B, 1T, 1Qa, ...
+    Параметр lang оставлен для обратной совместимости вызовов, но больше не
+    влияет на суффиксы — везде используется единый стиль database.py."""
+    return _db_format_amount(n)
 
 
 # ════════════════════════════════════════════════════════════
