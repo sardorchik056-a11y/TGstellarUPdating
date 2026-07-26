@@ -7176,7 +7176,7 @@ async def _users_scan_loop():
     настали, реального доп. нагрузки от более частого тика это не даёт,
     т.к. сама проверка — это дешёвое сравнение в памяти, а не поход в БД.
     """
-    from database import get_all_users, save_user as _sv
+    from database import get_all_users, save_user as _sv, get_user as _gu_fresh
     import random as _rnd
     import datetime as _dt
     import green as _green
@@ -7190,54 +7190,82 @@ async def _users_scan_loop():
                 changed = False
 
                 # ---------- Шахта: уведомление о завершении копки ----------
-                if _d.get("mine_start") is not None and not _d.get("mine_collected"):
-                    if _d.get("mine_last_notified_start") != _d["mine_start"]:
-                        prog = calc_mine_progress(_d)
-                        if prog["finished"]:
-                            _lang = _d.get("lang", "ru")
-                            msg_text = mine_finished_notify_text(_d, _lang)
-                            try:
-                                await bot.send_message(uid, msg_text, parse_mode="HTML")
-                            except Exception:
-                                pass
-                            _d["mine_last_notified_start"] = _d["mine_start"]
-                            changed = True
+                # Само условие "пора ли" дёшево проверяем по снапшоту _d, но
+                # РЕАЛЬНОЕ изменение и сохранение делаем под локом пользователя
+                # на свежепрочитанных данных (см. ниже) — иначе, как и с садом,
+                # можно затереть параллельное действие игрока (сбор урожая,
+                # апгрейд грядки и т.п.), т.к. asyncio.to_thread(_sv, uid, _d)
+                # писал бы устаревший снимок ВСЕЙ записи пользователя целиком.
+                mine_due = (
+                    _d.get("mine_start") is not None
+                    and not _d.get("mine_collected")
+                    and _d.get("mine_last_notified_start") != _d.get("mine_start")
+                )
 
                 # ---------- Питомцы: доход + уведомление ----------
                 owned = _d.get("owned_pets", [])
+                pets_due = False
                 if owned:
                     now = int(_dt.datetime.now(_dt.timezone.utc).timestamp())
                     last_all = _d.get("pet_last_group_notify", 0)
                     interval = _PETS_INTERVAL_ONE if len(owned) == 1 else _PETS_INTERVAL_MANY
+                    pets_due = (now - last_all) >= interval
 
-                    if now - last_all >= interval:
-                        pk  = _rnd.choice(owned)
-                        pet = __import__("pets").PETS_BY_KEY.get(pk)
-                        if pet:
-                            amount = _rnd.randint(pet["income_min"], pet["income_max"])
-                            try:
-                                from shop import get_artifact_pets_multiplier as _apt_mult
-                                amount = int(amount * _apt_mult(_d))
-                            except Exception:
-                                pass
-                            try:
-                                _cap_mult = await aio_get_capsule_multiplier(uid, "pets")
-                                if _cap_mult > 1.0:
-                                    amount = int(amount * _cap_mult)
-                            except Exception as _cpe:
-                                print(f"[capsules] pets income boost error: {_cpe}")
-                            _d["balance"] = _d.get("balance", 0) + amount
-                            _d["ref_income"] = _d.get("ref_income", 0) + amount
-                            _d["pet_last_group_notify"] = now
+                if mine_due or pets_due:
+                    async with await _get_user_lock(uid):
+                        fresh = await asyncio.to_thread(_gu_fresh, uid)
+                        if fresh:
+                            if mine_due and fresh.get("mine_start") is not None \
+                                    and not fresh.get("mine_collected") \
+                                    and fresh.get("mine_last_notified_start") != fresh.get("mine_start"):
+                                prog = calc_mine_progress(fresh)
+                                if prog["finished"]:
+                                    _lang = fresh.get("lang", "ru")
+                                    msg_text = mine_finished_notify_text(fresh, _lang)
+                                    try:
+                                        await bot.send_message(uid, msg_text, parse_mode="HTML")
+                                    except Exception:
+                                        pass
+                                    fresh["mine_last_notified_start"] = fresh["mine_start"]
+                                    changed = True
 
-                            msgs       = __import__("pets")._NOTIFICATIONS.get(pk, [])
-                            notif_text = _rnd.choice(msgs) if msgs else ""
-                            msg_text   = pet_income_text(pk, amount, notif_text)
-                            try:
-                                await bot.send_message(uid, msg_text, parse_mode="HTML")
-                            except Exception:
-                                pass
-                            changed = True
+                            owned_fresh = fresh.get("owned_pets", [])
+                            if pets_due and owned_fresh:
+                                now = int(_dt.datetime.now(_dt.timezone.utc).timestamp())
+                                last_all = fresh.get("pet_last_group_notify", 0)
+                                interval = _PETS_INTERVAL_ONE if len(owned_fresh) == 1 else _PETS_INTERVAL_MANY
+                                if now - last_all >= interval:
+                                    pk  = _rnd.choice(owned_fresh)
+                                    pet = __import__("pets").PETS_BY_KEY.get(pk)
+                                    if pet:
+                                        amount = _rnd.randint(pet["income_min"], pet["income_max"])
+                                        try:
+                                            from shop import get_artifact_pets_multiplier as _apt_mult
+                                            amount = int(amount * _apt_mult(fresh))
+                                        except Exception:
+                                            pass
+                                        try:
+                                            _cap_mult = await aio_get_capsule_multiplier(uid, "pets")
+                                            if _cap_mult > 1.0:
+                                                amount = int(amount * _cap_mult)
+                                        except Exception as _cpe:
+                                            print(f"[capsules] pets income boost error: {_cpe}")
+                                        fresh["balance"] = fresh.get("balance", 0) + amount
+                                        fresh["ref_income"] = fresh.get("ref_income", 0) + amount
+                                        fresh["pet_last_group_notify"] = now
+
+                                        msgs       = __import__("pets")._NOTIFICATIONS.get(pk, [])
+                                        notif_text = _rnd.choice(msgs) if msgs else ""
+                                        msg_text   = pet_income_text(pk, amount, notif_text)
+                                        try:
+                                            await bot.send_message(uid, msg_text, parse_mode="HTML")
+                                        except Exception:
+                                            pass
+                                        changed = True
+
+                            if changed:
+                                await asyncio.to_thread(_sv, uid, fresh)
+                                changed = False  # уже сохранили fresh — общий save ниже больше не нужен
 
                 # ---------- Сад: проверка созревших грядок ----------
                 # Сад защищаем персональным локом и перечитываем свежие
@@ -7247,7 +7275,6 @@ async def _users_scan_loop():
                 # что была в прежнем отдельном garden_notify_loop.
                 garden = _d.get("garden")
                 if isinstance(garden, dict) and garden.get("plots"):
-                    from database import get_user as _gu_fresh
                     async with await _get_user_lock(uid):
                         # Перечитываем свежие данные ПОД локом — снапшот из
                         # общего скана мог устареть из-за параллельного
@@ -7270,10 +7297,12 @@ async def _users_scan_loop():
                         except Exception:
                             pass
                     # Сад сохраняется отдельной веткой выше (под локом,
-                    # на свежих данных) — в общий `_d`/`changed` не мешаем.
+                    # на свежих данных).
 
-                if changed:
-                    await asyncio.to_thread(_sv, uid, _d)
+                # Шахта/питомцы/сад теперь ВСЕГДА сохраняются под локом на
+                # свежепрочитанных данных внутри своих веток выше — общего
+                # "сохранить устаревший _d целиком" здесь больше нет, именно
+                # это и было источником гонки (см. комментарии выше).
         except Exception as _e:
             print(f"[users_scan_loop] {_e}")
         await asyncio.sleep(_USERS_SCAN_INTERVAL)
