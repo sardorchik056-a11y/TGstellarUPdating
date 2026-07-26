@@ -172,6 +172,65 @@ FAKE_DOCS_AND_ESCORT_REDUCTION = 0.30   # совместный эффект (в�
 SECURITY_COST = 8_000_000         # охрана каравана
 SECURITY_REDUCTION = 0.10
 
+# ──────────────────────────────────────────────────────────────────────────
+# КАПСУЛЫ УСИЛЕНИЯ
+# 3 категории по 5 капсул (15 всего). Каждая капсула — постоянный множитель,
+# который вступает в силу при активации ("использовании") и держится, пока
+# игрок не активирует другую капсулу той же категории (тогда старая
+# заменяется — активна всегда максимум ОДНА капсула на категорию,
+# использовать сразу несколько капсул одной категории нельзя).
+# Множители одинаковы для всех трёх категорий (I→V: 1.15×...2.00×),
+# цены растут от 100 млн до 15 млрд кристаллов.
+# ──────────────────────────────────────────────────────────────────────────
+CAPSULE_ROMAN = ["I", "II", "III", "IV", "V"]
+CAPSULE_TIER_MULT = [1.15, 1.35, 1.55, 1.80, 2.00]
+CAPSULE_TIER_PRICE = [100_000_000, 500_000_000, 2_000_000_000, 6_000_000_000, 15_000_000_000]
+
+CAPSULE_CATEGORIES = {
+    "mining": {
+        "title": "Капсулы добычи",
+        "emoji": "⛏",
+        "noun": "добычи",
+        "effect": "увеличивает добычу руды в шахте",
+        "flavor": "Алхимический состав ускоряет резонанс кирки с рудной жилой — "
+                   "с каждой партией из недр поднимается больше породы.",
+    },
+    "damage": {
+        "title": "Капсулы урона",
+        "emoji": "⚔️",
+        "noun": "урона",
+        "effect": "увеличивает урон в бою",
+        "flavor": "Концентрат боевых трав разгоняет кровь и обостряет реакцию — "
+                   "удары становятся тяжелее и точнее.",
+    },
+    "pets": {
+        "title": "Капсулы питомцев",
+        "emoji": "🐾",
+        "noun": "питомцев",
+        "effect": "увеличивает силу питомцев",
+        "flavor": "Питательная эссенция, выведенная зверинцем гильдии — "
+                   "любимец растёт сильнее и выносливее.",
+    },
+}
+
+
+def _build_capsules() -> dict:
+    capsules = {}
+    for category, info in CAPSULE_CATEGORIES.items():
+        for i in range(5):
+            cid = f"{category}_{i + 1}"
+            capsules[cid] = {
+                "category": category,
+                "tier": i + 1,
+                "name": f"Капсула {info['noun']} {CAPSULE_ROMAN[i]}",
+                "mult": CAPSULE_TIER_MULT[i],
+                "price": CAPSULE_TIER_PRICE[i],
+            }
+    return capsules
+
+
+CAPSULES = _build_capsules()
+
 # ── ПОВОЗКА: лимит суммарного количества товара, который можно везти за раз ──
 # Уровень 0 — базовая повозка, доступна всем бесплатно. Дальше — платная
 # прокачка за кристаллы вплоть до максимума в 1 000 000 единиц товара.
@@ -369,6 +428,27 @@ def init_city_db():
         inv_cols = [r["name"] for r in conn.execute("PRAGMA table_info(city_inventory)").fetchall()]
         if "acquired_at" not in inv_cols:
             conn.execute("ALTER TABLE city_inventory ADD COLUMN acquired_at INTEGER")
+        # ── Капсулы усиления: купленный, но ещё не использованный запас ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS city_capsules_owned (
+                user_id    INTEGER NOT NULL,
+                capsule_id TEXT NOT NULL,
+                quantity   INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(user_id, capsule_id)
+            )
+        """)
+        # ── Капсулы усиления: активная (использованная) капсула по категориям —
+        # ровно одна запись на пару (user_id, category), т.е. максимум одна
+        # активная капсула на категорию одновременно.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS city_capsules_active (
+                user_id      INTEGER NOT NULL,
+                category     TEXT NOT NULL,
+                capsule_id   TEXT NOT NULL,
+                activated_at INTEGER NOT NULL,
+                UNIQUE(user_id, category)
+            )
+        """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_prices (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -759,6 +839,104 @@ def try_buy_protection(user_id: int, kind: str) -> tuple[bool, str]:
             return False, "❌ Не удалось совершить покупку. Попробуйте ещё раз."
     log_crystal_event(user_id, -cost)
     return True, "✅ Защита успешно приобретена."
+
+
+# ---------- капсулы усиления ----------
+
+def get_capsules_owned(user_id: int) -> dict:
+    """{capsule_id: количество на складе (ещё не использовано)}."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT capsule_id, quantity FROM city_capsules_owned WHERE user_id=? AND quantity>0",
+            (user_id,),
+        ).fetchall()
+    return {r["capsule_id"]: r["quantity"] for r in rows}
+
+
+def get_active_capsules(user_id: int) -> dict:
+    """{category: capsule_id} — активная (используемая) капсула по каждой категории."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT category, capsule_id FROM city_capsules_active WHERE user_id=?", (user_id,)
+        ).fetchall()
+    return {r["category"]: r["capsule_id"] for r in rows}
+
+
+def get_capsule_multiplier(user_id: int, category: str) -> float:
+    """Текущий множитель для категории (1.0, если нет активной капсулы).
+    Это единственная точка интеграции, которую нужно вызывать из основной
+    игровой логики (добыча в шахте / урон в бою / сила питомцев), чтобы
+    учесть эффект капсул."""
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT capsule_id FROM city_capsules_active WHERE user_id=? AND category=?",
+            (user_id, category),
+        ).fetchone()
+    if not row:
+        return 1.0
+    return CAPSULES.get(row["capsule_id"], {}).get("mult", 1.0)
+
+
+def try_buy_capsule(user_id: int, capsule_id: str) -> tuple[bool, str]:
+    """Покупает одну капсулу — пополняет склад, НЕ активирует автоматически."""
+    cap = CAPSULES.get(capsule_id)
+    if not cap:
+        return False, "❌ Неизвестная капсула."
+    cost = cap["price"]
+    with _conn() as conn:
+        row = conn.execute("SELECT balance FROM city_users WHERE user_id=?", (user_id,)).fetchone()
+        if row is None:
+            return False, "❌ Профиль не найден."
+        if row["balance"] < cost:
+            return False, f"💸 Недостаточно {CURRENCY_NAME}. Нужно {_crystals_plain(cost)}, у вас {_crystals_plain(row['balance'])}."
+        cur = conn.execute(
+            "UPDATE city_users SET balance = balance - ? WHERE user_id=? AND balance>=?",
+            (cost, user_id, cost),
+        )
+        if cur.rowcount == 0:
+            return False, "❌ Не удалось совершить покупку. Попробуйте ещё раз."
+        conn.execute(
+            "INSERT INTO city_capsules_owned (user_id, capsule_id, quantity) VALUES (?,?,1) "
+            "ON CONFLICT(user_id, capsule_id) DO UPDATE SET quantity = quantity + 1",
+            (user_id, capsule_id),
+        )
+        conn.commit()
+    log_crystal_event(user_id, -cost)
+    return True, f"✅ Куплена «{cap['name']}»."
+
+
+def try_use_capsule(user_id: int, capsule_id: str) -> tuple[bool, str]:
+    """Активирует капсулу со склада. Списывает 1 шт. со склада и делает её
+    активной в своей категории — если в этой категории уже была активна
+    другая капсула, она заменяется (использовать сразу несколько капсул
+    одной категории нельзя, активна всегда только одна)."""
+    cap = CAPSULES.get(capsule_id)
+    if not cap:
+        return False, "❌ Неизвестная капсула."
+    category = cap["category"]
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT quantity FROM city_capsules_owned WHERE user_id=? AND capsule_id=?",
+            (user_id, capsule_id),
+        ).fetchone()
+        if not row or row["quantity"] <= 0:
+            return False, "❌ У вас нет этой капсулы на складе — сначала купите её."
+        cur = conn.execute(
+            "UPDATE city_capsules_owned SET quantity = quantity - 1 "
+            "WHERE user_id=? AND capsule_id=? AND quantity>0",
+            (user_id, capsule_id),
+        )
+        if cur.rowcount == 0:
+            return False, "❌ У вас нет этой капсулы на складе — сначала купите её."
+        conn.execute(
+            "INSERT INTO city_capsules_active (user_id, category, capsule_id, activated_at) "
+            "VALUES (?,?,?,?) "
+            "ON CONFLICT(user_id, category) DO UPDATE SET capsule_id=excluded.capsule_id, "
+            "activated_at=excluded.activated_at",
+            (user_id, category, capsule_id, int(time.time())),
+        )
+        conn.commit()
+    return True, f"✅ Активирована «{cap['name']}» (×{cap['mult']:g})."
 
 
 # ---------- повозка (лимит перевозки) ----------
@@ -1163,6 +1341,26 @@ async def aio_try_buy_protection(user_id: int, kind: str) -> tuple[bool, str]:
     return await asyncio.to_thread(try_buy_protection, user_id, kind)
 
 
+async def aio_get_capsules_owned(user_id: int) -> dict:
+    return await asyncio.to_thread(get_capsules_owned, user_id)
+
+
+async def aio_get_active_capsules(user_id: int) -> dict:
+    return await asyncio.to_thread(get_active_capsules, user_id)
+
+
+async def aio_get_capsule_multiplier(user_id: int, category: str) -> float:
+    return await asyncio.to_thread(get_capsule_multiplier, user_id, category)
+
+
+async def aio_try_buy_capsule(user_id: int, capsule_id: str) -> tuple[bool, str]:
+    return await asyncio.to_thread(try_buy_capsule, user_id, capsule_id)
+
+
+async def aio_try_use_capsule(user_id: int, capsule_id: str) -> tuple[bool, str]:
+    return await asyncio.to_thread(try_use_capsule, user_id, capsule_id)
+
+
 async def aio_try_upgrade_cart(user_id: int) -> tuple[bool, str, dict | None]:
     return await asyncio.to_thread(try_upgrade_cart, user_id)
 
@@ -1320,6 +1518,7 @@ def city_main_menu_keyboard() -> InlineKeyboardMarkup:
     )
     builder.row(
         InlineKeyboardButton(text=" Защита от таможни", callback_data="city_nav_defense", icon_custom_emoji_id=BTN_EMOJI["defense"]),
+        InlineKeyboardButton(text=" Капсулы", callback_data="city_nav_capsules", icon_custom_emoji_id=BTN_EMOJI.get("capsules")),
     )
     return builder.as_markup()
 
@@ -1362,6 +1561,52 @@ def city_defense_keyboard(u: dict) -> InlineKeyboardMarkup:
             callback_data="city_buy_defense_security",
         ))
     builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
+    return builder.as_markup()
+
+
+def city_capsules_menu_keyboard() -> InlineKeyboardMarkup:
+    """Главное окно капсул — по кнопке на каждую из 3 категорий."""
+    builder = InlineKeyboardBuilder()
+    for category, info in CAPSULE_CATEGORIES.items():
+        builder.row(InlineKeyboardButton(
+            text=f"{info['emoji']} {info['title']}",
+            callback_data=f"city_capsule_cat_{category}",
+        ))
+    builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
+    return builder.as_markup()
+
+
+def city_capsule_category_keyboard(category: str) -> InlineKeyboardMarkup:
+    """Окно категории — отдельная кнопка на каждую из 5 капсул этой категории."""
+    builder = InlineKeyboardBuilder()
+    for i in range(1, 6):
+        cid = f"{category}_{i}"
+        cap = CAPSULES[cid]
+        builder.row(InlineKeyboardButton(
+            text=f"{CAPSULE_ROMAN[i - 1]} — ×{cap['mult']:g} — {_fmt(cap['price'])} 💎",
+            callback_data=f"city_capsule_view_{cid}",
+        ))
+    builder.row(InlineKeyboardButton(text=" К капсулам", callback_data="city_nav_capsules"))
+    return builder.as_markup()
+
+
+def city_capsule_detail_keyboard(capsule_id: str, owned: int) -> InlineKeyboardMarkup:
+    """Отдельное окно одной капсулы — информация + кнопка «Купить», и
+    «Использовать», если капсула уже куплена и лежит на складе.
+    owned — количество этой капсулы на складе (передаётся вызывающей
+    стороной, которая уже получила его асинхронным запросом к БД)."""
+    cap = CAPSULES[capsule_id]
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=f"🛒 Купить — {_fmt(cap['price'])} 💎",
+        callback_data=f"city_capsule_buy_{capsule_id}",
+    ))
+    if owned > 0:
+        builder.row(InlineKeyboardButton(
+            text=f"✨ Использовать ({owned} на складе)",
+            callback_data=f"city_capsule_use_{capsule_id}",
+        ))
+    builder.row(InlineKeyboardButton(text=" К категории", callback_data=f"city_capsule_cat_{cap['category']}"))
     return builder.as_markup()
 
 
@@ -1547,6 +1792,72 @@ def _defense_text(u: dict) -> str:
         f"📊 <b><i>Ваш текущий шанс:</i></b> обычный товар — <b><i>{effective_normal}%</i></b>, "
         f"запретные свитки — <b><i>{effective_forbidden}%</i></b>\n"
         f"🏆 <b><i>При покупке всех трёх защит шанс падает до минимума —</i></b> <b><i>{int(MIN_CUSTOMS_CHANCE * 100)}%</i></b>"
+    )
+
+
+def _capsules_menu_text(active: dict) -> str:
+    """active: {category: capsule_id или None} — активные капсулы игрока."""
+    lines = [
+        "💊 <b><i>КАПСУЛЫ УСИЛЕНИЯ</i></b>",
+        "<b><i>Алхимия гильдии для тех, кто не привык ждать</i></b> ✨",
+        "━━━━━━━━━━━━━━━━━━━━\n",
+    ]
+    for category, info in CAPSULE_CATEGORIES.items():
+        cid = active.get(category)
+        if cid:
+            cap = CAPSULES[cid]
+            status = f"✅ <b><i>активна «{cap['name']}» (×{cap['mult']:g})</i></b>"
+        else:
+            status = "⭕ <b><i>нет активной капсулы</i></b>"
+        lines.append(f"{info['emoji']} <b><i>{info['title']}</i></b> — {info['effect']}\n   {status}")
+    lines.append(
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "<b><i>В каждой категории 5 капсул — от I до V, множитель растёт "
+        "от ×1.15 до ×2.00. Активной в категории может быть только "
+        "ОДНА капсула: новая всегда заменяет предыдущую, использовать "
+        "несколько капсул одной категории разом нельзя.</i></b>\n\n"
+        "<b><i>Выберите категорию ниже 👇</i></b>"
+    )
+    return "\n\n".join(lines)
+
+
+def _capsule_category_text(category: str, owned: dict, active_id: str | None) -> str:
+    info = CAPSULE_CATEGORIES[category]
+    lines = [
+        f"{info['emoji']} <b><i>{info['title'].upper()}</i></b>",
+        f"<i>{info['flavor']}</i>",
+        "━━━━━━━━━━━━━━━━━━━━\n",
+    ]
+    for i in range(1, 6):
+        cid = f"{category}_{i}"
+        cap = CAPSULES[cid]
+        have = owned.get(cid, 0)
+        marker = " 🟢 <b><i>(активна)</i></b>" if cid == active_id else ""
+        lines.append(
+            f"<b><i>{CAPSULE_ROMAN[i - 1]}. {cap['name']}</i></b>{marker}\n"
+            f"   Множитель: <b><i>×{cap['mult']:g}</i></b> к {info['noun']}\n"
+            f"   Цена: <b><i>{_fmt(cap['price'])}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
+            f"   На складе: <b><i>{have}</i></b> шт."
+        )
+    lines.append("━━━━━━━━━━━━━━━━━━━━\n<b><i>Выберите капсулу, чтобы посмотреть подробности и купить</i></b> 👇")
+    return "\n\n".join(lines)
+
+
+def _capsule_detail_text(capsule_id: str, owned: int, is_active: bool) -> str:
+    cap = CAPSULES[capsule_id]
+    info = CAPSULE_CATEGORIES[cap["category"]]
+    status = "🟢 <b><i>сейчас активна</i></b>" if is_active else ("📦 <b><i>лежит на складе, не активирована</i></b>" if owned > 0 else "❌ <b><i>не куплена</i></b>")
+    return (
+        f"{info['emoji']} <b><i>{cap['name'].upper()}</i></b>\n"
+        f"<i>{info['flavor']}</i>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📈 <b><i>Эффект:</i></b> {info['effect']} — множитель <b><i>×{cap['mult']:g}</i></b>\n"
+        f"💰 <b><i>Цена:</i></b> <b><i>{_fmt(cap['price'])}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
+        f"📦 <b><i>На складе:</i></b> <b><i>{owned}</i></b> шт.\n"
+        f"📡 <b><i>Статус:</i></b> {status}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "⚠️ <b><i>Активной в этой категории может быть только одна капсула — "
+        "использование новой заменит текущую.</i></b>"
     )
 
 
@@ -1789,6 +2100,7 @@ def _help_text() -> str:
         f"{_tge('route', '🗺')} <code>/cityroute</code> — <b><i>самый выгодный маршрут прямо сейчас</i></b>\n"
         f"{_tge('exchange', '🔁')} <code>/cityexchange количество</code> — <b><i>обменять кристаллы на монеты</i></b>\n"
         f"{_tge('defense', '🛡')} <code>/citydefense</code> — <b><i>магазин защиты от таможни</i></b>\n"
+        f"💊 <code>/citycapsules</code> — <b><i>капсулы усиления (добыча/урон/питомцы)</i></b>\n"
         f"{_tge('help', '❓')} <code>/cityhelp</code> — <b><i>эта справка</i></b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "<b><i>📦 Товары</i></b>\n"
@@ -1927,6 +2239,28 @@ async def cmd_city_defense(message: Message):
 async def cmd_city_defense_noslash(message: Message):
     """Текстовый алиас магазина защиты без слеша."""
     await cmd_city_defense(message)
+
+
+@router.message(Command("citycapsules", "капсулы"))
+async def cmd_city_capsules(message: Message):
+    if not await _city_level_ok(message):
+        return
+    u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
+    active = await aio_get_active_capsules(u["user_id"])
+    await message.reply(
+        _capsules_menu_text(active),
+        parse_mode="HTML",
+        reply_markup=city_capsules_menu_keyboard(),
+    )
+
+
+@router.message(F.text.regexp(
+    r"^капсулы(?:\s|$)",
+    flags=__import__("re").IGNORECASE
+))
+async def cmd_city_capsules_noslash(message: Message):
+    """Текстовый алиас магазина капсул без слеша."""
+    await cmd_city_capsules(message)
 
 
 def _parse_crystal_amount(s: str) -> int | None:
@@ -2628,6 +2962,108 @@ async def cb_city_buy_defense(call: CallbackQuery):
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
     await call.message.edit_text(
         _defense_text(u), parse_mode="HTML", reply_markup=city_defense_keyboard(u)
+    )
+    await call.answer(msg, show_alert=True)
+
+
+@router.callback_query(F.data == "city_nav_capsules")
+async def cb_city_capsules(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    active = await aio_get_active_capsules(call.from_user.id)
+    await call.message.edit_text(
+        _capsules_menu_text(active), parse_mode="HTML", reply_markup=city_capsules_menu_keyboard()
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("city_capsule_cat_"))
+async def cb_city_capsule_category(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    category = call.data.removeprefix("city_capsule_cat_")
+    if category not in CAPSULE_CATEGORIES:
+        await call.answer("❌ Неизвестная категория.", show_alert=True)
+        return
+    owned = await aio_get_capsules_owned(call.from_user.id)
+    active = await aio_get_active_capsules(call.from_user.id)
+    await call.message.edit_text(
+        _capsule_category_text(category, owned, active.get(category)),
+        parse_mode="HTML",
+        reply_markup=city_capsule_category_keyboard(category),
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("city_capsule_view_"))
+async def cb_city_capsule_view(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    capsule_id = call.data.removeprefix("city_capsule_view_")
+    if capsule_id not in CAPSULES:
+        await call.answer("❌ Неизвестная капсула.", show_alert=True)
+        return
+    cap = CAPSULES[capsule_id]
+    owned = (await aio_get_capsules_owned(call.from_user.id)).get(capsule_id, 0)
+    active = await aio_get_active_capsules(call.from_user.id)
+    is_active = active.get(cap["category"]) == capsule_id
+    await call.message.edit_text(
+        _capsule_detail_text(capsule_id, owned, is_active),
+        parse_mode="HTML",
+        reply_markup=city_capsule_detail_keyboard(capsule_id, owned),
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("city_capsule_buy_"))
+async def cb_city_capsule_buy(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    capsule_id = call.data.removeprefix("city_capsule_buy_")
+    if capsule_id not in CAPSULES:
+        await call.answer("❌ Неизвестная капсула.", show_alert=True)
+        return
+    ok, msg = await aio_try_buy_capsule(call.from_user.id, capsule_id)
+    if not ok:
+        await call.answer(msg, show_alert=True)
+        return
+
+    cap = CAPSULES[capsule_id]
+    owned = (await aio_get_capsules_owned(call.from_user.id)).get(capsule_id, 0)
+    active = await aio_get_active_capsules(call.from_user.id)
+    is_active = active.get(cap["category"]) == capsule_id
+    await call.message.edit_text(
+        _capsule_detail_text(capsule_id, owned, is_active),
+        parse_mode="HTML",
+        reply_markup=city_capsule_detail_keyboard(capsule_id, owned),
+    )
+    await call.answer(msg, show_alert=True)
+
+
+@router.callback_query(F.data.startswith("city_capsule_use_"))
+async def cb_city_capsule_use(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    capsule_id = call.data.removeprefix("city_capsule_use_")
+    if capsule_id not in CAPSULES:
+        await call.answer("❌ Неизвестная капсула.", show_alert=True)
+        return
+    ok, msg = await aio_try_use_capsule(call.from_user.id, capsule_id)
+    if not ok:
+        await call.answer(msg, show_alert=True)
+        return
+
+    cap = CAPSULES[capsule_id]
+    owned = (await aio_get_capsules_owned(call.from_user.id)).get(capsule_id, 0)
+    await call.message.edit_text(
+        _capsule_detail_text(capsule_id, owned, True),
+        parse_mode="HTML",
+        reply_markup=city_capsule_detail_keyboard(capsule_id, owned),
     )
     await call.answer(msg, show_alert=True)
 
