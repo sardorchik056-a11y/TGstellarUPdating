@@ -20,6 +20,7 @@ from database import get_user as _db_get_user, update_user as _db_update_user
 from database import get_user_by_id_or_username as _db_get_user_by_id_or_username
 from database import aio_get_user as _aio_db_get_user
 from database import aio_get_user_by_id_or_username as _aio_db_get_user_by_id_or_username
+from database import format_amount as _db_format_amount
 
 # Лог начислений/списаний кристаллов гильдии — нужен топу кристаллов
 # (leaders_crystals.py), чтобы считать "сколько заработано за сегодня/
@@ -587,6 +588,35 @@ def update_city_user(user_id: int, **fields):
     vals = list(fields.values()) + [user_id]
     with _conn() as conn:
         conn.execute(f"UPDATE city_users SET {sets} WHERE user_id=?", vals)
+        conn.commit()
+
+
+def claim_travel_slot(user_id: int, dest: str, origin_city: str, end_time: int) -> bool:
+    """Атомарно переводит игрока в статус 'traveling' ОДНИМ запросом с условием
+    status='free' в WHERE. Это единственная точка входа в поездку — вызывается
+    ДО списания денег и ДО броска таможни, поэтому повторный/параллельный клик
+    (двойной тап, ретрай апдейта от Telegram) не может пройти дальше одного раза
+    и, как следствие, не может дать два независимых броска конфискации на один
+    и тот же товар. True — слот успешно захвачен этим вызовом."""
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE city_users SET status='traveling', travel_end_time=?, "
+            "city=?, travel_from=? WHERE user_id=? AND status='free'",
+            (end_time, dest, origin_city, user_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def release_travel_slot(user_id: int, origin_city: str):
+    """Откатывает claim_travel_slot, если после захвата слота выяснилось, что
+    поездку продолжить нельзя (например, не хватило денег на дорогу)."""
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE city_users SET status='free', travel_end_time=NULL, "
+            "travel_from=NULL, city=? WHERE user_id=?",
+            (origin_city, user_id),
+        )
         conn.commit()
 
 
@@ -1313,6 +1343,14 @@ async def aio_update_city_user(user_id: int, **fields):
     return await asyncio.to_thread(lambda: update_city_user(user_id, **fields))
 
 
+async def aio_claim_travel_slot(user_id: int, dest: str, origin_city: str, end_time: int) -> bool:
+    return await asyncio.to_thread(claim_travel_slot, user_id, dest, origin_city, end_time)
+
+
+async def aio_release_travel_slot(user_id: int, origin_city: str):
+    return await asyncio.to_thread(release_travel_slot, user_id, origin_city)
+
+
 async def aio_add_crystals_to_all(amount: int) -> int:
     return await asyncio.to_thread(add_crystals_to_all, amount)
 
@@ -1442,7 +1480,9 @@ async def aio_get_active_news(limit: int = 5) -> list:
 # ──────────────────────────────────────────────────────────────────────────
 
 def _fmt(n: int) -> str:
-    return f"{n:,}".replace(",", " ")
+    """Сокращает число так же, как format_amount в database.py
+    (единая шкала и округление во всём боте): 1500->1.5K, 2.3M, 1.5B, итд."""
+    return _db_format_amount(n)
 
 
 def _crystals(n: int) -> str:
@@ -2585,10 +2625,22 @@ async def _do_travel(user_id: int, username: str, dest: str):
     if dest == u["city"]:
         return False, "📍 Вы уже находитесь в этом городе."
 
-    if not await aio_try_spend_balance(u["user_id"], TRAVEL_COST):
-        return False, f"💸 Недостаточно {CURRENCY_NAME} на дорогу. Нужно {_crystals(TRAVEL_COST)}."
-
     origin_city = u["city"]
+    end_time = int(time.time()) + TRAVEL_MINUTES * 60
+
+    # ── Атомарный "замок" на поездку ────────────────────────────────────
+    # Захватываем статус 'traveling' ОДНИМ запросом (status='free' в WHERE)
+    # ДО списания денег и ДО броска таможни. Если между чтением статуса
+    # выше и этим запросом кто-то параллельно (двойной тап по кнопке,
+    # повтор апдейта от Telegram) уже запустил поездку — claim провалится,
+    # и мы просто вежливо откажем, вместо того чтобы прокрутить кубик
+    # конфискации второй раз на тот же груз.
+    if not await aio_claim_travel_slot(user_id, dest, origin_city, end_time):
+        return False, "🚶 Вы уже в пути."
+
+    if not await aio_try_spend_balance(u["user_id"], TRAVEL_COST):
+        await aio_release_travel_slot(user_id, origin_city)  # снимаем замок, поездка не состоялась
+        return False, f"💸 Недостаточно {CURRENCY_NAME} на дорогу. Нужно {_crystals(TRAVEL_COST)}."
 
     inv = await aio_get_inventory(u["user_id"])  # заодно спишет протухшую икру
     confiscated = []
@@ -2602,15 +2654,6 @@ async def _do_travel(user_id: int, username: str, dest: str):
 
     if fine_total:
         await aio_spend_up_to(u["user_id"], fine_total)  # не уводит баланс в минус
-
-    end_time = int(time.time()) + TRAVEL_MINUTES * 60
-    await aio_update_city_user(
-        u["user_id"],
-        status="traveling",
-        travel_end_time=end_time,
-        city=dest,
-        travel_from=origin_city,
-    )
 
     cancel_min = TRAVEL_CANCEL_WINDOW // 60
     text = (
