@@ -258,10 +258,12 @@ from shop import (
     open_case, activate_booster, sell_booster,
     use_xp_item, sell_xp_item,
     use_poison, activate_enh_boost, sell_enh_item,
-    # Артефакты
-    artifact_case_detail_text, artifact_case_keyboard,
+    # Артефакты (прямая покупка, без рандома)
+    artifact_shop_list_text, artifact_shop_list_keyboard,
+    artifact_tier_text, artifact_tier_keyboard,
+    artifact_info_text, artifact_info_keyboard,
     artifact_collection_text, artifact_collection_keyboard,
-    open_artifact_case, ARTIFACT_CASE_COST_STARS, ARTIFACT_POOL_BY_KEY,
+    buy_artifact, is_artifact_owned, ARTIFACT_POOL_BY_KEY, ARTIFACT_TIERS_BY_KEY,
     # Единый инвентарь
     unified_inventory_text, get_unified_inventory,
     use_item_by_slot_id, cancel_active_by_type,
@@ -432,7 +434,7 @@ _user_locks_mutex = _asyncio.Lock()
 _pending_stars_msg: dict[int, tuple] = {}
 
 # Хранит message_id экрана кейса артефактов перед оплатой: uid -> (chat_id, message_id)
-_pending_artifact_msg: dict[int, tuple] = {}
+_pending_artifact_msg: dict[int, tuple] = {}  # uid -> (chat_id, msg_id, artifact_key)
 
 # Хранит message_id экрана статуса перед оплатой: uid -> (chat_id, message_id, tier)
 _pending_status_msg: dict[int, tuple] = {}
@@ -5608,29 +5610,57 @@ async def handle_callback(call: CallbackQuery):
                     pass
             return
 
-        # ===== КЕЙС АРТЕФАКТОВ: экран информации =====
-        if cd == "artifact_case_info":
-            await edit(artifact_case_detail_text(data, lang), artifact_case_keyboard(lang=lang))
+        # ===== МАГАЗИН АРТЕФАКТОВ: список тиров =====
+        if cd == "artifact_shop_list":
+            await edit(artifact_shop_list_text(data, lang), artifact_shop_list_keyboard(lang))
             return
 
-        # ===== КЕЙС АРТЕФАКТОВ: создать инвойс и обновить сообщение =====
-        if cd == "artifact_case_buy":
+        # ===== МАГАЗИН АРТЕФАКТОВ: артефакты одного тира =====
+        if cd.startswith("artifact_tier_"):
+            tier_key = cd.removeprefix("artifact_tier_")
+            if tier_key not in ARTIFACT_TIERS_BY_KEY:
+                await call.answer("❌ Тир не найден." if lang == "ru" else "❌ Tier not found.", show_alert=True)
+                return
+            await edit(artifact_tier_text(data, tier_key, lang), artifact_tier_keyboard(data, tier_key, lang))
+            return
+
+        # ===== МАГАЗИН АРТЕФАКТОВ: окно одного артефакта (инфо + купить) =====
+        if cd.startswith("artifact_info_"):
+            artifact_key = cd.removeprefix("artifact_info_")
+            if artifact_key not in ARTIFACT_POOL_BY_KEY:
+                await call.answer("❌ Артефакт не найден." if lang == "ru" else "❌ Artifact not found.", show_alert=True)
+                return
+            await edit(artifact_info_text(data, artifact_key, lang), artifact_info_keyboard(data, artifact_key, lang=lang))
+            return
+
+        # ===== МАГАЗИН АРТЕФАКТОВ: создать инвойс на конкретный артефакт =====
+        if cd.startswith("artifact_buy_"):
+            artifact_key = cd.removeprefix("artifact_buy_")
+            art = ARTIFACT_POOL_BY_KEY.get(artifact_key)
+            if not art:
+                await call.answer("❌ Артефакт не найден." if lang == "ru" else "❌ Artifact not found.", show_alert=True)
+                return
+            if is_artifact_owned(data, artifact_key):
+                await call.answer("⚠️ Этот артефакт у тебя уже есть." if lang == "ru" else "⚠️ You already own this artifact.", show_alert=True)
+                return
+
+            art_name = art.get("name_en", art["name"]) if lang == "en" else art["name"]
             if lang == "en":
-                _inv_title = "Artifact Case"
-                _inv_desc  = "Open a case and get a permanent artifact bonus forever!"
-                _inv_label = "Artifact Case"
+                _inv_title = art_name
+                _inv_desc  = f"Permanent {art['multiplier']}x bonus, forever, no randomness."
+                _inv_label = art_name
             else:
-                _inv_title = "Кейс Артефактов"
-                _inv_desc  = "Открой кейс и получи постоянный артефакт с бонусом навсегда!"
-                _inv_label = "Кейс Артефактов"
+                _inv_title = art_name
+                _inv_desc  = f"Постоянный бонус {art['multiplier']}×, навсегда, без рандома."
+                _inv_label = art_name
             try:
                 invoice_url = await bot.create_invoice_link(
                     title=_inv_title,
                     description=_inv_desc,
-                    payload="artifact_case",
+                    payload=f"artifact_buy:{artifact_key}",
                     provider_token="",
                     currency="XTR",
-                    prices=[LabeledPrice(label=_inv_label, amount=ARTIFACT_CASE_COST_STARS)],
+                    prices=[LabeledPrice(label=_inv_label, amount=art["price_stars"])],
                 )
             except Exception as e:
                 print(f"Artifact invoice error: {e}")
@@ -5639,11 +5669,12 @@ async def handle_callback(call: CallbackQuery):
             _pending_artifact_msg[call.from_user.id] = (
                 call.message.chat.id,
                 call.message.message_id,
+                artifact_key,
             )
-            await edit(artifact_case_detail_text(data, lang), artifact_case_keyboard(invoice_url=invoice_url, lang=lang))
+            await edit(artifact_info_text(data, artifact_key, lang), artifact_info_keyboard(data, artifact_key, invoice_url=invoice_url, lang=lang))
             return
 
-        # ===== КЕЙС АРТЕФАКТОВ: коллекция =====
+        # ===== МАГАЗИН АРТЕФАКТОВ: коллекция =====
         if cd == "artifact_collection":
             await edit(artifact_collection_text(data, lang), artifact_collection_keyboard(lang))
             return
@@ -6468,17 +6499,18 @@ async def handle_pre_checkout(query: PreCheckoutQuery):
 async def handle_successful_payment(message: Message):
     payload = message.successful_payment.invoice_payload
 
-    # ===== ОПЛАТА: Кейс Артефактов =====
-    if payload == "artifact_case":
+    # ===== ОПЛАТА: Артефакт (прямая покупка, без рандома) =====
+    if payload.startswith("artifact_buy:"):
+        artifact_key = payload.split(":", 1)[1]
         try:
-            from shop import STAR
+            from shop import STAR, ARTIFACT_POOL_BY_KEY, buy_artifact, artifact_info_text, artifact_info_keyboard, _get_effect_label, _artifact_icon
             from database import aio_get_user, aio_save_user
         except Exception as _imp_e:
             # Импорт упал ДО того, как charge_id помечен обработанным — если
             # промолчать здесь, деньги списаны, а пользователь не получит
             # вообще ничего (см. историю бага "молчит после оплаты").
             import traceback as _tb
-            print(f"[artifact_case] КРИТИЧНО: ошибка импорта в обработчике оплаты: {_imp_e!r}")
+            print(f"[artifact_buy] КРИТИЧНО: ошибка импорта в обработчике оплаты: {_imp_e!r}")
             _tb.print_exc()
             try:
                 await bot.send_message(
@@ -6490,9 +6522,14 @@ async def handle_successful_payment(message: Message):
                 pass
             return
 
+        art = ARTIFACT_POOL_BY_KEY.get(artifact_key)
+        if not art:
+            await bot.send_message(message.chat.id, "❌ Ошибка: артефакт не найден. Напиши /support.")
+            return
+
         # Проверяем сумму оплаты — защита от подмены инвойса
         paid_amount = message.successful_payment.total_amount
-        if paid_amount != ARTIFACT_CASE_COST_STARS:
+        if paid_amount != art["price_stars"]:
             await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
             return
 
@@ -6504,43 +6541,24 @@ async def handle_successful_payment(message: Message):
 
         uid = message.from_user.id
 
-        # ВАЖНО: раньше здесь бралась _get_user_lock(uid) и всё оборачивалось
-        # в `async with lock:`. /giveart (админ-команда) работает по этому же
-        # payload'у ("выдать артефакт") БЕЗ какого-либо лока и с ним таких
-        # проблем никогда не было. Если лок для этого uid где-то в другом
-        # хендлере не освобождается (баг/раннее return без release),
-        # наш код мог зависать на `async with lock` НАВСЕГДА — без
-        # исключения, без лога, без сообщения игроку. Именно так выглядит
-        # "деньги списаны, а бот молчит". Убираю лок, выдаём напрямую —
-        # ровно как /giveart.
-        # ВСЁ ниже — в одном try/except, включая получение/создание юзера.
-        # Деньги уже списаны Telegram'ом И charge_id уже помечен как
-        # processed (см. выше), поэтому что бы ни случилось (ошибка в
-        # aio_get_user/aio_get_or_create_user, в open_artifact_case, в
-        # check_achievements, в верстке текста) — пользователь должен
-        # получить хотя бы fallback-сообщение, а не тишину. Раньше
-        # aio_get_user/aio_get_or_create_user были ВНЕ try/except: если
-        # там падало исключение, оно уходило в глобальный @dp.errors(),
-        # который просто логирует и глушит апдейт — юзер не получал
-        # вообще ничего, а повторная доставка апдейта от Telegram сразу
-        # же выходила по "charge уже processed" — тоже молча. Баг был
-        # "навсегда": деньги списаны, ни артефакта, ни компенсации.
+        # Тот же принцип, что и раньше в artifact_case: без лока, всё в одном
+        # try/except. Деньги уже списаны И charge_id уже помечен processed,
+        # поэтому что бы ни случилось — пользователь должен получить хотя бы
+        # fallback-сообщение, а не тишину.
         _lang = "ru"
-        chosen = None
+        ok  = False
         msg = ""
         try:
             data = await aio_get_user(uid)
             if not data:
-                # Пользователь не найден в БД — создаём и пробуем снова
                 data = await aio_get_or_create_user(message.from_user)
             data["id"] = uid  # подстраховка: ключ "id" должен совпадать с uid
 
             _lang = data.get("lang", "ru")
 
-            ok, msg, chosen = open_artifact_case(data, _lang)
+            ok, msg = buy_artifact(data, artifact_key, _lang)
 
-            # Сохраняем СРАЗУ, используя uid напрямую (не data["id"],
-            # чтобы не зависеть от возможного отсутствия/рассинхрона ключа).
+            # Сохраняем СРАЗУ, используя uid напрямую.
             await aio_save_user(uid, data)
 
             try:
@@ -6550,11 +6568,11 @@ async def handle_successful_payment(message: Message):
                     await _notify_ach(uid, data, _ach_newly)
             except Exception as _ach_e:
                 import traceback as _tb
-                print(f"[artifact_case] Ошибка check_achievements: {_ach_e!r}")
+                print(f"[artifact_buy] Ошибка check_achievements: {_ach_e!r}")
                 _tb.print_exc()
         except Exception as _grant_e:
             import traceback as _tb
-            print(f"[artifact_case] КРИТИЧНО: ошибка выдачи награды: {_grant_e!r}")
+            print(f"[artifact_buy] КРИТИЧНО: ошибка выдачи награды: {_grant_e!r}")
             _tb.print_exc()
             fallback = (
                 "⚠️ Оплата прошла, но при выдаче награды произошла ошибка. "
@@ -6572,86 +6590,73 @@ async def handle_successful_payment(message: Message):
         # 1) Обновляем старое сообщение — убираем ссылку-инвойс
         pending = _pending_artifact_msg.pop(uid, None)
         if pending:
-            old_chat_id, old_msg_id = pending
+            old_chat_id, old_msg_id, _pending_key = pending
             try:
                 await bot.edit_message_text(
-                    artifact_case_detail_text(data, _lang),
+                    artifact_info_text(data, _pending_key, _lang),
                     chat_id=old_chat_id,
                     message_id=old_msg_id,
-                    reply_markup=artifact_case_keyboard(lang=_lang),
+                    reply_markup=artifact_info_keyboard(data, _pending_key, lang=_lang),
                     parse_mode="HTML"
                 )
             except Exception:
                 pass
 
-        # 2) Формируем текст результата
-        # ВАЖНО: chosen может быть None — это 25%-я ветка, когда вместо
-        # артефакта выдаются монеты (см. open_artifact_case в shop.py).
-        # Раньше здесь считалось, что chosen всегда есть, из-за чего
-        # обращение к chosen["effect"] падало с TypeError и пользователь
-        # не получал вообще никакого ответа от бота (хотя деньги/монеты
-        # уже были начислены и сохранены выше).
+        # 2) Формируем текст результата.
+        # ok=False значит артефакт уже был в коллекции на момент выдачи
+        # (гонка: игрок успел получить его другим путём, пока висел инвойс) —
+        # деньги списаны, но повторно не выдаём. В этом редком случае нужен
+        # ручной возврат/начисление через /support.
         try:
-            if chosen is None:
-                # Монеты вместо артефакта — msg уже содержит полный текст результата
-                if _lang == "en":
-                    success_text = (
-                        f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
-                        f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                        f'{msg}'
-                    )
-                else:
-                    success_text = (
-                        f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
-                        f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                        f'{msg}'
-                    )
-            else:
-                from shop import _get_effect_label as _eff_lbl
-                effect_label = _eff_lbl(chosen["effect"], _lang)
-                art_name = chosen.get("name_en", chosen["name"]) if _lang == "en" else chosen["name"]
-                art_emoji_id = chosen.get("emoji_id", "")
-                art_emoji = f'<tg-emoji emoji-id="{art_emoji_id}">♦️</tg-emoji> ' if art_emoji_id else ""
+            if not ok:
+                warn = (
+                    "⚠️ Оплата прошла, но этот артефакт у тебя уже был на момент "
+                    "начисления — повторно не выдан. Напиши /support для возврата."
+                    if _lang != "en" else
+                    "⚠️ Payment went through, but you already owned this artifact "
+                    "by the time it was granted — not issued twice. Contact /support for a refund."
+                )
+                await bot.send_message(message.chat.id, warn, parse_mode="HTML")
+                return
 
-                # msg уже содержит правильный текст (новый артефакт или дубликат+компенсация)
-                if _lang == "en":
-                    success_text = (
-                        f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
-                        f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                        f'<blockquote>'
-                        f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>Artifact Case opened!</b>\n'
-                        f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>Artifact: {art_emoji}{art_name}</b>\n'
-                        f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Bonus: {chosen["multiplier"]}× {effect_label} forever</b>\n'
-                        f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Spent: {ARTIFACT_CASE_COST_STARS} {STAR}</b>'
-                        f'</blockquote>\n\n'
-                        f'{msg}'
-                    )
-                else:
-                    success_text = (
-                        f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
-                        f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                        f'<blockquote>'
-                        f'<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b>Кейс Артефактов открыт!</b>\n'
-                        f'<tg-emoji emoji-id="5397782960512444700">🎟</tg-emoji> <b>Артефакт: {art_emoji}{art_name}</b>\n'
-                        f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Бонус: {chosen["multiplier"]}× {effect_label} навсегда</b>\n'
-                        f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Потрачено: {ARTIFACT_CASE_COST_STARS} {STAR}</b>'
-                        f'</blockquote>\n\n'
-                        f'{msg}'
-                    )
+            effect_label = _get_effect_label(art["effect"], _lang)
+            art_name     = art.get("name_en", art["name"]) if _lang == "en" else art["name"]
+            art_icon     = _artifact_icon(art)
+
+            if _lang == "en":
+                success_text = (
+                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'{art_icon} <b>Artifact purchased: {art_name}</b>\n'
+                    f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Bonus: {art["multiplier"]}× {effect_label} forever</b>\n'
+                    f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Spent: {art["price_stars"]} {STAR}</b>'
+                    f'</blockquote>\n\n'
+                    f'{msg}'
+                )
+            else:
+                success_text = (
+                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
+                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                    f'<blockquote>'
+                    f'{art_icon} <b>Артефакт куплен: {art_name}</b>\n'
+                    f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Бонус: {art["multiplier"]}× {effect_label} навсегда</b>\n'
+                    f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Потрачено: {art["price_stars"]} {STAR}</b>'
+                    f'</blockquote>\n\n'
+                    f'{msg}'
+                )
             await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
         except Exception as _e:
-            # Деньги/артефакт уже сохранены в БД строкой выше (save_user),
-            # поэтому даже если верстка сообщения упала — игрок не теряет
-            # покупку. Но бот больше не должен "молчать": шлём резервное
-            # уведомление и логируем причину для разбора.
-            print(f"[artifact_case] Ошибка формирования success_text: {_e!r}")
+            # Артефакт уже сохранён в БД строкой выше (save_user), поэтому
+            # даже если верстка сообщения упала — игрок не теряет покупку.
+            print(f"[artifact_buy] Ошибка формирования success_text: {_e!r}")
             fallback = (
-                "✅ Оплата прошла успешно, кейс открыт! Награда уже зачислена "
-                "(проверь баланс/коллекцию артефактов). Не удалось красиво "
+                "✅ Оплата прошла успешно, артефакт куплен! Награда уже зачислена "
+                "(проверь коллекцию артефактов). Не удалось красиво "
                 "оформить сообщение — но покупка не потеряна."
                 if _lang != "en" else
-                "✅ Payment successful, case opened! Reward has been credited "
-                "(check your balance/artifact collection). Couldn't render the "
+                "✅ Payment successful, artifact purchased! Reward has been credited "
+                "(check your artifact collection). Couldn't render the "
                 "fancy message, but your purchase is not lost."
             )
             try:
