@@ -1629,7 +1629,7 @@ def artifact_shop_list_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for t in ARTIFACT_TIERS:
         tname = t["name_en"] if lang == "en" else t["name"]
-        label = f'{t["icon"]} {tname}'
+        label = tname
         builder.row(InlineKeyboardButton(
             text=label,
             callback_data=f'artifact_tier_{t["tier"]}',
@@ -1660,7 +1660,7 @@ def artifact_tier_text(data: dict, tier_key: str, lang: str = "ru") -> str:
         aname = a.get("name_en", a["name"]) if lang == "en" else a["name"]
         eff   = _get_effect_label(a["effect"], lang)
         status = _pe("ok", "✅") if a["key"] in owned_keys else _pe("art_locked", "🔒")
-        coin_part = f' / {_fmt_num(a["price_coins"])} 💰' if a.get("price_coins") else ""
+        coin_part = f' / {_fmt_num(a["price_coins"])} {_pe("coin", "💰")}' if a.get("price_coins") else ""
         rows.append(
             f'{status} {_artifact_icon(a)} <b><i>{aname}</i></b> — '
             f'<b><i>{a["multiplier"]}× {eff}</i></b> · <b><i>{a["price_stars"]} {STAR}{coin_part}</i></b>\n'
