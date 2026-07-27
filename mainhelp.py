@@ -6640,23 +6640,23 @@ async def handle_successful_payment(message: Message):
 
             if _lang == "en":
                 success_text = (
-                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
+                    f'<tg-emoji emoji-id="5798819377088307477">⭐</tg-emoji> <b>Payment successful!</b>\n'
                     f'━━━━━━━━━━━━━━━━━━━━\n\n'
                     f'<blockquote>'
                     f'{art_icon} <b>Artifact purchased: {art_name}</b>\n'
                     f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Bonus: {art["multiplier"]}× {effect_label} forever</b>\n'
-                    f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Spent: {art["price_stars"]} {STAR}</b>'
+                    f'<tg-emoji emoji-id="5798819377088307477">🎟</tg-emoji> <b>Spent: {art["price_stars"]} {STAR}</b>'
                     f'</blockquote>\n\n'
                     f'{msg}'
                 )
             else:
                 success_text = (
-                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
+                    f'<tg-emoji emoji-id="5798819377088307477">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
                     f'━━━━━━━━━━━━━━━━━━━━\n\n'
                     f'<blockquote>'
                     f'{art_icon} <b>Артефакт куплен: {art_name}</b>\n'
                     f'<tg-emoji emoji-id="5375338737028841420">🎟</tg-emoji> <b>Бонус: {art["multiplier"]}× {effect_label} навсегда</b>\n'
-                    f'<tg-emoji emoji-id="5267500801240092311">🎟</tg-emoji> <b>Потрачено: {art["price_stars"]} {STAR}</b>'
+                    f'<tg-emoji emoji-id="5798819377088307477">🎟</tg-emoji> <b>Потрачено: {art["price_stars"]} {STAR}</b>'
                     f'</blockquote>\n\n'
                     f'{msg}'
                 )
