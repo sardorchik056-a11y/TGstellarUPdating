@@ -214,28 +214,71 @@ POISON_BY_KEY   = {x["key"]: x for x in _POISON_POOL}
 MAX_ENH_INVENTORY = 10
 
 # ============================================================
-#  ПУЛ КЕЙСА АРТЕФАКТОВ
+#  МАГАЗИН АРТЕФАКТОВ (прямая покупка за Telegram Stars)
+#  Раньше здесь был гача-кейс артефактов (случайный дроп за Stars).
+#  Теперь каждый артефакт — самостоятельный товар с фиксированной
+#  ценой в Stars: игрок открывает отдельное окно артефакта с описанием
+#  и жмёт «Купить», без рандома. Ключи "key" у первых 10 артефактов
+#  оставлены без изменений — это сохраняет совместимость с уже
+#  выданными артефактами в data["artifacts"] у существующих игроков.
 # ============================================================
 
-_ARTIFACT_POOL = [
-    # ── 50% шанс — множитель 1.3× ──────────────────────────
-    {"key": "art_kulon_iskazheniya",   "type": "artifact", "name": "Кулон Искажения",      "name_en": "Distortion Pendant",    "emoji_id": "5938541999031325561", "effect": "mine",   "multiplier": 1.25, "chance": 50},
-    {"key": "art_oracle",              "type": "artifact", "name": "Оракул",               "name_en": "Oracle",                "emoji_id": "5165898384870999138", "effect": "damage", "multiplier": 1.25, "chance": 50},
-    {"key": "art_amulet_hranitelya",   "type": "artifact", "name": "Амулет Хранителя",     "name_en": "Guardian Amulet",       "emoji_id": "5938082716703528871", "effect": "pets",   "multiplier": 1.25, "chance": 50},
-    # ── 25% шанс — множитель 1.5× ──────────────────────────
-    {"key": "art_lunnaya_relikviya",   "type": "artifact", "name": "Лунная Реликвия",      "name_en": "Lunar Relic",           "emoji_id": "5226662903569989373", "effect": "mine",   "multiplier": 1.4, "chance": 25},
-    {"key": "art_sfera_zhadnosti",     "type": "artifact", "name": "Сфера Жадности",       "name_en": "Sphere of Greed",       "emoji_id": "5080262187302257610", "effect": "damage", "multiplier": 1.4, "chance": 25},
-    {"key": "art_amulet_zhizni",       "type": "artifact", "name": "Амулет Жизни и Смерти","name_en": "Amulet of Life & Death","emoji_id": "6228938636428052300", "effect": "pets",   "multiplier": 1.4, "chance": 25},
-    # ── 15% шанс — множитель 1.8× ──────────────────────────
-    {"key": "art_sfera_illyuziy",      "type": "artifact", "name": "Сфера Иллюзий",        "name_en": "Sphere of Illusions",   "emoji_id": "5343583990815156847", "effect": "mine",   "multiplier": 1.65, "chance": 15},
-    {"key": "art_serdtse_morey",       "type": "artifact", "name": "Сердце Морей",          "name_en": "Heart of the Seas",     "emoji_id": "6201647288947839133", "effect": "damage", "multiplier": 1.65, "chance": 15},
-    {"key": "art_kristall_egzorcizma", "type": "artifact", "name": "Кристалл Экзорцизма",  "name_en": "Exorcism Crystal",      "emoji_id": "5451889386549425709", "effect": "pets",   "multiplier": 1.65, "chance": 15},
-    # ── 1% шанс — комбо-артефакт ────────────────────────────
-    {"key": "art_vsevlastniy",         "type": "artifact", "name": "Кольцо Перерождений",  "name_en": "Ring of Rebirths",      "emoji_id": "5872990619021875271", "effect": "all",    "multiplier": 1.35, "chance": 1},
+ARTIFACT_SHOP_POOL = [
+    # ── Tier 1: 1.25× — 169⭐ ────────────────────────────────
+    {"key": "art_kulon_iskazheniya",        "type": "artifact", "name": "Кулон Искажения",             "name_en": "Distortion Pendant",       "emoji_id": "5938541999031325561", "effect": "mine",   "multiplier": 1.25, "price_stars": 169, "tier": "t125"},
+    {"key": "art_oracle",                   "type": "artifact", "name": "Оракул",                      "name_en": "Oracle",                   "emoji_id": "5165898384870999138", "effect": "damage", "multiplier": 1.25, "price_stars": 169, "tier": "t125"},
+    {"key": "art_amulet_hranitelya",        "type": "artifact", "name": "Амулет Хранителя",            "name_en": "Guardian Amulet",           "emoji_id": "5938082716703528871", "effect": "pets",   "multiplier": 1.25, "price_stars": 169, "tier": "t125"},
+    {"key": "art_oskolok_zvezdnoy_pyli",    "type": "artifact", "name": "Осколок Звёздной Пыли",       "name_en": "Shard of Stardust",         "emoji_id": "",                     "effect": "mine",   "multiplier": 1.25, "price_stars": 169, "tier": "t125"},
+    {"key": "art_klinok_nemezidy",          "type": "artifact", "name": "Клинок Немезиды",             "name_en": "Blade of Nemesis",          "emoji_id": "",                     "effect": "damage", "multiplier": 1.25, "price_stars": 169, "tier": "t125"},
+    {"key": "art_osheynik_vernosti",        "type": "artifact", "name": "Ошейник Верности",            "name_en": "Collar of Loyalty",         "emoji_id": "",                     "effect": "pets",   "multiplier": 1.25, "price_stars": 169, "tier": "t125"},
+
+    # ── Tier 2: 1.4× — 249⭐ ─────────────────────────────────
+    {"key": "art_lunnaya_relikviya",        "type": "artifact", "name": "Лунная Реликвия",             "name_en": "Lunar Relic",               "emoji_id": "5226662903569989373", "effect": "mine",   "multiplier": 1.4, "price_stars": 249, "tier": "t140"},
+    {"key": "art_sfera_zhadnosti",          "type": "artifact", "name": "Сфера Жадности",              "name_en": "Sphere of Greed",           "emoji_id": "5080262187302257610", "effect": "damage", "multiplier": 1.4, "price_stars": 249, "tier": "t140"},
+    {"key": "art_amulet_zhizni",            "type": "artifact", "name": "Амулет Жизни и Смерти",       "name_en": "Amulet of Life & Death",    "emoji_id": "6228938636428052300", "effect": "pets",   "multiplier": 1.4, "price_stars": 249, "tier": "t140"},
+    {"key": "art_zhezl_glubin",             "type": "artifact", "name": "Жезл Глубин",                 "name_en": "Rod of the Depths",         "emoji_id": "",                     "effect": "mine",   "multiplier": 1.4, "price_stars": 249, "tier": "t140"},
+    {"key": "art_pechat_vozmezdiya",        "type": "artifact", "name": "Печать Возмездия",            "name_en": "Seal of Retribution",       "emoji_id": "",                     "effect": "damage", "multiplier": 1.4, "price_stars": 249, "tier": "t140"},
+    {"key": "art_svistok_povelitelya_zverey","type": "artifact", "name": "Свисток Повелителя Зверей",  "name_en": "Beastmaster's Whistle",     "emoji_id": "",                     "effect": "pets",   "multiplier": 1.4, "price_stars": 249, "tier": "t140"},
+
+    # ── Tier 3: 1.65× — 359⭐ ────────────────────────────────
+    {"key": "art_sfera_illyuziy",           "type": "artifact", "name": "Сфера Иллюзий",               "name_en": "Sphere of Illusions",       "emoji_id": "5343583990815156847", "effect": "mine",   "multiplier": 1.65, "price_stars": 359, "tier": "t165"},
+    {"key": "art_serdtse_morey",            "type": "artifact", "name": "Сердце Морей",                "name_en": "Heart of the Seas",         "emoji_id": "6201647288947839133", "effect": "damage", "multiplier": 1.65, "price_stars": 359, "tier": "t165"},
+    {"key": "art_kristall_egzorcizma",      "type": "artifact", "name": "Кристалл Экзорцизма",         "name_en": "Exorcism Crystal",          "emoji_id": "5451889386549425709", "effect": "pets",   "multiplier": 1.65, "price_stars": 359, "tier": "t165"},
+    {"key": "art_korona_podzemnogo_korolya","type": "artifact", "name": "Корона Подземного Короля",    "name_en": "Crown of the Underground King", "emoji_id": "",                  "effect": "mine",   "multiplier": 1.65, "price_stars": 359, "tier": "t165"},
+    {"key": "art_sekira_titana",            "type": "artifact", "name": "Секира Титана",               "name_en": "Titan's Axe",               "emoji_id": "",                     "effect": "damage", "multiplier": 1.65, "price_stars": 359, "tier": "t165"},
+    {"key": "art_totem_drevnego_lesa",      "type": "artifact", "name": "Тотем Древнего Леса",         "name_en": "Totem of the Ancient Forest","emoji_id": "",                    "effect": "pets",   "multiplier": 1.65, "price_stars": 359, "tier": "t165"},
+
+    # ── Tier 4: 1.8× — 489⭐ (новый) ─────────────────────────
+    {"key": "art_serdtse_gory",             "type": "artifact", "name": "Сердце Горы",                 "name_en": "Heart of the Mountain",     "emoji_id": "",                     "effect": "mine",   "multiplier": 1.8, "price_stars": 489, "tier": "t180"},
+    {"key": "art_kogot_drakona",            "type": "artifact", "name": "Коготь Дракона",              "name_en": "Dragon's Claw",             "emoji_id": "",                     "effect": "damage", "multiplier": 1.8, "price_stars": 489, "tier": "t180"},
+    {"key": "art_svitok_prirucheniya",      "type": "artifact", "name": "Свиток Приручения",           "name_en": "Scroll of Taming",          "emoji_id": "",                     "effect": "pets",   "multiplier": 1.8, "price_stars": 489, "tier": "t180"},
+
+    # ── Легендарные — множат ВСЕ три вида добычи сразу ──────
+    {"key": "art_vsevlastniy",              "type": "artifact", "name": "Кольцо Перерождений",         "name_en": "Ring of Rebirths",          "emoji_id": "5872990619021875271", "effect": "all", "multiplier": 1.35, "price_stars": 699,  "tier": "tall"},
+    {"key": "art_korona_vechnosti",         "type": "artifact", "name": "Корона Вечности",             "name_en": "Crown of Eternity",         "emoji_id": "",                     "effect": "all", "multiplier": 1.6,  "price_stars": 999,  "tier": "tall"},
+    {"key": "art_serdtse_vselennoy",        "type": "artifact", "name": "Сердце Вселенной",            "name_en": "Heart of the Universe",     "emoji_id": "",                     "effect": "all", "multiplier": 1.95, "price_stars": 1399, "tier": "tall"},
+    {"key": "art_tron_bogov",               "type": "artifact", "name": "Трон Богов",                  "name_en": "Throne of the Gods",        "emoji_id": "",                     "effect": "all", "multiplier": 2.25, "price_stars": 1899, "tier": "tall"},
 ]
 
-ARTIFACT_POOL_BY_KEY = {a["key"]: a for a in _ARTIFACT_POOL}
-ARTIFACT_CASE_COST_STARS = 299
+# Обратная совместимость: часть кода (и, возможно, внешние модули)
+# может ссылаться на старое имя _ARTIFACT_POOL.
+_ARTIFACT_POOL = ARTIFACT_SHOP_POOL
+ARTIFACT_POOL_BY_KEY = {a["key"]: a for a in ARTIFACT_SHOP_POOL}
+MAX_ARTIFACTS = len(ARTIFACT_SHOP_POOL)
+
+ARTIFACT_TIERS = [
+    {"tier": "t125", "multiplier": 1.25, "price_stars": 169,  "name": "Обычные",     "name_en": "Common",    "icon": "🔹"},
+    {"tier": "t140", "multiplier": 1.4,  "price_stars": 249,  "name": "Редкие",      "name_en": "Rare",      "icon": "🔷"},
+    {"tier": "t165", "multiplier": 1.65, "price_stars": 359,  "name": "Эпические",   "name_en": "Epic",      "icon": "💠"},
+    {"tier": "t180", "multiplier": 1.8,  "price_stars": 489,  "name": "Мифические",  "name_en": "Mythic",    "icon": "🔶"},
+    {"tier": "tall", "multiplier": None, "price_stars": None, "name": "Легендарные (× ко всей добыче)", "name_en": "Legendary (× to all income)", "icon": "👑"},
+]
+ARTIFACT_TIERS_BY_KEY = {t["tier"]: t for t in ARTIFACT_TIERS}
+
+
+def artifacts_in_tier(tier_key: str) -> list:
+    return [a for a in ARTIFACT_SHOP_POOL if a["tier"] == tier_key]
+
 
 _ARTIFACT_EFFECT_LABELS = {
     "mine":   "к добыче руды",
@@ -251,71 +294,63 @@ _ARTIFACT_EFFECT_LABELS_EN = {
     "all":    "to all three income types",
 }
 
+_ARTIFACT_EFFECT_ICONS = {
+    "mine":   "⛏️",
+    "damage": "⚔️",
+    "pets":   "🐾",
+    "all":    "✨",
+}
+
 def _get_effect_label(effect: str, lang: str = "ru") -> str:
     return (_ARTIFACT_EFFECT_LABELS_EN if lang == "en" else _ARTIFACT_EFFECT_LABELS).get(effect, "")
 
+def _artifact_icon(a: dict) -> str:
+    eid = a.get("emoji_id", "")
+    if eid:
+        return f'<tg-emoji emoji-id="{eid}">💎</tg-emoji>'
+    return _ARTIFACT_EFFECT_ICONS.get(a.get("effect"), "💎")
+
 def _artifact_desc(a: dict, lang: str = "ru") -> str:
     effect_label = _get_effect_label(a["effect"], lang)
-    eid  = a.get("emoji_id", "")
-    emoji = f'<tg-emoji emoji-id="{eid}">♦️</tg-emoji> ' if eid else ""
     name = a.get("name_en", a["name"]) if lang == "en" else a["name"]
-    return f'{emoji}<b><i>{name}</i></b> — {a["multiplier"]}× {effect_label}'
+    return f'{_artifact_icon(a)} <b><i>{name}</i></b> — {a["multiplier"]}× {effect_label}'
 
 
-_ARTIFACT_CASE_COIN_REWARD = 50_000_000  # монеты за 25%-шанс вместо артефакта
+def is_artifact_owned(data: dict, artifact_key: str) -> bool:
+    return any(entry["key"] == artifact_key for entry in data.get("artifacts", []))
 
-def open_artifact_case(data: dict, lang: str = "ru") -> tuple:
-    """Открыть кейс артефактов. Оплата Stars уже прошла — выдаём артефакт.
-    25% шанс: выдаём 50М монет вместо артефакта.
-    75% шанс: выдаём артефакт из пула.
-    ВСЕГДА возвращает (True, msg, chosen) — сохранение на стороне вызывающего."""
 
-    # Счётчик инкрементируется всегда — деньги потрачены в любом случае
-    data["artifact_cases_opened"] = data.get("artifact_cases_opened", 0) + 1
-    _mark_case_opened(data)
+def buy_artifact(data: dict, artifact_key: str, lang: str = "ru") -> tuple:
+    """
+    Выдаёт артефакт покупателю. Вызывается ПОСЛЕ успешной оплаты
+    Telegram Stars (сама оплата/инвойс обрабатываются на стороне бота,
+    эта функция только добавляет артефакт в коллекцию — без рандома).
+    Возвращает (ok, сообщение).
+    """
+    art = ARTIFACT_POOL_BY_KEY.get(artifact_key)
+    if not art:
+        err = "Неизвестный артефакт." if lang == "ru" else "Unknown artifact."
+        return False, f"❌ {err}"
 
-    # ── 25% шанс: монеты вместо артефакта ──────────────────────────────
-    if random.random() < 0.25:
-        coins = _ARTIFACT_CASE_COIN_REWARD
-        data["balance"] = data.get("balance", 0) + coins
-        if lang == "en":
-            msg = (
-                f"<blockquote>{_pe('stats', '💎')} <b><i>Artifact Case opened!</i></b>\n"
-                f"{_pe('coin', '💰')} <b><i>Lucky coins drop: +{_fmt_num(coins)} {COIN}</i></b></blockquote>"
-            )
-        else:
-            msg = (
-                f"<blockquote>{_pe('stats', '💎')} <b><i>Кейс Артефактов открыт!</i></b>\n"
-                f"{_pe('coin', '💰')} <b><i>Монеты вместо артефакта: +{_fmt_num(coins)} {COIN}</i></b></blockquote>"
-            )
-        return True, msg, None
-
-    # ── 75% шанс: артефакт из пула ─────────────────────────────────────
-    pool    = _ARTIFACT_POOL
-    weights = [a["chance"] for a in pool]
-    chosen  = random.choices(pool, weights=weights, k=1)[0]
+    if is_artifact_owned(data, artifact_key):
+        err = (
+            "Этот артефакт у тебя уже есть — покупать второй раз не нужно."
+            if lang == "ru"
+            else "You already own this artifact — no need to buy it again."
+        )
+        return False, f"⚠️ {err}"
 
     artifacts = data.setdefault("artifacts", [])
-    already_have = any(entry["key"] == chosen["key"] for entry in artifacts)
-    if not already_have:
-        artifacts.append({"key": chosen["key"]})
-        added_msg = f"{_pe('ok', '✅')} <b><i>{_L(lang, 'Артефакт добавлен в коллекцию!', 'Artifact added to collection!')}</i></b>"
-    else:
-        # Дубликат — выдаём монеты по множителю артефакта
-        _dup_rewards = {1.25: 5_000_000, 1.4: 8_000_000, 1.65: 15_000_000, 1.35: 50_000_000}
-        _dup_coins = _dup_rewards.get(chosen["multiplier"], 5_000_000)
-        data["balance"] = data.get("balance", 0) + _dup_coins
-        added_msg = (
-            f"{_pe('warn', '⚠️')} <b><i>{_L(lang, 'Этот артефакт у тебя уже есть!', 'You already have this artifact!')}</i></b>\n"
-            f"{_pe('coin', '💰')} <b><i>{_L(lang, 'Компенсация', 'Compensation')}: +{_fmt_num(_dup_coins)} {COIN}</i></b>"
-        )
+    artifacts.append({"key": artifact_key})
+    data["artifacts_bought"] = data.get("artifacts_bought", 0) + 1
 
+    name = art.get("name_en", art["name"]) if lang == "en" else art["name"]
     msg = (
-        f"<blockquote>{_pe('stats', '💎')} <b><i>{_L(lang, 'Кейс Артефактов открыт!', 'Artifact Case opened!')}</i></b>\n"
-        f"{_pe('arrow', '➡️')} <b><i>{_L(lang, 'Выпало', 'Dropped')}: {_artifact_desc(chosen, lang)}</i></b></blockquote>\n"
-        f"\n<blockquote>{added_msg}</blockquote>"
+        f"<blockquote>{_pe('ok', '✅')} <b><i>{_L(lang, 'Артефакт куплен!', 'Artifact purchased!')}</i></b>\n"
+        f"{_artifact_desc(art, lang)}</blockquote>\n"
+        f"\n<blockquote>{_pe('stats', '💎')} <b><i>{_L(lang, 'Коллекция', 'Collection')}: {len(artifacts)}/{MAX_ARTIFACTS}</i></b></blockquote>"
     )
-    return True, msg, chosen
+    return True, msg
 
 
 def get_artifact_mine_multiplier(data: dict) -> float:
@@ -1356,8 +1391,8 @@ def cases_shop_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         cname = names[1] if lang == "en" else names[0]
         builder.row(_btn(_E[e_key], f'{cname} {"case" if lang == "en" else "кейс"}', f'case_info_{c["key"]}'))
     builder.row(InlineKeyboardButton(
-        text=_L(lang, "Кейс Артефактов", "Artifact Case"),
-        callback_data="artifact_case_info",
+        text=_L(lang, "Магазин Артефактов", "Artifact Shop"),
+        callback_data="artifact_shop_list",
         icon_custom_emoji_id="5229011542011299168"
     ))
     builder.row(_back_btn("back_to_menu", _L(lang, "Назад в меню", "Back to menu")))
@@ -1470,66 +1505,160 @@ def case_detail_keyboard(case_key: str, can_buy: bool, lang: str = "ru") -> Inli
 
 
 # ============================================================
-#  UI — КЕЙС АРТЕФАКТОВ
+#  UI — МАГАЗИН АРТЕФАКТОВ (прямая покупка, без рандома)
+#  Навигация: список тиров → артефакты тира → окно артефакта (купить)
 # ============================================================
 
-def artifact_case_detail_text(data: dict, lang: str = "ru") -> str:
-    opened = data.get("artifact_cases_opened", 0)
-    owned  = data.get("artifacts", [])
+_E_MINE  = "5201914481671682382"
+_E_DMG   = "5373173798633752502"
+_E_PETS  = "5208535779348864977"
+_E_BONUS = "5438496463044752972"
 
-    _E_MINE   = "5201914481671682382"
-    _E_DMG    = "5373173798633752502"
-    _E_PETS   = "5208535779348864977"
-    _E_BONUS  = "5438496463044752972"
 
-    def _ae(a):
-        eid = a.get("emoji_id", "")
-        return f'<tg-emoji emoji-id="{eid}">💎</tg-emoji>' if eid else "💎"
+def artifact_shop_list_text(data: dict, lang: str = "ru") -> str:
+    owned = data.get("artifacts", [])
+    owned_keys = {e["key"] for e in owned}
 
-    def _row(a, pct):
-        eff_label = _get_effect_label(a["effect"], lang)
-        aname = a.get("name_en", a["name"]) if lang == "en" else a["name"]
-        return (
-            f'{_ae(a)} <b><i>{aname}</i></b> — '
-            f'<b><i><i>{a["multiplier"]}× {eff_label}</i></i></b> <b><i>({pct}%)</i></b>\n'
+    lines = []
+    for t in ARTIFACT_TIERS:
+        items = artifacts_in_tier(t["tier"])
+        have  = sum(1 for a in items if a["key"] in owned_keys)
+        tname = t["name_en"] if lang == "en" else t["name"]
+        if t["tier"] == "tall":
+            price_str = "699–1899 ⭐"
+            mult_str  = _L(lang, "1.35×–2.25× ко ВСЕЙ добыче сразу", "1.35×–2.25× to ALL income at once")
+        else:
+            price_str = f'{t["price_stars"]} ⭐'
+            mult_str  = _L(lang, f'{t["multiplier"]}× к руде / урону / питомцам', f'{t["multiplier"]}× to ore / damage / pets')
+        lines.append(
+            f'{t["icon"]} <b><i>{tname}</i></b> — <b><i>{mult_str}</i></b>\n'
+            f'{_pe("balance","⭐")} <b><i>{price_str}</i></b>  |  '
+            f'{_pe("stats","💎")} <b><i>{have}/{len(items)}</i></b>\n'
         )
 
-    loot = "".join(_row(a, a["chance"]) for a in _ARTIFACT_POOL)
-
+    total_owned = len(owned)
     return (
-        f'<blockquote><tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b><i>{_L(lang, "Кейс Артефактов", "Artifact Case")}</i></b>\n'
-        f'<tg-emoji emoji-id="5262643974912355126">⭐</tg-emoji> <b><i>{_L(lang, "Цена", "Price")}: {ARTIFACT_CASE_COST_STARS} Telegram Stars</i></b></blockquote>\n'
-        f'\n<blockquote><b><i>{_L(lang, "Возможный лут", "Possible loot")}:</i></b>\n{loot}</blockquote>\n'
-        f'\n<blockquote>'
-        f'<tg-emoji emoji-id="{_E_BONUS}">✨</tg-emoji> <b><i>{_L(lang, "Артефакты дают постоянный бонус навсегда!", "Artifacts give a permanent bonus forever!")}</i></b>\n'
-        f'{_pe("warn", "⚠️")} <b><i>{_L(lang, "Дубликат — компенсация монетами.", "Duplicate — compensated with coins.")}</i></b></blockquote>\n'
-        f'\n<blockquote><tg-emoji emoji-id="5359664288241829619">📦</tg-emoji> <b><i>{_L(lang, "Открыто кейсов", "Cases opened")}: {opened}</i></b>  |  '
-        f'{_pe("stats", "💎")} <b><i>{_L(lang, "Коллекция", "Collection")}: {len(owned)}/10</i></b></blockquote>'
+        f'<blockquote><tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> '
+        f'<b><i>{_L(lang, "МАГАЗИН АРТЕФАКТОВ", "ARTIFACT SHOP")}</i></b>\n'
+        f'{_pe("stats","💎")} <b><i>{_L(lang, "Собрано", "Collected")}: {total_owned}/{MAX_ARTIFACTS}</i></b></blockquote>\n'
+        f'\n<blockquote>{"".join(lines)}</blockquote>\n'
+        f'\n<blockquote>{_pe("ok","✨")} <b><i>{_L(lang, "Каждый артефакт — постоянный бонус навсегда, без рандома. Выбери тир, затем артефакт, и купи его за Stars.", "Every artifact is a permanent bonus forever, no randomness. Pick a tier, then an artifact, and buy it with Stars.")}</i></b></blockquote>'
     )
 
 
-def artifact_case_keyboard(invoice_url: str = None, lang: str = "ru") -> InlineKeyboardMarkup:
+def artifact_shop_list_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    if invoice_url:
-        builder.row(InlineKeyboardButton(
-            text=f"{'Open' if lang == 'en' else 'Открыть'} {ARTIFACT_CASE_COST_STARS} ⭐",
-            url=invoice_url,
-            icon_custom_emoji_id="5999336376342940892",
-            style="success"
-        ))
-    else:
-        builder.row(_btn(_E["stats"], f"{'Open' if lang == 'en' else 'Открыть'} {ARTIFACT_CASE_COST_STARS} ⭐", "artifact_case_buy"))
-    builder.row(InlineKeyboardButton(
-        text=_L(lang, "Мои звёзды", "My stars"),
-        url="tg://stars/",
-        icon_custom_emoji_id="5348570868752595928"
-    ))
+    for t in ARTIFACT_TIERS:
+        tname = t["name_en"] if lang == "en" else t["name"]
+        label = f'{t["icon"]} {tname}'
+        builder.row(InlineKeyboardButton(text=label, callback_data=f'artifact_tier_{t["tier"]}'))
     builder.row(InlineKeyboardButton(
         text=_L(lang, "Моя коллекция", "My collection"),
         callback_data="artifact_collection",
         icon_custom_emoji_id="5222113468051629260"
     ))
+    builder.row(InlineKeyboardButton(
+        text=_L(lang, "Мои звёзды", "My stars"),
+        url="tg://stars/",
+        icon_custom_emoji_id="5348570868752595928"
+    ))
     builder.row(_back_btn("shop_cases", _L(lang, "Назад", "Back")))
+    return builder.as_markup()
+
+
+def artifact_tier_text(data: dict, tier_key: str, lang: str = "ru") -> str:
+    t = ARTIFACT_TIERS_BY_KEY.get(tier_key)
+    items = artifacts_in_tier(tier_key)
+    owned_keys = {e["key"] for e in data.get("artifacts", [])}
+    tname = (t["name_en"] if lang == "en" else t["name"]) if t else tier_key
+
+    rows = []
+    for a in items:
+        aname = a.get("name_en", a["name"]) if lang == "en" else a["name"]
+        eff   = _get_effect_label(a["effect"], lang)
+        status = _pe("ok", "✅") if a["key"] in owned_keys else _pe("balance", "⭐")
+        rows.append(
+            f'{status} {_artifact_icon(a)} <b><i>{aname}</i></b> — '
+            f'<b><i>{a["multiplier"]}× {eff}</i></b> · <b><i>{a["price_stars"]} ⭐</i></b>\n'
+        )
+
+    return (
+        f'<blockquote>{t["icon"] if t else "💎"} <b><i>{tname}</i></b></blockquote>\n'
+        f'\n<blockquote>{"".join(rows)}</blockquote>\n'
+        f'\n<blockquote>{_pe("stats","💎")} <b><i>{_L(lang, "Выбери артефакт, чтобы открыть окно покупки.", "Pick an artifact to open the purchase window.")}</i></b></blockquote>'
+    )
+
+
+def artifact_tier_keyboard(data: dict, tier_key: str, lang: str = "ru") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    owned_keys = {e["key"] for e in data.get("artifacts", [])}
+    for a in artifacts_in_tier(tier_key):
+        aname = a.get("name_en", a["name"]) if lang == "en" else a["name"]
+        mark  = "✅ " if a["key"] in owned_keys else ""
+        label = f'{mark}{aname} — {a["price_stars"]}⭐'
+        builder.row(InlineKeyboardButton(text=label, callback_data=f'artifact_info_{a["key"]}'))
+    builder.row(_back_btn("artifact_shop_list", _L(lang, "К тирам", "To tiers")))
+    return builder.as_markup()
+
+
+def artifact_info_text(data: dict, artifact_key: str, lang: str = "ru") -> str:
+    """Отдельное окно одного артефакта: полное описание + цена + статус."""
+    a = ARTIFACT_POOL_BY_KEY.get(artifact_key)
+    if not a:
+        return f'❌ {_L(lang, "Артефакт не найден.", "Artifact not found.")}'
+
+    aname  = a.get("name_en", a["name"]) if lang == "en" else a["name"]
+    eff    = _get_effect_label(a["effect"], lang)
+    owned  = is_artifact_owned(data, artifact_key)
+    icon   = _artifact_icon(a)
+
+    status_line = (
+        f'{_pe("ok","✅")} <b><i>{_L(lang, "Уже в твоей коллекции", "Already in your collection")}</i></b>'
+        if owned else
+        f'{_pe("balance","⭐")} <b><i>{_L(lang, "Цена", "Price")}: {a["price_stars"]} Telegram Stars</i></b>'
+    )
+
+    effect_full = (
+        _L(lang, "Даёт постоянный множитель ко ВСЕМ трём видам добычи (руда, урон по боссу, питомцы).",
+                  "Gives a permanent multiplier to ALL three income types (ore, boss damage, pets).")
+        if a["effect"] == "all" else
+        _L(lang, f"Даёт постоянный множитель {a['multiplier']}× {eff}.",
+                  f"Gives a permanent {a['multiplier']}× multiplier {eff}.")
+    )
+
+    return (
+        f'<blockquote>{icon} <b><i>{aname}</i></b>\n'
+        f'{_pe("stats","💎")} <b><i>{a["multiplier"]}× {eff}</i></b></blockquote>\n'
+        f'\n<blockquote>{effect_full}</blockquote>\n'
+        f'\n<blockquote>{status_line}</blockquote>\n'
+        f'\n<blockquote>{_pe("warn","⚠️")} <b><i>{_L(lang, "Бонус действует всегда и не расходуется.", "The bonus is permanent and never consumed.")}</i></b></blockquote>'
+    )
+
+
+def artifact_info_keyboard(data: dict, artifact_key: str, invoice_url: str = None, lang: str = "ru") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    a = ARTIFACT_POOL_BY_KEY.get(artifact_key)
+    owned = is_artifact_owned(data, artifact_key)
+
+    if owned:
+        builder.row(_btn(_E["ok"], _L(lang, "Уже куплено", "Already owned"), "noop"))
+    elif invoice_url:
+        builder.row(InlineKeyboardButton(
+            text=_L(lang, f'Купить за {a["price_stars"]} ⭐', f'Buy for {a["price_stars"]} ⭐'),
+            url=invoice_url,
+            icon_custom_emoji_id="5999336376342940892",
+            style="success"
+        ))
+    else:
+        builder.row(_btn(_E["stats"], _L(lang, f'Купить за {a["price_stars"]} ⭐', f'Buy for {a["price_stars"]} ⭐'), f"artifact_buy_{artifact_key}"))
+
+    builder.row(InlineKeyboardButton(
+        text=_L(lang, "Моя коллекция", "My collection"),
+        callback_data="artifact_collection",
+        icon_custom_emoji_id="5222113468051629260"
+    ))
+    tier_key = a["tier"] if a else "t125"
+    builder.row(_back_btn(f"artifact_tier_{tier_key}", _L(lang, "Назад", "Back")))
     return builder.as_markup()
 
 
@@ -1539,28 +1668,21 @@ def artifact_collection_text(data: dict, lang: str = "ru") -> str:
         return (
             f'<blockquote><tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b><i>{_L(lang, "МОЯ КОЛЛЕКЦИЯ АРТЕФАКТОВ", "MY ARTIFACT COLLECTION")}</i></b>\n'
             f'{_pe("cancel", "❌")} <b><i>{_L(lang, "У тебя пока нет артефактов.", "You have no artifacts yet.")}</i></b>\n'
-            f'{_L(lang, "Открой Кейс Артефактов, чтобы получить первый!", "Open an Artifact Case to get your first one!")}</blockquote>'
+            f'{_L(lang, "Загляни в Магазин Артефактов, чтобы купить первый!", "Check out the Artifact Shop to buy your first one!")}</blockquote>'
         )
 
     mine_mult   = get_artifact_mine_multiplier(data)
     damage_mult = get_artifact_damage_multiplier(data)
     pets_mult   = get_artifact_pets_multiplier(data)
 
-    _E_MINE  = "5201914481671682382"
-    _E_DMG   = "5373173798633752502"
-    _E_PETS  = "5208535779348864977"
-    _E_BONUS = "5438496463044752972"
-
     artifact_lines = []
     for entry in owned:
         a = ARTIFACT_POOL_BY_KEY.get(entry["key"])
         if a:
-            eid  = a.get("emoji_id", "")
-            ae   = f'<tg-emoji emoji-id="{eid}">💎</tg-emoji>' if eid else "💎"
             effect_label = _get_effect_label(a["effect"], lang)
             aname = a.get("name_en", a["name"]) if lang == "en" else a["name"]
             artifact_lines.append(
-                f'{ae} <b><i>{aname}</i></b> — '
+                f'{_artifact_icon(a)} <b><i>{aname}</i></b> — '
                 f'<b><i><i>{a["multiplier"]}× {effect_label}</i></i></b>\n'
             )
 
@@ -1571,7 +1693,7 @@ def artifact_collection_text(data: dict, lang: str = "ru") -> str:
 
     return (
         f'<blockquote><tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> '
-        f'<b><i>{_L(lang, "МОЯ КОЛЛЕКЦИЯ", "MY COLLECTION")} ({len(owned)}/10)</i></b></blockquote>\n'
+        f'<b><i>{_L(lang, "МОЯ КОЛЛЕКЦИЯ", "MY COLLECTION")} ({len(owned)}/{MAX_ARTIFACTS})</i></b></blockquote>\n'
         f'\n<blockquote>'
         f'{bonus_icon} <b><i>{_L(lang, "Итоговые бонусы", "Total bonuses")}:</i></b>\n'
         f'{mine_icon} <b><i>{_L(lang, "Руда", "Ore")}: ×{mine_mult}</i></b>\n'
@@ -1584,7 +1706,7 @@ def artifact_collection_text(data: dict, lang: str = "ru") -> str:
 
 def artifact_collection_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(_back_btn("artifact_case_info", _L(lang, "К кейсу", "To case")))
+    builder.row(_back_btn("artifact_shop_list", _L(lang, "В магазин", "To shop")))
     return builder.as_markup()
 
 
