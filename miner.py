@@ -100,16 +100,28 @@ ORES_BY_KEY = {o["key"]: o for o in ORES}
 #  следствие:
 #
 #      payback_minutes(i) = BASE_PAYBACK_MIN * PAYBACK_GROWTH ** i
-#      cost(i) = payback_minutes(i) * income_per_minute(i)
+#      cost(i) = K * payback_minutes(i) * income_per_minute(i)
 #
-#  где i — порядковый номер кирки в PICKAXES_ORDER (0..99),
+#  где i — порядковый номер кирки в PICKAXES_ORDER (0..134),
 #  income_per_minute(i) = ((dig_min+dig_max)/2 * EV_за_удар(tier)) / 5,
 #  EV_за_удар(tier) — реальная средняя ценность руды за 1 удар,
 #  посчитанная из весов ORES и тиковых шансов THRESHOLD_ORES (не из
-#  декоративного поля "chance", оно на дроп не влияет).
+#  декоративного поля "chance", оно на дроп не влияет),
+#  K ≈ 3.222 — калибровочный множитель формулы, подобранный так, чтобы
+#  cost(i) совпадал с уже захардкоженными ценами copper..netherite
+#  (там расхождение < 0.5%) — нужен, потому что "сырой" payback*income
+#  всегда занижает реальную цену примерно в одно и то же число раз.
 #
 #  BASE_PAYBACK_MIN = 27   → wood_2 (i=1) окупается ~28 мин (крючок)
-#  PAYBACK_GROWTH   = 1.0531 → netherite_5 (i=99) окупается ~75ч (~3 дня)
+#  PAYBACK_GROWTH   = 1.0531 → netherite_5 (i=99)     окупается ~75ч   (~3 дня)
+#                            → singularity_5 (i=134)  окупается ~461ч  (~19 дней)
+#
+#  Тиры meteorite/lunar/solar/nebula/galactic/quasar/singularity (i=100..134)
+#  добавлены поверх netherite как чисто "инструментальные" тиры без новой
+#  руды — точно так же, как vip/vip_plus/premium/netherite до них: EV_за_удар
+#  у них не меняется (уже максимальный, т.к. tier >= copper открывает все
+#  пороговые руды), растут только dig_min/dig_max (×1.15 за уровень, как и
+#  во всём хвосте таблицы) и, соответственно, цена по формуле выше.
 #
 #  Если поменяешь дропы/цены руды или добавишь кирки — прогони
 #  формулу заново (скрипт пересчёта есть в чате), чтобы кривая
@@ -221,6 +233,42 @@ PICKAXES = {
     "netherite_3": {"name": "Netherite-3lvl", "dig_min": 1342835, "dig_max": 2685671, "cost": 12600000000000, "currency": "coins", "required_level": 1, "tier": "netherite"},
     "netherite_4": {"name": "Netherite-4lvl", "dig_min": 1544261, "dig_max": 3088521, "cost": 15300000000000, "currency": "coins", "required_level": 1, "tier": "netherite"},
     "netherite_5": {"name": "Netherite-5lvl", "dig_min": 1775900, "dig_max": 3551799, "cost": 18500000000000, "currency": "coins", "required_level": 1, "tier": "netherite"},
+    # ── Новые 7 тиров (i=100..134), посчитаны той же формулой окупаемости ──
+    "meteorite_1": {"name": "Meteorite-1lvl", "dig_min": 2042285, "dig_max": 4084569, "cost": 22400000000000, "currency": "coins", "required_level": 1, "tier": "meteorite"},
+    "meteorite_2": {"name": "Meteorite-2lvl", "dig_min": 2348628, "dig_max": 4697254, "cost": 27100000000000, "currency": "coins", "required_level": 1, "tier": "meteorite"},
+    "meteorite_3": {"name": "Meteorite-3lvl", "dig_min": 2700922, "dig_max": 5401842, "cost": 32900000000000, "currency": "coins", "required_level": 1, "tier": "meteorite"},
+    "meteorite_4": {"name": "Meteorite-4lvl", "dig_min": 3106060, "dig_max": 6212118, "cost": 39800000000000, "currency": "coins", "required_level": 1, "tier": "meteorite"},
+    "meteorite_5": {"name": "Meteorite-5lvl", "dig_min": 3571969, "dig_max": 7143936, "cost": 48200000000000, "currency": "coins", "required_level": 1, "tier": "meteorite"},
+    "lunar_1": {"name": "Lunar-1lvl", "dig_min": 4107764, "dig_max": 8215526, "cost": 58400000000000, "currency": "coins", "required_level": 1, "tier": "lunar"},
+    "lunar_2": {"name": "Lunar-2lvl", "dig_min": 4723929, "dig_max": 9447855, "cost": 70700000000000, "currency": "coins", "required_level": 1, "tier": "lunar"},
+    "lunar_3": {"name": "Lunar-3lvl", "dig_min": 5432518, "dig_max": 10865033, "cost": 85600000000000, "currency": "coins", "required_level": 1, "tier": "lunar"},
+    "lunar_4": {"name": "Lunar-4lvl", "dig_min": 6247396, "dig_max": 12494788, "cost": 104000000000000, "currency": "coins", "required_level": 1, "tier": "lunar"},
+    "lunar_5": {"name": "Lunar-5lvl", "dig_min": 7184505, "dig_max": 14369006, "cost": 126000000000000, "currency": "coins", "required_level": 1, "tier": "lunar"},
+    "solar_1": {"name": "Solar-1lvl", "dig_min": 8262181, "dig_max": 16524357, "cost": 152000000000000, "currency": "coins", "required_level": 1, "tier": "solar"},
+    "solar_2": {"name": "Solar-2lvl", "dig_min": 9501508, "dig_max": 19003011, "cost": 184000000000000, "currency": "coins", "required_level": 1, "tier": "solar"},
+    "solar_3": {"name": "Solar-3lvl", "dig_min": 10926734, "dig_max": 21853463, "cost": 223000000000000, "currency": "coins", "required_level": 1, "tier": "solar"},
+    "solar_4": {"name": "Solar-4lvl", "dig_min": 12565744, "dig_max": 25131482, "cost": 270000000000000, "currency": "coins", "required_level": 1, "tier": "solar"},
+    "solar_5": {"name": "Solar-5lvl", "dig_min": 14450606, "dig_max": 28901204, "cost": 327000000000000, "currency": "coins", "required_level": 1, "tier": "solar"},
+    "nebula_1": {"name": "Nebula-1lvl", "dig_min": 16618197, "dig_max": 33236385, "cost": 396000000000000, "currency": "coins", "required_level": 1, "tier": "nebula"},
+    "nebula_2": {"name": "Nebula-2lvl", "dig_min": 19110927, "dig_max": 38221843, "cost": 480000000000000, "currency": "coins", "required_level": 1, "tier": "nebula"},
+    "nebula_3": {"name": "Nebula-3lvl", "dig_min": 21977566, "dig_max": 43955119, "cost": 581000000000000, "currency": "coins", "required_level": 1, "tier": "nebula"},
+    "nebula_4": {"name": "Nebula-4lvl", "dig_min": 25274201, "dig_max": 50548387, "cost": 704000000000000, "currency": "coins", "required_level": 1, "tier": "nebula"},
+    "nebula_5": {"name": "Nebula-5lvl", "dig_min": 29065331, "dig_max": 58130645, "cost": 852000000000000, "currency": "coins", "required_level": 1, "tier": "nebula"},
+    "galactic_1": {"name": "Galactic-1lvl", "dig_min": 33425131, "dig_max": 66850242, "cost": 1030000000000000, "currency": "coins", "required_level": 1, "tier": "galactic"},
+    "galactic_2": {"name": "Galactic-2lvl", "dig_min": 38438901, "dig_max": 76877778, "cost": 1250000000000000, "currency": "coins", "required_level": 1, "tier": "galactic"},
+    "galactic_3": {"name": "Galactic-3lvl", "dig_min": 44204736, "dig_max": 88409445, "cost": 1510000000000000, "currency": "coins", "required_level": 1, "tier": "galactic"},
+    "galactic_4": {"name": "Galactic-4lvl", "dig_min": 50835446, "dig_max": 101670862, "cost": 1830000000000000, "currency": "coins", "required_level": 1, "tier": "galactic"},
+    "galactic_5": {"name": "Galactic-5lvl", "dig_min": 58460763, "dig_max": 116921491, "cost": 2220000000000000, "currency": "coins", "required_level": 1, "tier": "galactic"},
+    "quasar_1": {"name": "Quasar-1lvl", "dig_min": 67229877, "dig_max": 134459715, "cost": 2690000000000000, "currency": "coins", "required_level": 1, "tier": "quasar"},
+    "quasar_2": {"name": "Quasar-2lvl", "dig_min": 77314359, "dig_max": 154628672, "cost": 3260000000000000, "currency": "coins", "required_level": 1, "tier": "quasar"},
+    "quasar_3": {"name": "Quasar-3lvl", "dig_min": 88911513, "dig_max": 177822973, "cost": 3940000000000000, "currency": "coins", "required_level": 1, "tier": "quasar"},
+    "quasar_4": {"name": "Quasar-4lvl", "dig_min": 102248240, "dig_max": 204496419, "cost": 4780000000000000, "currency": "coins", "required_level": 1, "tier": "quasar"},
+    "quasar_5": {"name": "Quasar-5lvl", "dig_min": 117585476, "dig_max": 235170882, "cost": 5780000000000000, "currency": "coins", "required_level": 1, "tier": "quasar"},
+    "singularity_1": {"name": "Singularity-1lvl", "dig_min": 135223297, "dig_max": 270446514, "cost": 7000000000000000, "currency": "coins", "required_level": 1, "tier": "singularity"},
+    "singularity_2": {"name": "Singularity-2lvl", "dig_min": 155506792, "dig_max": 311013491, "cost": 8480000000000000, "currency": "coins", "required_level": 1, "tier": "singularity"},
+    "singularity_3": {"name": "Singularity-3lvl", "dig_min": 178832811, "dig_max": 357665515, "cost": 10300000000000000, "currency": "coins", "required_level": 1, "tier": "singularity"},
+    "singularity_4": {"name": "Singularity-4lvl", "dig_min": 205657733, "dig_max": 411315342, "cost": 12400000000000000, "currency": "coins", "required_level": 1, "tier": "singularity"},
+    "singularity_5": {"name": "Singularity-5lvl", "dig_min": 236506393, "dig_max": 473012643, "cost": 15100000000000000, "currency": "coins", "required_level": 1, "tier": "singularity"},
 }
 
 PICKAXES_ORDER = [
@@ -244,6 +292,13 @@ PICKAXES_ORDER = [
     "vip_plus_1", "vip_plus_2", "vip_plus_3", "vip_plus_4", "vip_plus_5",
     "premium_1", "premium_2", "premium_3", "premium_4", "premium_5",
     "netherite_1", "netherite_2", "netherite_3", "netherite_4", "netherite_5",
+    "meteorite_1", "meteorite_2", "meteorite_3", "meteorite_4", "meteorite_5",
+    "lunar_1", "lunar_2", "lunar_3", "lunar_4", "lunar_5",
+    "solar_1", "solar_2", "solar_3", "solar_4", "solar_5",
+    "nebula_1", "nebula_2", "nebula_3", "nebula_4", "nebula_5",
+    "galactic_1", "galactic_2", "galactic_3", "galactic_4", "galactic_5",
+    "quasar_1", "quasar_2", "quasar_3", "quasar_4", "quasar_5",
+    "singularity_1", "singularity_2", "singularity_3", "singularity_4", "singularity_5",
 ]
 
 WORKSHOP_PAGE_SIZE   = 10
@@ -261,6 +316,10 @@ WORKSHOP_PAGE_LABELS = [
     "💜 Amethyst / 🟢 Jade",
     "👑 VIP / 💠 VIP+",
     "💫 Premium / ⬛ Netherite",
+    "☄️ Meteorite / 🌙 Lunar",
+    "☀️ Solar / 🌌 Nebula",
+    "🪐 Galactic / 🌠 Quasar",
+    "🕳️ Singularity",
 ]
 
 TIER_LABELS = {
@@ -269,6 +328,8 @@ TIER_LABELS = {
     "lazurite": "Lazurite", "gold": "Gold", "granite": "Granite", "diamond": "Diamond",
     "mithril": "Mithril", "uranium": "Uranium", "amethyst": "Amethyst", "jade": "Jade",
     "vip": "VIP", "vip_plus": "VIP+", "premium": "Premium", "netherite": "Netherite",
+    "meteorite": "Meteorite", "lunar": "Lunar", "solar": "Solar", "nebula": "Nebula",
+    "galactic": "Galactic", "quasar": "Quasar", "singularity": "Singularity",
 }
 
 DURATIONS = {
@@ -451,7 +512,8 @@ THRESHOLD_ORES = {
 TIER_ORDER = ["wood", "rock", "stone", "coal", "flint", "copper", "iron",
               "silver", "lazurite", "gold", "granite", "diamond", "mithril",
               "uranium", "amethyst", "jade", "vip", "vip_plus", "premium",
-              "netherite"]
+              "netherite", "meteorite", "lunar", "solar", "nebula",
+              "galactic", "quasar", "singularity"]
 _TIER_INDEX = {tier: i for i, tier in enumerate(TIER_ORDER)}
 
 
