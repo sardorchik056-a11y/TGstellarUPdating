@@ -263,7 +263,7 @@ from shop import (
     artifact_tier_text, artifact_tier_keyboard,
     artifact_info_text, artifact_info_keyboard,
     artifact_collection_text, artifact_collection_keyboard,
-    buy_artifact, is_artifact_owned, ARTIFACT_POOL_BY_KEY, ARTIFACT_TIERS_BY_KEY,
+    buy_artifact, buy_artifact_with_coins, is_artifact_owned, ARTIFACT_POOL_BY_KEY, ARTIFACT_TIERS_BY_KEY,
     # Единый инвентарь
     unified_inventory_text, get_unified_inventory,
     use_item_by_slot_id, cancel_active_by_type,
@@ -5631,6 +5631,21 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer("❌ Артефакт не найден." if lang == "ru" else "❌ Artifact not found.", show_alert=True)
                 return
             await edit(artifact_info_text(data, artifact_key, lang), artifact_info_keyboard(data, artifact_key, lang=lang))
+            return
+
+        # ===== МАГАЗИН АРТЕФАКТОВ: купить за монеты (только обычные/редкие) =====
+        # Важно: проверяем ДО "artifact_buy_", иначе более общий startswith
+        # перехватит этот callback раньше и артефакт не найдётся по ключу.
+        if cd.startswith("artifact_buy_coins_"):
+            artifact_key = cd.removeprefix("artifact_buy_coins_")
+            ok, msg = buy_artifact_with_coins(data, artifact_key, lang)
+            if ok:
+                _ach_newly = check_achievements(data)
+                await aio_save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
+                await edit(artifact_info_text(data, artifact_key, lang), artifact_info_keyboard(data, artifact_key, lang=lang))
+            else:
+                await call.answer(_plain(msg), show_alert=True)
             return
 
         # ===== МАГАЗИН АРТЕФАКТОВ: создать инвойс на конкретный артефакт =====
