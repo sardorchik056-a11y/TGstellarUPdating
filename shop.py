@@ -69,6 +69,7 @@ _E = {
     "spent":      "5447183459602669338",
     "balance":    "5278467510604160626",
     "arrow":      "5427168083074628963",
+    "art_locked": "5296369303661067030",
 }
 
 
@@ -1632,7 +1633,7 @@ def artifact_tier_text(data: dict, tier_key: str, lang: str = "ru") -> str:
     for a in items:
         aname = a.get("name_en", a["name"]) if lang == "en" else a["name"]
         eff   = _get_effect_label(a["effect"], lang)
-        status = _pe("ok", "✅") if a["key"] in owned_keys else _pe("balance", "⭐")
+        status = _pe("ok", "✅") if a["key"] in owned_keys else _pe("art_locked", "🔒")
         coin_part = f' / {_fmt_num(a["price_coins"])} 💰' if a.get("price_coins") else ""
         rows.append(
             f'{status} {_artifact_icon(a)} <b><i>{aname}</i></b> — '
@@ -1663,7 +1664,11 @@ def artifact_tier_keyboard(data: dict, tier_key: str, lang: str = "ru") -> Inlin
         else:
             coin_part = f' / {_fmt_num(a["price_coins"])}💰' if a.get("price_coins") else ""
             label = f'{aname} — {a["price_stars"]}⭐{coin_part}'
-            builder.row(InlineKeyboardButton(text=label, callback_data=f'artifact_info_{a["key"]}'))
+            builder.row(InlineKeyboardButton(
+                text=label,
+                callback_data=f'artifact_info_{a["key"]}',
+                icon_custom_emoji_id=a["emoji_id"] or _E["art_locked"],
+            ))
     builder.row(_back_btn("artifact_shop_list", _L(lang, "К тирам", "To tiers")))
     return builder.as_markup()
 
@@ -1682,7 +1687,7 @@ def artifact_info_text(data: dict, artifact_key: str, lang: str = "ru") -> str:
     if owned:
         status_line = f'{_pe("ok","✅")} <b><i>{_L(lang, "Уже в твоей коллекции", "Already in your collection")}</i></b>'
     else:
-        status_line = f'{_pe("balance","⭐")} <b><i>{_L(lang, "Цена", "Price")}: {a["price_stars"]} Telegram Stars</i></b>'
+        status_line = f'{_pe("art_locked","🔒")} <b><i>{_L(lang, "Цена", "Price")}: {a["price_stars"]} Telegram Stars</i></b>'
         if a.get("price_coins"):
             status_line += f'\n{_pe("coin","💰")} <b><i>{_L(lang, "или", "or")}: {_fmt_num(a["price_coins"])} {_L(lang, "монет", "coins")}</i></b>'
 
@@ -1720,14 +1725,14 @@ def artifact_info_keyboard(data: dict, artifact_key: str, invoice_url: str = Non
             builder.row(InlineKeyboardButton(
                 text=_L(lang, f'Купить за {a["price_stars"]} ⭐', f'Buy for {a["price_stars"]} ⭐'),
                 url=invoice_url,
-                icon_custom_emoji_id="5999336376342940892",
+                icon_custom_emoji_id=(a["emoji_id"] if a else "") or "5999336376342940892",
                 style="success"
             ))
         else:
-            builder.row(_btn(_E["stats"], _L(lang, f'Купить за {a["price_stars"]} ⭐', f'Buy for {a["price_stars"]} ⭐'), f"artifact_buy_{artifact_key}"))
+            builder.row(_btn((a["emoji_id"] if a else "") or _E["stats"], _L(lang, f'Купить за {a["price_stars"]} ⭐', f'Buy for {a["price_stars"]} ⭐'), f"artifact_buy_{artifact_key}"))
         if a and a.get("price_coins"):
             builder.row(_btn(
-                _E["coin"],
+                a["emoji_id"] or _E["coin"],
                 _L(lang, f'Купить за {_fmt_num(a["price_coins"])} монет', f'Buy for {_fmt_num(a["price_coins"])} coins'),
                 f"artifact_buy_coins_{artifact_key}",
             ))
