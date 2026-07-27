@@ -41,7 +41,7 @@ def _L(lang: str, ru: str, en: str) -> str:
 # того, что происходит с покупкой кирок в miner.py (см. баг: убрали
 # кирки за звёзды из miner.py — заодно пропала общая константа STAR,
 # и кейсы перестали открываться после оплаты).
-STAR = '<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji>'
+STAR = '<tg-emoji emoji-id="5798819377088307477">⭐</tg-emoji>'
 
 
 _E = {
@@ -284,6 +284,28 @@ ARTIFACT_TIERS = [
     {"tier": "tall", "multiplier": None, "price_stars": None, "name": "Легендарные (× ко всей добыче)", "name_en": "Legendary (× to all income)", "icon": "👑"},
 ]
 ARTIFACT_TIERS_BY_KEY = {t["tier"]: t for t in ARTIFACT_TIERS}
+
+# 5 эмодзи "редкости" — все подходят одинаково, поэтому раздаём их по
+# тирам случайно (порядок не важен, тиров и айди поровну — по 5).
+_ARTIFACT_TIER_ICON_IDS = [
+    "5251280754167539397",
+    "5251575062506531550",
+    "5251553162468284915",
+    "5251661382759243996",
+    "5251329454801710673",
+]
+_shuffled_tier_icon_ids = _ARTIFACT_TIER_ICON_IDS[:]
+random.shuffle(_shuffled_tier_icon_ids)
+for _t, _icon_id in zip(ARTIFACT_TIERS, _shuffled_tier_icon_ids):
+    _t["icon_id"] = _icon_id
+del _t, _icon_id
+
+
+def _tier_icon(t: dict) -> str:
+    icon_id = t.get("icon_id") if t else None
+    if icon_id:
+        return f'<tg-emoji emoji-id="{icon_id}">{t["icon"]}</tg-emoji>'
+    return t["icon"] if t else "💎"
 
 
 def artifacts_in_tier(tier_key: str) -> list:
@@ -1582,13 +1604,13 @@ def artifact_shop_list_text(data: dict, lang: str = "ru") -> str:
         have  = sum(1 for a in items if a["key"] in owned_keys)
         tname = t["name_en"] if lang == "en" else t["name"]
         if t["tier"] == "tall":
-            price_str = "699–1899 ⭐"
+            price_str = f"699–1899 {STAR}"
             mult_str  = _L(lang, "1.35×–2.25× ко ВСЕЙ добыче сразу", "1.35×–2.25× to ALL income at once")
         else:
-            price_str = f'{t["price_stars"]} ⭐'
+            price_str = f'{t["price_stars"]} {STAR}'
             mult_str  = _L(lang, f'{t["multiplier"]}× к руде / урону / питомцам', f'{t["multiplier"]}× to ore / damage / pets')
         lines.append(
-            f'{t["icon"]} <b><i>{tname}</i></b> — <b><i>{mult_str}</i></b>\n'
+            f'{_tier_icon(t)} <b><i>{tname}</i></b> — <b><i>{mult_str}</i></b>\n'
             f'{_pe("balance","⭐")} <b><i>{price_str}</i></b>  |  '
             f'{_pe("stats","💎")} <b><i>{have}/{len(items)}</i></b>\n'
         )
@@ -1608,7 +1630,11 @@ def artifact_shop_list_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     for t in ARTIFACT_TIERS:
         tname = t["name_en"] if lang == "en" else t["name"]
         label = f'{t["icon"]} {tname}'
-        builder.row(InlineKeyboardButton(text=label, callback_data=f'artifact_tier_{t["tier"]}'))
+        builder.row(InlineKeyboardButton(
+            text=label,
+            callback_data=f'artifact_tier_{t["tier"]}',
+            icon_custom_emoji_id=t.get("icon_id", ""),
+        ))
     builder.row(InlineKeyboardButton(
         text=_L(lang, "Моя коллекция", "My collection"),
         callback_data="artifact_collection",
@@ -1637,11 +1663,11 @@ def artifact_tier_text(data: dict, tier_key: str, lang: str = "ru") -> str:
         coin_part = f' / {_fmt_num(a["price_coins"])} 💰' if a.get("price_coins") else ""
         rows.append(
             f'{status} {_artifact_icon(a)} <b><i>{aname}</i></b> — '
-            f'<b><i>{a["multiplier"]}× {eff}</i></b> · <b><i>{a["price_stars"]} ⭐{coin_part}</i></b>\n'
+            f'<b><i>{a["multiplier"]}× {eff}</i></b> · <b><i>{a["price_stars"]} {STAR}{coin_part}</i></b>\n'
         )
 
     return (
-        f'<blockquote>{t["icon"] if t else "💎"} <b><i>{tname}</i></b></blockquote>\n'
+        f'<blockquote>{_tier_icon(t)} <b><i>{tname}</i></b></blockquote>\n'
         f'\n<blockquote>{"".join(rows)}</blockquote>\n'
         f'\n<blockquote>{_pe("stats","💎")} <b><i>{_L(lang, "Выбери артефакт, чтобы открыть окно покупки.", "Pick an artifact to open the purchase window.")}</i></b></blockquote>'
     )
