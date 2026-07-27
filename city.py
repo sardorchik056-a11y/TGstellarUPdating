@@ -276,6 +276,8 @@ CART_MAX_LEVEL = len(CART_LEVELS) - 1
 # Уровень 0 — базовый склад, доступен всем бесплатно. Дальше — платная
 # прокачка за кристаллы, всего 10 уровней (9 платных), от 10 000 до
 # 10 000 000 кристаллов, вместимость от 10 000 до 10 000 000 товаров.
+# КАЖДЫЙ ГОРОД ИМЕЕТ СОБСТВЕННЫЙ СКЛАД! Прокачка склада теперь привязана
+# к конкретному городу — игрок может иметь разный уровень склада в разных городах.
 WAREHOUSE_LEVELS = [
     {"level": 0, "capacity": 10_000,     "cost": 0,          "name": "Сарай"},
     {"level": 1, "capacity": 25_000,     "cost": 10_000,     "name": "Погреб"},
@@ -430,8 +432,6 @@ def init_city_db():
             conn.execute("ALTER TABLE city_users ADD COLUMN last_daily TEXT")
         if "cart_level" not in cols:
             conn.execute("ALTER TABLE city_users ADD COLUMN cart_level INTEGER NOT NULL DEFAULT 0")
-        if "warehouse_level" not in cols:
-            conn.execute("ALTER TABLE city_users ADD COLUMN warehouse_level INTEGER NOT NULL DEFAULT 0")
         # Магазин защиты от таможни — три независимых флага защиты.
         if "has_fake_docs" not in cols:
             conn.execute("ALTER TABLE city_users ADD COLUMN has_fake_docs INTEGER NOT NULL DEFAULT 0")
@@ -443,31 +443,75 @@ def init_city_db():
             CREATE TABLE IF NOT EXISTS city_inventory (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id   INTEGER NOT NULL,
+                city      TEXT NOT NULL,
                 item_type TEXT NOT NULL,
                 quantity  INTEGER NOT NULL DEFAULT 0,
-                UNIQUE(user_id, item_type)
+                UNIQUE(user_id, city, item_type)
             )
         """)
+        # Миграция: добавляем колонку city в существующую таблицу city_inventory
+        inv_cols = [r["name"] for r in conn.execute("PRAGMA table_info(city_inventory)").fetchall()]
+        if "city" not in inv_cols:
+            conn.execute("ALTER TABLE city_inventory ADD COLUMN city TEXT NOT NULL DEFAULT 'Столица'")
+            # Удаляем старый уникальный индекс, если он был
+            conn.execute("DROP INDEX IF EXISTS sqlite_autoindex_city_inventory_1")
+            # Создаём новый уникальный индекс с city
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_city_inventory_unique ON city_inventory(user_id, city, item_type)")
+        if "acquired_at" not in inv_cols:
+            conn.execute("ALTER TABLE city_inventory ADD COLUMN acquired_at INTEGER")
+        
         # ── Склад — ОТДЕЛЬНОЕ хранилище от сумки/повозки (city_inventory).
-        # Товар не "продаётся"/"покупается" при перекладке — он физически
-        # переезжает между двумя таблицами (см. try_deposit_to_warehouse /
-        # try_withdraw_from_warehouse). Лимит склада (get_warehouse_capacity)
-        # теперь считается от суммы именно этой таблицы, а не от сумки.
+        # Теперь склад привязан к КОНКРЕТНОМУ ГОРОДУ! Каждый город имеет
+        # свой собственный склад, и товары не перемещаются между городами
+        # автоматически — игрок может хранить товары в том городе, где их купил.
+        # Прокачка склада (warehouse_level) теперь хранится отдельно для каждого города.
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_warehouse (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id   INTEGER NOT NULL,
+                city      TEXT NOT NULL,
                 item_type TEXT NOT NULL,
                 quantity  INTEGER NOT NULL DEFAULT 0,
-                UNIQUE(user_id, item_type)
+                UNIQUE(user_id, city, item_type)
             )
         """)
-        # Миграция: колонка для отслеживания свежести скоропортящихся товаров
-        # (используется чёрной икрой) — timestamp последней "свежей" покупки.
-        inv_cols = [r["name"] for r in conn.execute("PRAGMA table_info(city_inventory)").fetchall()]
-        if "acquired_at" not in inv_cols:
-            conn.execute("ALTER TABLE city_inventory ADD COLUMN acquired_at INTEGER")
-        # ── Капсулы усиления: купленный, но ещё не использованный запас ──
+        # Миграция: добавляем колонку city в city_warehouse
+        wh_cols = [r["name"] for r in conn.execute("PRAGMA table_info(city_warehouse)").fetchall()]
+        if "city" not in wh_cols:
+            conn.execute("ALTER TABLE city_warehouse ADD COLUMN city TEXT NOT NULL DEFAULT 'Столица'")
+            conn.execute("DROP INDEX IF EXISTS sqlite_autoindex_city_warehouse_1")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_city_warehouse_unique ON city_warehouse(user_id, city, item_type)")
+        
+        # ── Уровень склада для каждого города отдельно ──
+        # Миграция: создаём таблицу city_warehouse_level, если её нет
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS city_warehouse_levels (
+                user_id INTEGER NOT NULL,
+                city    TEXT NOT NULL,
+                level   INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(user_id, city)
+            )
+        """)
+        # Переносим старые данные из city_users.warehouse_level в новую таблицу
+        wl_cols = [r["name"] for r in conn.execute("PRAGMA table_info(city_warehouse_levels)").fetchall()]
+        if "level" not in wl_cols:
+            conn.execute("ALTER TABLE city_warehouse_levels ADD COLUMN level INTEGER NOT NULL DEFAULT 0")
+        
+        # Переносим существующие warehouse_level из city_users в новую таблицу
+        # (если колонка ещё существует в city_users)
+        if "warehouse_level" in cols:
+            # Для каждого пользователя с warehouse_level > 0 создаём запись для всех городов
+            rows = conn.execute("SELECT user_id, warehouse_level FROM city_users WHERE warehouse_level > 0").fetchall()
+            for r in rows:
+                for city in CITIES:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO city_warehouse_levels (user_id, city, level) VALUES (?, ?, ?)",
+                        (r["user_id"], city, r["warehouse_level"])
+                    )
+            # Удаляем старую колонку
+            conn.execute("ALTER TABLE city_users DROP COLUMN warehouse_level")
+        
+        # Капсулы усиления: купленный, но ещё не использованный запас
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_capsules_owned (
                 user_id    INTEGER NOT NULL,
@@ -476,9 +520,7 @@ def init_city_db():
                 UNIQUE(user_id, capsule_id)
             )
         """)
-        # ── Капсулы усиления: активная (использованная) капсула по категориям —
-        # ровно одна запись на пару (user_id, category), т.е. максимум одна
-        # активная капсула на категорию одновременно.
+        # Капсулы усиления: активная (использованная) капсула по категориям
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_capsules_active (
                 user_id      INTEGER NOT NULL,
@@ -521,8 +563,7 @@ def init_city_db():
                 user_id   INTEGER
             )
         """)
-        # Миграция: добавляем user_id, если таблица создана старой версией кода —
-        # без него нельзя отличить покупки одного игрока от покупок многих игроков.
+        # Миграция: добавляем user_id, если таблица создана старой версией кода
         log_cols = [r["name"] for r in conn.execute("PRAGMA table_info(city_trade_log)").fetchall()]
         if "user_id" not in log_cols:
             conn.execute("ALTER TABLE city_trade_log ADD COLUMN user_id INTEGER")
@@ -571,10 +612,23 @@ def get_city_user(user_id: int, username: str = "") -> dict:
                 "VALUES (?,?,?,?,?,NULL,?)",
                 (user_id, username or "", START_BALANCE, START_CITY, "free", today),
             )
-            for item in ITEMS:
+            # Создаём записи инвентаря для всех городов
+            for city in CITIES:
+                for item in ITEMS:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO city_inventory (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
+                        (user_id, city, item),
+                    )
+                # Создаём записи склада для всех городов
+                for item in ITEMS:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO city_warehouse (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
+                        (user_id, city, item),
+                    )
+                # Создаём записи уровня склада для всех городов
                 conn.execute(
-                    "INSERT OR IGNORE INTO city_inventory (user_id, item_type, quantity) VALUES (?,?,0)",
-                    (user_id, item),
+                    "INSERT OR IGNORE INTO city_warehouse_levels (user_id, city, level) VALUES (?,?,0)",
+                    (user_id, city),
                 )
             conn.commit()
             row = conn.execute("SELECT * FROM city_users WHERE user_id=?", (user_id,)).fetchone()
@@ -582,8 +636,6 @@ def get_city_user(user_id: int, username: str = "") -> dict:
 
     u = dict(row)
     # ── Ежедневный бонус кристаллов (атомарно и идемпотентно — раз в день) ──
-    # Условие на last_daily проверяется прямо в WHERE, поэтому даже если два
-    # запроса от одного игрока придут одновременно, бонус начислится один раз.
     if u.get("last_daily") != today:
         with _conn() as conn:
             cur = conn.execute(
@@ -666,11 +718,17 @@ def add_crystals_to_user(user_id: int, amount: int, username: str = "") -> int:
     return row["balance"] if row else 0
 
 
-def get_inventory(user_id: int) -> dict:
-    _spoil_expired_perishables(user_id)
+def get_inventory(user_id: int, city: str = None) -> dict:
+    """Получает инвентарь игрока для указанного города (или для текущего города игрока)."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
+    
+    _spoil_expired_perishables(user_id, city)
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT item_type, quantity FROM city_inventory WHERE user_id=?", (user_id,)
+            "SELECT item_type, quantity FROM city_inventory WHERE user_id=? AND city=?",
+            (user_id, city)
         ).fetchall()
     inv = {item: 0 for item in ITEMS}
     for r in rows:
@@ -678,12 +736,16 @@ def get_inventory(user_id: int) -> dict:
     return inv
 
 
-def _spoil_expired_perishables(user_id: int):
+def _spoil_expired_perishables(user_id: int, city: str = None):
     """Проверяет скоропортящиеся товары (сейчас — только чёрная икра) и
     обнуляет их, если с момента покупки прошло больше CAVIAR_FRESHNESS_SECONDS.
     Вызывается лениво из get_inventory, поэтому испорченный товар исчезает
     сам собой при любом обращении к инвентарю (покупка, продажа, поездка,
     просмотр сумки/склада) — отдельный фоновый цикл не нужен."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
+    
     now = int(time.time())
     perishable_items = [k for k, v in ITEMS.items() if v.get("perishable")]
     if not perishable_items:
@@ -692,40 +754,46 @@ def _spoil_expired_perishables(user_id: int):
         placeholders = ",".join("?" * len(perishable_items))
         rows = conn.execute(
             f"SELECT item_type, quantity, acquired_at FROM city_inventory "
-            f"WHERE user_id=? AND item_type IN ({placeholders}) AND quantity>0",
-            (user_id, *perishable_items),
+            f"WHERE user_id=? AND city=? AND item_type IN ({placeholders}) AND quantity>0",
+            (user_id, city, *perishable_items),
         ).fetchall()
         for r in rows:
             if r["acquired_at"] and now - r["acquired_at"] > CAVIAR_FRESHNESS_SECONDS:
                 conn.execute(
                     "UPDATE city_inventory SET quantity=0 "
-                    "WHERE user_id=? AND item_type=? AND quantity=?",
-                    (user_id, r["item_type"], r["quantity"]),
+                    "WHERE user_id=? AND city=? AND item_type=? AND quantity=?",
+                    (user_id, city, r["item_type"], r["quantity"]),
                 )
         conn.commit()
 
 
-def refresh_item_freshness(user_id: int, item_type: str):
+def refresh_item_freshness(user_id: int, item_type: str, city: str = None):
     """Обновляет таймер свежести товара (вызывается при каждой покупке
     скоропортящегося товара — новая партия считается свежей целиком)."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
     with _conn() as conn:
         conn.execute(
-            "UPDATE city_inventory SET acquired_at=? WHERE user_id=? AND item_type=?",
-            (int(time.time()), user_id, item_type),
+            "UPDATE city_inventory SET acquired_at=? WHERE user_id=? AND city=? AND item_type=?",
+            (int(time.time()), user_id, city, item_type),
         )
         conn.commit()
 
 
-def get_item_freshness_left(user_id: int, item_type: str) -> int | None:
+def get_item_freshness_left(user_id: int, item_type: str, city: str = None) -> int | None:
     """Секунд до порчи товара, или None если товар не портится, отсутствует
     в инвентаре, либо уже испорчен/списан."""
     if not ITEMS.get(item_type, {}).get("perishable"):
         return None
-    _spoil_expired_perishables(user_id)
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
+    _spoil_expired_perishables(user_id, city)
     with _conn() as conn:
         row = conn.execute(
-            "SELECT quantity, acquired_at FROM city_inventory WHERE user_id=? AND item_type=?",
-            (user_id, item_type),
+            "SELECT quantity, acquired_at FROM city_inventory WHERE user_id=? AND city=? AND item_type=?",
+            (user_id, city, item_type),
         ).fetchone()
     if not row or row["quantity"] <= 0 or not row["acquired_at"]:
         return None
@@ -733,14 +801,17 @@ def get_item_freshness_left(user_id: int, item_type: str) -> int | None:
     return max(0, left)
 
 
-def set_inventory_qty(user_id: int, item_type: str, qty: int):
+def set_inventory_qty(user_id: int, item_type: str, qty: int, city: str = None):
     """Жёстко выставляет количество товара. ВНИМАНИЕ: не атомарна относительно
     параллельных изменений — для покупки/продажи использовать try_adjust_inventory."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
     with _conn() as conn:
         conn.execute(
-            "INSERT INTO city_inventory (user_id, item_type, quantity) VALUES (?,?,?) "
-            "ON CONFLICT(user_id, item_type) DO UPDATE SET quantity=excluded.quantity",
-            (user_id, item_type, max(0, qty)),
+            "INSERT INTO city_inventory (user_id, city, item_type, quantity) VALUES (?,?,?,?) "
+            "ON CONFLICT(user_id, city, item_type) DO UPDATE SET quantity=excluded.quantity",
+            (user_id, city, item_type, max(0, qty)),
         )
         conn.commit()
 
@@ -801,23 +872,26 @@ def spend_up_to(user_id: int, amount: int):
         log_crystal_event(user_id, -actually_taken)
 
 
-def try_adjust_inventory(user_id: int, item_type: str, delta: int) -> bool:
+def try_adjust_inventory(user_id: int, item_type: str, delta: int, city: str = None) -> bool:
     """Атомарно меняет количество товара на delta (может быть отрицательным).
     Не даёт уйти в минус. Если строки инвентаря ещё нет (например, у старого
     аккаунта, зарегистрированного до появления этого товара) — создаёт её
     перед изменением, иначе UPDATE молча не найдёт строку и ничего не
     изменит, даже если деньги уже списаны. True — изменение применено."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
     if delta == 0:
         return True
     with _conn() as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO city_inventory (user_id, item_type, quantity) VALUES (?,?,0)",
-            (user_id, item_type),
+            "INSERT OR IGNORE INTO city_inventory (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
+            (user_id, city, item_type),
         )
         cur = conn.execute(
             "UPDATE city_inventory SET quantity = quantity + ? "
-            "WHERE user_id=? AND item_type=? AND quantity + ? >= 0",
-            (delta, user_id, item_type, delta),
+            "WHERE user_id=? AND city=? AND item_type=? AND quantity + ? >= 0",
+            (delta, user_id, city, item_type, delta),
         )
         conn.commit()
         return cur.rowcount > 0
@@ -834,9 +908,12 @@ def try_adjust_inventory(user_id: int, item_type: str, delta: int) -> bool:
 # до commit изменения не видны и не сохранены, при сбое SQLite/WAL откатывает
 # оба изменения сразу, при успехе — оба применяются сразу.
 
-def try_buy_item(user_id: int, item_type: str, qty: int, total_cost: int) -> bool:
-    """Атомарно: списывает total_cost кристаллов И начисляет qty товара —
+def try_buy_item(user_id: int, item_type: str, qty: int, total_cost: int, city: str = None) -> bool:
+    """Атомарно: списывает total_cost кристаллов И начисляет qty товара в текущем городе —
     либо применяются оба изменения, либо ни одного. True — сделка прошла."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
     if qty <= 0:
         return False
     if total_cost < 0:
@@ -849,12 +926,12 @@ def try_buy_item(user_id: int, item_type: str, qty: int, total_cost: int) -> boo
         if cur.rowcount == 0:
             return False  # средств не хватило — ничего не менялось, коммитить нечего
         conn.execute(
-            "INSERT OR IGNORE INTO city_inventory (user_id, item_type, quantity) VALUES (?,?,0)",
-            (user_id, item_type),
+            "INSERT OR IGNORE INTO city_inventory (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
+            (user_id, city, item_type),
         )
         conn.execute(
-            "UPDATE city_inventory SET quantity = quantity + ? WHERE user_id=? AND item_type=?",
-            (qty, user_id, item_type),
+            "UPDATE city_inventory SET quantity = quantity + ? WHERE user_id=? AND city=? AND item_type=?",
+            (qty, user_id, city, item_type),
         )
         conn.commit()
     if total_cost:
@@ -862,20 +939,23 @@ def try_buy_item(user_id: int, item_type: str, qty: int, total_cost: int) -> boo
     return True
 
 
-def try_sell_item(user_id: int, item_type: str, qty: int, total_gain: int) -> bool:
+def try_sell_item(user_id: int, item_type: str, qty: int, total_gain: int, city: str = None) -> bool:
     """Атомарно: списывает qty товара И начисляет total_gain кристаллов —
     либо применяются оба изменения, либо ни одного. True — сделка прошла."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
     if qty <= 0:
         return False
     with _conn() as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO city_inventory (user_id, item_type, quantity) VALUES (?,?,0)",
-            (user_id, item_type),
+            "INSERT OR IGNORE INTO city_inventory (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
+            (user_id, city, item_type),
         )
         cur = conn.execute(
             "UPDATE city_inventory SET quantity = quantity - ? "
-            "WHERE user_id=? AND item_type=? AND quantity>=?",
-            (qty, user_id, item_type, qty),
+            "WHERE user_id=? AND city=? AND item_type=? AND quantity>=?",
+            (qty, user_id, city, item_type, qty),
         )
         if cur.rowcount == 0:
             return False  # товара не хватило — INSERT OR IGNORE выше безвреден, коммитить больше нечего
@@ -889,38 +969,48 @@ def try_sell_item(user_id: int, item_type: str, qty: int, total_gain: int) -> bo
     return True
 
 
-def force_confiscate_inventory(user_id: int, item_type: str) -> int:
-    """Атомарно обнуляет товар (конфискация на таможне).
+def force_confiscate_inventory(user_id: int, item_type: str, city: str = None) -> int:
+    """Атомарно обнуляет товар (конфискация на таможне) в текущем городе.
     Возвращает количество, которое реально было изъято (0, если и так пусто)."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
     with _conn() as conn:
         row = conn.execute(
-            "SELECT quantity FROM city_inventory WHERE user_id=? AND item_type=?",
-            (user_id, item_type),
+            "SELECT quantity FROM city_inventory WHERE user_id=? AND city=? AND item_type=?",
+            (user_id, city, item_type),
         ).fetchone()
         qty = row["quantity"] if row else 0
         if qty > 0:
             cur = conn.execute(
                 "UPDATE city_inventory SET quantity=0 "
-                "WHERE user_id=? AND item_type=? AND quantity=?",
-                (user_id, item_type, qty),
+                "WHERE user_id=? AND city=? AND item_type=? AND quantity=?",
+                (user_id, city, item_type, qty),
             )
             conn.commit()
             return qty if cur.rowcount else 0
         return 0
 
 
-# ---------- склад — отдельное хранилище (city_warehouse) ----------
+# ---------- склад — отдельное хранилище (city_warehouse), привязанное к городу ----------
 # В отличие от сумки/повозки (city_inventory), товар на складе не участвует
 # в таможенных проверках и не тратится при поездках — он просто лежит,
 # пока игрок не заберёт его обратно кнопкой «Забрать со склада». Деньги
 # нигде не участвуют: это перекладка одного и того же товара между двумя
 # хранилищами, а не покупка/продажа.
+# КАЖДЫЙ ГОРОД ИМЕЕТ СОБСТВЕННЫЙ СКЛАД! Товары не перемещаются между городами
+# автоматически — игрок может хранить товары только в том городе, где их купил.
 
-def get_warehouse_stock(user_id: int) -> dict:
-    """Содержимое СКЛАДА (не сумки!) — отдельная таблица city_warehouse."""
+def get_warehouse_stock(user_id: int, city: str = None) -> dict:
+    """Содержимое СКЛАДА (не сумки!) для указанного города.
+    Если city не указан — используется текущий город игрока."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT item_type, quantity FROM city_warehouse WHERE user_id=?", (user_id,)
+            "SELECT item_type, quantity FROM city_warehouse WHERE user_id=? AND city=?",
+            (user_id, city)
         ).fetchall()
     stock = {item: 0 for item in ITEMS}
     for r in rows:
@@ -928,57 +1018,132 @@ def get_warehouse_stock(user_id: int) -> dict:
     return stock
 
 
-def try_deposit_to_warehouse(user_id: int, item_type: str, qty: int) -> bool:
+def get_warehouse_level_for_city(user_id: int, city: str = None) -> int:
+    """Возвращает уровень склада для конкретного города."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT level FROM city_warehouse_levels WHERE user_id=? AND city=?",
+            (user_id, city)
+        ).fetchone()
+        if row is None:
+            # Создаём запись, если её нет
+            conn.execute(
+                "INSERT OR IGNORE INTO city_warehouse_levels (user_id, city, level) VALUES (?,?,0)",
+                (user_id, city)
+            )
+            conn.commit()
+            return 0
+        return row["level"] or 0
+
+
+def get_warehouse_capacity_for_city(user_id: int, city: str = None) -> int:
+    """Суммарный лимит товара (всех видов вместе), который можно хранить в конкретном городе."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
+    level = get_warehouse_level_for_city(user_id, city)
+    return WAREHOUSE_LEVELS[min(level, WAREHOUSE_MAX_LEVEL)]["capacity"]
+
+
+def get_warehouse_next_tier_for_city(user_id: int, city: str = None) -> dict | None:
+    """Следующий уровень склада для конкретного города, или None если уже максимум."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
+    lvl = get_warehouse_level_for_city(user_id, city)
+    if lvl >= WAREHOUSE_MAX_LEVEL:
+        return None
+    return WAREHOUSE_LEVELS[lvl + 1]
+
+
+def try_upgrade_warehouse_for_city(user_id: int, city: str = None) -> tuple[bool, str, dict | None]:
+    """Атомарно прокачивает склад в конкретном городе на следующий уровень за кристаллы.
+    Возвращает (успех, текст_ошибки_или_пусто, данные_нового_уровня_или_None)."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
+    
+    current_level = get_warehouse_level_for_city(user_id, city)
+    nxt = get_warehouse_next_tier_for_city(user_id, city)
+    if nxt is None:
+        return False, f"📦 Склад в городе {city} уже прокачан до максимума.", None
+
+    if not try_spend_balance(user_id, nxt["cost"]):
+        return False, f"💸 Недостаточно {CURRENCY_NAME} для прокачки склада в городе {city}.", None
+
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE city_warehouse_levels SET level = ? WHERE user_id=? AND city=? AND level=?",
+            (nxt["level"], user_id, city, current_level),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            # кто-то параллельно уже прокачал склад — возвращаем кристаллы
+            add_balance(user_id, nxt["cost"])
+            return False, "⚠️ Склад уже был прокачан. Средства возвращены.", None
+
+    return True, "", nxt
+
+
+def try_deposit_to_warehouse(user_id: int, item_type: str, qty: int, city: str = None) -> bool:
     """Атомарно: списывает qty товара из сумки (city_inventory) И начисляет
-    qty на склад (city_warehouse) — либо применяются оба изменения, либо ни
-    одного. True — в сумке было достаточно товара и перемещение прошло.
-    Лимит склада проверяется вызывающей стороной ДО вызова (как и лимит
-    повозки при покупке) — здесь только атомарность самой перекладки."""
+    qty на склад (city_warehouse) в указанном городе — либо применяются оба
+    изменения, либо ни одного. True — в сумке было достаточно товара и
+    перемещение прошло. Лимит склада проверяется вызывающей стороной ДО вызова."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
     if qty <= 0:
         return False
     with _conn() as conn:
         cur = conn.execute(
             "UPDATE city_inventory SET quantity = quantity - ? "
-            "WHERE user_id=? AND item_type=? AND quantity>=?",
-            (qty, user_id, item_type, qty),
+            "WHERE user_id=? AND city=? AND item_type=? AND quantity>=?",
+            (qty, user_id, city, item_type, qty),
         )
         if cur.rowcount == 0:
             return False  # в сумке не хватило товара — ничего не менялось
         conn.execute(
-            "INSERT OR IGNORE INTO city_warehouse (user_id, item_type, quantity) VALUES (?,?,0)",
-            (user_id, item_type),
+            "INSERT OR IGNORE INTO city_warehouse (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
+            (user_id, city, item_type),
         )
         conn.execute(
-            "UPDATE city_warehouse SET quantity = quantity + ? WHERE user_id=? AND item_type=?",
-            (qty, user_id, item_type),
+            "UPDATE city_warehouse SET quantity = quantity + ? WHERE user_id=? AND city=? AND item_type=?",
+            (qty, user_id, city, item_type),
         )
         conn.commit()
     return True
 
 
-def try_withdraw_from_warehouse(user_id: int, item_type: str, qty: int) -> bool:
+def try_withdraw_from_warehouse(user_id: int, item_type: str, qty: int, city: str = None) -> bool:
     """Атомарно: списывает qty товара со склада (city_warehouse) И
-    начисляет qty в сумку (city_inventory) — либо применяются оба
-    изменения, либо ни одного. True — на складе было достаточно товара.
-    Сумка ничем не ограничена (лимит повозки проверяется только при
-    отправлении в поездку), поэтому здесь дополнительных лимитов нет."""
+    начисляет qty в сумку (city_inventory) в указанном городе — либо
+    применяются оба изменения, либо ни одного. True — на складе было
+    достаточно товара. Сумка ничем не ограничена (лимит повозки проверяется
+    только при отправлении в поездку), поэтому здесь дополнительных лимитов нет."""
+    if city is None:
+        u = get_city_user(user_id)
+        city = u.get("city", "Столица")
     if qty <= 0:
         return False
     with _conn() as conn:
         cur = conn.execute(
             "UPDATE city_warehouse SET quantity = quantity - ? "
-            "WHERE user_id=? AND item_type=? AND quantity>=?",
-            (qty, user_id, item_type, qty),
+            "WHERE user_id=? AND city=? AND item_type=? AND quantity>=?",
+            (qty, user_id, city, item_type, qty),
         )
         if cur.rowcount == 0:
             return False  # на складе не хватило товара — ничего не менялось
         conn.execute(
-            "INSERT OR IGNORE INTO city_inventory (user_id, item_type, quantity) VALUES (?,?,0)",
-            (user_id, item_type),
+            "INSERT OR IGNORE INTO city_inventory (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
+            (user_id, city, item_type),
         )
         conn.execute(
-            "UPDATE city_inventory SET quantity = quantity + ? WHERE user_id=? AND item_type=?",
-            (qty, user_id, item_type),
+            "UPDATE city_inventory SET quantity = quantity + ? WHERE user_id=? AND city=? AND item_type=?",
+            (qty, user_id, city, item_type),
         )
         conn.commit()
     return True
@@ -1195,54 +1360,6 @@ def try_upgrade_cart(user_id: int) -> tuple[bool, str, dict | None]:
 
 def total_inventory_qty(inv: dict) -> int:
     return sum(inv.values())
-
-
-# ---------- склад (лимит хранения) ----------
-# Отдельная механика от повозки: повозка ограничивает, сколько товара можно
-# ВЕЗТИ за одну поездку; склад ограничивает, сколько товара можно ХРАНИТЬ
-# вообще (используется при проверке лимита на покупку в cmd_city_buy).
-
-def get_warehouse_level(u: dict) -> int:
-    lvl = u.get("warehouse_level", 0) or 0
-    return max(0, min(lvl, WAREHOUSE_MAX_LEVEL))
-
-
-def get_warehouse_capacity(u: dict) -> int:
-    """Суммарный лимит товара (всех видов вместе), который можно хранить."""
-    return WAREHOUSE_LEVELS[get_warehouse_level(u)]["capacity"]
-
-
-def get_warehouse_next_tier(u: dict) -> dict | None:
-    """Следующий уровень склада, или None если уже максимум."""
-    lvl = get_warehouse_level(u)
-    if lvl >= WAREHOUSE_MAX_LEVEL:
-        return None
-    return WAREHOUSE_LEVELS[lvl + 1]
-
-
-def try_upgrade_warehouse(user_id: int) -> tuple[bool, str, dict | None]:
-    """Атомарно прокачивает склад на следующий уровень за кристаллы.
-    Возвращает (успех, текст_ошибки_или_пусто, данные_нового_уровня_или_None)."""
-    u = get_city_user(user_id)
-    nxt = get_warehouse_next_tier(u)
-    if nxt is None:
-        return False, "📦 Склад уже прокачан до максимума.", None
-
-    if not try_spend_balance(user_id, nxt["cost"]):
-        return False, f"💸 Недостаточно {CURRENCY_NAME} для прокачки склада.", None
-
-    with _conn() as conn:
-        cur = conn.execute(
-            "UPDATE city_users SET warehouse_level = ? WHERE user_id=? AND warehouse_level=?",
-            (nxt["level"], user_id, get_warehouse_level(u)),
-        )
-        conn.commit()
-        if cur.rowcount == 0:
-            # кто-то параллельно уже прокачал склад — возвращаем кристаллы
-            add_balance(user_id, nxt["cost"])
-            return False, "⚠️ Склад уже был прокачан. Средства возвращены.", None
-
-    return True, "", nxt
 
 
 # ---------- цены ----------
@@ -1518,12 +1635,12 @@ async def aio_add_crystals_to_user(user_id: int, amount: int, username: str = ""
     return await asyncio.to_thread(add_crystals_to_user, user_id, amount, username)
 
 
-async def aio_get_inventory(user_id: int) -> dict:
-    return await asyncio.to_thread(get_inventory, user_id)
+async def aio_get_inventory(user_id: int, city: str = None) -> dict:
+    return await asyncio.to_thread(get_inventory, user_id, city)
 
 
-async def aio_set_inventory_qty(user_id: int, item_type: str, qty: int):
-    return await asyncio.to_thread(set_inventory_qty, user_id, item_type, qty)
+async def aio_set_inventory_qty(user_id: int, item_type: str, qty: int, city: str = None):
+    return await asyncio.to_thread(set_inventory_qty, user_id, item_type, qty, city)
 
 
 async def aio_try_spend_balance(user_id: int, amount: int) -> bool:
@@ -1538,40 +1655,40 @@ async def aio_spend_up_to(user_id: int, amount: int):
     return await asyncio.to_thread(spend_up_to, user_id, amount)
 
 
-async def aio_try_adjust_inventory(user_id: int, item_type: str, delta: int) -> bool:
-    return await asyncio.to_thread(try_adjust_inventory, user_id, item_type, delta)
+async def aio_try_adjust_inventory(user_id: int, item_type: str, delta: int, city: str = None) -> bool:
+    return await asyncio.to_thread(try_adjust_inventory, user_id, item_type, delta, city)
 
 
-async def aio_try_buy_item(user_id: int, item_type: str, qty: int, total_cost: int) -> bool:
-    return await asyncio.to_thread(try_buy_item, user_id, item_type, qty, total_cost)
+async def aio_try_buy_item(user_id: int, item_type: str, qty: int, total_cost: int, city: str = None) -> bool:
+    return await asyncio.to_thread(try_buy_item, user_id, item_type, qty, total_cost, city)
 
 
-async def aio_try_sell_item(user_id: int, item_type: str, qty: int, total_gain: int) -> bool:
-    return await asyncio.to_thread(try_sell_item, user_id, item_type, qty, total_gain)
+async def aio_try_sell_item(user_id: int, item_type: str, qty: int, total_gain: int, city: str = None) -> bool:
+    return await asyncio.to_thread(try_sell_item, user_id, item_type, qty, total_gain, city)
 
 
-async def aio_force_confiscate_inventory(user_id: int, item_type: str) -> int:
-    return await asyncio.to_thread(force_confiscate_inventory, user_id, item_type)
+async def aio_force_confiscate_inventory(user_id: int, item_type: str, city: str = None) -> int:
+    return await asyncio.to_thread(force_confiscate_inventory, user_id, item_type, city)
 
 
-async def aio_get_warehouse_stock(user_id: int) -> dict:
-    return await asyncio.to_thread(get_warehouse_stock, user_id)
+async def aio_get_warehouse_stock(user_id: int, city: str = None) -> dict:
+    return await asyncio.to_thread(get_warehouse_stock, user_id, city)
 
 
-async def aio_try_deposit_to_warehouse(user_id: int, item_type: str, qty: int) -> bool:
-    return await asyncio.to_thread(try_deposit_to_warehouse, user_id, item_type, qty)
+async def aio_try_deposit_to_warehouse(user_id: int, item_type: str, qty: int, city: str = None) -> bool:
+    return await asyncio.to_thread(try_deposit_to_warehouse, user_id, item_type, qty, city)
 
 
-async def aio_try_withdraw_from_warehouse(user_id: int, item_type: str, qty: int) -> bool:
-    return await asyncio.to_thread(try_withdraw_from_warehouse, user_id, item_type, qty)
+async def aio_try_withdraw_from_warehouse(user_id: int, item_type: str, qty: int, city: str = None) -> bool:
+    return await asyncio.to_thread(try_withdraw_from_warehouse, user_id, item_type, qty, city)
 
 
-async def aio_refresh_item_freshness(user_id: int, item_type: str):
-    return await asyncio.to_thread(refresh_item_freshness, user_id, item_type)
+async def aio_refresh_item_freshness(user_id: int, item_type: str, city: str = None):
+    return await asyncio.to_thread(refresh_item_freshness, user_id, item_type, city)
 
 
-async def aio_get_item_freshness_left(user_id: int, item_type: str) -> int | None:
-    return await asyncio.to_thread(get_item_freshness_left, user_id, item_type)
+async def aio_get_item_freshness_left(user_id: int, item_type: str, city: str = None) -> int | None:
+    return await asyncio.to_thread(get_item_freshness_left, user_id, item_type, city)
 
 
 async def aio_try_buy_protection(user_id: int, kind: str) -> tuple[bool, str]:
@@ -1602,8 +1719,20 @@ async def aio_try_upgrade_cart(user_id: int) -> tuple[bool, str, dict | None]:
     return await asyncio.to_thread(try_upgrade_cart, user_id)
 
 
-async def aio_try_upgrade_warehouse(user_id: int) -> tuple[bool, str, dict | None]:
-    return await asyncio.to_thread(try_upgrade_warehouse, user_id)
+async def aio_get_warehouse_level_for_city(user_id: int, city: str = None) -> int:
+    return await asyncio.to_thread(get_warehouse_level_for_city, user_id, city)
+
+
+async def aio_get_warehouse_capacity_for_city(user_id: int, city: str = None) -> int:
+    return await asyncio.to_thread(get_warehouse_capacity_for_city, user_id, city)
+
+
+async def aio_get_warehouse_next_tier_for_city(user_id: int, city: str = None) -> dict | None:
+    return await asyncio.to_thread(get_warehouse_next_tier_for_city, user_id, city)
+
+
+async def aio_try_upgrade_warehouse_for_city(user_id: int, city: str = None) -> tuple[bool, str, dict | None]:
+    return await asyncio.to_thread(try_upgrade_warehouse_for_city, user_id, city)
 
 
 async def aio_get_price(city: str, item: str) -> int:
@@ -1911,14 +2040,28 @@ def city_cart_keyboard(can_upgrade: bool) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def city_warehouse_keyboard(can_upgrade: bool) -> InlineKeyboardMarkup:
+def city_warehouse_keyboard(u: dict, city: str) -> InlineKeyboardMarkup:
+    """Клавиатура склада для конкретного города."""
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text=" Положить в склад", callback_data="city_wh_buy", icon_custom_emoji_id=BTN_EMOJI["buy"]),
         InlineKeyboardButton(text=" Забрать со склада", callback_data="city_wh_sell", icon_custom_emoji_id=BTN_EMOJI["bag"]),
     )
-    if can_upgrade:
-        builder.row(InlineKeyboardButton(text=" Прокачать склад", callback_data="city_warehouse_upgrade", icon_custom_emoji_id=BTN_EMOJI["warehouse"]))
+    next_tier = get_warehouse_next_tier_for_city(u["user_id"], city)
+    if next_tier is not None:
+        builder.row(InlineKeyboardButton(
+            text=f" Прокачать склад ({next_tier['name']} — {_fmt(next_tier['cost'])})",
+            callback_data=f"city_warehouse_upgrade_{city}",
+            icon_custom_emoji_id=BTN_EMOJI["warehouse"],
+            style="success" if u["balance"] >= next_tier["cost"] else "danger",
+        ))
+    else:
+        builder.row(InlineKeyboardButton(
+            text=" Максимум!",
+            callback_data="noop",
+            icon_custom_emoji_id=EMOJI_ACTIVE,
+            style="success",
+        ))
     builder.row(
         InlineKeyboardButton(text=" Сумка", callback_data="city_nav_bag", icon_custom_emoji_id=BTN_EMOJI["bag"]),
         InlineKeyboardButton(text=" На рынок", callback_data="city_nav_market", icon_custom_emoji_id=BTN_EMOJI["market"]),
@@ -2100,7 +2243,7 @@ def _profile_text(u: dict, inv: dict) -> str:
         f"{_tge('balance', CURRENCY_EMOJI)} Баланс: <b><i>{_fmt(u['balance'])}</i></b> <b><i>{CURRENCY_NAME}</i></b>\n"
         f"{_city_emoji_tag(u['city'])} Город: <b><i>{u['city']}</i></b>\n"
         f"{_tge('status', '📡')} Статус: {status_line}\n\n"
-        "📦 <b><i>Склад</i></b>\n"
+        f"📦 <b><i>Склад в городе {u['city']}</i></b>\n"
         + "".join(
             f"  {_item_emoji(item)} {info['name']} — <b><i>{inv.get(item, 0)}</i></b> <b><i>шт.</i></b>\n"
             for item, info in ITEMS.items()
@@ -2263,6 +2406,8 @@ def _bag_text(inv: dict, u: dict | None = None, freshness: dict | None = None) -
     bar = _cart_bar(total_items, capacity)
     pct = 0 if capacity <= 0 else min(100, round(total_items / capacity * 100))
 
+    city = u.get("city", "Столица") if u else "Столица"
+    
     goods_lines = []
     for item, info in ITEMS.items():
         line = f"{_item_emoji(item)} {info['name']}: <b><i>{inv.get(item, 0)}</i></b> <b><i>шт.</i></b>"
@@ -2276,6 +2421,7 @@ def _bag_text(inv: dict, u: dict | None = None, freshness: dict | None = None) -
 
     return (
         f"{_tge('bag', '🎒')} <b><i>ИНВЕНТАРЬ ТОРГОВЦА</i></b>\n"
+        f"<b><i>Город: {city}</i></b>\n"
         "<b><i>Что лежит у вас в сумке (готово к перевозке)</i></b> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{goods_block}\n\n"
@@ -2338,15 +2484,15 @@ def _cart_text(u: dict, inv: dict) -> str:
     return "\n".join(lines)
 
 
-def _warehouse_text(u: dict, inv: dict) -> str:
-    """inv — содержимое СКЛАДА (city_warehouse), а не сумки."""
-    lvl = get_warehouse_level(u)
+def _warehouse_text(u: dict, inv: dict, city: str) -> str:
+    """inv — содержимое СКЛАДА (city_warehouse) для конкретного города, а не сумки."""
+    lvl = get_warehouse_level_for_city(u["user_id"], city)
     cur_tier = WAREHOUSE_LEVELS[lvl]
     capacity = cur_tier["capacity"]
     stored = total_inventory_qty(inv)
     bar = _cart_bar(stored, capacity)
     pct = 0 if capacity <= 0 else min(100, round(stored / capacity * 100))
-    nxt = get_warehouse_next_tier(u)
+    nxt = get_warehouse_next_tier_for_city(u["user_id"], city)
 
     goods_lines = [
         f"  {_item_emoji(item)} {info['name']}: <b><i>{inv.get(item, 0)}</i></b> <b><i>шт.</i></b>"
@@ -2356,20 +2502,21 @@ def _warehouse_text(u: dict, inv: dict) -> str:
 
     lines = [
         "📦 <b><i>СКЛАД</i></b>",
-        "<b><i>Отдельное хранилище — товар лежит здесь, а не в сумке</i></b> ✨",
+        f"<b><i>Отдельное хранилище в городе {city}</i></b> ✨",
         "━━━━━━━━━━━━━━━━━━━━\n",
         f"🏬 Текущий склад: <b><i>{cur_tier['name']}</i></b> <b><i>(уровень {lvl})</i></b>\n",
         f"{goods_block}\n",
         f"📦 Хранится: <b><i>{_fmt(stored)} / {_fmt(capacity)}</i></b> <b><i>({pct}%)</i></b>\n"
         f"{bar}\n",
         "<i>Товар на складе не портится, не рискует конфискацией на таможне и не занимает место в повозке. "
-        "Заберите его обратно кнопкой «Забрать со склада», когда понадобится для торговли или поездки.</i>\n",
+        "Заберите его обратно кнопкой «Забрать со склада», когда понадобится для торговли или поездки.\n"
+        f"<b>ВНИМАНИЕ: склад привязан к городу {city} — товары хранятся только здесь и не перемещаются автоматически между городами!</b></i>\n",
     ]
 
     if nxt is None:
         lines.append(
             "━━━━━━━━━━━━━━━━━━━━\n"
-            f"🏆 <b><i>Склад прокачан до максимума — {_fmt(WAREHOUSE_LEVELS[WAREHOUSE_MAX_LEVEL]['capacity'])} ед. товара!</i></b>"
+            f"🏆 <b><i>Склад в городе {city} прокачан до максимума — {_fmt(WAREHOUSE_LEVELS[WAREHOUSE_MAX_LEVEL]['capacity'])} ед. товара!</i></b>"
         )
     else:
         lines.append(
@@ -2486,8 +2633,8 @@ def _help_text() -> str:
         f"{_tge('bag', '🎒')} <code>/citybag</code> — <b><i>инвентарь</i></b>\n"
         f"{_tge('cart', '🐎')} <code>/citycart</code> — <b><i>статус повозки и прокачка</i></b>\n"
         f"{_tge('cart', '🐎')} <code>/citycartup</code> — <b><i>прокачать повозку на след. уровень</i></b>\n"
-        f"{_tge('warehouse', '📦')} <code>/citywarehouse</code> — <b><i>статус склада и прокачка</i></b>\n"
-        f"{_tge('warehouse', '📦')} <code>/citywarehouseup</code> — <b><i>прокачать склад на след. уровень</i></b>\n"
+        f"{_tge('warehouse', '📦')} <code>/citywarehouse</code> — <b><i>статус склада в текущем городе и прокачка</i></b>\n"
+        f"{_tge('warehouse', '📦')} <code>/citywarehouseup</code> — <b><i>прокачать склад в текущем городе на след. уровень</i></b>\n"
         f"{_tge('news', '🗞')} <code>/citynews</code> — <b><i>слухи и прогнозы цен на 2 часа вперёд</i></b>\n"
         f"{_tge('route', '🗺')} <code>/cityroute</code> — <b><i>самый выгодный маршрут прямо сейчас</i></b>\n"
         f"{_tge('exchange', '🔁')} <code>/cityexchange количество</code> — <b><i>обменять кристаллы на монеты</i></b>\n"
@@ -2502,6 +2649,12 @@ def _help_text() -> str:
         f"  {_item_emoji('forbidden_scrolls')} Запретные свитки — <b><i>дорогая контрабанда, шанс конфискации {int(ITEM_CUSTOMS_CHANCE['forbidden_scrolls'] * 100)}% вместо {int(CUSTOMS_CHANCE * 100)}%</i></b>\n"
         f"  {_item_emoji('caviar')} Чёрная икра — <b><i>портится через {CAVIAR_FRESHNESS_SECONDS // 60} минут после покупки — не затягивайте с продажей</i></b>\n"
         f"  {_tge('city_capital', '🏛')} Столица — <b><i>всё дорого, но цены стабильнее</i></b>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "🏚️ <b><i>СКЛАДЫ В ГОРОДАХ</i></b>\n"
+        f"  • <b><i>У каждого города свой отдельный склад!</i></b>\n"
+        f"  • <b><i>Товары, купленные в городе, хранятся только в этом городе</i></b>\n"
+        f"  • <b><i>При переезде в другой город склад остаётся в старом — товары не переносятся автоматически</i></b>\n"
+        f"  • <b><i>Прокачка склада отдельная для каждого города — уровень в одном городе не влияет на другие</i></b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"<b><i>{_tge('travel', '🧭')} Путешествия</i></b>\n"
         f"  • Стоимость дороги: <b><i>{TRAVEL_COST}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
@@ -2526,11 +2679,12 @@ def _help_text() -> str:
         f"  • <b><i>Прокачивается за кристаллы, всего {CART_MAX_LEVEL} платных уровней</i></b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"<b><i>{_tge('warehouse', '📦')} Склад (лимит хранения)</i></b>\n"
-        f"  • <b><i>Проверяется при покупке — сколько товара вы вообще можете хранить, независимо от повозки</i></b>\n"
+        f"  • <b><i>Проверяется при покупке — сколько товара вы вообще можете хранить в текущем городе</i></b>\n"
         f"  • <b><i>Кнопка «Положить в склад» в меню склада — покупка прямо через кнопки, без команд</i></b>\n"
         f"  • <b><i>Базовый лимит:</i></b> <b><i>{_fmt(WAREHOUSE_LEVELS[0]['capacity'])}</i></b> <b><i>ед. товара</i></b>\n"
         f"  • <b><i>Максимум после прокачки:</i></b> <b><i>{_fmt(WAREHOUSE_LEVELS[WAREHOUSE_MAX_LEVEL]['capacity'])}</i></b> <b><i>ед.</i></b>\n"
-        f"  • <b><i>Прокачивается за кристаллы, всего {WAREHOUSE_MAX_LEVEL} платных уровней</i></b>\n\n"
+        f"  • <b><i>Прокачивается за кристаллы, всего {WAREHOUSE_MAX_LEVEL} платных уровней</i></b>\n"
+        f"  • <b><i>⭐ У каждого города свой уровень склада — прокачка не переносится между городами!</i></b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         '<b><i><tg-emoji emoji-id="5231200819986047254">🌟</tg-emoji> Динамика цен</i></b>\n'
         "  • <b><i>Цены обновляются каждый час (±20% случайно)</i></b>\n"
@@ -2578,7 +2732,7 @@ async def cmd_city_profile(message: Message):
     if not await _city_level_ok(message):
         return
     u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
-    inv = await aio_get_inventory(u["user_id"])
+    inv = await aio_get_inventory(u["user_id"], u["city"])
     await message.reply(
         _profile_text(u, inv),
         parse_mode="HTML",
@@ -2765,9 +2919,26 @@ async def cmd_city_buy(message: Message):
         await message.reply("❌ Количество должно быть положительным.")
         return
 
-    # ── Лимит повозки проверяется только при отправлении в другой город
-    # (см. _do_travel), а не здесь при покупке: сумка сама по себе ничем
-    # не ограничена, лишний товар можно унести на склад (/citywarehouse).
+    # ── Проверяем лимит склада ПЕРЕД покупкой ──
+    # Товар покупается в текущем городе и сразу попадает в инвентарь (сумку).
+    # Но если суммарное количество товара (всех видов) в инвентаре + склад
+    # превышает лимит склада — купить нельзя. Склад — это общее хранилище,
+    # и товар в сумке тоже считается частью общего количества, которое
+    # игрок может хранить в этом городе.
+    current_inv = await aio_get_inventory(u["user_id"], u["city"])
+    current_total = sum(current_inv.values())
+    warehouse_capacity = await aio_get_warehouse_capacity_for_city(u["user_id"], u["city"])
+    if current_total + qty > warehouse_capacity:
+        await message.reply(
+            f"📦 <b><i>Склад в городе {u['city']} переполнен!</i></b>\n"
+            f"📦 Сейчас занято: <b><i>{_fmt(current_total)}</i></b> <b><i>ед.</i></b>\n"
+            f"📦 Лимит склада: <b><i>{_fmt(warehouse_capacity)}</i></b> <b><i>ед.</i></b>\n"
+            f"📦 Свободно: <b><i>{_fmt(max(0, warehouse_capacity - current_total))}</i></b> <b><i>ед.</i></b>\n\n"
+            f"<b><i>Продайте часть товара (</i></b><code>/citysell</code><b><i>), "
+            f"или прокачайте склад (</i></b><code>/citywarehouseup</code><b><i>), чтобы купить больше.</i></b>",
+            parse_mode="HTML",
+        )
+        return
 
     price = await aio_get_price(u["city"], item)
     total = price * qty
@@ -2778,7 +2949,7 @@ async def cmd_city_buy(message: Message):
         )
         return
 
-    if not await aio_try_buy_item(u["user_id"], item, qty, total):
+    if not await aio_try_buy_item(u["user_id"], item, qty, total, u["city"]):
         await message.reply(
             f"💸 Недостаточно {CURRENCY_NAME} для этой покупки.",
             parse_mode="HTML",
@@ -2790,7 +2961,7 @@ async def cmd_city_buy(message: Message):
     perishable_note = ""
     if ITEMS[item].get("perishable"):
         # Каждая новая покупка обновляет таймер свежести для всего товара на руках.
-        await aio_refresh_item_freshness(u["user_id"], item)
+        await aio_refresh_item_freshness(u["user_id"], item, u["city"])
         fresh_min = CAVIAR_FRESHNESS_SECONDS // 60
         perishable_note = f"\n⏳ <b><i>Свежесть: {fresh_min} мин. — успейте продать или довезти!</i></b>"
 
@@ -2840,7 +3011,7 @@ async def cmd_city_sell(message: Message):
         await message.reply("❌ Количество должно быть положительным.")
         return
 
-    inv = await aio_get_inventory(u["user_id"])
+    inv = await aio_get_inventory(u["user_id"], u["city"])
     if qty > inv[item]:
         await message.reply(f"📦 У вас только <b><i>{inv[item]}</i></b> единиц этого товара.", parse_mode="HTML")
         return
@@ -2851,7 +3022,7 @@ async def cmd_city_sell(message: Message):
     price = await aio_get_price(u["city"], item)
     total = price * qty
 
-    if not await aio_try_sell_item(u["user_id"], item, qty, total):
+    if not await aio_try_sell_item(u["user_id"], item, qty, total, u["city"]):
         await message.reply(f"📦 У вас недостаточно этого товара.", parse_mode="HTML")
         return
 
@@ -2887,7 +3058,7 @@ async def _do_travel(user_id: int, username: str, dest: str):
     # на руках больше, чем влезает в повозку — в путь отправиться нельзя,
     # пока часть не продана, не убрана на склад, или повозка не прокачана.
     cart_capacity = get_cart_capacity(u)
-    inv_now = await aio_get_inventory(u["user_id"])
+    inv_now = await aio_get_inventory(u["user_id"], u["city"])
     carried = total_inventory_qty(inv_now)
     if carried > cart_capacity:
         overflow = carried - cart_capacity
@@ -2899,7 +3070,6 @@ async def _do_travel(user_id: int, username: str, dest: str):
             f"<b><i>Продайте часть товара (</i></b><code>/citysell</code><b><i>), уберите на склад (</i></b><code>/citywarehouse</code><b><i>) "
             f"или прокачайте повозку (</i></b><code>/citycartup</code><b><i>), чтобы отправиться в путь.</i></b>"
         )
-
 
     origin_city = u["city"]
     end_time = int(time.time()) + TRAVEL_MINUTES * 60
@@ -2918,12 +3088,12 @@ async def _do_travel(user_id: int, username: str, dest: str):
         await aio_release_travel_slot(user_id, origin_city)  # снимаем замок, поездка не состоялась
         return False, f"💸 Недостаточно {CURRENCY_NAME} на дорогу. Нужно {_crystals(TRAVEL_COST)}."
 
-    inv = await aio_get_inventory(u["user_id"])  # заодно спишет протухшую икру
+    inv = await aio_get_inventory(u["user_id"], origin_city)  # заодно спишет протухшую икру
     confiscated = []
     fine_total = 0
     for item, qty in inv.items():
         if qty > CUSTOMS_LIMIT and random.random() < get_customs_chance(item, u):
-            taken = await aio_force_confiscate_inventory(u["user_id"], item)
+            taken = await aio_force_confiscate_inventory(u["user_id"], item, origin_city)
             if taken > 0:
                 confiscated.append(ITEMS[item]["name"])
                 fine_total += CUSTOMS_FINE
@@ -3032,12 +3202,15 @@ async def cmd_city_cancel_travel(message: Message):
     await message.reply(text, parse_mode="HTML", reply_markup=city_back_keyboard())
 
 
-async def _get_perishables_freshness(user_id: int) -> dict:
+async def _get_perishables_freshness(user_id: int, city: str = None) -> dict:
     """Собирает {item_type: секунд_до_порчи} по всем скоропортящимся товарам."""
+    if city is None:
+        u = await aio_get_city_user(user_id)
+        city = u.get("city", "Столица")
     result = {}
     for item, info in ITEMS.items():
         if info.get("perishable"):
-            left = await aio_get_item_freshness_left(user_id, item)
+            left = await aio_get_item_freshness_left(user_id, item, city)
             if left is not None:
                 result[item] = left
     return result
@@ -3046,8 +3219,8 @@ async def _get_perishables_freshness(user_id: int) -> dict:
 @router.message(Command("citybag", "сумка", "bag"))
 async def cmd_city_inventory(message: Message):
     u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
-    inv = await aio_get_inventory(u["user_id"])
-    freshness = await _get_perishables_freshness(u["user_id"])
+    inv = await aio_get_inventory(u["user_id"], u["city"])
+    freshness = await _get_perishables_freshness(u["user_id"], u["city"])
     await message.reply(
         _bag_text(inv, u, freshness),
         parse_mode="HTML",
@@ -3058,7 +3231,7 @@ async def cmd_city_inventory(message: Message):
 @router.message(Command("citycart", "повозка", "cart"))
 async def cmd_city_cart(message: Message):
     u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
-    inv = await aio_get_inventory(u["user_id"])
+    inv = await aio_get_inventory(u["user_id"], u["city"])
     await message.reply(
         _cart_text(u, inv),
         parse_mode="HTML",
@@ -3089,29 +3262,30 @@ async def cmd_city_cart_upgrade(message: Message):
 @router.message(Command("citywarehouse", "склад", "warehouse"))
 async def cmd_city_warehouse(message: Message):
     u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
-    wh = await aio_get_warehouse_stock(u["user_id"])
+    wh = await aio_get_warehouse_stock(u["user_id"], u["city"])
     await message.reply(
-        _warehouse_text(u, wh),
+        _warehouse_text(u, wh, u["city"]),
         parse_mode="HTML",
-        reply_markup=city_warehouse_keyboard(get_warehouse_next_tier(u) is not None),
+        reply_markup=city_warehouse_keyboard(u, u["city"]),
     )
 
 
 @router.message(Command("citywarehouseup", "прокачатьсклад", "warehouseup"))
 async def cmd_city_warehouse_upgrade(message: Message):
-    ok, err, nxt = await aio_try_upgrade_warehouse(message.from_user.id)
+    u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
+    ok, err, nxt = await aio_try_upgrade_warehouse_for_city(message.from_user.id, u["city"])
     if not ok:
         await message.reply(err, parse_mode="HTML", reply_markup=city_back_keyboard())
         return
 
-    u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
+    u2 = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
     await message.reply(
-        "✅ <b><i>СКЛАД ПРОКАЧАН!</i></b>\n"
+        f"✅ <b><i>СКЛАД В ГОРОДЕ {u['city']} ПРОКАЧАН!</i></b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"📦 Новый склад: <b><i>{nxt['name']}</i></b>\n"
         f"📦 Новый лимит хранения: <b><i>{_fmt(nxt['capacity'])}</i></b> <b><i>ед.</i></b>\n"
         f"{_tge('currency', CURRENCY_EMOJI)} Списано: <b><i>{_fmt(nxt['cost'])}</i></b> <b><i>{CURRENCY_NAME}</i></b>\n"
-        f"{_tge('balance', CURRENCY_EMOJI)} Остаток: <b><i>{_fmt(u['balance'])}</i></b> <b><i>{CURRENCY_NAME}</i></b>",
+        f"{_tge('balance', CURRENCY_EMOJI)} Остаток: <b><i>{_fmt(u2['balance'])}</i></b> <b><i>{CURRENCY_NAME}</i></b>",
         parse_mode="HTML",
         reply_markup=city_back_keyboard(),
     )
@@ -3220,7 +3394,7 @@ async def cb_city_profile(call: CallbackQuery):
         await _city_deny(call)
         return
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
-    inv = await aio_get_inventory(u["user_id"])
+    inv = await aio_get_inventory(u["user_id"], u["city"])
     await call.message.edit_text(
         _profile_text(u, inv), parse_mode="HTML", reply_markup=city_main_menu_keyboard()
     )
@@ -3244,8 +3418,8 @@ async def cb_city_bag(call: CallbackQuery):
         await _city_deny(call)
         return
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
-    inv = await aio_get_inventory(call.from_user.id)
-    freshness = await _get_perishables_freshness(call.from_user.id)
+    inv = await aio_get_inventory(call.from_user.id, u["city"])
+    freshness = await _get_perishables_freshness(call.from_user.id, u["city"])
     await call.message.edit_text(
         _bag_text(inv, u, freshness), parse_mode="HTML", reply_markup=city_bag_keyboard()
     )
@@ -3258,7 +3432,7 @@ async def cb_city_cart(call: CallbackQuery):
         await _city_deny(call)
         return
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
-    inv = await aio_get_inventory(u["user_id"])
+    inv = await aio_get_inventory(u["user_id"], u["city"])
     await call.message.edit_text(
         _cart_text(u, inv),
         parse_mode="HTML",
@@ -3278,7 +3452,7 @@ async def cb_city_cart_upgrade(call: CallbackQuery):
         return
 
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
-    inv = await aio_get_inventory(u["user_id"])
+    inv = await aio_get_inventory(u["user_id"], u["city"])
     await call.message.edit_text(
         _cart_text(u, inv),
         parse_mode="HTML",
@@ -3293,33 +3467,34 @@ async def cb_city_warehouse(call: CallbackQuery):
         await _city_deny(call)
         return
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
-    wh = await aio_get_warehouse_stock(u["user_id"])
+    wh = await aio_get_warehouse_stock(u["user_id"], u["city"])
     await call.message.edit_text(
-        _warehouse_text(u, wh),
+        _warehouse_text(u, wh, u["city"]),
         parse_mode="HTML",
-        reply_markup=city_warehouse_keyboard(get_warehouse_next_tier(u) is not None),
+        reply_markup=city_warehouse_keyboard(u, u["city"]),
     )
     await call.answer()
 
 
-@router.callback_query(F.data == "city_warehouse_upgrade")
+@router.callback_query(F.data.startswith("city_warehouse_upgrade_"))
 async def cb_city_warehouse_upgrade(call: CallbackQuery):
     if not _city_check_owner(call):
         await _city_deny(call)
         return
-    ok, err, nxt = await aio_try_upgrade_warehouse(call.from_user.id)
+    city = call.data.replace("city_warehouse_upgrade_", "", 1)
+    ok, err, nxt = await aio_try_upgrade_warehouse_for_city(call.from_user.id, city)
     if not ok:
         await call.answer(err, show_alert=True)
         return
 
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
-    wh = await aio_get_warehouse_stock(u["user_id"])
+    wh = await aio_get_warehouse_stock(u["user_id"], city)
     await call.message.edit_text(
-        _warehouse_text(u, wh),
+        _warehouse_text(u, wh, city),
         parse_mode="HTML",
-        reply_markup=city_warehouse_keyboard(get_warehouse_next_tier(u) is not None),
+        reply_markup=city_warehouse_keyboard(u, city),
     )
-    await call.answer(f"✅ Склад прокачан до «{nxt['name']}»!", show_alert=True)
+    await call.answer(f"✅ Склад в городе {city} прокачан до «{nxt['name']}»!", show_alert=True)
 
 
 @router.callback_query(F.data == "city_wh_buy")
@@ -3328,9 +3503,10 @@ async def cb_city_wh_buy_menu(call: CallbackQuery):
         await _city_deny(call)
         return
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
-    inv = await aio_get_inventory(u["user_id"])
+    inv = await aio_get_inventory(u["user_id"], u["city"])
     await call.message.edit_text(
         f"{_tge('warehouse', '📦')} <b><i>ПОЛОЖИТЬ В СКЛАД</i></b>\n"
+        f"<b><i>Город: {u['city']}</i></b>\n"
         "<b><i>Выберите товар из сумки, чтобы убрать на склад</i></b> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━",
         parse_mode="HTML",
@@ -3350,20 +3526,22 @@ async def cb_city_wh_buy_item(call: CallbackQuery):
         return
 
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    city = u["city"]
 
-    inv = await aio_get_inventory(u["user_id"])
+    inv = await aio_get_inventory(u["user_id"], city)
     have = inv.get(item, 0)
     if have <= 0:
         await call.answer("🎒 У вас нет этого товара в сумке.", show_alert=True)
         return
 
-    wh = await aio_get_warehouse_stock(u["user_id"])
-    wh_capacity = get_warehouse_capacity(u)
+    wh = await aio_get_warehouse_stock(u["user_id"], city)
+    wh_capacity = await aio_get_warehouse_capacity_for_city(u["user_id"], city)
     free_space = max(0, wh_capacity - total_inventory_qty(wh))
     max_qty = max(0, min(have, free_space))
 
     text = (
         f"{_item_emoji(item)} <b><i>{ITEMS[item]['name'].upper()}</i></b>\n"
+        f"📍 <b><i>Город: {city}</i></b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"🎒 В сумке: <b><i>{_fmt(have)}</i></b> <b><i>ед.</i></b>\n"
         f"📦 Свободно на складе: <b><i>{_fmt(free_space)}</i></b> <b><i>ед.</i></b>\n\n"
@@ -3402,15 +3580,12 @@ async def cb_city_wh_buy_qty(call: CallbackQuery):
         return
 
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    city = u["city"]
 
-    # ── Перепроверяем лимит склада перед перекладкой — экран с кнопками мог
-    # быть открыт какое-то время назад, за это время склад мог заполниться
-    # другой перекладкой. Сама перекладка всё равно атомарна
-    # (try_deposit_to_warehouse), но лучше сразу дать понятную ошибку, чем
-    # молча обрезать qty.
-    wh = await aio_get_warehouse_stock(u["user_id"])
+    # ── Перепроверяем лимит склада перед перекладкой ──
+    wh = await aio_get_warehouse_stock(u["user_id"], city)
     stored = total_inventory_qty(wh)
-    wh_capacity = get_warehouse_capacity(u)
+    wh_capacity = await aio_get_warehouse_capacity_for_city(u["user_id"], city)
     if stored + qty > wh_capacity:
         await call.answer(
             f"📦 Склад переполнен — свободно только {_fmt(max(0, wh_capacity - stored))} ед.",
@@ -3418,19 +3593,18 @@ async def cb_city_wh_buy_qty(call: CallbackQuery):
         )
         return
 
-    if not await aio_try_deposit_to_warehouse(u["user_id"], item, qty):
+    if not await aio_try_deposit_to_warehouse(u["user_id"], item, qty, city):
         await call.answer("🎒 В сумке не хватает этого товара.", show_alert=True)
         return
 
-    u2 = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
-    wh2 = await aio_get_warehouse_stock(u["user_id"])
+    wh2 = await aio_get_warehouse_stock(u["user_id"], city)
     await call.message.edit_text(
-        _warehouse_text(u2, wh2),
+        _warehouse_text(u, wh2, city),
         parse_mode="HTML",
-        reply_markup=city_warehouse_keyboard(get_warehouse_next_tier(u2) is not None),
+        reply_markup=city_warehouse_keyboard(u, city),
     )
     await call.answer(
-        f"✅ Убрано на склад: {qty} × {ITEMS[item]['name']}!",
+        f"✅ Убрано на склад в городе {city}: {qty} × {ITEMS[item]['name']}!",
         show_alert=True,
     )
 
@@ -3441,9 +3615,10 @@ async def cb_city_wh_sell_menu(call: CallbackQuery):
         await _city_deny(call)
         return
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
-    wh = await aio_get_warehouse_stock(u["user_id"])
+    wh = await aio_get_warehouse_stock(u["user_id"], u["city"])
     await call.message.edit_text(
         f"{_tge('warehouse', '📦')} <b><i>ЗАБРАТЬ СО СКЛАДА</i></b>\n"
+        f"<b><i>Город: {u['city']}</i></b>\n"
         "<b><i>Выберите товар, чтобы вернуть его в сумку</i></b> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━",
         parse_mode="HTML",
@@ -3463,8 +3638,9 @@ async def cb_city_wh_sell_item(call: CallbackQuery):
         return
 
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    city = u["city"]
 
-    wh = await aio_get_warehouse_stock(u["user_id"])
+    wh = await aio_get_warehouse_stock(u["user_id"], city)
     owned = wh.get(item, 0)
     if owned <= 0:
         await call.answer("📦 У вас нет этого товара на складе.", show_alert=True)
@@ -3472,6 +3648,7 @@ async def cb_city_wh_sell_item(call: CallbackQuery):
 
     text = (
         f"{_item_emoji(item)} <b><i>{ITEMS[item]['name'].upper()}</i></b>\n"
+        f"📍 <b><i>Город: {city}</i></b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"📦 На складе: <b><i>{_fmt(owned)}</i></b> <b><i>ед.</i></b>\n\n"
         "<b><i>Сколько забрать в сумку?</i></b>"
@@ -3507,13 +3684,10 @@ async def cb_city_wh_sell_qty(call: CallbackQuery):
         return
 
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    city = u["city"]
 
-    # ── Перепроверяем остаток перед перекладкой — экран с кнопками мог быть
-    # открыт какое-то время назад, за это время товар мог закончиться
-    # (например, забран по другому каналу). Сама перекладка всё равно
-    # атомарна (try_withdraw_from_warehouse), но лучше сразу дать понятную
-    # ошибку, чем молча обрезать qty.
-    wh = await aio_get_warehouse_stock(u["user_id"])
+    # ── Перепроверяем остаток перед перекладкой ──
+    wh = await aio_get_warehouse_stock(u["user_id"], city)
     if qty > wh.get(item, 0):
         await call.answer(
             f"📦 На складе только {_fmt(wh.get(item, 0))} ед. этого товара.",
@@ -3521,24 +3695,23 @@ async def cb_city_wh_sell_qty(call: CallbackQuery):
         )
         return
 
-    if not await aio_try_withdraw_from_warehouse(u["user_id"], item, qty):
+    if not await aio_try_withdraw_from_warehouse(u["user_id"], item, qty, city):
         await call.answer("📦 На складе недостаточно этого товара.", show_alert=True)
         return
 
     if ITEMS[item].get("perishable"):
         # Товар не портился, пока лежал на складе — при возврате в сумку
         # таймер свежести стартует заново, как при новой покупке.
-        await aio_refresh_item_freshness(u["user_id"], item)
+        await aio_refresh_item_freshness(u["user_id"], item, city)
 
-    u2 = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
-    wh2 = await aio_get_warehouse_stock(u["user_id"])
+    wh2 = await aio_get_warehouse_stock(u["user_id"], city)
     await call.message.edit_text(
-        _warehouse_text(u2, wh2),
+        _warehouse_text(u, wh2, city),
         parse_mode="HTML",
-        reply_markup=city_warehouse_keyboard(get_warehouse_next_tier(u2) is not None),
+        reply_markup=city_warehouse_keyboard(u, city),
     )
     await call.answer(
-        f"✅ Забрано со склада: {qty} × {ITEMS[item]['name']}!",
+        f"✅ Забрано со склада в городе {city}: {qty} × {ITEMS[item]['name']}!",
         show_alert=True,
     )
 
