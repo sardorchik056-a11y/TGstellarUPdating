@@ -449,6 +449,23 @@ def init_city_db():
         inv_cols = [r["name"] for r in conn.execute("PRAGMA table_info(city_inventory)").fetchall()]
         if "acquired_at" not in inv_cols:
             conn.execute("ALTER TABLE city_inventory ADD COLUMN acquired_at INTEGER")
+        # ── Склад (хранение) — ОТДЕЛЬНАЯ от city_inventory таблица.
+        # city_inventory теперь представляет то, что игрок везёт с собой
+        # (повозка): именно это подвергается риску конфискации на таможне
+        # и ограничивается вместимостью повозки. city_warehouse — то, что
+        # игрок сознательно положил на склад «дома»: туда таможня не лезет,
+        # и это НЕ считается при проверке вместимости повозки. Суммарно
+        # (повозка + склад) ограничено вместимостью склада — так и было
+        # задумано изначально (см. WAREHOUSE_LEVELS выше).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS city_warehouse (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id   INTEGER NOT NULL,
+                item_type TEXT NOT NULL,
+                quantity  INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(user_id, item_type)
+            )
+        """)
         # ── Капсулы усиления: купленный, но ещё не использованный запас ──
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_capsules_owned (
@@ -803,6 +820,70 @@ def try_adjust_inventory(user_id: int, item_type: str, delta: int) -> bool:
         )
         conn.commit()
         return cur.rowcount > 0
+
+
+def get_warehouse_stock(user_id: int) -> dict:
+    """Товар, который лежит на складе (не в повозке). Не подвержен порче
+    и не проверяется таможней — таможня досматривает только то, что
+    везётся с собой (см. get_inventory / city_inventory)."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT item_type, quantity FROM city_warehouse WHERE user_id=?", (user_id,)
+        ).fetchall()
+    wh = {item: 0 for item in ITEMS}
+    for r in rows:
+        wh[r["item_type"]] = r["quantity"]
+    return wh
+
+
+def try_adjust_warehouse_stock(user_id: int, item_type: str, delta: int) -> bool:
+    """Атомарно меняет количество товара на складе (аналог try_adjust_inventory,
+    но для city_warehouse). Не даёт уйти в минус."""
+    if delta == 0:
+        return True
+    with _conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO city_warehouse (user_id, item_type, quantity) VALUES (?,?,0)",
+            (user_id, item_type),
+        )
+        cur = conn.execute(
+            "UPDATE city_warehouse SET quantity = quantity + ? "
+            "WHERE user_id=? AND item_type=? AND quantity + ? >= 0",
+            (delta, user_id, item_type, delta),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def try_store_item(user_id: int, item_type: str, qty: int) -> tuple[bool, str]:
+    """Кладёт `qty` товара из повозки (city_inventory) на склад (city_warehouse).
+    Общая вместимость склада (повозка+склад вместе) не меняется от этой
+    операции — она просто перекладывает товар из одного места в другое,
+    поэтому дополнительная проверка лимита склада тут не нужна."""
+    if qty <= 0:
+        return False, "❌ Количество должно быть положительным."
+    if not try_adjust_inventory(user_id, item_type, -qty):
+        return False, "📦 В повозке недостаточно этого товара."
+    if not try_adjust_warehouse_stock(user_id, item_type, qty):
+        # откат — не должно случаться, но на всякий случай возвращаем товар в повозку
+        try_adjust_inventory(user_id, item_type, qty)
+        return False, "❌ Не удалось положить товар на склад. Попробуйте ещё раз."
+    return True, ""
+
+
+def try_take_item(user_id: int, item_type: str, qty: int) -> tuple[bool, str]:
+    """Забирает `qty` товара со склада (city_warehouse) обратно в повозку
+    (city_inventory). Вместимость повозки тут намеренно НЕ проверяется —
+    она проверяется один раз, перед самой отправкой в другой город
+    (см. _do_travel), а не на каждое перекладывание товара."""
+    if qty <= 0:
+        return False, "❌ Количество должно быть положительным."
+    if not try_adjust_warehouse_stock(user_id, item_type, -qty):
+        return False, "📦 На складе недостаточно этого товара."
+    if not try_adjust_inventory(user_id, item_type, qty):
+        try_adjust_warehouse_stock(user_id, item_type, qty)
+        return False, "❌ Не удалось забрать товар со склада. Попробуйте ещё раз."
+    return True, ""
 
 
 def force_confiscate_inventory(user_id: int, item_type: str) -> int:
@@ -1383,6 +1464,18 @@ async def aio_try_adjust_inventory(user_id: int, item_type: str, delta: int) -> 
     return await asyncio.to_thread(try_adjust_inventory, user_id, item_type, delta)
 
 
+async def aio_get_warehouse_stock(user_id: int) -> dict:
+    return await asyncio.to_thread(get_warehouse_stock, user_id)
+
+
+async def aio_try_store_item(user_id: int, item_type: str, qty: int) -> tuple[bool, str]:
+    return await asyncio.to_thread(try_store_item, user_id, item_type, qty)
+
+
+async def aio_try_take_item(user_id: int, item_type: str, qty: int) -> tuple[bool, str]:
+    return await asyncio.to_thread(try_take_item, user_id, item_type, qty)
+
+
 async def aio_force_confiscate_inventory(user_id: int, item_type: str) -> int:
     return await asyncio.to_thread(force_confiscate_inventory, user_id, item_type)
 
@@ -1734,6 +1827,10 @@ def city_cart_keyboard(can_upgrade: bool) -> InlineKeyboardMarkup:
 
 def city_warehouse_keyboard(can_upgrade: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📥 Положить в склад", callback_data="city_warehouse_store"),
+        InlineKeyboardButton(text="📤 Забрать со склада", callback_data="city_warehouse_take"),
+    )
     if can_upgrade:
         builder.row(InlineKeyboardButton(text=" Прокачать склад", callback_data="city_warehouse_upgrade", icon_custom_emoji_id=BTN_EMOJI["warehouse"]))
     builder.row(
@@ -1976,23 +2073,30 @@ def _cart_bar(carried: int, capacity: int, length: int = 12) -> str:
     return "▰" * filled + "▱" * (length - filled)
 
 
-def _bag_text(inv: dict, u: dict | None = None, freshness: dict | None = None) -> str:
+def _bag_text(inv: dict, u: dict | None = None, freshness: dict | None = None, wh: dict | None = None) -> str:
     """freshness: {item_type: seconds_left} для скоропортящихся товаров, которые
-    сейчас лежат в инвентаре (передаётся вызывающей стороной, т.к. это отдельный
-    async-запрос к БД)."""
+    сейчас лежат в повозке (передаётся вызывающей стороной, т.к. это отдельный
+    async-запрос к БД). wh — что лежит на складе (отдельно от повозки)."""
     freshness = freshness or {}
+    wh = wh or {}
     total_items = sum(inv.values())
     capacity = get_cart_capacity(u) if u else CART_LEVELS[0]["capacity"]
     bar = _cart_bar(total_items, capacity)
     pct = 0 if capacity <= 0 else min(100, round(total_items / capacity * 100))
+    wh_total = sum(wh.values())
     wh_capacity = get_warehouse_capacity(u) if u else WAREHOUSE_LEVELS[0]["capacity"]
-    wh_bar = _cart_bar(total_items, wh_capacity)
-    wh_pct = 0 if wh_capacity <= 0 else min(100, round(total_items / wh_capacity * 100))
+    owned_total = total_items + wh_total
+    wh_bar = _cart_bar(owned_total, wh_capacity)
+    wh_pct = 0 if wh_capacity <= 0 else min(100, round(owned_total / wh_capacity * 100))
 
     goods_lines = []
     for item, info in ITEMS.items():
-        line = f"{_item_emoji(item)} {info['name']}: <b><i>{inv.get(item, 0)}</i></b> <b><i>шт.</i></b>"
-        if info.get("perishable") and inv.get(item, 0) > 0:
+        have_cart = inv.get(item, 0)
+        have_wh = wh.get(item, 0)
+        line = f"{_item_emoji(item)} {info['name']}: <b><i>{have_cart}</i></b> <b><i>шт.</i></b>"
+        if have_wh:
+            line += f" <b><i>(+{have_wh} на складе)</i></b>"
+        if info.get("perishable") and have_cart > 0:
             left = freshness.get(item)
             if left is not None:
                 m, s = left // 60, left % 60
@@ -2002,17 +2106,19 @@ def _bag_text(inv: dict, u: dict | None = None, freshness: dict | None = None) -
 
     return (
         f"{_tge('bag', '🎒')} <b><i>ИНВЕНТАРЬ ТОРГОВЦА</i></b>\n"
-        "<b><i>Что лежит у вас на складе</i></b> ✨\n"
+        "<b><i>Что у вас в повозке (+ на складе)</i></b> ✨\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{goods_block}\n\n"
         f"🐎 <b><i>Повозка:</i></b> <b><i>{_fmt(total_items)} / {_fmt(capacity)}</i></b> <b><i>({pct}%)</i></b>\n"
         f"{bar}\n\n"
-        f"📦 <b><i>Склад:</i></b> <b><i>{_fmt(total_items)} / {_fmt(wh_capacity)}</i></b> <b><i>({wh_pct}%)</i></b>\n"
+        f"📦 <b><i>Склад (повозка + склад вместе):</i></b> <b><i>{_fmt(owned_total)} / {_fmt(wh_capacity)}</i></b> <b><i>({wh_pct}%)</i></b>\n"
         f"{wh_bar}\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚠️ <b><i>Провоз свыше {CUSTOMS_LIMIT} ед. одного товара рискует конфискацией на таможне.</i></b>\n"
+        f"⚠️ <b><i>Провоз свыше {CUSTOMS_LIMIT} ед. одного товара рискует конфискацией на таможне — но только то, что везётся в повозке. Товар на складе таможня не досматривает.</i></b>\n"
         f"⚠️ <b><i>Запретные свитки проверяют вдвое строже — шанс конфискации {int(ITEM_CUSTOMS_CHANCE.get('forbidden_scrolls', CUSTOMS_CHANCE) * 100)}%.</i></b>\n"
         f"⏳ <b><i>Чёрная икра портится через {CAVIAR_FRESHNESS_SECONDS // 60} мин. после покупки.</i></b>\n"
+        f"📝 <b><i>Положить на склад:</i></b> <code>/citystore товар количество</code>\n"
+        f"📝 <b><i>Забрать со склада:</i></b> <code>/citytake товар количество</code>\n"
         f"📝 <b><i>Прокачать повозку:</i></b> <code>/citycart</code>\n"
         f"📝 <b><i>Прокачать склад:</i></b> <code>/citywarehouse</code>\n"
         f"📝 <b><i>Снизить риск конфискации:</i></b> <code>/citydefense</code>"
@@ -2065,22 +2171,37 @@ def _cart_text(u: dict, inv: dict) -> str:
     return "\n".join(lines)
 
 
-def _warehouse_text(u: dict, inv: dict) -> str:
+def _warehouse_text(u: dict, wh: dict, inv: dict | None = None) -> str:
+    """wh — товар, реально лежащий на складе (city_warehouse). inv — то, что
+    в повозке (city_inventory), нужно только чтобы показать суммарный лимит
+    владения (повозка+склад ограничены общей вместимостью склада)."""
+    inv = inv or {}
     lvl = get_warehouse_level(u)
     cur_tier = WAREHOUSE_LEVELS[lvl]
     capacity = cur_tier["capacity"]
-    stored = total_inventory_qty(inv)
-    bar = _cart_bar(stored, capacity)
-    pct = 0 if capacity <= 0 else min(100, round(stored / capacity * 100))
+    wh_stored = total_inventory_qty(wh)
+    carried = total_inventory_qty(inv)
+    owned_total = wh_stored + carried
+    bar = _cart_bar(owned_total, capacity)
+    pct = 0 if capacity <= 0 else min(100, round(owned_total / capacity * 100))
     nxt = get_warehouse_next_tier(u)
+
+    goods_lines = "\n".join(
+        f"  {_item_emoji(item)} {info['name']}: <b><i>{wh.get(item, 0)}</i></b> <b><i>шт.</i></b>"
+        for item, info in ITEMS.items()
+        if wh.get(item, 0) > 0
+    ) or "  <i>пусто — товар лежит только в повозке</i>"
 
     lines = [
         "📦 <b><i>СКЛАД</i></b>",
-        "<b><i>Сколько товара можно хранить всего (не путать с повозкой)</i></b> ✨",
+        "<b><i>Товар, оставленный дома — таможня его не досматривает</i></b> ✨",
         "━━━━━━━━━━━━━━━━━━━━\n",
         f"🏬 Текущий склад: <b><i>{cur_tier['name']}</i></b> <b><i>(уровень {lvl})</i></b>\n",
-        f"📦 Хранится: <b><i>{_fmt(stored)} / {_fmt(capacity)}</i></b> <b><i>({pct}%)</i></b>\n"
+        f"📦 На складе:\n{goods_lines}\n",
+        f"\n📦 Владение всего (повозка + склад): <b><i>{_fmt(owned_total)} / {_fmt(capacity)}</i></b> <b><i>({pct}%)</i></b>\n"
         f"{bar}\n",
+        f"📝 <b><i>Положить на склад:</i></b> <code>/citystore товар количество</code>\n"
+        f"📝 <b><i>Забрать со склада:</i></b> <code>/citytake товар количество</code>\n",
     ]
 
     if nxt is None:
@@ -2205,6 +2326,8 @@ def _help_text() -> str:
         f"{_tge('cart', '🐎')} <code>/citycartup</code> — <b><i>прокачать повозку на след. уровень</i></b>\n"
         f"{_tge('warehouse', '📦')} <code>/citywarehouse</code> — <b><i>статус склада и прокачка</i></b>\n"
         f"{_tge('warehouse', '📦')} <code>/citywarehouseup</code> — <b><i>прокачать склад на след. уровень</i></b>\n"
+        f"{_tge('warehouse', '📦')} <code>/citystore товар количество</code> — <b><i>положить товар на склад</i></b>\n"
+        f"{_tge('warehouse', '📦')} <code>/citytake товар количество</code> — <b><i>забрать товар со склада</i></b>\n"
         f"{_tge('news', '🗞')} <code>/citynews</code> — <b><i>слухи и прогнозы цен на 2 часа вперёд</i></b>\n"
         f"{_tge('route', '🗺')} <code>/cityroute</code> — <b><i>самый выгодный маршрут прямо сейчас</i></b>\n"
         f"{_tge('exchange', '🔁')} <code>/cityexchange количество</code> — <b><i>обменять кристаллы на монеты</i></b>\n"
@@ -2226,6 +2349,7 @@ def _help_text() -> str:
         "  • <b><i>Во время пути торговля недоступна</i></b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"<b><i>{_tge('customs', '🧙‍♂️')} Таможня (Гильдия магов)</i></b>\n"
+        f"  • <b><i>Досматривает только товар в повозке — то, что лежит на складе, конфискации не подлежит</i></b>\n"
         f"  • <b><i>Провоз свыше</i></b> <b><i>{CUSTOMS_LIMIT}</i></b> <b><i>ед. одного товара рискует конфискацией</i></b>\n"
         f"  • Шанс конфискации: <b><i>{int(CUSTOMS_CHANCE * 100)}%</i></b> (обычный товар), "
         f"<b><i>{int(ITEM_CUSTOMS_CHANCE['forbidden_scrolls'] * 100)}%</i></b> (запретные свитки), "
@@ -2236,12 +2360,16 @@ def _help_text() -> str:
         f"  • <b><i>Все три защиты вместе снижают шанс конфискации до минимума —</i></b> <b><i>{int(MIN_CUSTOMS_CHANCE * 100)}%</i></b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"<b><i>{_tge('cart', '🐎')} Повозка (лимит перевозки)</i></b>\n"
+        f"  • <b><i>Проверяется только перед отправкой в другой город — при покупке товара лимит повозки не мешает</i></b>\n"
+        f"  • <b><i>Если груза больше, чем влезает в повозку — лишнее нужно продать или положить на склад</i></b> (<code>/citystore</code>)\n"
         f"  • <b><i>Базовый лимит:</i></b> <b><i>{_fmt(CART_LEVELS[0]['capacity'])}</i></b> <b><i>ед. товара за раз</i></b>\n"
         f"  • <b><i>Максимум после прокачки:</i></b> <b><i>{_fmt(CART_LEVELS[CART_MAX_LEVEL]['capacity'])}</i></b> <b><i>ед.</i></b>\n"
         f"  • <b><i>Прокачивается за кристаллы, всего {CART_MAX_LEVEL} платных уровней</i></b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"<b><i>{_tge('warehouse', '📦')} Склад (лимит хранения)</i></b>\n"
-        f"  • <b><i>Отдельно от повозки — если склад переполнен, купить товар нельзя</i></b>\n"
+        f"  • <b><i>Общий лимит на всё, чем вы владеете (повозка + склад вместе) — если он превышен, купить товар нельзя</i></b>\n"
+        f"  • <b><i>Товар на складе безопасен от таможни и не занимает место в повозке — но и не едет с вами</i></b>\n"
+        f"  • <b><i>Положить:</i></b> <code>/citystore товар количество</code> <b><i>· Забрать:</i></b> <code>/citytake товар количество</code>\n"
         f"  • <b><i>Базовый лимит:</i></b> <b><i>{_fmt(WAREHOUSE_LEVELS[0]['capacity'])}</i></b> <b><i>ед. товара</i></b>\n"
         f"  • <b><i>Максимум после прокачки:</i></b> <b><i>{_fmt(WAREHOUSE_LEVELS[WAREHOUSE_MAX_LEVEL]['capacity'])}</i></b> <b><i>ед.</i></b>\n"
         f"  • <b><i>Прокачивается за кристаллы, всего {WAREHOUSE_MAX_LEVEL} платных уровней</i></b>\n\n"
@@ -2479,26 +2607,21 @@ async def cmd_city_buy(message: Message):
         await message.reply("❌ Количество должно быть положительным.")
         return
 
-    capacity = get_cart_capacity(u)
+    # ── Вместимость повозки при покупке НЕ проверяем ────────────────────
+    # Повозка ограничивает только то, что реально везётся в поездку — эта
+    # проверка теперь сделана один раз, перед самой отправкой в другой
+    # город (см. _do_travel). При покупке товар может быть тут же убран
+    # на склад (кнопка/команда /citystore), поэтому блокировать покупку
+    # лимитом повозки было бы неверно.
     inv_before = await aio_get_inventory(u["user_id"])
+    wh_before = await aio_get_warehouse_stock(u["user_id"])
     carried = total_inventory_qty(inv_before)
-    if carried + qty > capacity:
-        free_space = max(0, capacity - carried)
-        await message.reply(
-            f"🐎 <b><i>Повозка не выдержит столько груза!</i></b>\n"
-            f"📦 Лимит повозки: <b><i>{_fmt(capacity)}</i></b> <b><i>ед.</i></b>\n"
-            f"📦 Уже везёте: <b><i>{_fmt(carried)}</i></b> <b><i>ед.</i></b>\n"
-            f"📦 Свободно места: <b><i>{_fmt(free_space)}</i></b> <b><i>ед.</i></b>\n\n"
-            f"<b><i>Прокачайте повозку командой</i></b> <code>/citycart</code> <b><i>, чтобы возить больше груза за раз.</i></b>",
-            parse_mode="HTML",
-        )
-        return
 
-    # ── Отдельная проверка: склад (лимит хранения) ─────────────────────
-    # Не путать с повозкой выше — склад ограничивает, сколько товара можно
-    # в принципе хранить, независимо от того, сколько влезает в повозку.
+    # ── Проверка: склад (общий лимит хранения) ──────────────────────────
+    # Ограничивает суммарное количество товара, которым игрок владеет —
+    # и то, что везётся в повозке, и то, что лежит на складе, вместе.
     wh_capacity = get_warehouse_capacity(u)
-    stored = carried  # общее кол-во товара на руках — то же значение, что и carried
+    stored = carried + total_inventory_qty(wh_before)
     if stored + qty > wh_capacity:
         free_space = max(0, wh_capacity - stored)
         await message.reply(
@@ -2628,6 +2751,26 @@ async def _do_travel(user_id: int, username: str, dest: str):
     origin_city = u["city"]
     end_time = int(time.time()) + TRAVEL_MINUTES * 60
 
+    # ── Проверка вместимости повозки — ЕДИНСТВЕННОЕ место, где она
+    # проверяется (при покупке товара её больше не проверяем, см. cmd_city_buy).
+    # Товар, который не влезает в повозку, нужно либо продать, либо
+    # положить на склад (/citystore) — со склада он в поездку не берётся
+    # и не рискует конфискацией.
+    cart_capacity = get_cart_capacity(u)
+    inv = await aio_get_inventory(u["user_id"])  # заодно спишет протухшую икру
+    carried = total_inventory_qty(inv)
+    if carried > cart_capacity:
+        over = carried - cart_capacity
+        return False, (
+            f"🐎 <b><i>Повозка не выдержит столько груза!</i></b>\n"
+            f"📦 Лимит повозки: <b><i>{_fmt(cart_capacity)}</i></b> <b><i>ед.</i></b>\n"
+            f"📦 Везёте с собой: <b><i>{_fmt(carried)}</i></b> <b><i>ед.</i></b>\n"
+            f"📦 Лишнего: <b><i>{_fmt(over)}</i></b> <b><i>ед.</i></b>\n\n"
+            f"<b><i>Продайте лишнее, положите его на склад</i></b> "
+            f"(<code>/citystore товар количество</code>) <b><i>или прокачайте повозку</i></b> "
+            f"(<code>/citycart</code>)."
+        )
+
     # ── Атомарный "замок" на поездку ────────────────────────────────────
     # Захватываем статус 'traveling' ОДНИМ запросом (status='free' в WHERE)
     # ДО списания денег и ДО броска таможни. Если между чтением статуса
@@ -2642,7 +2785,6 @@ async def _do_travel(user_id: int, username: str, dest: str):
         await aio_release_travel_slot(user_id, origin_city)  # снимаем замок, поездка не состоялась
         return False, f"💸 Недостаточно {CURRENCY_NAME} на дорогу. Нужно {_crystals(TRAVEL_COST)}."
 
-    inv = await aio_get_inventory(u["user_id"])  # заодно спишет протухшую икру
     confiscated = []
     fine_total = 0
     for item, qty in inv.items():
@@ -2771,9 +2913,10 @@ async def _get_perishables_freshness(user_id: int) -> dict:
 async def cmd_city_inventory(message: Message):
     u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
     inv = await aio_get_inventory(u["user_id"])
+    wh = await aio_get_warehouse_stock(u["user_id"])
     freshness = await _get_perishables_freshness(u["user_id"])
     await message.reply(
-        _bag_text(inv, u, freshness),
+        _bag_text(inv, u, freshness, wh),
         parse_mode="HTML",
         reply_markup=city_bag_keyboard(),
     )
@@ -2813,9 +2956,10 @@ async def cmd_city_cart_upgrade(message: Message):
 @router.message(Command("citywarehouse", "склад", "warehouse"))
 async def cmd_city_warehouse(message: Message):
     u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
+    wh = await aio_get_warehouse_stock(u["user_id"])
     inv = await aio_get_inventory(u["user_id"])
     await message.reply(
-        _warehouse_text(u, inv),
+        _warehouse_text(u, wh, inv),
         parse_mode="HTML",
         reply_markup=city_warehouse_keyboard(get_warehouse_next_tier(u) is not None),
     )
@@ -2836,6 +2980,102 @@ async def cmd_city_warehouse_upgrade(message: Message):
         f"📦 Новый лимит хранения: <b><i>{_fmt(nxt['capacity'])}</i></b> <b><i>ед.</i></b>\n"
         f"{_tge('currency', CURRENCY_EMOJI)} Списано: <b><i>{_fmt(nxt['cost'])}</i></b> <b><i>{CURRENCY_NAME}</i></b>\n"
         f"{_tge('balance', CURRENCY_EMOJI)} Остаток: <b><i>{_fmt(u['balance'])}</i></b> <b><i>{CURRENCY_NAME}</i></b>",
+        parse_mode="HTML",
+        reply_markup=city_back_keyboard(),
+    )
+
+
+@router.message(Command("citystore", "положить", "склад+"))
+async def cmd_city_store(message: Message):
+    """Кладёт товар из повозки на склад — просто для хранения. Со склада
+    товар не рискует конфискацией на таможне и не занимает место в повозке,
+    но обратно в поездку не берётся, пока не забрать его командой /citytake."""
+    args = (message.text or "").split()[1:]
+    if len(args) < 2:
+        await message.reply(
+            "📝 Использование: <code>/citystore [товар] [количество]</code>\n"
+            "<b><i>Например: /citystore зелья 10</i></b>\n\n"
+            "<b><i>Перекладывает товар из повозки на склад — для сохранности "
+            "(таможня его не тронет), но с собой в поездку он больше не поедет, "
+            "пока не заберёте его обратно</i></b> (<code>/citytake</code>).",
+            parse_mode="HTML",
+        )
+        return
+
+    qty_raw, item_raw = args[-1], " ".join(args[:-1])
+    u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
+
+    item = _parse_item(item_raw)
+    if not item:
+        await message.reply("❌ Неизвестный товар. Доступно: зелья, свитки, еда, запретные свитки, черная икра.")
+        return
+
+    try:
+        qty = int(qty_raw)
+    except ValueError:
+        await message.reply("❌ Количество должно быть числом.")
+        return
+
+    ok, err = await aio_try_store_item(u["user_id"], item, qty)
+    if not ok:
+        await message.reply(err, parse_mode="HTML", reply_markup=city_back_keyboard())
+        return
+
+    wh = await aio_get_warehouse_stock(u["user_id"])
+    await message.reply(
+        "✅ <b><i>ТОВАР УБРАН НА СКЛАД</i></b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{_item_emoji(item)} Убрано: <b><i>{qty} × {ITEMS[item]['name']}</i></b>\n"
+        f"📦 Теперь на складе: <b><i>{wh.get(item, 0)}</i></b> <b><i>шт.</i></b>\n\n"
+        "<b><i>Этот товар теперь в безопасности и не поедет с вами в город "
+        "автоматически — заберите его командой</i></b> <code>/citytake</code> "
+        "<b><i>перед тем как он вам понадобится в дороге.</i></b>",
+        parse_mode="HTML",
+        reply_markup=city_back_keyboard(),
+    )
+
+
+@router.message(Command("citytake", "забрать", "склад-"))
+async def cmd_city_take(message: Message):
+    """Забирает товар со склада обратно в повозку. Вместимость повозки тут
+    не проверяется — она проверяется один раз, перед самой отправкой в
+    другой город (см. /citygo)."""
+    args = (message.text or "").split()[1:]
+    if len(args) < 2:
+        await message.reply(
+            "📝 Использование: <code>/citytake [товар] [количество]</code>\n"
+            "<b><i>Например: /citytake зелья 10</i></b>",
+            parse_mode="HTML",
+        )
+        return
+
+    qty_raw, item_raw = args[-1], " ".join(args[:-1])
+    u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
+
+    item = _parse_item(item_raw)
+    if not item:
+        await message.reply("❌ Неизвестный товар. Доступно: зелья, свитки, еда, запретные свитки, черная икра.")
+        return
+
+    try:
+        qty = int(qty_raw)
+    except ValueError:
+        await message.reply("❌ Количество должно быть числом.")
+        return
+
+    ok, err = await aio_try_take_item(u["user_id"], item, qty)
+    if not ok:
+        await message.reply(err, parse_mode="HTML", reply_markup=city_back_keyboard())
+        return
+
+    inv = await aio_get_inventory(u["user_id"])
+    await message.reply(
+        "✅ <b><i>ТОВАР ЗАБРАН СО СКЛАДА</i></b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{_item_emoji(item)} Забрано: <b><i>{qty} × {ITEMS[item]['name']}</i></b>\n"
+        f"🐎 Теперь в повозке: <b><i>{inv.get(item, 0)}</i></b> <b><i>шт.</i></b>\n\n"
+        "⚠️ <b><i>Перед отправкой в другой город не забудьте проверить, что весь "
+        "груз влезает в повозку</i></b> (<code>/citycart</code>).",
         parse_mode="HTML",
         reply_markup=city_back_keyboard(),
     )
@@ -2968,10 +3208,11 @@ async def cb_city_bag(call: CallbackQuery):
         await _city_deny(call)
         return
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
-    inv = await aio_get_inventory(call.from_user.id)
-    freshness = await _get_perishables_freshness(call.from_user.id)
+    inv = await aio_get_inventory(u["user_id"])
+    wh = await aio_get_warehouse_stock(u["user_id"])
+    freshness = await _get_perishables_freshness(u["user_id"])
     await call.message.edit_text(
-        _bag_text(inv, u, freshness), parse_mode="HTML", reply_markup=city_bag_keyboard()
+        _bag_text(inv, u, freshness, wh), parse_mode="HTML", reply_markup=city_bag_keyboard()
     )
     await call.answer()
 
@@ -3017,9 +3258,10 @@ async def cb_city_warehouse(call: CallbackQuery):
         await _city_deny(call)
         return
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    wh = await aio_get_warehouse_stock(u["user_id"])
     inv = await aio_get_inventory(u["user_id"])
     await call.message.edit_text(
-        _warehouse_text(u, inv),
+        _warehouse_text(u, wh, inv),
         parse_mode="HTML",
         reply_markup=city_warehouse_keyboard(get_warehouse_next_tier(u) is not None),
     )
@@ -3037,13 +3279,44 @@ async def cb_city_warehouse_upgrade(call: CallbackQuery):
         return
 
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    wh = await aio_get_warehouse_stock(u["user_id"])
     inv = await aio_get_inventory(u["user_id"])
     await call.message.edit_text(
-        _warehouse_text(u, inv),
+        _warehouse_text(u, wh, inv),
         parse_mode="HTML",
         reply_markup=city_warehouse_keyboard(get_warehouse_next_tier(u) is not None),
     )
     await call.answer(f"✅ Склад прокачан до «{nxt['name']}»!", show_alert=True)
+
+
+@router.callback_query(F.data == "city_warehouse_store")
+async def cb_city_warehouse_store(call: CallbackQuery):
+    """Кнопка «Положить в склад» — подсказывает команду (аналогично тому,
+    как устроены кнопки покупки/продажи на рынке — ввод количества товаром
+    и его названием через текстовую команду)."""
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    await call.answer(
+        "📥 Чтобы положить товар на склад, отправьте команду:\n"
+        "/citystore [товар] [количество]\n\n"
+        "Например: /citystore зелья 10",
+        show_alert=True,
+    )
+
+
+@router.callback_query(F.data == "city_warehouse_take")
+async def cb_city_warehouse_take(call: CallbackQuery):
+    """Кнопка «Забрать со склада» — аналогично cb_city_warehouse_store."""
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    await call.answer(
+        "📤 Чтобы забрать товар со склада, отправьте команду:\n"
+        "/citytake [товар] [количество]\n\n"
+        "Например: /citytake зелья 10",
+        show_alert=True,
+    )
 
 
 @router.callback_query(F.data == "city_nav_defense")
