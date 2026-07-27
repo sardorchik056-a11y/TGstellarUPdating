@@ -15,33 +15,23 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from database import DB_PATH  # используем тот же файл БД, что и весь бот
+from database import DB_PATH
 from database import get_user as _db_get_user, update_user as _db_update_user
 from database import get_user_by_id_or_username as _db_get_user_by_id_or_username
 from database import aio_get_user as _aio_db_get_user
 from database import aio_get_user_by_id_or_username as _aio_db_get_user_by_id_or_username
 from database import format_amount as _db_format_amount
 
-# Лог начислений/списаний кристаллов гильдии — нужен топу кристаллов
-# (leaders_crystals.py), чтобы считать "сколько заработано за сегодня/
-# вчера/неделю", а не только текущий баланс. Модуль не импортирует
-# city.py обратно, поэтому цикла импорта нет.
 from leaders_crystals import log_crystal_event
 
 router = Router(name="city")
 
-# Список админов продублирован здесь, чтобы не тянуть импорт из main.py
-# (там уже импортируется city.py — циклический импорт).
 CITY_ADMIN_IDS = {8118184388}
 
-# ──────────────────────────────────────────────────────────────────────────
-# ОГРАНИЧЕНИЕ ПО УРОВНЮ: город открывается только с CITY_MIN_LEVEL
-# ──────────────────────────────────────────────────────────────────────────
 CITY_MIN_LEVEL = 15
 
 
 async def _city_level_gate(handler, event, data):
-    """Закрывает весь раздел города игрокам ниже CITY_MIN_LEVEL уровня."""
     user = event.from_user
     if user is None:
         return await handler(event, data)
@@ -71,10 +61,6 @@ async def _city_level_gate(handler, event, data):
 router.message.middleware(_city_level_gate)
 router.callback_query.middleware(_city_level_gate)
 
-# ──────────────────────────────────────────────────────────────────────────
-# КОНСТАНТЫ
-# ──────────────────────────────────────────────────────────────────────────
-
 CURRENCY_NAME = "кристаллы"
 CURRENCY_NAME_SINGULAR = "кристалл"
 CURRENCY_EMOJI = "💎"
@@ -91,24 +77,16 @@ ITEMS = {
     "potions": {"name": "Зелья", "emoji": "🧪", "base": 10},
     "scrolls": {"name": "Свитки", "emoji": "📜", "base": 12},
     "food":    {"name": "Еда",    "emoji": "🍖", "base": 8},
-    # ── Запретные свитки: контрабандный товар — дороже обычных свитков,
-    # но таможня проверяет их особенно тщательно (см. ITEM_CUSTOMS_CHANCE).
     "forbidden_scrolls": {"name": "Запретные свитки", "emoji": "🔮", "base": 30},
-    # ── Чёрная икра: скоропортящийся товар — теряет свежесть через
-    # CAVIAR_FRESHNESS_SECONDS после покупки (см. get_inventory).
     "caviar": {"name": "Чёрная икра", "emoji": "🐟", "base": 45, "perishable": True},
 }
 
-# Модификаторы базовой цены по городам
 CITY_MODIFIERS = {
     "Северный": {"potions": 0.7, "scrolls": 1.3, "food": 1.3, "forbidden_scrolls": 1.1, "caviar": 0.8},
     "Южный":    {"potions": 1.3, "scrolls": 0.7, "food": 0.7, "forbidden_scrolls": 0.8, "caviar": 1.3},
     "Столица":  {"potions": 1.2, "scrolls": 1.2, "food": 1.2, "forbidden_scrolls": 1.3, "caviar": 1.1},
 }
 
-# ──────────────────────────────────────────────────────────────────────────
-# ID КАСТОМНЫХ ЭМОДЗИ ДЛЯ КНОПОК
-# ──────────────────────────────────────────────────────────────────────────
 BTN_EMOJI = {
     "market": "5278702045883292456",
     "bag": "5848184700396376824",
@@ -134,9 +112,6 @@ BTN_EMOJI = {
     "capsules": "5217620305194800391",
 }
 
-# ──────────────────────────────────────────────────────────────────────────
-# КАСТОМНЫЕ ЭМОДЗИ СТАТУСОВ
-# ──────────────────────────────────────────────────────────────────────────
 EMOJI_LOCKED   = "5240241223632954241"
 EMOJI_OWNED    = "5391032818111363540"
 EMOJI_ACTIVE   = "5206607081334906820"
@@ -148,7 +123,6 @@ EMOJI_PICKAXE  = "5197371802136892976"
 
 
 def _stat_tge(emoji_id: str, fallback: str) -> str:
-    """Тег кастомного emoji по «сырому» id (не из BTN_EMOJI), с фолбэком."""
     return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
 
 TRAVEL_COST = 50
@@ -187,24 +161,21 @@ CAPSULE_CATEGORIES = {
         "emoji": _stat_tge(EMOJI_PICKAXE, "⛏"),
         "noun": "добычи",
         "effect": "увеличивает добычу руды в шахте",
-        "flavor": "Алхимический состав ускоряет резонанс кирки с рудной жилой — "
-                   "с каждой партией из недр поднимается больше породы.",
+        "flavor": "Алхимический состав ускоряет резонанс кирки с рудной жилой — с каждой партией из недр поднимается больше породы.",
     },
     "damage": {
         "title": "Капсулы урона",
         "emoji": "⚔️",
         "noun": "урона",
         "effect": "увеличивает урон в бою",
-        "flavor": "Концентрат боевых трав разгоняет кровь и обостряет реакцию — "
-                   "удары становятся тяжелее и точнее.",
+        "flavor": "Концентрат боевых трав разгоняет кровь и обостряет реакцию — удары становятся тяжелее и точнее.",
     },
     "pets": {
         "title": "Капсулы питомцев",
         "emoji": "🐾",
         "noun": "питомцев",
         "effect": "увеличивает силу питомцев",
-        "flavor": "Питательная эссенция, выведенная зверинцем гильдии — "
-                   "любимец растёт сильнее и выносливее.",
+        "flavor": "Питательная эссенция, выведенная зверинцем гильдии — любимец растёт сильнее и выносливее.",
     },
 }
 
@@ -290,7 +261,6 @@ ALIAS_TO_CITY = {
 
 
 def _tge(key: str, fallback: str) -> str:
-    """Возвращает <tg-emoji> тег с кастомным id, либо обычный эмодзи если id не задан."""
     eid = BTN_EMOJI.get(key)
     if not eid:
         return fallback
@@ -304,7 +274,6 @@ ITEM_EMOJI_ID = {
 
 
 def _item_emoji(item_type: str) -> str:
-    """Тег кастомного эмодзи для товара, либо обычный эмодзи из ITEMS, если id не задан."""
     fallback = ITEMS[item_type]["emoji"]
     eid = ITEM_EMOJI_ID.get(item_type)
     if not eid:
@@ -321,10 +290,6 @@ CITY_TGE_KEY = {
 
 def _city_emoji_tag(city: str) -> str:
     return _tge(CITY_TGE_KEY.get(city, ""), CITY_EMOJI.get(city, "🏙"))
-
-# ──────────────────────────────────────────────────────────────────────────
-# БД
-# ──────────────────────────────────────────────────────────────────────────
 
 from contextlib import contextmanager as _contextmanager
 
@@ -344,6 +309,15 @@ def _conn():
             yield conn
     finally:
         conn.close()
+
+
+def _ensure_column_exists(table: str, column: str, column_def: str):
+    """Проверяет наличие колонки и добавляет её если нет."""
+    with _conn() as conn:
+        cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+        if column not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
+            conn.commit()
 
 
 def init_city_db():
@@ -366,49 +340,64 @@ def init_city_db():
                 has_security   INTEGER NOT NULL DEFAULT 0
             )
         """)
-        
-        # Проверяем наличие колонок для миграции
-        cols = [r["name"] for r in conn.execute("PRAGMA table_info(city_users)").fetchall()]
-        if "travel_from" not in cols:
-            conn.execute("ALTER TABLE city_users ADD COLUMN travel_from TEXT")
-        if "last_daily" not in cols:
-            conn.execute("ALTER TABLE city_users ADD COLUMN last_daily TEXT")
-        if "cart_level" not in cols:
-            conn.execute("ALTER TABLE city_users ADD COLUMN cart_level INTEGER NOT NULL DEFAULT 0")
-        if "has_fake_docs" not in cols:
-            conn.execute("ALTER TABLE city_users ADD COLUMN has_fake_docs INTEGER NOT NULL DEFAULT 0")
-        if "has_escort" not in cols:
-            conn.execute("ALTER TABLE city_users ADD COLUMN has_escort INTEGER NOT NULL DEFAULT 0")
-        if "has_security" not in cols:
-            conn.execute("ALTER TABLE city_users ADD COLUMN has_security INTEGER NOT NULL DEFAULT 0")
-        
-        # ── Таблица инвентаря (привязана к городу) ──
-        # Проверяем существование таблицы и её структуру
+        conn.commit()
+    
+    # Добавляем недостающие колонки
+    _ensure_column_exists("city_users", "travel_from", "travel_from TEXT")
+    _ensure_column_exists("city_users", "last_daily", "last_daily TEXT")
+    _ensure_column_exists("city_users", "cart_level", "cart_level INTEGER NOT NULL DEFAULT 0")
+    _ensure_column_exists("city_users", "has_fake_docs", "has_fake_docs INTEGER NOT NULL DEFAULT 0")
+    _ensure_column_exists("city_users", "has_escort", "has_escort INTEGER NOT NULL DEFAULT 0")
+    _ensure_column_exists("city_users", "has_security", "has_security INTEGER NOT NULL DEFAULT 0")
+    
+    with _conn() as conn:
+        # Таблица инвентаря
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_inventory (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id   INTEGER NOT NULL,
-                city      TEXT NOT NULL,
+                city      TEXT NOT NULL DEFAULT 'Столица',
                 item_type TEXT NOT NULL,
                 quantity  INTEGER NOT NULL DEFAULT 0,
                 acquired_at INTEGER,
                 UNIQUE(user_id, city, item_type)
             )
         """)
-        
-        # ── Таблица склада (привязана к городу) ──
+        conn.commit()
+    
+    # Добавляем колонку city в city_inventory если её нет
+    with _conn() as conn:
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(city_inventory)").fetchall()]
+        if "city" not in cols:
+            conn.execute("ALTER TABLE city_inventory ADD COLUMN city TEXT NOT NULL DEFAULT 'Столица'")
+            conn.commit()
+        if "acquired_at" not in cols:
+            conn.execute("ALTER TABLE city_inventory ADD COLUMN acquired_at INTEGER")
+            conn.commit()
+    
+    with _conn() as conn:
+        # Таблица склада
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_warehouse (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id   INTEGER NOT NULL,
-                city      TEXT NOT NULL,
+                city      TEXT NOT NULL DEFAULT 'Столица',
                 item_type TEXT NOT NULL,
                 quantity  INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(user_id, city, item_type)
             )
         """)
-        
-        # ── Уровень склада для каждого города ──
+        conn.commit()
+    
+    # Добавляем колонку city в city_warehouse если её нет
+    with _conn() as conn:
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(city_warehouse)").fetchall()]
+        if "city" not in cols:
+            conn.execute("ALTER TABLE city_warehouse ADD COLUMN city TEXT NOT NULL DEFAULT 'Столица'")
+            conn.commit()
+    
+    with _conn() as conn:
+        # Уровень склада для каждого города
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_warehouse_levels (
                 user_id INTEGER NOT NULL,
@@ -418,7 +407,7 @@ def init_city_db():
             )
         """)
         
-        # ── Капсулы ──
+        # Капсулы
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_capsules_owned (
                 user_id    INTEGER NOT NULL,
@@ -437,7 +426,7 @@ def init_city_db():
             )
         """)
         
-        # ── Цены ──
+        # Цены
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_prices (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -451,7 +440,7 @@ def init_city_db():
             )
         """)
         
-        # ── Новости ──
+        # Новости
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_trade_news (
                 id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -465,7 +454,7 @@ def init_city_db():
             )
         """)
         
-        # ── Лог торговли ──
+        # Лог торговли
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_trade_log (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -476,7 +465,7 @@ def init_city_db():
             )
         """)
         
-        # ── Мета-таблица ──
+        # Мета-таблица
         conn.execute("""
             CREATE TABLE IF NOT EXISTS city_meta (
                 key   TEXT PRIMARY KEY,
@@ -485,7 +474,7 @@ def init_city_db():
         """)
         conn.commit()
 
-    # первичная генерация цен, если их ещё нет
+    # первичная генерация цен
     with _conn() as conn:
         for city in CITIES:
             for item in ITEMS:
@@ -510,8 +499,6 @@ def _roll_price(city: str, item: str) -> int:
     return max(1, round(base * mod * rand_coef))
 
 
-# ---------- пользователи ----------
-
 def get_city_user(user_id: int, username: str = "") -> dict:
     today = date.today().isoformat()
     with _conn() as conn:
@@ -522,20 +509,17 @@ def get_city_user(user_id: int, username: str = "") -> dict:
                 "VALUES (?,?,?,?,?,NULL,?)",
                 (user_id, username or "", START_BALANCE, START_CITY, "free", today),
             )
-            # Создаём записи инвентаря для всех городов
             for city in CITIES:
                 for item in ITEMS:
                     conn.execute(
                         "INSERT OR IGNORE INTO city_inventory (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
                         (user_id, city, item),
                     )
-                # Создаём записи склада для всех городов
                 for item in ITEMS:
                     conn.execute(
                         "INSERT OR IGNORE INTO city_warehouse (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
                         (user_id, city, item),
                     )
-                # Создаём записи уровня склада для всех городов
                 conn.execute(
                     "INSERT OR IGNORE INTO city_warehouse_levels (user_id, city, level) VALUES (?,?,0)",
                     (user_id, city),
@@ -545,7 +529,6 @@ def get_city_user(user_id: int, username: str = "") -> dict:
             return dict(row)
 
     u = dict(row)
-    # ── Ежедневный бонус кристаллов ──
     if u.get("last_daily") != today:
         with _conn() as conn:
             cur = conn.execute(
@@ -843,8 +826,6 @@ def force_confiscate_inventory(user_id: int, item_type: str, city: str = None) -
         return 0
 
 
-# ---------- склад (привязан к городу) ----------
-
 def get_warehouse_stock(user_id: int, city: str = None) -> dict:
     if city is None:
         u = get_city_user(user_id)
@@ -975,8 +956,6 @@ def try_withdraw_from_warehouse(user_id: int, item_type: str, qty: int, city: st
     return True
 
 
-# ---------- магазин защиты от таможни ----------
-
 def get_customs_reduction(u: dict) -> float:
     has_docs = bool(u.get("has_fake_docs"))
     has_escort = bool(u.get("has_escort"))
@@ -1032,8 +1011,6 @@ def try_buy_protection(user_id: int, kind: str) -> tuple[bool, str]:
     log_crystal_event(user_id, -cost)
     return True, "✅ Защита успешно приобретена."
 
-
-# ---------- капсулы усиления ----------
 
 def get_capsules_owned(user_id: int) -> dict:
     with _conn() as conn:
@@ -1120,8 +1097,6 @@ def try_use_capsule(user_id: int, capsule_id: str) -> tuple[bool, str]:
     return True, f"✅ Активирована «{cap['name']}» (×{cap['mult']:g})."
 
 
-# ---------- повозка ----------
-
 def get_cart_level(u: dict) -> int:
     lvl = u.get("cart_level", 0) or 0
     return max(0, min(lvl, CART_MAX_LEVEL))
@@ -1163,8 +1138,6 @@ def try_upgrade_cart(user_id: int) -> tuple[bool, str, dict | None]:
 def total_inventory_qty(inv: dict) -> int:
     return sum(inv.values())
 
-
-# ---------- цены ----------
 
 def get_price(city: str, item: str) -> int:
     with _conn() as conn:
@@ -1213,8 +1186,6 @@ def update_all_prices():
             )
         conn.commit()
 
-
-# ---------- обмен ----------
 
 def log_trade_qty(uid: int, qty: int, action: str):
     with _conn() as conn:
@@ -1299,8 +1270,6 @@ def exchange_crystals_for_coins(uid: int, qty: int) -> tuple[bool, str, int, int
     return True, "", coins, rate
 
 
-# ---------- новости ----------
-
 def generate_news() -> dict:
     city = random.choice(CITIES)
     item = random.choice(list(ITEMS.keys()))
@@ -1373,8 +1342,6 @@ def get_active_news(limit: int = 5) -> list:
         ).fetchall()
     return [dict(r) for r in rows]
 
-
-# ---------- Async-обёртки ----------
 
 async def aio_get_city_user(user_id: int, username: str = "") -> dict:
     return await asyncio.to_thread(get_city_user, user_id, username)
@@ -1548,10 +1515,6 @@ async def aio_get_active_news(limit: int = 5) -> list:
     return await asyncio.to_thread(get_active_news, limit)
 
 
-# ──────────────────────────────────────────────────────────────────────────
-# ВСПОМОГАТЕЛЬНОЕ
-# ──────────────────────────────────────────────────────────────────────────
-
 def _fmt(n: int) -> str:
     return _db_format_amount(n)
 
@@ -1613,10 +1576,6 @@ async def best_trade_route() -> dict | None:
             }
     return best
 
-
-# ──────────────────────────────────────────────────────────────────────────
-# ИНЛАЙН-КЛАВИАТУРЫ
-# ──────────────────────────────────────────────────────────────────────────
 
 def city_main_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
@@ -1947,10 +1906,6 @@ def city_travel_active_keyboard(can_cancel: bool) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text=" В главное меню", callback_data="city_nav_profile", icon_custom_emoji_id=BTN_EMOJI["home"]))
     return builder.as_markup()
 
-
-# ──────────────────────────────────────────────────────────────────────────
-# ТЕКСТЫ ЭКРАНОВ
-# ──────────────────────────────────────────────────────────────────────────
 
 def _profile_text(u: dict, inv: dict) -> str:
     status_line = "🟢 <b><i>Свободен</i></b> <b><i>— можно торговать прямо сейчас</i></b>"
@@ -2418,10 +2373,6 @@ def _help_text() -> str:
         f"<b><i>Удачной торговли, искатель прибыли!</i></b> {_tge('currency', CURRENCY_EMOJI)}"
     )
 
-
-# ──────────────────────────────────────────────────────────────────────────
-# ХЕНДЛЕРЫ КОМАНД
-# ──────────────────────────────────────────────────────────────────────────
 
 async def _city_level_ok(message: Message) -> bool:
     user = message.from_user
@@ -3038,11 +2989,7 @@ async def cmd_city_exchange(message: Message):
     )
 
 
-# ──────────────────────────────────────────────────────────────────────────
-# ОБРАБОТКА КНОПОК НАВИГАЦИИ (callback_query)
-# ──────────────────────────────────────────────────────────────────────────
-
-from aiogram.types import CallbackQuery  # noqa: E402
+from aiogram.types import CallbackQuery
 
 
 def _city_check_owner(call: CallbackQuery) -> bool:
@@ -3608,10 +3555,6 @@ async def cb_city_cancel_travel(call: CallbackQuery):
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=city_back_keyboard())
     await call.answer()
 
-
-# ──────────────────────────────────────────────────────────────────────────
-# ФОНОВЫЕ ЗАДАЧИ
-# ──────────────────────────────────────────────────────────────────────────
 
 async def city_prices_loop():
     import asyncio
