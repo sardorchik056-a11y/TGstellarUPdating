@@ -146,6 +146,7 @@ EMOJI_OWNED    = "5391032818111363540"   # 📦 куплено, но не акт
 EMOJI_ACTIVE   = "5206607081334906820"   # ✅ выбрано / активно сейчас
 EMOJI_BACK_ARR = "6039539366177541657"   # ⬅️ назад
 EMOJI_BUY_BTN  = "5199552030615558774"   # 🪙 купить (кнопка с ценой)
+EMOJI_CRYSTAL_BUY = "5427168083074628963"  # 💎 купить за кристаллы (капсулы) — тот же id, что и currency
 EMOJI_USE_BTN  = "5397916757333654639"   # ✨ использовать / выбрать
 EMOJI_PICKAXE  = "5197371802136892976"   # ⛏ капсулы добычи
 
@@ -1769,7 +1770,7 @@ def city_capsule_detail_keyboard(capsule_id: str, owned: int, is_active: bool = 
         builder.row(InlineKeyboardButton(
             text=f"{_fmt(cap['price'])} ",
             callback_data=f"city_capsule_buy_{capsule_id}",
-            icon_custom_emoji_id=EMOJI_BUY_BTN,
+            icon_custom_emoji_id=EMOJI_CRYSTAL_BUY,
             style="success" if can_afford else "danger",
         ))
     if owned > 0 and not is_active:
@@ -1811,7 +1812,10 @@ def city_cart_keyboard(can_upgrade: bool) -> InlineKeyboardMarkup:
 
 def city_warehouse_keyboard(can_upgrade: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=" Положить в склад", callback_data="city_wh_buy", icon_custom_emoji_id=BTN_EMOJI["buy"]))
+    builder.row(
+        InlineKeyboardButton(text=" Положить в склад", callback_data="city_wh_buy", icon_custom_emoji_id=BTN_EMOJI["buy"]),
+        InlineKeyboardButton(text=" Забрать со склада", callback_data="city_wh_sell", icon_custom_emoji_id=BTN_EMOJI["sell"]),
+    )
     if can_upgrade:
         builder.row(InlineKeyboardButton(text=" Прокачать склад", callback_data="city_warehouse_upgrade", icon_custom_emoji_id=BTN_EMOJI["warehouse"]))
     builder.row(
@@ -1826,11 +1830,59 @@ def city_warehouse_item_keyboard() -> InlineKeyboardMarkup:
     """Выбор товара для покупки прямо из меню склада (кнопка «Положить в склад»)."""
     builder = InlineKeyboardBuilder()
     for item, info in ITEMS.items():
+        eid = ITEM_EMOJI_ID.get(item)
+        kwargs = {"icon_custom_emoji_id": eid} if eid else {}
         builder.row(InlineKeyboardButton(
-            text=f"{info['emoji']} {info['name']}",
+            text=f"{info['emoji']} {info['name']}" if not eid else info["name"],
             callback_data=f"city_wh_buy_item_{item}",
+            **kwargs,
         ))
     builder.row(InlineKeyboardButton(text=" К складу", callback_data="city_nav_warehouse", icon_custom_emoji_id=EMOJI_BACK_ARR))
+    return builder.as_markup()
+
+
+def city_warehouse_sell_item_keyboard(inv: dict) -> InlineKeyboardMarkup:
+    """Выбор товара для продажи прямо из меню склада (кнопка «Забрать со склада»).
+    Показывает только товары, которых на складе больше 0 штук."""
+    builder = InlineKeyboardBuilder()
+    for item, info in ITEMS.items():
+        if inv.get(item, 0) <= 0:
+            continue
+        eid = ITEM_EMOJI_ID.get(item)
+        kwargs = {"icon_custom_emoji_id": eid} if eid else {}
+        builder.row(InlineKeyboardButton(
+            text=(f"{info['emoji']} {info['name']}" if not eid else info["name"]) + f" ({_fmt(inv[item])})",
+            callback_data=f"city_wh_sell_item_{item}",
+            **kwargs,
+        ))
+    if not any(inv.get(item, 0) > 0 for item in ITEMS):
+        builder.row(InlineKeyboardButton(text=" Склад пуст", callback_data="noop"))
+    builder.row(InlineKeyboardButton(text=" К складу", callback_data="city_nav_warehouse", icon_custom_emoji_id=EMOJI_BACK_ARR))
+    return builder.as_markup()
+
+
+def city_warehouse_sell_qty_keyboard(item: str, max_qty: int) -> InlineKeyboardMarkup:
+    """Быстрый выбор количества для продажи. Показывает только варианты,
+    не превышающие max_qty (сколько реально лежит на складе), плюс
+    кнопку «Максимум»."""
+    builder = InlineKeyboardBuilder()
+    row = []
+    for qty in WAREHOUSE_BUY_QTY_OPTIONS:
+        if qty > max_qty:
+            continue
+        row.append(InlineKeyboardButton(text=_fmt(qty), callback_data=f"city_wh_sell_qty_{item}_{qty}"))
+        if len(row) == 3:
+            builder.row(*row)
+            row = []
+    if row:
+        builder.row(*row)
+    if max_qty > 0:
+        builder.row(InlineKeyboardButton(
+            text=f"Максимум ({_fmt(max_qty)})",
+            callback_data=f"city_wh_sell_qty_{item}_{max_qty}",
+            icon_custom_emoji_id=BTN_EMOJI["sell"],
+        ))
+    builder.row(InlineKeyboardButton(text=" К товарам", callback_data="city_wh_sell"))
     return builder.as_markup()
 
 
@@ -3299,6 +3351,127 @@ async def cb_city_wh_buy_qty(call: CallbackQuery):
     )
     await call.answer(
         f"✅ Куплено {qty} × {ITEMS[item]['name']} за {_fmt(total)} {CURRENCY_NAME}!",
+        show_alert=True,
+    )
+
+
+@router.callback_query(F.data == "city_wh_sell")
+async def cb_city_wh_sell_menu(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    if _is_traveling(u):
+        await call.answer("🚶 Вы в пути — торговля недоступна до прибытия.", show_alert=True)
+        return
+    inv = await aio_get_inventory(u["user_id"])
+    await call.message.edit_text(
+        f"{_tge('warehouse', '📦')} <b><i>ЗАБРАТЬ СО СКЛАДА</i></b>\n"
+        "<b><i>Выберите товар для продажи</i></b> ✨\n"
+        "━━━━━━━━━━━━━━━━━━━━",
+        parse_mode="HTML",
+        reply_markup=city_warehouse_sell_item_keyboard(inv),
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("city_wh_sell_item_"))
+async def cb_city_wh_sell_item(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    item = call.data.replace("city_wh_sell_item_", "", 1)
+    if item not in ITEMS:
+        await call.answer("❌ Неизвестный товар.", show_alert=True)
+        return
+
+    u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    if _is_traveling(u):
+        await call.answer("🚶 Вы в пути — торговля недоступна до прибытия.", show_alert=True)
+        return
+
+    price = await aio_get_price(u["city"], item)
+    inv = await aio_get_inventory(u["user_id"])
+    owned = inv.get(item, 0)
+    if owned <= 0:
+        await call.answer("📦 У вас нет этого товара на складе.", show_alert=True)
+        return
+
+    text = (
+        f"{_item_emoji(item)} <b><i>{ITEMS[item]['name'].upper()}</i></b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"💵 Цена за шт.: <b><i>{price}</i></b> {_tge('currency', CURRENCY_EMOJI)}\n"
+        f"📦 На складе: <b><i>{_fmt(owned)}</i></b> <b><i>ед.</i></b>\n\n"
+        "<b><i>Сколько продать?</i></b>"
+    )
+
+    await call.message.edit_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=city_warehouse_sell_qty_keyboard(item, owned),
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("city_wh_sell_qty_"))
+async def cb_city_wh_sell_qty(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    payload = call.data.replace("city_wh_sell_qty_", "", 1)
+    # Количество — всегда последний токен; товар может содержать "_"
+    # (forbidden_scrolls), поэтому режем с конца строки.
+    item, _, qty_raw = payload.rpartition("_")
+    if item not in ITEMS:
+        await call.answer("❌ Неизвестный товар.", show_alert=True)
+        return
+    try:
+        qty = int(qty_raw)
+    except ValueError:
+        await call.answer("❌ Некорректное количество.", show_alert=True)
+        return
+    if qty <= 0:
+        await call.answer("❌ Нечего продавать.", show_alert=True)
+        return
+
+    u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    if _is_traveling(u):
+        await call.answer("🚶 Вы в пути — торговля недоступна до прибытия.", show_alert=True)
+        return
+
+    # ── Перепроверяем остаток перед продажей — экран с кнопками мог быть
+    # открыт какое-то время назад, за это время товар мог закончиться
+    # (например, продан по другому каналу). Сама продажа всё равно
+    # атомарна (try_sell_item), но лучше сразу дать понятную ошибку.
+    inv = await aio_get_inventory(u["user_id"])
+    if qty > inv.get(item, 0):
+        await call.answer(
+            f"📦 У вас только {_fmt(inv.get(item, 0))} ед. этого товара.",
+            show_alert=True,
+        )
+        return
+
+    # ── Цену фиксируем ДО списания товара, чтобы игрок получал деньги
+    # по той цене, что видел на момент продажи (а не по цене, которая
+    # могла смениться фоновой задачей city_prices_loop в этот же момент).
+    price = await aio_get_price(u["city"], item)
+    total = price * qty
+
+    if not await aio_try_sell_item(u["user_id"], item, qty, total):
+        await call.answer("📦 У вас недостаточно этого товара.", show_alert=True)
+        return
+    await aio_register_trade(u["city"], item, "sell")
+    await aio_log_trade_qty(u["user_id"], qty, "sell")
+
+    u2 = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    inv2 = await aio_get_inventory(u["user_id"])
+    await call.message.edit_text(
+        _warehouse_text(u2, inv2),
+        parse_mode="HTML",
+        reply_markup=city_warehouse_keyboard(get_warehouse_next_tier(u2) is not None),
+    )
+    await call.answer(
+        f"✅ Продано {qty} × {ITEMS[item]['name']} за {_fmt(total)} {CURRENCY_NAME}!",
         show_alert=True,
     )
 
