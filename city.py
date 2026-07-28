@@ -231,6 +231,11 @@ WAREHOUSE_MAX_LEVEL = len(WAREHOUSE_LEVELS) - 1
 
 WAREHOUSE_BUY_QTY_OPTIONS = [10, 50, 100, 500, 1000, 5000]
 
+# uid -> {"action": "deposit"/"withdraw", "item": str, "city": str, "max_qty": int}
+# Простое хранилище "ожидания ручного ввода количества" для склада —
+# отдельного FSM в модуле нет, поэтому используем лёгкий словарь в памяти.
+_PENDING_WH_QTY: dict[int, dict] = {}
+
 NEWS_TRUE_CHANCE = 0.60
 NEWS_LIFETIME_HOURS = 2
 
@@ -1835,6 +1840,10 @@ def city_warehouse_sell_qty_keyboard(item: str, max_qty: int) -> InlineKeyboardM
             callback_data=f"city_wh_sell_qty_{item}_{max_qty}",
             icon_custom_emoji_id=BTN_EMOJI["bag"],
         ))
+        builder.row(InlineKeyboardButton(
+            text="✏️ Своё количество",
+            callback_data=f"city_wh_sell_custom_{item}",
+        ))
     builder.row(InlineKeyboardButton(text=" К товарам", callback_data="city_wh_sell"))
     return builder.as_markup()
 
@@ -1856,6 +1865,10 @@ def city_warehouse_qty_keyboard(item: str, max_qty: int) -> InlineKeyboardMarkup
             text=f"Максимум ({_fmt(max_qty)})",
             callback_data=f"city_wh_buy_qty_{item}_{max_qty}",
             icon_custom_emoji_id=BTN_EMOJI["buy"],
+        ))
+        builder.row(InlineKeyboardButton(
+            text="✏️ Своё количество",
+            callback_data=f"city_wh_buy_custom_{item}",
         ))
     builder.row(InlineKeyboardButton(text=" К товарам", callback_data="city_wh_buy"))
     return builder.as_markup()
@@ -2590,8 +2603,8 @@ async def cmd_city_buy(message: Message):
         await message.reply(
             f"🐎 <b><i>Повозка не выдержит столько груза!</i></b>\n"
             f"📦 Сейчас везёте: <b><i>{_fmt(current_total)}</i></b> <b><i>ед.</i></b>\n"
-            f"📦 Лимит повозки: <b><i>{_fmt(cart_capacity)}</i></b> <b><i>ед.</i></b>\n"
-            f"📦 Свободно: <b><i>{_fmt(max(0, cart_capacity - current_total))}</i></b> <b><i>ед.</i></b>\n\n"
+            f"📏 Лимит повозки: <b><i>{_fmt(cart_capacity)}</i></b> <b><i>ед.</i></b>\n"
+            f"🆓 Свободно: <b><i>{_fmt(max(0, cart_capacity - current_total))}</i></b> <b><i>ед.</i></b>\n\n"
             f"<b><i>Продайте часть товара (</i></b><code>/citysell</code><b><i>), уберите на склад (</i></b><code>/citywarehouse</code><b><i>), "
             f"или прокачайте повозку (</i></b><code>/citycartup</code><b><i>), чтобы купить больше.</i></b>",
             parse_mode="HTML",
@@ -2711,8 +2724,8 @@ async def _do_travel(user_id: int, username: str, dest: str):
         return False, (
             f"🐎 <b><i>Повозка не выдержит столько груза!</i></b>\n"
             f"📦 Везёте: <b><i>{_fmt(carried)}</i></b> <b><i>ед.</i></b>\n"
-            f"📦 Лимит повозки: <b><i>{_fmt(cart_capacity)}</i></b> <b><i>ед.</i></b>\n"
-            f"📦 Лишнего: <b><i>{_fmt(overflow)}</i></b> <b><i>ед.</i></b>\n\n"
+            f"📏 Лимит повозки: <b><i>{_fmt(cart_capacity)}</i></b> <b><i>ед.</i></b>\n"
+            f"⚠️ Лишнего: <b><i>{_fmt(overflow)}</i></b> <b><i>ед.</i></b>\n\n"
             f"<b><i>Продайте часть товара (</i></b><code>/citysell</code><b><i>), уберите на склад (</i></b><code>/citywarehouse</code><b><i>) "
             f"или прокачайте повозку (</i></b><code>/citycartup</code><b><i>), чтобы отправиться в путь.</i></b>"
         )
@@ -2835,7 +2848,10 @@ async def cmd_city_travel(message: Message):
 
 @router.message(Command("citycancel", "отмена", "cancel"))
 async def cmd_city_cancel_travel(message: Message):
+    had_pending = _PENDING_WH_QTY.pop(message.from_user.id, None) is not None
     ok, text = await _do_cancel_travel(message.from_user.id, message.from_user.username or "")
+    if had_pending and not ok:
+        text = "✏️ <b><i>Ввод количества для склада отменён.</i></b>"
     await message.reply(text, parse_mode="HTML", reply_markup=city_back_keyboard())
 
 
@@ -3257,6 +3273,55 @@ async def cb_city_wh_buy_qty(call: CallbackQuery):
     )
 
 
+@router.callback_query(F.data.startswith("city_wh_buy_custom_"))
+async def cb_city_wh_buy_custom_prompt(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    item = call.data.replace("city_wh_buy_custom_", "", 1)
+    if item not in ITEMS:
+        await call.answer("❌ Неизвестный товар.", show_alert=True)
+        return
+
+    u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    if _is_traveling(u):
+        await call.answer("🚶 Склад недоступен, пока вы в пути. Дождитесь прибытия в город.", show_alert=True)
+        return
+    city = u["city"]
+
+    inv = await aio_get_inventory(u["user_id"], city)
+    have = inv.get(item, 0)
+    wh = await aio_get_warehouse_stock(u["user_id"], city)
+    wh_capacity = await aio_get_warehouse_capacity_for_city(u["user_id"], city)
+    free_space = max(0, wh_capacity - total_inventory_qty(wh))
+    max_qty = max(0, min(have, free_space))
+
+    if max_qty <= 0:
+        await call.answer("❌ Сейчас нельзя переложить ни одной единицы — на складе нет места.", show_alert=True)
+        return
+
+    _PENDING_WH_QTY[call.from_user.id] = {
+        "action": "deposit",
+        "item": item,
+        "city": city,
+        "max_qty": max_qty,
+        "prompt_msg_id": call.message.message_id,
+    }
+
+    await call.message.edit_text(
+        f"{_item_emoji(item)} <b><i>{ITEMS[item]['name'].upper()}</i></b>\n"
+        f"📍 <b><i>Город: {city}</i></b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🎒 В сумке: <b><i>{_fmt(have)}</i></b> <b><i>ед.</i></b>\n"
+        f"📦 Свободно на складе: <b><i>{_fmt(free_space)}</i></b> <b><i>ед.</i></b>\n\n"
+        f"✏️ <b><i>Введите число от 1 до {_fmt(max_qty)} одним сообщением</i></b> — "
+        f"сколько убрать на склад.\n"
+        f"<i>Отменить: /citycancel</i>",
+        parse_mode="HTML",
+    )
+    await call.answer()
+
+
 @router.callback_query(F.data == "city_wh_sell")
 async def cb_city_wh_sell_menu(call: CallbackQuery):
     if not _city_check_owner(call):
@@ -3366,6 +3431,138 @@ async def cb_city_wh_sell_qty(call: CallbackQuery):
         f"✅ Забрано со склада в городе {city}: {qty} × {ITEMS[item]['name']}!",
         show_alert=True,
     )
+
+
+@router.callback_query(F.data.startswith("city_wh_sell_custom_"))
+async def cb_city_wh_sell_custom_prompt(call: CallbackQuery):
+    if not _city_check_owner(call):
+        await _city_deny(call)
+        return
+    item = call.data.replace("city_wh_sell_custom_", "", 1)
+    if item not in ITEMS:
+        await call.answer("❌ Неизвестный товар.", show_alert=True)
+        return
+
+    u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    if _is_traveling(u):
+        await call.answer("🚶 Склад недоступен, пока вы в пути. Дождитесь прибытия в город.", show_alert=True)
+        return
+    city = u["city"]
+
+    wh = await aio_get_warehouse_stock(u["user_id"], city)
+    owned = wh.get(item, 0)
+    if owned <= 0:
+        await call.answer("📦 У вас нет этого товара на складе.", show_alert=True)
+        return
+
+    _PENDING_WH_QTY[call.from_user.id] = {
+        "action": "withdraw",
+        "item": item,
+        "city": city,
+        "max_qty": owned,
+        "prompt_msg_id": call.message.message_id,
+    }
+
+    await call.message.edit_text(
+        f"{_item_emoji(item)} <b><i>{ITEMS[item]['name'].upper()}</i></b>\n"
+        f"📍 <b><i>Город: {city}</i></b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📦 На складе: <b><i>{_fmt(owned)}</i></b> <b><i>ед.</i></b>\n\n"
+        f"✏️ <b><i>Введите число от 1 до {_fmt(owned)} одним сообщением</i></b> — "
+        f"сколько забрать в сумку.\n"
+        f"<i>Отменить: /citycancel</i>",
+        parse_mode="HTML",
+    )
+    await call.answer()
+
+
+def _has_pending_wh_qty(message: Message) -> bool:
+    """Фильтр: сообщение — просто число, и от пользователя ждут ручной ввод
+    количества для склада. Если условие не выполняется — возвращает False,
+    и сообщение спокойно уходит дальше по цепочке хендлеров (не перехватывает
+    чужие цифровые команды)."""
+    if not message.text or message.from_user is None:
+        return False
+    if message.from_user.id not in _PENDING_WH_QTY:
+        return False
+    return message.text.strip().isdigit()
+
+
+@router.message(_has_pending_wh_qty)
+async def handle_wh_custom_qty_input(message: Message):
+    uid = message.from_user.id
+    pending = _PENDING_WH_QTY.pop(uid, None)
+    if not pending:
+        return
+
+    qty = int(message.text.strip())
+    if qty <= 0:
+        await message.reply("❌ <b><i>Количество должно быть положительным.</i></b>", parse_mode="HTML")
+        return
+
+    item, city, action = pending["item"], pending["city"], pending["action"]
+
+    u = await aio_get_city_user(uid, message.from_user.username or "")
+    if _is_traveling(u):
+        await message.reply("🚶 Склад недоступен, пока вы в пути. Дождитесь прибытия в город.")
+        return
+    if u["city"] != city:
+        await message.reply("❌ <b><i>Вы сменили город — начните заново через /citywarehouse.</i></b>", parse_mode="HTML")
+        return
+
+    if action == "deposit":
+        inv = await aio_get_inventory(uid, city)
+        have = inv.get(item, 0)
+        wh = await aio_get_warehouse_stock(uid, city)
+        wh_capacity = await aio_get_warehouse_capacity_for_city(uid, city)
+        free_space = max(0, wh_capacity - total_inventory_qty(wh))
+        max_qty = max(0, min(have, free_space))
+
+        if qty > max_qty:
+            await message.reply(
+                f"❌ <b><i>Можно убрать не больше {_fmt(max_qty)} ед.</i></b>\n"
+                f"🎒 В сумке: <b><i>{_fmt(have)}</i></b> ед. · "
+                f"📦 Свободно на складе: <b><i>{_fmt(free_space)}</i></b> ед.",
+                parse_mode="HTML",
+            )
+            return
+
+        if not await aio_try_deposit_to_warehouse(uid, item, qty, city):
+            await message.reply("🎒 В сумке не хватает этого товара.")
+            return
+
+        wh2 = await aio_get_warehouse_stock(uid, city)
+        await message.reply(
+            f"✅ <b><i>Убрано на склад в городе {city}: {qty} × {ITEMS[item]['name']}!</i></b>\n\n"
+            + _warehouse_text(u, wh2, city),
+            parse_mode="HTML",
+            reply_markup=city_warehouse_keyboard(u, city),
+        )
+
+    else:  # withdraw
+        wh = await aio_get_warehouse_stock(uid, city)
+        owned = wh.get(item, 0)
+        if qty > owned:
+            await message.reply(
+                f"❌ <b><i>На складе только {_fmt(owned)} ед. этого товара.</i></b>",
+                parse_mode="HTML",
+            )
+            return
+
+        if not await aio_try_withdraw_from_warehouse(uid, item, qty, city):
+            await message.reply("📦 На складе недостаточно этого товара.")
+            return
+
+        if ITEMS[item].get("perishable"):
+            await aio_refresh_item_freshness(uid, item, city)
+
+        wh2 = await aio_get_warehouse_stock(uid, city)
+        await message.reply(
+            f"✅ <b><i>Забрано со склада в городе {city}: {qty} × {ITEMS[item]['name']}!</i></b>\n\n"
+            + _warehouse_text(u, wh2, city),
+            parse_mode="HTML",
+            reply_markup=city_warehouse_keyboard(u, city),
+        )
 
 
 @router.callback_query(F.data == "city_nav_defense")
