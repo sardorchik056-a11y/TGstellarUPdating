@@ -236,6 +236,45 @@ WAREHOUSE_BUY_QTY_OPTIONS = [10, 50, 100, 500, 1000, 5000]
 # отдельного FSM в модуле нет, поэтому используем лёгкий словарь в памяти.
 _PENDING_WH_QTY: dict[int, dict] = {}
 
+
+def _parse_amount_input(text: str) -> int | None:
+    """Парсит количество, введённое игроком вручную, с поддержкой сокращений:
+    '1000', '1к'/'1К'/'1k'/'1K', '1.5м'/'1.5M', полных слов тыс/млн/млрд/трлн.
+    Регистр и раскладка (рус/eng) не важны. None — если не удалось разобрать
+    или число <= 0."""
+    if not text:
+        return None
+    s = text.strip().lower().replace(" ", "").replace(",", ".")
+    if not s:
+        return None
+
+    # Порядок важен: сначала длинные слова, потом однобуквенные сокращения,
+    # иначе "100млн" обрежется по одной букве "м" вместо целого "млн".
+    suffixes = [
+        ("трлн", 10 ** 12), ("млрд", 10 ** 9), ("млн", 10 ** 6), ("тыс", 10 ** 3),
+        ("t", 10 ** 12), ("т", 10 ** 12),
+        ("b", 10 ** 9),  ("б", 10 ** 9),
+        ("m", 10 ** 6),  ("м", 10 ** 6),
+        ("k", 10 ** 3),  ("к", 10 ** 3),
+    ]
+
+    mult = 1
+    for suf, m in suffixes:
+        if s.endswith(suf):
+            s = s[: -len(suf)]
+            mult = m
+            break
+
+    if not s:
+        return None
+    try:
+        val = float(s)
+    except ValueError:
+        return None
+    if val <= 0:
+        return None
+    return int(round(val * mult))
+
 NEWS_TRUE_CHANCE = 0.60
 NEWS_LIFETIME_HOURS = 2
 
@@ -3316,6 +3355,7 @@ async def cb_city_wh_buy_custom_prompt(call: CallbackQuery):
         f"📦 Свободно на складе: <b><i>{_fmt(free_space)}</i></b> <b><i>ед.</i></b>\n\n"
         f"✏️ <b><i>Введите число от 1 до {_fmt(max_qty)} одним сообщением</i></b> — "
         f"сколько убрать на склад.\n"
+        f"<i>Можно сокращённо: 1500 или 1.5К</i>\n"
         f"<i>Отменить: /citycancel</i>",
         parse_mode="HTML",
     )
@@ -3470,6 +3510,7 @@ async def cb_city_wh_sell_custom_prompt(call: CallbackQuery):
         f"📦 На складе: <b><i>{_fmt(owned)}</i></b> <b><i>ед.</i></b>\n\n"
         f"✏️ <b><i>Введите число от 1 до {_fmt(owned)} одним сообщением</i></b> — "
         f"сколько забрать в сумку.\n"
+        f"<i>Можно сокращённо: 1500 или 1.5К</i>\n"
         f"<i>Отменить: /citycancel</i>",
         parse_mode="HTML",
     )
@@ -3477,15 +3518,16 @@ async def cb_city_wh_sell_custom_prompt(call: CallbackQuery):
 
 
 def _has_pending_wh_qty(message: Message) -> bool:
-    """Фильтр: сообщение — просто число, и от пользователя ждут ручной ввод
-    количества для склада. Если условие не выполняется — возвращает False,
-    и сообщение спокойно уходит дальше по цепочке хендлеров (не перехватывает
-    чужие цифровые команды)."""
+    """Фильтр: от пользователя ждут ручной ввод количества для склада, и
+    сообщение похоже на число (в том числе с буквой-сокращением: 1к/1.5М
+    и т.п.). Если условие не выполняется — возвращает False, и сообщение
+    спокойно уходит дальше по цепочке хендлеров (не перехватывает чужие
+    команды)."""
     if not message.text or message.from_user is None:
         return False
     if message.from_user.id not in _PENDING_WH_QTY:
         return False
-    return message.text.strip().isdigit()
+    return _parse_amount_input(message.text) is not None
 
 
 @router.message(_has_pending_wh_qty)
@@ -3495,8 +3537,8 @@ async def handle_wh_custom_qty_input(message: Message):
     if not pending:
         return
 
-    qty = int(message.text.strip())
-    if qty <= 0:
+    qty = _parse_amount_input(message.text)
+    if qty is None or qty <= 0:
         await message.reply("❌ <b><i>Количество должно быть положительным.</i></b>", parse_mode="HTML")
         return
 
