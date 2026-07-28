@@ -2584,16 +2584,16 @@ async def cmd_city_buy(message: Message):
         return
 
     current_inv = await aio_get_inventory(u["user_id"], u["city"])
-    current_total = sum(current_inv.values())
-    warehouse_capacity = await aio_get_warehouse_capacity_for_city(u["user_id"], u["city"])
-    if current_total + qty > warehouse_capacity:
+    current_total = total_inventory_qty(current_inv)
+    cart_capacity = get_cart_capacity(u)
+    if current_total + qty > cart_capacity:
         await message.reply(
-            f"📦 <b><i>Склад в городе {u['city']} переполнен!</i></b>\n"
-            f"📦 Сейчас занято: <b><i>{_fmt(current_total)}</i></b> <b><i>ед.</i></b>\n"
-            f"📦 Лимит склада: <b><i>{_fmt(warehouse_capacity)}</i></b> <b><i>ед.</i></b>\n"
-            f"📦 Свободно: <b><i>{_fmt(max(0, warehouse_capacity - current_total))}</i></b> <b><i>ед.</i></b>\n\n"
-            f"<b><i>Продайте часть товара (</i></b><code>/citysell</code><b><i>), "
-            f"или прокачайте склад (</i></b><code>/citywarehouseup</code><b><i>), чтобы купить больше.</i></b>",
+            f"🐎 <b><i>Повозка не выдержит столько груза!</i></b>\n"
+            f"📦 Сейчас везёте: <b><i>{_fmt(current_total)}</i></b> <b><i>ед.</i></b>\n"
+            f"📦 Лимит повозки: <b><i>{_fmt(cart_capacity)}</i></b> <b><i>ед.</i></b>\n"
+            f"📦 Свободно: <b><i>{_fmt(max(0, cart_capacity - current_total))}</i></b> <b><i>ед.</i></b>\n\n"
+            f"<b><i>Продайте часть товара (</i></b><code>/citysell</code><b><i>), уберите на склад (</i></b><code>/citywarehouse</code><b><i>), "
+            f"или прокачайте повозку (</i></b><code>/citycartup</code><b><i>), чтобы купить больше.</i></b>",
             parse_mode="HTML",
         )
         return
@@ -2898,6 +2898,9 @@ async def cmd_city_cart_upgrade(message: Message):
 @router.message(Command("citywarehouse", "склад", "warehouse"))
 async def cmd_city_warehouse(message: Message):
     u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
+    if _is_traveling(u):
+        await message.reply("🚶 Склад недоступен, пока вы в пути. Дождитесь прибытия в город.")
+        return
     wh = await aio_get_warehouse_stock(u["user_id"], u["city"])
     await message.reply(
         _warehouse_text(u, wh, u["city"]),
@@ -2909,6 +2912,9 @@ async def cmd_city_warehouse(message: Message):
 @router.message(Command("citywarehouseup", "прокачатьсклад", "warehouseup"))
 async def cmd_city_warehouse_upgrade(message: Message):
     u = await aio_get_city_user(message.from_user.id, message.from_user.username or "")
+    if _is_traveling(u):
+        await message.reply("🚶 Склад недоступен, пока вы в пути. Дождитесь прибытия в город.")
+        return
     ok, err, nxt = await aio_try_upgrade_warehouse_for_city(message.from_user.id, u["city"])
     if not ok:
         await message.reply(err, parse_mode="HTML", reply_markup=city_back_keyboard())
@@ -3096,6 +3102,9 @@ async def cb_city_warehouse(call: CallbackQuery):
         await _city_deny(call)
         return
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    if _is_traveling(u):
+        await call.answer("🚶 Склад недоступен, пока вы в пути. Дождитесь прибытия в город.", show_alert=True)
+        return
     wh = await aio_get_warehouse_stock(u["user_id"], u["city"])
     await call.message.edit_text(
         _warehouse_text(u, wh, u["city"]),
@@ -3109,6 +3118,10 @@ async def cb_city_warehouse(call: CallbackQuery):
 async def cb_city_warehouse_upgrade(call: CallbackQuery):
     if not _city_check_owner(call):
         await _city_deny(call)
+        return
+    u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    if _is_traveling(u):
+        await call.answer("🚶 Склад недоступен, пока вы в пути. Дождитесь прибытия в город.", show_alert=True)
         return
     city = call.data.replace("city_warehouse_upgrade_", "", 1)
     ok, err, nxt = await aio_try_upgrade_warehouse_for_city(call.from_user.id, city)
@@ -3132,6 +3145,9 @@ async def cb_city_wh_buy_menu(call: CallbackQuery):
         await _city_deny(call)
         return
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    if _is_traveling(u):
+        await call.answer("🚶 Склад недоступен, пока вы в пути. Дождитесь прибытия в город.", show_alert=True)
+        return
     inv = await aio_get_inventory(u["user_id"], u["city"])
     await call.message.edit_text(
         f"{_tge('warehouse', '📦')} <b><i>ПОЛОЖИТЬ В СКЛАД</i></b>\n"
@@ -3155,6 +3171,9 @@ async def cb_city_wh_buy_item(call: CallbackQuery):
         return
 
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    if _is_traveling(u):
+        await call.answer("🚶 Склад недоступен, пока вы в пути. Дождитесь прибытия в город.", show_alert=True)
+        return
     city = u["city"]
 
     inv = await aio_get_inventory(u["user_id"], city)
@@ -3207,6 +3226,9 @@ async def cb_city_wh_buy_qty(call: CallbackQuery):
         return
 
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    if _is_traveling(u):
+        await call.answer("🚶 Склад недоступен, пока вы в пути. Дождитесь прибытия в город.", show_alert=True)
+        return
     city = u["city"]
 
     wh = await aio_get_warehouse_stock(u["user_id"], city)
@@ -3241,6 +3263,9 @@ async def cb_city_wh_sell_menu(call: CallbackQuery):
         await _city_deny(call)
         return
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    if _is_traveling(u):
+        await call.answer("🚶 Склад недоступен, пока вы в пути. Дождитесь прибытия в город.", show_alert=True)
+        return
     wh = await aio_get_warehouse_stock(u["user_id"], u["city"])
     await call.message.edit_text(
         f"{_tge('warehouse', '📦')} <b><i>ЗАБРАТЬ СО СКЛАДА</i></b>\n"
@@ -3264,6 +3289,9 @@ async def cb_city_wh_sell_item(call: CallbackQuery):
         return
 
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    if _is_traveling(u):
+        await call.answer("🚶 Склад недоступен, пока вы в пути. Дождитесь прибытия в город.", show_alert=True)
+        return
     city = u["city"]
 
     wh = await aio_get_warehouse_stock(u["user_id"], city)
@@ -3308,6 +3336,9 @@ async def cb_city_wh_sell_qty(call: CallbackQuery):
         return
 
     u = await aio_get_city_user(call.from_user.id, call.from_user.username or "")
+    if _is_traveling(u):
+        await call.answer("🚶 Склад недоступен, пока вы в пути. Дождитесь прибытия в город.", show_alert=True)
+        return
     city = u["city"]
 
     wh = await aio_get_warehouse_stock(u["user_id"], city)
