@@ -973,6 +973,49 @@ def reject_all_applications(creator_uid: int) -> dict:
 
 # ─────────────────────── КАЗНА ───────────────────────────────
 
+def parse_amount_input(text: str) -> int | None:
+    """Парсит сумму, введённую игроком, с поддержкой сокращений — тех же
+    букв, что и в _fmt() выше (K/M/B/T), плюс их кириллические аналоги
+    (к/м/б/т) и полные слова (тыс/млн/млрд/трлн). Регистр и раскладка не
+    важны: '100000', '100к', '100K', '1.5m', '1.5М' — всё это одно и то же.
+    Возвращает None, если строку не удалось разобрать, или число <= 0.
+
+    Использовать в хэндлере ввода суммы для пополнения казны вместо
+    голого int(message.text)."""
+    if not text:
+        return None
+    s = text.strip().lower().replace(" ", "").replace(",", ".")
+    if not s:
+        return None
+
+    # Порядок важен: сначала длинные слова, потом однобуквенные сокращения,
+    # иначе "100млн" обрежется по одной букве "м" вместо целого "млн".
+    suffixes = [
+        ("трлн", 10 ** 12), ("млрд", 10 ** 9), ("млн", 10 ** 6), ("тыс", 10 ** 3),
+        ("t", 10 ** 12), ("т", 10 ** 12),
+        ("b", 10 ** 9),  ("б", 10 ** 9),
+        ("m", 10 ** 6),  ("м", 10 ** 6),
+        ("k", 10 ** 3),  ("к", 10 ** 3),
+    ]
+
+    mult = 1
+    for suf, m in suffixes:
+        if s.endswith(suf):
+            s = s[: -len(suf)]
+            mult = m
+            break
+
+    if not s:
+        return None
+    try:
+        val = float(s)
+    except ValueError:
+        return None
+    if val <= 0:
+        return None
+    return int(round(val * mult))
+
+
 def deposit_treasury(uid: int, amount: int) -> dict:
     if amount <= 0:
         return {"ok": False, "error": "bad_amount"}
