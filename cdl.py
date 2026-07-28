@@ -88,6 +88,48 @@ DEPOSITS = [
 
 DEPOSITS_BY_KEY = {d["key"]: d for d in DEPOSITS}
 
+
+def parse_amount_input(text: str) -> int | None:
+    """Парсит сумму, введённую игроком при открытии вклада, с поддержкой
+    сокращений: '100000', '100к'/'100К'/'100k'/'100K', '1.5м'/'1.5M',
+    а также полных слов тыс/млн/млрд/трлн. Регистр и раскладка (рус/eng)
+    не важны. Возвращает None, если строку не удалось разобрать, или
+    если число <= 0.
+
+    Использовать в хэндлере ввода суммы вклада вместо голого int(message.text)."""
+    if not text:
+        return None
+    s = text.strip().lower().replace(" ", "").replace(",", ".")
+    if not s:
+        return None
+
+    # Порядок важен: сначала длинные слова, потом однобуквенные сокращения,
+    # иначе "100млн" обрежется по одной букве "м" вместо целого "млн".
+    suffixes = [
+        ("трлн", 10 ** 12), ("млрд", 10 ** 9), ("млн", 10 ** 6), ("тыс", 10 ** 3),
+        ("t", 10 ** 12), ("т", 10 ** 12),
+        ("b", 10 ** 9),  ("б", 10 ** 9),
+        ("m", 10 ** 6),  ("м", 10 ** 6),
+        ("k", 10 ** 3),  ("к", 10 ** 3),
+    ]
+
+    mult = 1
+    for suf, m in suffixes:
+        if s.endswith(suf):
+            s = s[: -len(suf)]
+            mult = m
+            break
+
+    if not s:
+        return None
+    try:
+        val = float(s)
+    except ValueError:
+        return None
+    if val <= 0:
+        return None
+    return int(round(val * mult))
+
 # Emoji кнопки «назад»
 _BACK_EMOJI = "6039539366177541657"
 
@@ -481,7 +523,8 @@ def cdl_input_text(dep_key: str, d: dict) -> str:
         f'<b><tg-emoji emoji-id="5278467510604160626">👛</tg-emoji>Баланс:</b> {format_amount(bal)}\n'
         f'<b><tg-emoji emoji-id="5447183459602669338">👛</tg-emoji>Минимум:</b> {format_amount(dep["min"])} · <b>+{dep["profit"]}%</b>'
         f'</blockquote>\n\n'
-        f'<b><i><tg-emoji emoji-id="5197269100878907942">👛</tg-emoji>Введи сумму ниже:</i></b>'
+        f'<b><i><tg-emoji emoji-id="5197269100878907942">👛</tg-emoji>Введи сумму ниже:</i></b>\n'
+        f'<i>Можно сокращённо: 100000 или 100К</i>'
     )
 
 
