@@ -180,6 +180,7 @@ from klan import (
     aio_reject_all_applications as reject_all_applications,
     aio_deposit_treasury as deposit_treasury,
     aio_request_withdrawal as request_withdrawal,
+    parse_amount_input as _klan_parse_amount,
     aio_get_withdrawal_requests as get_withdrawal_requests,
     aio_approve_withdrawal as approve_withdrawal,
     aio_reject_withdrawal as reject_withdrawal,
@@ -237,6 +238,7 @@ from cdl import (
     # async-хэндлера блокирует ВЕСЬ event loop бота на время диск-I/O
     # и был причиной многоминутных зависаний для всех пользователей сразу.
     aio_open_deposit as _cdl_open_deposit,
+    parse_amount_input as _cdl_parse_amount,
     aio_get_ready_deposits as _cdl_get_ready,
     aio_claim_deposit as _cdl_claim,
     aio_count_active as _cdl_count_active,
@@ -862,14 +864,14 @@ async def handle_pending_text_input(message: Message):
                 text, parse_mode="HTML", reply_markup=kb
             )
 
-        if not raw.isdigit():
+        amount = _cdl_parse_amount(raw)
+        if amount is None:
             await _cdl_edit(
-                f'❌ <b>Некорректный ввод.</b>\nОткрой вклад снова и введи число.',
+                f'❌ <b>Некорректный ввод.</b>\nОткрой вклад снова и введи сумму — например 100000 или 100К.',
                 cdl_input_keyboard(dep_key)
             )
             return
 
-        amount = int(raw)
         dep    = _CDL_DEPOSITS_BY_KEY.get(dep_key)
         if dep is None:
             return
@@ -2802,12 +2804,12 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
             _ach_newly = check_achievements(data)
             await aio_save_user(uid, data)
             await _notify_ach(uid, data, _ach_newly)
-            cleaned = text.replace(" ", "").replace(",", "").replace("_", "")
-            if not cleaned.isdigit() or int(cleaned) <= 0:
-                err = "❌ Отправь положительное число." if lang == "ru" else "❌ Send a positive number."
+            cleaned = text.replace("_", "")
+            amount = _klan_parse_amount(cleaned)
+            if amount is None:
+                err = "❌ Отправь положительное число — например 100000 или 100К." if lang == "ru" else "❌ Send a positive number — e.g. 100000 or 100K."
                 await message.answer(err, parse_mode="HTML")
                 return True
-            amount = int(cleaned)
             res    = await deposit_treasury(uid, amount)
             if res["ok"]:
                 m    = await get_member(uid)
@@ -2854,16 +2856,16 @@ async def _handle_klan_text_input(message: Message, data: dict) -> bool:
             await aio_save_user(uid, data)
             await _notify_ach(uid, data, _ach_newly)
             raw_parts  = text.split("|", 1)
-            amount_str = raw_parts[0].strip().replace(" ", "").replace(",", "").replace("_", "")
+            amount_str = raw_parts[0].strip().replace(" ", "").replace("_", "")
             reason     = raw_parts[1].strip() if len(raw_parts) > 1 else ""
-            if not amount_str.isdigit() or int(amount_str) <= 0:
+            amount = _klan_parse_amount(amount_str)
+            if amount is None:
                 err = (
-                    "❌ Неверный формат. Используй: <code>1000 | причина</code>" if lang == "ru"
-                    else "❌ Invalid format. Use: <code>1000 | reason</code>"
+                    "❌ Неверный формат. Используй: <code>1000 | причина</code> (можно 100К)" if lang == "ru"
+                    else "❌ Invalid format. Use: <code>1000 | reason</code> (100K works too)"
                 )
                 await message.answer(err, parse_mode="HTML")
                 return True
-            amount = int(amount_str)
             res    = await request_withdrawal(uid, amount, reason)
             if res["ok"]:
                 ok_text = (f"✅ Запрос на вывод <b>{format_amount(amount)}</b> {_COIN} отправлен создателю клана." if lang == "ru"
@@ -4476,10 +4478,10 @@ async def handle_callback(call: CallbackQuery):
             bal = data.get("balance", 0)
             prompt = (
                 f'➕ <b>Пополнить казну</b>\n\n'
-                f'<blockquote>Твой баланс: <b>{format_amount(bal)}</b> {_COIN}\n\nОтправь сумму для пополнения:</blockquote>'
+                f'<blockquote>Твой баланс: <b>{format_amount(bal)}</b> {_COIN}\n\nОтправь сумму для пополнения (можно сокращённо: 100000 или 100К):</blockquote>'
             ) if lang == "ru" else (
                 f'➕ <b>Deposit to Treasury</b>\n\n'
-                f'<blockquote>Your balance: <b>{format_amount(bal)}</b> {_COIN}\n\nSend the amount to deposit:</blockquote>'
+                f'<blockquote>Your balance: <b>{format_amount(bal)}</b> {_COIN}\n\nSend the amount to deposit (shorthand works too: 100000 or 100K):</blockquote>'
             )
             await edit(prompt, klan_back_keyboard("klan_treasury", lang))
             data["_klan_deposit_pending"] = True
@@ -4498,12 +4500,12 @@ async def handle_callback(call: CallbackQuery):
             prompt = (
                 f'➖ <b>Запрос на вывод</b>\n\n'
                 f'<blockquote>Казна клана: <b>{format_amount(clan["treasury"])}</b> {_COIN}\n\n'
-                f'Отправь сумму и причину через «|»:\n'
+                f'Отправь сумму и причину через «|» (сумму можно сокращённо: 100К):\n'
                 f'<code>1000 | нужно на апгрейд</code></blockquote>'
             ) if lang == "ru" else (
                 f'➖ <b>Withdrawal Request</b>\n\n'
                 f'<blockquote>Clan treasury: <b>{format_amount(clan["treasury"])}</b> {_COIN}\n\n'
-                f'Send amount and reason separated by «|»:\n'
+                f'Send amount and reason separated by «|» (shorthand OK: 100K):\n'
                 f'<code>1000 | need for upgrade</code></blockquote>'
             )
             await edit(prompt, klan_back_keyboard("klan_treasury", lang))
