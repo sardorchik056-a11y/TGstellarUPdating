@@ -65,6 +65,14 @@ CURRENCY_NAME = "кристаллы"
 CURRENCY_NAME_SINGULAR = "кристалл"
 CURRENCY_EMOJI = "💎"
 
+# Инвентарь (в отличие от склада) больше не привязан к городу — товар
+# везётся вместе с игроком. Все операции с city_inventory используют этот
+# фиксированный ключ вместо текущего города, чтобы у игрока была ровно
+# одна "сумка" на все города. Параметр `city` в функциях инвентаря
+# оставлен только для обратной совместимости вызовов и больше не влияет
+# на то, откуда читаются/пишутся товары.
+INVENTORY_KEY = "__inventory__"
+
 CITIES = ["Северный", "Южный", "Столица"]
 
 CITY_EMOJI = {
@@ -474,6 +482,36 @@ def init_city_db():
         """)
         conn.commit()
 
+    # Миграция: раньше инвентарь хранился отдельно по каждому городу,
+    # из-за чего товар "терялся" при переезде в другой город. Один раз
+    # схлопываем все старые записи в единый инвентарь на пользователя.
+    with _conn() as conn:
+        already = conn.execute(
+            "SELECT value FROM city_meta WHERE key='inventory_merged_global'"
+        ).fetchone()
+        if not already:
+            rows = conn.execute(
+                "SELECT user_id, item_type, SUM(quantity) AS qty, "
+                "MAX(CASE WHEN quantity>0 THEN acquired_at END) AS acq "
+                "FROM city_inventory WHERE city != ? GROUP BY user_id, item_type",
+                (INVENTORY_KEY,),
+            ).fetchall()
+            conn.execute("DELETE FROM city_inventory WHERE city != ?", (INVENTORY_KEY,))
+            for r in rows:
+                qty = r["qty"] or 0
+                conn.execute(
+                    "INSERT INTO city_inventory (user_id, city, item_type, quantity, acquired_at) "
+                    "VALUES (?,?,?,?,?) "
+                    "ON CONFLICT(user_id, city, item_type) DO UPDATE SET "
+                    "quantity = quantity + excluded.quantity, "
+                    "acquired_at = COALESCE(excluded.acquired_at, city_inventory.acquired_at)",
+                    (r["user_id"], INVENTORY_KEY, r["item_type"], qty, r["acq"]),
+                )
+            conn.execute(
+                "INSERT OR REPLACE INTO city_meta (key, value) VALUES ('inventory_merged_global','1')"
+            )
+            conn.commit()
+
     # первичная генерация цен
     with _conn() as conn:
         for city in CITIES:
@@ -509,12 +547,12 @@ def get_city_user(user_id: int, username: str = "") -> dict:
                 "VALUES (?,?,?,?,?,NULL,?)",
                 (user_id, username or "", START_BALANCE, START_CITY, "free", today),
             )
+            for item in ITEMS:
+                conn.execute(
+                    "INSERT OR IGNORE INTO city_inventory (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
+                    (user_id, INVENTORY_KEY, item),
+                )
             for city in CITIES:
-                for item in ITEMS:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO city_inventory (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
-                        (user_id, city, item),
-                    )
                 for item in ITEMS:
                     conn.execute(
                         "INSERT OR IGNORE INTO city_warehouse (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
@@ -599,27 +637,21 @@ def add_crystals_to_user(user_id: int, amount: int, username: str = "") -> int:
 
 
 def get_inventory(user_id: int, city: str = None) -> dict:
-    if city is None:
-        u = get_city_user(user_id)
-        city = u.get("city", "Столица")
-    
-    _spoil_expired_perishables(user_id, city)
+    # Инвентарь общий для всех городов — параметр city больше не влияет
+    # на выборку, оставлен только для совместимости вызовов.
+    _spoil_expired_perishables(user_id)
     with _conn() as conn:
         rows = conn.execute(
             "SELECT item_type, quantity FROM city_inventory WHERE user_id=? AND city=?",
-            (user_id, city)
+            (user_id, INVENTORY_KEY)
         ).fetchall()
     inv = {item: 0 for item in ITEMS}
     for r in rows:
-        inv[r["item_type"]] = r["quantity"]
+        inv[r["item_type"]] = inv.get(r["item_type"], 0) + r["quantity"]
     return inv
 
 
 def _spoil_expired_perishables(user_id: int, city: str = None):
-    if city is None:
-        u = get_city_user(user_id)
-        city = u.get("city", "Столица")
-    
     now = int(time.time())
     perishable_items = [k for k, v in ITEMS.items() if v.get("perishable")]
     if not perishable_items:
@@ -629,26 +661,23 @@ def _spoil_expired_perishables(user_id: int, city: str = None):
         rows = conn.execute(
             f"SELECT item_type, quantity, acquired_at FROM city_inventory "
             f"WHERE user_id=? AND city=? AND item_type IN ({placeholders}) AND quantity>0",
-            (user_id, city, *perishable_items),
+            (user_id, INVENTORY_KEY, *perishable_items),
         ).fetchall()
         for r in rows:
             if r["acquired_at"] and now - r["acquired_at"] > CAVIAR_FRESHNESS_SECONDS:
                 conn.execute(
                     "UPDATE city_inventory SET quantity=0 "
                     "WHERE user_id=? AND city=? AND item_type=? AND quantity=?",
-                    (user_id, city, r["item_type"], r["quantity"]),
+                    (user_id, INVENTORY_KEY, r["item_type"], r["quantity"]),
                 )
         conn.commit()
 
 
 def refresh_item_freshness(user_id: int, item_type: str, city: str = None):
-    if city is None:
-        u = get_city_user(user_id)
-        city = u.get("city", "Столица")
     with _conn() as conn:
         conn.execute(
             "UPDATE city_inventory SET acquired_at=? WHERE user_id=? AND city=? AND item_type=?",
-            (int(time.time()), user_id, city, item_type),
+            (int(time.time()), user_id, INVENTORY_KEY, item_type),
         )
         conn.commit()
 
@@ -656,14 +685,11 @@ def refresh_item_freshness(user_id: int, item_type: str, city: str = None):
 def get_item_freshness_left(user_id: int, item_type: str, city: str = None) -> int | None:
     if not ITEMS.get(item_type, {}).get("perishable"):
         return None
-    if city is None:
-        u = get_city_user(user_id)
-        city = u.get("city", "Столица")
-    _spoil_expired_perishables(user_id, city)
+    _spoil_expired_perishables(user_id)
     with _conn() as conn:
         row = conn.execute(
             "SELECT quantity, acquired_at FROM city_inventory WHERE user_id=? AND city=? AND item_type=?",
-            (user_id, city, item_type),
+            (user_id, INVENTORY_KEY, item_type),
         ).fetchone()
     if not row or row["quantity"] <= 0 or not row["acquired_at"]:
         return None
@@ -672,14 +698,11 @@ def get_item_freshness_left(user_id: int, item_type: str, city: str = None) -> i
 
 
 def set_inventory_qty(user_id: int, item_type: str, qty: int, city: str = None):
-    if city is None:
-        u = get_city_user(user_id)
-        city = u.get("city", "Столица")
     with _conn() as conn:
         conn.execute(
             "INSERT INTO city_inventory (user_id, city, item_type, quantity) VALUES (?,?,?,?) "
             "ON CONFLICT(user_id, city, item_type) DO UPDATE SET quantity=excluded.quantity",
-            (user_id, city, item_type, max(0, qty)),
+            (user_id, INVENTORY_KEY, item_type, max(0, qty)),
         )
         conn.commit()
 
@@ -729,29 +752,23 @@ def spend_up_to(user_id: int, amount: int):
 
 
 def try_adjust_inventory(user_id: int, item_type: str, delta: int, city: str = None) -> bool:
-    if city is None:
-        u = get_city_user(user_id)
-        city = u.get("city", "Столица")
     if delta == 0:
         return True
     with _conn() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO city_inventory (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
-            (user_id, city, item_type),
+            (user_id, INVENTORY_KEY, item_type),
         )
         cur = conn.execute(
             "UPDATE city_inventory SET quantity = quantity + ? "
             "WHERE user_id=? AND city=? AND item_type=? AND quantity + ? >= 0",
-            (delta, user_id, city, item_type, delta),
+            (delta, user_id, INVENTORY_KEY, item_type, delta),
         )
         conn.commit()
         return cur.rowcount > 0
 
 
 def try_buy_item(user_id: int, item_type: str, qty: int, total_cost: int, city: str = None) -> bool:
-    if city is None:
-        u = get_city_user(user_id)
-        city = u.get("city", "Столица")
     if qty <= 0:
         return False
     if total_cost < 0:
@@ -765,11 +782,11 @@ def try_buy_item(user_id: int, item_type: str, qty: int, total_cost: int, city: 
             return False
         conn.execute(
             "INSERT OR IGNORE INTO city_inventory (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
-            (user_id, city, item_type),
+            (user_id, INVENTORY_KEY, item_type),
         )
         conn.execute(
             "UPDATE city_inventory SET quantity = quantity + ? WHERE user_id=? AND city=? AND item_type=?",
-            (qty, user_id, city, item_type),
+            (qty, user_id, INVENTORY_KEY, item_type),
         )
         conn.commit()
     if total_cost:
@@ -778,20 +795,17 @@ def try_buy_item(user_id: int, item_type: str, qty: int, total_cost: int, city: 
 
 
 def try_sell_item(user_id: int, item_type: str, qty: int, total_gain: int, city: str = None) -> bool:
-    if city is None:
-        u = get_city_user(user_id)
-        city = u.get("city", "Столица")
     if qty <= 0:
         return False
     with _conn() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO city_inventory (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
-            (user_id, city, item_type),
+            (user_id, INVENTORY_KEY, item_type),
         )
         cur = conn.execute(
             "UPDATE city_inventory SET quantity = quantity - ? "
             "WHERE user_id=? AND city=? AND item_type=? AND quantity>=?",
-            (qty, user_id, city, item_type, qty),
+            (qty, user_id, INVENTORY_KEY, item_type, qty),
         )
         if cur.rowcount == 0:
             return False
@@ -806,20 +820,17 @@ def try_sell_item(user_id: int, item_type: str, qty: int, total_gain: int, city:
 
 
 def force_confiscate_inventory(user_id: int, item_type: str, city: str = None) -> int:
-    if city is None:
-        u = get_city_user(user_id)
-        city = u.get("city", "Столица")
     with _conn() as conn:
         row = conn.execute(
             "SELECT quantity FROM city_inventory WHERE user_id=? AND city=? AND item_type=?",
-            (user_id, city, item_type),
+            (user_id, INVENTORY_KEY, item_type),
         ).fetchone()
         qty = row["quantity"] if row else 0
         if qty > 0:
             cur = conn.execute(
                 "UPDATE city_inventory SET quantity=0 "
                 "WHERE user_id=? AND city=? AND item_type=? AND quantity=?",
-                (user_id, city, item_type, qty),
+                (user_id, INVENTORY_KEY, item_type, qty),
             )
             conn.commit()
             return qty if cur.rowcount else 0
@@ -837,7 +848,7 @@ def get_warehouse_stock(user_id: int, city: str = None) -> dict:
         ).fetchall()
     stock = {item: 0 for item in ITEMS}
     for r in rows:
-        stock[r["item_type"]] = r["quantity"]
+        stock[r["item_type"]] = stock.get(r["item_type"], 0) + r["quantity"]
     return stock
 
 
@@ -905,6 +916,8 @@ def try_upgrade_warehouse_for_city(user_id: int, city: str = None) -> tuple[bool
 
 
 def try_deposit_to_warehouse(user_id: int, item_type: str, qty: int, city: str = None) -> bool:
+    # Склад по-прежнему привязан к городу (это здание, стоящее в конкретном
+    # городе), а инвентарь — общий на все города.
     if city is None:
         u = get_city_user(user_id)
         city = u.get("city", "Столица")
@@ -914,7 +927,7 @@ def try_deposit_to_warehouse(user_id: int, item_type: str, qty: int, city: str =
         cur = conn.execute(
             "UPDATE city_inventory SET quantity = quantity - ? "
             "WHERE user_id=? AND city=? AND item_type=? AND quantity>=?",
-            (qty, user_id, city, item_type, qty),
+            (qty, user_id, INVENTORY_KEY, item_type, qty),
         )
         if cur.rowcount == 0:
             return False
@@ -946,11 +959,11 @@ def try_withdraw_from_warehouse(user_id: int, item_type: str, qty: int, city: st
             return False
         conn.execute(
             "INSERT OR IGNORE INTO city_inventory (user_id, city, item_type, quantity) VALUES (?,?,?,0)",
-            (user_id, city, item_type),
+            (user_id, INVENTORY_KEY, item_type),
         )
         conn.execute(
             "UPDATE city_inventory SET quantity = quantity + ? WHERE user_id=? AND city=? AND item_type=?",
-            (qty, user_id, city, item_type),
+            (qty, user_id, INVENTORY_KEY, item_type),
         )
         conn.commit()
     return True
