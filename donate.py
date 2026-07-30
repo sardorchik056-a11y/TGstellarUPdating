@@ -520,17 +520,23 @@ async def create_xrocket_invoice(pkg_key: str, uid: int) -> tuple[bool, str, str
         "currency": ROCKET_PAY_CURRENCY,
         "description": f"TGStellar — пакет «{p['label']}» ({p['samosvety']} самосветов)",
         "payload": f"xrocket_donate:{pkg_key}:{uid}",
+        "numPayments": 1,  # сколько раз можно оплатить этот счёт — обязательное поле API
     }
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{ROCKET_PAY_BASE_URL}/tg-invoices",
+                f"{ROCKET_PAY_BASE_URL}/invoices",
                 headers=headers, json=body,
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
+                status_code = resp.status
                 data = await resp.json()
     except Exception as e:
         print(f"[donate] xRocket create invoice error: {e}")
+        return False, "", ""
+
+    if status_code >= 400:
+        print(f"[donate] xRocket create invoice HTTP {status_code}: {data}")
         return False, "", ""
 
     # Ответ API обёрнут в {"success": bool, "data": {...}}
@@ -557,16 +563,22 @@ async def check_xrocket_invoice(invoice_id: str) -> str:
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{ROCKET_PAY_BASE_URL}/tg-invoices/{invoice_id}",
+                f"{ROCKET_PAY_BASE_URL}/invoices/{invoice_id}",
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
+                status_code = resp.status
                 data = await resp.json()
     except Exception as e:
         print(f"[donate] xRocket check invoice error: {e}")
         return "error"
 
+    if status_code >= 400:
+        print(f"[donate] xRocket check invoice HTTP {status_code}: {data}")
+        return "error"
+
     if not data.get("success"):
+        print(f"[donate] xRocket check invoice failed: {data}")
         return "error"
     result = data.get("data", {})
     # В разных версиях API поле может называться по-разному — подстраховываемся
