@@ -5740,7 +5740,7 @@ async def handle_callback(call: CallbackQuery):
                 call.message.message_id,
                 pkg_key,
             )
-            await edit(donate_package_text(pkg_key, lang), donate_package_keyboard(pkg_key, invoice_url=invoice_url, lang=lang))
+            await edit(donate_package_text(pkg_key, lang, show_method_hint=False), donate_package_keyboard(pkg_key, invoice_url=invoice_url, lang=lang))
             return
 
         # ===== ДОНАТЫ: оплата через @send (Crypto Pay) =====
@@ -7050,7 +7050,7 @@ async def handle_successful_payment(message: Message):
                 old_chat_id, old_msg_id, _pkg_key = pending
                 try:
                     await bot.edit_message_text(
-                        donate_package_text(_pkg_key, _lang),
+                        donate_package_text(_pkg_key, _lang, show_method_hint=False),
                         chat_id=old_chat_id,
                         message_id=old_msg_id,
                         reply_markup=donate_package_keyboard(_pkg_key, lang=_lang),
