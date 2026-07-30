@@ -91,6 +91,10 @@ DONATE_BY_KEY = {p["key"]: p for p in DONATE_PACKAGES}
 DONATE_MIN_SAMOSVETY = 49
 DONATE_MAX_SAMOSVETY = 10_000
 
+# Курс Telegram Stars -> USD (приблизительный, официальный курс Telegram
+# варьируется по региону; поправь при необходимости под актуальный курс)
+STAR_TO_USD = 0.013
+
 # ============================================================
 #  УТИЛИТЫ
 # ============================================================
@@ -180,6 +184,11 @@ def _fmt_stars(s: int) -> str:
     """Форматирует количество Stars той же буквенной шкалой, что и _fmt_num,
     чтобы не было разнобоя между «15.0к ⭐» и «1.5M» в одном файле."""
     return f"{_fmt_num(s)} ⭐"
+
+
+def _fmt_usd(stars: int) -> str:
+    """Приблизительная сумма в USD по курсу STAR_TO_USD."""
+    return f"${stars * STAR_TO_USD:.2f}"
 
 
 # ============================================================
@@ -275,13 +284,13 @@ def donate_main_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     """Список всех пакетов — кнопка на каждый."""
     builder = InlineKeyboardBuilder()
     for p in DONATE_PACKAGES:
-        name          = p["label_en"] if lang == "en" else p["label"]
         samosvety_str = _fmt_num(p["samosvety"])
         stars_str     = _fmt_stars(p["stars"])
+        usd_str       = _fmt_usd(p["stars"])
         builder.row(InlineKeyboardButton(
-            text=f"{name} — {samosvety_str} 💠 | {stars_str}",
+            text=f"💠 {samosvety_str} | {stars_str} | {usd_str}",
             callback_data=f"donate_pkg_{p['key']}",
-            icon_custom_emoji_id=_STAR_EMOJI_ID,
+            icon_custom_emoji_id=_SAMOSVET_EMOJI_ID,
         ))
     builder.row(InlineKeyboardButton(
         text=_L(lang, "Мои звёзды", "My stars"),
