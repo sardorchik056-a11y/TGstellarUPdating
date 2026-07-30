@@ -195,7 +195,9 @@ def _fmt_usd(stars: int) -> str:
 #  ТЕКСТ — ГЛАВНЫЙ ЭКРАН ДОНАТОВ
 # ============================================================
 
-def donate_main_text(lang: str = "ru") -> str:
+def donate_main_text(lang: str = "ru", balance: int = 0) -> str:
+    balance_str = _fmt_num(balance)
+
     if lang == "en":
         header = (
             f"<blockquote>"
@@ -218,16 +220,24 @@ def donate_main_text(lang: str = "ru") -> str:
     if lang == "en":
         lines.append(
             f"\n<blockquote>"
+            f"{_samosvet()} <b>Your balance: {balance_str} Samosvets</b>"
+            f"</blockquote>"
+        )
+        lines.append(
+            f"\n<blockquote>"
             f"{_star()} <b>Payment via Telegram Stars.</b>\n"
-            f"{_samosvet()} <b>Rate: 1 ⭐ = 1 Samosvet.</b>\n"
             f"<i>Select a package below to proceed.</i>"
             f"</blockquote>"
         )
     else:
         lines.append(
             f"\n<blockquote>"
+            f"{_samosvet()} <b>Твой баланс: {balance_str} Самосветов</b>"
+            f"</blockquote>"
+        )
+        lines.append(
+            f"\n<blockquote>"
             f"{_star()} <b>Оплата через Telegram Stars.</b>\n"
-            f"{_samosvet()} <b>Курс: 1 ⭐ = 1 Самосвет.</b>\n"
             f"<i>Выбери пакет ниже для оплаты.</i>"
             f"</blockquote>"
         )
@@ -251,27 +261,25 @@ def donate_package_text(pkg_key: str, lang: str = "ru") -> str:
     if lang == "en":
         return (
             f"<blockquote>"
-            f'<tg-emoji emoji-id="5400362079783770689">🌟</tg-emoji> <b>{name} Package</b>\n'
-            f"{_samosvet()} <b>Samosvets: {samosvety_str}</b>\n"
-            f"{_star()} <b>Price: {stars_str}</b>\n"
-            f'<tg-emoji emoji-id="5429651785352501917">🌟</tg-emoji> <b>Rate: 1 ⭐ = 1 Samosvet</b>'
+            f'<tg-emoji emoji-id="5400362079783770689">🌟</tg-emoji> <b>«{name}» Package</b>\n'
+            f"{_samosvet()} <b>You get:</b> {samosvety_str} Samosvets\n"
+            f"{_star()} <b>Price:</b> {stars_str}"
             f"</blockquote>\n"
             f"\n<blockquote>"
-            f'<tg-emoji emoji-id="5206607081334906820">🌟</tg-emoji> <b>Samosvets are credited instantly after payment.</b>\n'
-            f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> <b>No expiry — yours forever.</b>'
+            f'<tg-emoji emoji-id="5206607081334906820">🌟</tg-emoji> Credited to your balance instantly after payment\n'
+            f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> Samosvets never expire'
             f"</blockquote>"
         )
     else:
         return (
             f"<blockquote>"
             f'<tg-emoji emoji-id="5400362079783770689">🌟</tg-emoji> <b>Пакет «{name}»</b>\n'
-            f"{_samosvet()} <b>Самосветы: {samosvety_str}</b>\n"
-            f"{_star()} <b>Цена: {stars_str}</b>\n"
-            f'<tg-emoji emoji-id="5429651785352501917">🌟</tg-emoji> <b>Курс: 1 ⭐ = 1 Самосвет</b>'
+            f"{_samosvet()} <b>Получишь:</b> {samosvety_str} Самосветов\n"
+            f"{_star()} <b>Стоимость:</b> {stars_str}"
             f"</blockquote>\n"
             f"\n<blockquote>"
-            f'<tg-emoji emoji-id="5206607081334906820">🌟</tg-emoji> <b>Самосветы зачисляются мгновенно после оплаты.</b>\n'
-            f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> <b>Срок действия не ограничен — твои навсегда.</b>'
+            f'<tg-emoji emoji-id="5206607081334906820">🌟</tg-emoji> Зачисляется на баланс сразу после оплаты\n'
+            f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> Самосветы не сгорают'
             f"</blockquote>"
         )
 
