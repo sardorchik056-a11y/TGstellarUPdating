@@ -5716,8 +5716,8 @@ async def handle_callback(call: CallbackQuery):
                 return
             name = pkg["label"] if lang == "ru" else pkg["label_en"]
             from shop import _fmt_num as _shop_fmt
-            desc_ru = f"Получи {_shop_fmt(pkg['coins'])} монет мгновенно!"
-            desc_en = f"Get {_shop_fmt(pkg['coins'])} coins instantly!"
+            desc_ru = f"Получи {_shop_fmt(pkg['samosvety'])} самосветов мгновенно!"
+            desc_en = f"Get {_shop_fmt(pkg['samosvety'])} Samosvets instantly!"
             try:
                 invoice_url = await bot.create_invoice_link(
                     title=name,
@@ -6961,7 +6961,7 @@ async def handle_successful_payment(message: Message):
                 data = await aio_get_or_create_user(message.from_user)
 
             _lang = data.get("lang", "ru")
-            ok, msg, coins = apply_donate(data, pkg_key)
+            ok, msg, samosvety = apply_donate(data, pkg_key)
             if ok:
                 _ach_newly = check_achievements(data)
                 await aio_save_user(data["id"], data)
@@ -6984,7 +6984,7 @@ async def handle_successful_payment(message: Message):
 
             name = pkg["label_en"] if _lang == "en" else pkg["label"]
             from donate import _fmt_num as _d_fmt
-            coins_str = _d_fmt(pkg["coins"])
+            samosvety_str = _d_fmt(pkg["samosvety"])
             stars_str = str(pkg["stars"])
 
             if _lang == "en":
