@@ -106,7 +106,7 @@ STAR_TO_USD = 0.013
 #    Токен: открой @send -> Crypto Pay -> Create App -> API Token
 #    Докс:  https://help.send.tg/en/articles/10279948-crypto-pay-api
 #
-SEND_PAY_API_TOKEN = "PASTE_YOUR_SEND_CRYPTO_PAY_TOKEN_HERE"
+SEND_PAY_API_TOKEN = "582363:AALEf7JOugnrQyrkMHzH5UrO7pdOjjYnTQy"
 SEND_PAY_BASE_URL  = "https://pay.crypt.bot/api"   # тестнет: https://testnet-pay.crypt.bot/api
 SEND_PAY_ASSET     = "USDT"
 
@@ -114,7 +114,7 @@ SEND_PAY_ASSET     = "USDT"
 #    Токен: открой @xrocket -> Rocket Pay -> Создать кассу -> API token
 #    Докс:  https://pay.ton-rocket.com/api
 #
-ROCKET_PAY_API_KEY  = "PASTE_YOUR_XROCKET_API_KEY_HERE"
+ROCKET_PAY_API_KEY  = "034cea3212dcfe762c3dc3093"
 ROCKET_PAY_BASE_URL = "https://pay.ton-rocket.com"
 ROCKET_PAY_CURRENCY = "USDT"
 
@@ -137,6 +137,16 @@ _BACK_EMOJI_ID      = "6039539366177541657"   # ← назад
 _GIFT_EMOJI_ID      = "5222113468051629260"   # 🎁
 _FIRE_EMOJI_ID      = "5438496463044752972"   # 🔥
 _CROWN_EMOJI_ID     = "5348570868752595928"   # 👑  (иконка звёзд Telegram)
+
+# Иконки для кнопок выбора способа оплаты
+_CHOICE_EMOJI_STARS    = "5798819377088307477"
+_CHOICE_EMOJI_XROCKET  = "5798534328698805312"
+_CHOICE_EMOJI_CRYPTOBOT = "5798650400189980129"
+_CHOICE_EMOJI_BY_PROVIDER = {
+    "stars":   _CHOICE_EMOJI_STARS,
+    "send":    _CHOICE_EMOJI_CRYPTOBOT,
+    "xrocket": _CHOICE_EMOJI_XROCKET,
+}
 
 _TIER_DIVIDERS = {
     1: None,
@@ -291,7 +301,7 @@ def donate_main_text(lang: str = "ru", balance: int = 0) -> str:
 #  ТЕКСТ — ДЕТАЛЬНЫЙ ЭКРАН ПАКЕТА
 # ============================================================
 
-def donate_package_text(pkg_key: str, lang: str = "ru") -> str:
+def donate_package_text(pkg_key: str, lang: str = "ru", show_method_hint: bool = True) -> str:
     p = DONATE_BY_KEY.get(pkg_key)
     if not p:
         return "❌ Пакет не найден." if lang == "ru" else "❌ Package not found."
@@ -299,6 +309,12 @@ def donate_package_text(pkg_key: str, lang: str = "ru") -> str:
     name          = p["label_en"] if lang == "en" else p["label"]
     samosvety_str = _fmt_num(p["samosvety"])
     stars_str     = _fmt_stars(p["stars"])
+    hint = ""
+    if show_method_hint:
+        hint = (
+            f"\n\n<i>Choose a payment method below</i>" if lang == "en"
+            else f"\n\n<i>Выберите способ оплаты ниже</i>"
+        )
 
     if lang == "en":
         return (
@@ -311,6 +327,7 @@ def donate_package_text(pkg_key: str, lang: str = "ru") -> str:
             f'<tg-emoji emoji-id="5206607081334906820">🌟</tg-emoji> Credited to your balance instantly after payment\n'
             f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> Samosvets never expire'
             f"</blockquote>"
+            f"{hint}"
         )
     else:
         return (
@@ -323,6 +340,7 @@ def donate_package_text(pkg_key: str, lang: str = "ru") -> str:
             f'<tg-emoji emoji-id="5206607081334906820">🌟</tg-emoji> Зачисляется на баланс сразу после оплаты\n'
             f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> Самосветы не сгорают'
             f"</blockquote>"
+            f"{hint}"
         )
 
 
@@ -358,15 +376,14 @@ def donate_main_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
 def donate_package_keyboard(pkg_key: str, invoice_url: str = None, lang: str = "ru") -> InlineKeyboardMarkup:
     """
     Экран конкретного пакета.
-    Пока Stars-инвойс ещё не создан (invoice_url=None) — показываем выбор
-    из трёх способов оплаты: Stars / @send / xRocket.
-    После того как для Stars уже создана invoice_url — как раньше, одна
-    кнопка "Купить" со ссылкой на её оплату.
+    Пока способ оплаты ещё не выбран (invoice_url=None) — три кнопки выбора
+    без сумм: Stars / Cryptobot / xRocket.
+    После того как выбран Stars и для него создана invoice_url — как раньше,
+    кнопка "Купить" с суммой + "Мои звёзды" (эта кнопка нужна только тут).
     """
     builder = InlineKeyboardBuilder()
     p = DONATE_BY_KEY.get(pkg_key)
     stars_str = _fmt_stars(p["stars"]) if p else "?"
-    usdt_str  = f"{_stars_to_usdt(p['stars']):.2f} USDT" if p else "?"
 
     if invoice_url:
         builder.row(InlineKeyboardButton(
@@ -375,26 +392,28 @@ def donate_package_keyboard(pkg_key: str, invoice_url: str = None, lang: str = "
             icon_custom_emoji_id=_STAR_EMOJI_ID,
             style="success",
         ))
+        builder.row(InlineKeyboardButton(
+            text=_L(lang, "Мои звёзды", "My stars"),
+            url="tg://stars/",
+            icon_custom_emoji_id=_CROWN_EMOJI_ID,
+        ))
     else:
         builder.row(InlineKeyboardButton(
-            text=f"⭐ Stars — {stars_str}",
+            text="Stars",
             callback_data=f"donate_buy_{pkg_key}",
-            icon_custom_emoji_id=_STAR_EMOJI_ID,
+            icon_custom_emoji_id=_CHOICE_EMOJI_STARS,
         ))
         builder.row(InlineKeyboardButton(
-            text=f"💳 @send — {usdt_str}",
+            text="Cryptobot",
             callback_data=f"donate_pay_send_{pkg_key}",
+            icon_custom_emoji_id=_CHOICE_EMOJI_CRYPTOBOT,
         ))
         builder.row(InlineKeyboardButton(
-            text=f"🚀 xRocket — {usdt_str}",
+            text="xRocket",
             callback_data=f"donate_pay_xrocket_{pkg_key}",
+            icon_custom_emoji_id=_CHOICE_EMOJI_XROCKET,
         ))
 
-    builder.row(InlineKeyboardButton(
-        text=_L(lang, "Мои звёзды", "My stars"),
-        url="tg://stars/",
-        icon_custom_emoji_id=_CROWN_EMOJI_ID,
-    ))
     builder.row(InlineKeyboardButton(
         text=_L(lang, " Все пакеты", " All packages"),
         callback_data="donate_main",
@@ -602,7 +621,7 @@ def donate_crypto_invoice_keyboard(
     builder.row(InlineKeyboardButton(
         text=_L(lang, "Оплатить", "Pay"),
         url=pay_url,
-        icon_custom_emoji_id=_STAR_EMOJI_ID,
+        icon_custom_emoji_id=_CHOICE_EMOJI_BY_PROVIDER.get(provider, _STAR_EMOJI_ID),
         style="success",
     ))
     builder.row(InlineKeyboardButton(
