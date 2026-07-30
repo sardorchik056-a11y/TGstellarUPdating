@@ -148,6 +148,10 @@ _CHOICE_EMOJI_BY_PROVIDER = {
     "xrocket": _CHOICE_EMOJI_XROCKET,
 }
 
+# Иконки для текста выставленного крипто-счёта
+_USDT_EMOJI_ID   = "5409048419211682843"   # USDT
+_AMOUNT_EMOJI_ID = "5386757680679377085"   # иконка для строки «Сумма»
+
 _TIER_DIVIDERS = {
     1: None,
     2: ("💎", "Популярные пакеты", "Popular packages"),
@@ -599,14 +603,16 @@ def donate_crypto_invoice_text(pkg_key: str, provider: str, lang: str = "ru") ->
     prov = PAYMENT_PROVIDERS.get(provider, {"label": provider, "emoji": "💳"})
     name = p["label_en"] if lang == "en" else p["label"]
     samosvety_str = _fmt_num(p["samosvety"])
-    usdt_str = f"{_stars_to_usdt(p['stars']):.2f} USDT"
+    usdt_str = f"{_stars_to_usdt(p['stars']):.2f} {_tg(_USDT_EMOJI_ID, 'USDT')}"
+    provider_icon = _tg(_CHOICE_EMOJI_BY_PROVIDER.get(provider, _STAR_EMOJI_ID), prov["emoji"])
+    amount_icon = _tg(_AMOUNT_EMOJI_ID, prov["emoji"])
 
     if lang == "en":
         return (
             f"<blockquote>"
-            f"{prov['emoji']} <b>Payment via {prov['label']}</b>\n"
+            f"{provider_icon} <b>Payment via {prov['label']}</b>\n"
             f"{_samosvet()} <b>Package:</b> «{name}» — {samosvety_str} Samosvets\n"
-            f"{prov['emoji']} <b>Amount:</b> {usdt_str}"
+            f"{amount_icon} <b>Amount:</b> {usdt_str}"
             f"</blockquote>\n"
             f"\n<blockquote>"
             f"<i>Tap “Pay”, complete the payment in the opened app, "
@@ -616,9 +622,9 @@ def donate_crypto_invoice_text(pkg_key: str, provider: str, lang: str = "ru") ->
     else:
         return (
             f"<blockquote>"
-            f"{prov['emoji']} <b>Оплата через {prov['label']}</b>\n"
+            f"{provider_icon} <b>Оплата через {prov['label']}</b>\n"
             f"{_samosvet()} <b>Пакет:</b> «{name}» — {samosvety_str} Самосветов\n"
-            f"{prov['emoji']} <b>Сумма:</b> {usdt_str}"
+            f"{amount_icon} <b>Сумма:</b> {usdt_str}"
             f"</blockquote>\n"
             f"\n<blockquote>"
             f"<i>Нажми «Оплатить», заверши платёж в открывшемся приложении, "
