@@ -112,10 +112,10 @@ SEND_PAY_ASSET     = "USDT"
 
 #  xRocket — Rocket Pay API.
 #    Токен: открой @xrocket -> Rocket Pay -> Создать кассу -> API token
-#    Докс:  https://pay.ton-rocket.com/api
+#    Докс:  https://pay.xrocket.tg/api (Swagger UI)
 #
 ROCKET_PAY_API_KEY  = "034cea3212dcfe762c3dc3093"
-ROCKET_PAY_BASE_URL = "https://pay.ton-rocket.com"
+ROCKET_PAY_BASE_URL = "https://pay.xrocket.tg"
 ROCKET_PAY_CURRENCY = "USDT"
 
 # Крипто-платёжки не примут микро-суммы — держим минимум по инвойсу
@@ -521,11 +521,12 @@ async def create_xrocket_invoice(pkg_key: str, uid: int) -> tuple[bool, str, str
         "description": f"TGStellar — пакет «{p['label']}» ({p['samosvety']} самосветов)",
         "payload": f"xrocket_donate:{pkg_key}:{uid}",
         "numPayments": 1,  # сколько раз можно оплатить этот счёт — обязательное поле API
+        "expiredIn": 1800,
     }
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{ROCKET_PAY_BASE_URL}/invoices",
+                f"{ROCKET_PAY_BASE_URL}/tg-invoices",
                 headers=headers, json=body,
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
@@ -539,12 +540,12 @@ async def create_xrocket_invoice(pkg_key: str, uid: int) -> tuple[bool, str, str
         print(f"[donate] xRocket create invoice HTTP {status_code}: {data}")
         return False, "", ""
 
-    # Ответ API обёрнут в {"success": bool, "data": {...}}
-    if not data.get("success"):
+    # Ответ API: {"data": {...}}, без обёртки "success"
+    result = data.get("data")
+    if not result:
         print(f"[donate] xRocket create invoice failed: {data}")
         return False, "", ""
 
-    result = data.get("data", {})
     pay_url = result.get("link") or result.get("payLink") or result.get("url")
     invoice_id = str(result.get("id", ""))
     if not pay_url or not invoice_id:
@@ -563,7 +564,7 @@ async def check_xrocket_invoice(invoice_id: str) -> str:
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{ROCKET_PAY_BASE_URL}/invoices/{invoice_id}",
+                f"{ROCKET_PAY_BASE_URL}/tg-invoices/{invoice_id}",
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
@@ -577,10 +578,10 @@ async def check_xrocket_invoice(invoice_id: str) -> str:
         print(f"[donate] xRocket check invoice HTTP {status_code}: {data}")
         return "error"
 
-    if not data.get("success"):
+    result = data.get("data")
+    if not result:
         print(f"[donate] xRocket check invoice failed: {data}")
         return "error"
-    result = data.get("data", {})
     # В разных версиях API поле может называться по-разному — подстраховываемся
     status = result.get("status") or ("paid" if result.get("paid") else "active")
     return status
