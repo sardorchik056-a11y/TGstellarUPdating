@@ -603,7 +603,7 @@ def donate_crypto_invoice_text(pkg_key: str, provider: str, lang: str = "ru") ->
     prov = PAYMENT_PROVIDERS.get(provider, {"label": provider, "emoji": "💳"})
     name = p["label_en"] if lang == "en" else p["label"]
     samosvety_str = _fmt_num(p["samosvety"])
-    usdt_str = f"{_stars_to_usdt(p['stars']):.2f} {_tg(_USDT_EMOJI_ID, 'USDT')}"
+    usdt_str = f"{_stars_to_usdt(p['stars']):.2f} {_tg(_USDT_EMOJI_ID, '💵')}"
     provider_icon = _tg(_CHOICE_EMOJI_BY_PROVIDER.get(provider, _STAR_EMOJI_ID), prov["emoji"])
     amount_icon = _tg(_AMOUNT_EMOJI_ID, prov["emoji"])
 
