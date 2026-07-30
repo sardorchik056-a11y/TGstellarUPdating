@@ -288,7 +288,7 @@ def donate_main_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         stars_str     = _fmt_stars(p["stars"])
         usd_str       = _fmt_usd(p["stars"])
         builder.row(InlineKeyboardButton(
-            text=f"💠 {samosvety_str} | {stars_str} | {usd_str}",
+            text=f"{samosvety_str} | {stars_str} | {usd_str}",
             callback_data=f"donate_pkg_{p['key']}",
             icon_custom_emoji_id=_SAMOSVET_EMOJI_ID,
         ))
