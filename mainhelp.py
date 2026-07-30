@@ -279,6 +279,10 @@ from donate import (
     donate_main_text, donate_main_keyboard,
     donate_package_text, donate_package_keyboard,
     apply_donate,
+    PAYMENT_PROVIDERS,
+    create_send_invoice, check_send_invoice,
+    create_xrocket_invoice, check_xrocket_invoice,
+    donate_crypto_invoice_text, donate_crypto_invoice_keyboard,
 )
 
 from city import (
@@ -5738,6 +5742,79 @@ async def handle_callback(call: CallbackQuery):
             )
             await edit(donate_package_text(pkg_key, lang), donate_package_keyboard(pkg_key, invoice_url=invoice_url, lang=lang))
             return
+
+        # ===== ДОНАТЫ: оплата через @send (Crypto Pay) =====
+        if cd.startswith("donate_pay_send_"):
+            pkg_key = cd.removeprefix("donate_pay_send_")
+            if not DONATE_BY_KEY.get(pkg_key):
+                await call.answer("❌ Пакет не найден." if lang == "ru" else "❌ Package not found.", show_alert=True)
+                return
+            await call.answer("⏳ Создаю счёт..." if lang == "ru" else "⏳ Creating invoice...")
+            ok, pay_url, invoice_id = await create_send_invoice(pkg_key, user.id)
+            if not ok:
+                await call.answer("❌ Не удалось создать счёт. Попробуй позже." if lang == "ru" else "❌ Could not create invoice. Try again later.", show_alert=True)
+                return
+            await edit(
+                donate_crypto_invoice_text(pkg_key, "send", lang),
+                donate_crypto_invoice_keyboard(pkg_key, "send", pay_url, invoice_id, lang),
+            )
+            return
+
+        # ===== ДОНАТЫ: оплата через xRocket =====
+        if cd.startswith("donate_pay_xrocket_"):
+            pkg_key = cd.removeprefix("donate_pay_xrocket_")
+            if not DONATE_BY_KEY.get(pkg_key):
+                await call.answer("❌ Пакет не найден." if lang == "ru" else "❌ Package not found.", show_alert=True)
+                return
+            await call.answer("⏳ Создаю счёт..." if lang == "ru" else "⏳ Creating invoice...")
+            ok, pay_url, invoice_id = await create_xrocket_invoice(pkg_key, user.id)
+            if not ok:
+                await call.answer("❌ Не удалось создать счёт. Попробуй позже." if lang == "ru" else "❌ Could not create invoice. Try again later.", show_alert=True)
+                return
+            await edit(
+                donate_crypto_invoice_text(pkg_key, "xrocket", lang),
+                donate_crypto_invoice_keyboard(pkg_key, "xrocket", pay_url, invoice_id, lang),
+            )
+            return
+
+        # ===== ДОНАТЫ: проверка оплаты @send / xRocket =====
+        if cd.startswith("donate_check_send:") or cd.startswith("donate_check_xrocket:"):
+            provider = "send" if cd.startswith("donate_check_send:") else "xrocket"
+            _, invoice_id, pkg_key = cd.split(":", 2)
+            if not DONATE_BY_KEY.get(pkg_key):
+                await call.answer("❌ Пакет не найден." if lang == "ru" else "❌ Package not found.", show_alert=True)
+                return
+
+            charge_key = f"{provider}:{invoice_id}"
+            if await aio_is_charge_processed(charge_key):
+                await call.answer("✅ Уже зачислено." if lang == "ru" else "✅ Already credited.", show_alert=True)
+                return
+
+            status = await check_send_invoice(invoice_id) if provider == "send" else await check_xrocket_invoice(invoice_id)
+            if status != "paid":
+                await call.answer(
+                    "⏳ Оплата ещё не поступила. Попробуй проверить чуть позже." if lang == "ru"
+                    else "⏳ Payment not received yet. Try checking again shortly.",
+                    show_alert=True,
+                )
+                return
+
+            await aio_mark_charge_processed(charge_key, user.id, f"{provider}_donate:{pkg_key}")
+            ok, msg, samosvety = apply_donate(data, pkg_key)
+            if ok:
+                newly = check_achievements(data)
+                await aio_save_user(data["id"], data)
+                await _notify_ach(data["id"], data, newly)
+
+            prov = PAYMENT_PROVIDERS.get(provider, {"label": provider, "emoji": "💳"})
+            success_text = (
+                f'{prov["emoji"]} <b>{"Оплата прошла успешно!" if lang == "ru" else "Payment successful!"}</b>\n'
+                f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                f'{msg}'
+            )
+            await edit(success_text, donate_main_keyboard(lang))
+            return
+
         if cd == "status":
             await call.answer()
             await edit(status_main_text(data, lang), status_main_keyboard(data, lang))
