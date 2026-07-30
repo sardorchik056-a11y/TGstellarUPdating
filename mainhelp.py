@@ -1963,7 +1963,7 @@ async def cmd_donate(message: Message):
     await aio_track_user(message.from_user.id)
     if await _check_onboarded(message, u): return
     await message.reply(
-        donate_main_text(lang),
+        donate_main_text(lang, u.get("samosvety", 0)),
         parse_mode="HTML",
         reply_markup=donate_main_keyboard(lang),
     )
@@ -5698,7 +5698,7 @@ async def handle_callback(call: CallbackQuery):
 
         # ===== ДОНАТЫ: главный экран =====
         if cd == "donate_main":
-            await edit(donate_main_text(lang), donate_main_keyboard(lang))
+            await edit(donate_main_text(lang, data.get("samosvety", 0)), donate_main_keyboard(lang))
             return
 
         # ===== ДОНАТЫ: экран конкретного пакета =====
