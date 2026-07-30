@@ -1,5 +1,5 @@
 # ============================================================
-#  donate.py  —  Донаты / Пакеты монет за Telegram Stars
+#  donate.py  —  Донаты / Пакеты Самосветов за Telegram Stars
 # ============================================================
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -7,114 +7,100 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
 # ============================================================
-#  ПАКЕТЫ МОНЕТ
+#  ПАКЕТЫ САМОСВЕТОВ  (курс фиксированный: 1 ⭐ = 1 самосвет)
 # ============================================================
 
 DONATE_PACKAGES = [
     {
-        "key":    "donate_1",
-        "coins":  1_000_000,
-        "stars":  49,
-        "emoji":  "🪙",
-        "label":  "Стартовый",
-        "label_en": "Starter",
-        "tier":   1,
+        "key":       "donate_1",
+        "samosvety": 49,
+        "stars":     49,
+        "emoji":     "💠",
+        "label":     "Стартовый",
+        "label_en":  "Starter",
+        "tier":      1,
     },
     {
-        "key":    "donate_2",
-        "coins":  3_500_000,
-        "stars":  89,
-        "emoji":  "💰",
-        "label":  "Базовый",
-        "label_en": "Basic",
-        "tier":   1,
+        "key":       "donate_2",
+        "samosvety": 100,
+        "stars":     100,
+        "emoji":     "💠",
+        "label":     "Базовый",
+        "label_en":  "Basic",
+        "tier":      1,
     },
     {
-        "key":    "donate_3",
-        "coins":  10_000_000,
-        "stars":  149,
-        "emoji":  "💎",
-        "label":  "Стандарт",
-        "label_en": "Standard",
-        "tier":   2,
+        "key":       "donate_3",
+        "samosvety": 250,
+        "stars":     250,
+        "emoji":     "🔷",
+        "label":     "Стандарт",
+        "label_en":  "Standard",
+        "tier":      2,
     },
     {
-        "key":    "donate_4",
-        "coins":  50_000_000,
-        "stars":  299,
-        "emoji":  "💎",
-        "label":  "Расширенный",
-        "label_en": "Advanced",
-        "tier":   2,
+        "key":       "donate_4",
+        "samosvety": 500,
+        "stars":     500,
+        "emoji":     "🔷",
+        "label":     "Расширенный",
+        "label_en":  "Advanced",
+        "tier":      2,
     },
     {
-        "key":    "donate_5",
-        "coins":  150_000_000,
-        "stars":  599,
-        "emoji":  "🔷",
-        "label":  "Премиум",
-        "label_en": "Premium",
-        "tier":   3,
+        "key":       "donate_5",
+        "samosvety": 1_000,
+        "stars":     1_000,
+        "emoji":     "💎",
+        "label":     "Премиум",
+        "label_en":  "Premium",
+        "tier":      3,
     },
     {
-        "key":    "donate_6",
-        "coins":  500_000_000,
-        "stars":  1_299,
-        "emoji":  "🔷",
-        "label":  "Элитный",
-        "label_en": "Elite",
-        "tier":   3,
+        "key":       "donate_6",
+        "samosvety": 2_500,
+        "stars":     2_500,
+        "emoji":     "💎",
+        "label":     "Элитный",
+        "label_en":  "Elite",
+        "tier":      3,
     },
     {
-        "key":    "donate_7",
-        "coins":  1_700_000_000,
-        "stars":  2_499,
-        "emoji":  "🏆",
-        "label":  "Легенда",
-        "label_en": "Legend",
-        "tier":   4,
+        "key":       "donate_7",
+        "samosvety": 5_000,
+        "stars":     5_000,
+        "emoji":     "🏆",
+        "label":     "Легенда",
+        "label_en":  "Legend",
+        "tier":      4,
     },
     {
-        "key":    "donate_8",
-        "coins":  4_000_000_000,
-        "stars":  4_999,
-        "emoji":  "👑",
-        "label":  "Король",
-        "label_en": "King",
-        "tier":   4,
-    },
-    {
-        "key":    "donate_9",
-        "coins":  15_000_000_000,
-        "stars":  9_999,
-        "emoji":  "👑",
-        "label":  "Император",
-        "label_en": "Emperor",
-        "tier":   5,
-    },
-    {
-        "key":    "donate_10",
-        "coins":  75_000_000_000,
-        "stars":  14_999,
-        "emoji":  "🌌",
-        "label":  "Абсолют",
-        "label_en": "Absolute",
-        "tier":   5,
+        "key":       "donate_8",
+        "samosvety": 10_000,
+        "stars":     10_000,
+        "emoji":     "🌌",
+        "label":     "Абсолют",
+        "label_en":  "Absolute",
+        "tier":      5,
     },
 ]
 
 DONATE_BY_KEY = {p["key"]: p for p in DONATE_PACKAGES}
 
+# Ограничения на пакет (для валидации, если понадобится кастомная сумма)
+DONATE_MIN_SAMOSVETY = 49
+DONATE_MAX_SAMOSVETY = 10_000
+
 # ============================================================
 #  УТИЛИТЫ
 # ============================================================
 
-_STAR_EMOJI_ID  = "5262643974912355126"   # ⭐ Telegram Stars
-_COIN_EMOJI_ID  = "5199552030615558774"   # 💰 монеты
-_BACK_EMOJI_ID  = "6039539366177541657"   # ← назад
-_GIFT_EMOJI_ID  = "5222113468051629260"   # 🎁
-_FIRE_EMOJI_ID  = "5438496463044752972"   # 🔥
-_CROWN_EMOJI_ID = "5348570868752595928"   # 👑  (иконка звёзд Telegram)
+_STAR_EMOJI_ID      = "5262643974912355126"   # ⭐ Telegram Stars
+_SAMOSVET_EMOJI_ID  = "5465501598199342448"   # 💠 Самосвет (донатная валюта)
+_BACK_EMOJI_ID      = "6039539366177541657"   # ← назад
+_GIFT_EMOJI_ID      = "5222113468051629260"   # 🎁
+_FIRE_EMOJI_ID      = "5438496463044752972"   # 🔥
+_CROWN_EMOJI_ID     = "5348570868752595928"   # 👑  (иконка звёзд Telegram)
 
 _TIER_DIVIDERS = {
     1: None,
@@ -133,8 +119,8 @@ def _star() -> str:
     return _tg(_STAR_EMOJI_ID, "⭐")
 
 
-def _coin() -> str:
-    return _tg(_COIN_EMOJI_ID, "💰")
+def _samosvet() -> str:
+    return _tg(_SAMOSVET_EMOJI_ID, "💠")
 
 
 def _L(lang: str, ru: str, en: str) -> str:
@@ -204,23 +190,19 @@ def donate_main_text(lang: str = "ru") -> str:
     if lang == "en":
         header = (
             f"<blockquote>"
-            f"{_tg(_GIFT_EMOJI_ID, '🎁')} <b>DONATE — Coin Packages</b>\n"
-            f"Support the project and get coins instantly!\n"
-            f"{_tg(_FIRE_EMOJI_ID, '🔥')} <b>Coins are credited immediately after payment.</b>"
+            f"{_tg(_GIFT_EMOJI_ID, '🎁')} <b>DONATE — Samosvet Packages</b>\n"
+            f"Support the project and get Samosvets instantly!\n"
+            f"{_tg(_FIRE_EMOJI_ID, '🔥')} <b>Samosvets are credited immediately after payment.</b>"
             f"</blockquote>\n"
         )
-        packages_title = "📦 Available packages:"
-        coin_label = "coins"
     else:
         header = (
             f"<blockquote>"
-            f"{_tg(_GIFT_EMOJI_ID, '🎁')} <b>ДОНАТЫ — Пакеты монет</b>\n"
-            f"Поддержи проект и получи монеты мгновенно!\n"
-            f"{_tg(_FIRE_EMOJI_ID, '🔥')} <b>Монеты зачисляются сразу после оплаты.</b>"
+            f"{_tg(_GIFT_EMOJI_ID, '🎁')} <b>ДОНАТЫ — Пакеты Самосветов</b>\n"
+            f"Поддержи проект и получи Самосветы мгновенно!\n"
+            f"{_tg(_FIRE_EMOJI_ID, '🔥')} <b>Самосветы зачисляются сразу после оплаты.</b>"
             f"</blockquote>\n"
         )
-        packages_title = "📦 Доступные пакеты:"
-        coin_label = "монет"
 
     lines = [header]
 
@@ -228,6 +210,7 @@ def donate_main_text(lang: str = "ru") -> str:
         lines.append(
             f"\n<blockquote>"
             f"{_star()} <b>Payment via Telegram Stars.</b>\n"
+            f"{_samosvet()} <b>Rate: 1 ⭐ = 1 Samosvet.</b>\n"
             f"<i>Select a package below to proceed.</i>"
             f"</blockquote>"
         )
@@ -235,6 +218,7 @@ def donate_main_text(lang: str = "ru") -> str:
         lines.append(
             f"\n<blockquote>"
             f"{_star()} <b>Оплата через Telegram Stars.</b>\n"
+            f"{_samosvet()} <b>Курс: 1 ⭐ = 1 Самосвет.</b>\n"
             f"<i>Выбери пакет ниже для оплаты.</i>"
             f"</blockquote>"
         )
@@ -251,25 +235,20 @@ def donate_package_text(pkg_key: str, lang: str = "ru") -> str:
     if not p:
         return "❌ Пакет не найден." if lang == "ru" else "❌ Package not found."
 
-    name       = p["label_en"] if lang == "en" else p["label"]
-    coins_str  = _fmt_num(p["coins"])
-    stars_str  = _fmt_stars(p["stars"])
-    coin_label = "coins" if lang == "en" else "монет"
-
-    # Подсчёт "выгоды" (монет за 1 звезду)
-    per_star = int(p["coins"] / p["stars"])
-    per_star_str = _fmt_num(per_star)
+    name          = p["label_en"] if lang == "en" else p["label"]
+    samosvety_str = _fmt_num(p["samosvety"])
+    stars_str     = _fmt_stars(p["stars"])
 
     if lang == "en":
         return (
             f"<blockquote>"
             f'<tg-emoji emoji-id="5400362079783770689">🌟</tg-emoji> <b>{name} Package</b>\n'
-            f"{_coin()} <b>Coins: {coins_str}</b>\n"
+            f"{_samosvet()} <b>Samosvets: {samosvety_str}</b>\n"
             f"{_star()} <b>Price: {stars_str}</b>\n"
-            f'<tg-emoji emoji-id="5429651785352501917">🌟</tg-emoji> <b>Value: {per_star_str} coins</b>'
+            f'<tg-emoji emoji-id="5429651785352501917">🌟</tg-emoji> <b>Rate: 1 ⭐ = 1 Samosvet</b>'
             f"</blockquote>\n"
             f"\n<blockquote>"
-            f'<tg-emoji emoji-id="5206607081334906820">🌟</tg-emoji> <b>Coins are credited instantly after payment.</b>\n'
+            f'<tg-emoji emoji-id="5206607081334906820">🌟</tg-emoji> <b>Samosvets are credited instantly after payment.</b>\n'
             f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> <b>No expiry — yours forever.</b>'
             f"</blockquote>"
         )
@@ -277,12 +256,12 @@ def donate_package_text(pkg_key: str, lang: str = "ru") -> str:
         return (
             f"<blockquote>"
             f'<tg-emoji emoji-id="5400362079783770689">🌟</tg-emoji> <b>Пакет «{name}»</b>\n'
-            f"{_coin()} <b>Монеты: {coins_str}</b>\n"
+            f"{_samosvet()} <b>Самосветы: {samosvety_str}</b>\n"
             f"{_star()} <b>Цена: {stars_str}</b>\n"
-            f'<tg-emoji emoji-id="5429651785352501917">🌟</tg-emoji> <b>Выгода: {per_star_str} монет</b>'
+            f'<tg-emoji emoji-id="5429651785352501917">🌟</tg-emoji> <b>Курс: 1 ⭐ = 1 Самосвет</b>'
             f"</blockquote>\n"
             f"\n<blockquote>"
-            f'<tg-emoji emoji-id="5206607081334906820">🌟</tg-emoji> <b>Монеты зачисляются мгновенно после оплаты.</b>\n'
+            f'<tg-emoji emoji-id="5206607081334906820">🌟</tg-emoji> <b>Самосветы зачисляются мгновенно после оплаты.</b>\n'
             f'<tg-emoji emoji-id="5427168083074628963">🌟</tg-emoji> <b>Срок действия не ограничен — твои навсегда.</b>'
             f"</blockquote>"
         )
@@ -296,11 +275,11 @@ def donate_main_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     """Список всех пакетов — кнопка на каждый."""
     builder = InlineKeyboardBuilder()
     for p in DONATE_PACKAGES:
-        name      = p["label_en"] if lang == "en" else p["label"]
-        coins_str = _fmt_num(p["coins"])
-        stars_str = _fmt_stars(p["stars"])
+        name          = p["label_en"] if lang == "en" else p["label"]
+        samosvety_str = _fmt_num(p["samosvety"])
+        stars_str     = _fmt_stars(p["stars"])
         builder.row(InlineKeyboardButton(
-            text=f"{name} — {coins_str} | {stars_str}",
+            text=f"{name} — {samosvety_str} 💠 | {stars_str}",
             callback_data=f"donate_pkg_{p['key']}",
             icon_custom_emoji_id=_STAR_EMOJI_ID,
         ))
@@ -352,40 +331,43 @@ def donate_package_keyboard(pkg_key: str, invoice_url: str = None, lang: str = "
 
 
 # ============================================================
-#  ЛОГИКА — ЗАЧИСЛЕНИЕ МОНЕТ
+#  ЛОГИКА — ЗАЧИСЛЕНИЕ САМОСВЕТОВ
 # ============================================================
 
 def apply_donate(data: dict, pkg_key: str) -> tuple[bool, str, int]:
     """
-    Зачислить монеты за донат после успешной оплаты Stars.
+    Зачислить Самосветы за донат после успешной оплаты Stars.
     Вызывать из хендлера successful_payment.
 
-    Возвращает (ok, msg, coins_added).
+    Самосветы — донатная валюта, отдельная от игровых монет (balance).
+    Хранится в data["samosvety"].
+
+    Возвращает (ok, msg, samosvety_added).
     Модифицирует data на месте — сохранение в БД на стороне вызывающего.
     """
     p = DONATE_BY_KEY.get(pkg_key)
     if not p:
         return False, "❌ Пакет не найден.", 0
 
-    coins = p["coins"]
-    data["balance"] = data.get("balance", 0) + coins
+    samosvety = p["samosvety"]
+    data["samosvety"] = data.get("samosvety", 0) + samosvety
     data["total_donated_stars"] = data.get("total_donated_stars", 0) + p["stars"]
-    data["total_donated_coins"] = data.get("total_donated_coins", 0) + coins
+    data["total_donated_samosvety"] = data.get("total_donated_samosvety", 0) + samosvety
     data["donate_purchases"] = data.get("donate_purchases", 0) + 1
     data.setdefault("donate_purchased_keys", []).append(pkg_key)
 
     lang = data.get("lang", "ru")
     name = p["label_en"] if lang == "en" else p["label"]
-    coins_str = _fmt_num(coins)
-    bal_str   = _fmt_num(data["balance"])
+    samosvety_str = _fmt_num(samosvety)
+    bal_str       = _fmt_num(data["samosvety"])
 
     if lang == "en":
         msg = (
             f"<blockquote>"
             f"{_tg(_GIFT_EMOJI_ID, '🎁')} <b>Thank you for your support!</b>\n"
             f"{p['emoji']} <b>Package «{name}» activated!</b>\n"
-            f"{_coin()} <b>+{coins_str} coins</b>\n"
-            f"{_coin()} <b>Balance: {bal_str}</b>"
+            f"{_samosvet()} <b>+{samosvety_str} Samosvets</b>\n"
+            f"{_samosvet()} <b>Balance: {bal_str}</b>"
             f"</blockquote>"
         )
     else:
@@ -393,11 +375,11 @@ def apply_donate(data: dict, pkg_key: str) -> tuple[bool, str, int]:
             f"<blockquote>"
             f"{_tg(_GIFT_EMOJI_ID, '🎁')} <b>Спасибо за поддержку!</b>\n"
             f"{p['emoji']} <b>Пакет «{name}» активирован!</b>\n"
-            f"{_coin()} <b>+{coins_str} монет</b>\n"
-            f"{_coin()} <b>Баланс: {bal_str}</b>"
+            f"{_samosvet()} <b>+{samosvety_str} Самосветов</b>\n"
+            f"{_samosvet()} <b>Баланс: {bal_str}</b>"
             f"</blockquote>"
         )
-    return True, msg, coins
+    return True, msg, samosvety
 
 
 # ============================================================
@@ -405,7 +387,7 @@ def apply_donate(data: dict, pkg_key: str) -> tuple[bool, str, int]:
 # ============================================================
 #
 #  1. В профиле добавить кнопку:
-#       InlineKeyboardButton(text="💝 Донат", callback_data="donate_main")
+#       InlineKeyboardButton(text="💠 Донат", callback_data="donate_main")
 #
 #  2. Хендлер callback "donate_main":
 #       await callback.message.edit_text(
@@ -429,10 +411,11 @@ def apply_donate(data: dict, pkg_key: str) -> tuple[bool, str, int]:
 #
 #  5. Хендлер successful_payment:
 #       pkg_key = event.successful_payment.invoice_payload
-#       ok, msg, coins = apply_donate(user_data, pkg_key)
+#       ok, msg, samosvety = apply_donate(user_data, pkg_key)
 #       # apply_donate() уже сам проставил donate_purchases,
-#       # total_donated_stars, total_donated_coins, donate_purchased_keys —
+#       # total_donated_stars, total_donated_samosvety, donate_purchased_keys —
 #       # ничего доинкрементировать вручную не нужно.
+#       # Самосветы хранятся отдельно от игровых монет: user_data["samosvety"]
 #       from achieves import check_achievements, notify_new_achievements
 #       newly = check_achievements(user_data)
 #       # сохранить user_data в БД
