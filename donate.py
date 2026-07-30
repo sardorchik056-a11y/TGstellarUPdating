@@ -2,6 +2,8 @@
 #  donate.py  —  Донаты / Пакеты Самосветов за Telegram Stars
 # ============================================================
 
+import aiohttp
+
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -94,6 +96,36 @@ DONATE_MAX_SAMOSVETY = 10_000
 # Курс Telegram Stars -> USD (приблизительный, официальный курс Telegram
 # варьируется по региону; поправь при необходимости под актуальный курс)
 STAR_TO_USD = 0.013
+
+# ============================================================
+#  КОНФИГ — КРИПТО-ПЛАТЁЖИ (@send / xRocket)
+# ============================================================
+#
+#  @send — новое имя бота @CryptoBot, платёжный API называется "Crypto Pay"
+#  и не переименовался вместе с ботом.
+#    Токен: открой @send -> Crypto Pay -> Create App -> API Token
+#    Докс:  https://help.send.tg/en/articles/10279948-crypto-pay-api
+#
+SEND_PAY_API_TOKEN = "PASTE_YOUR_SEND_CRYPTO_PAY_TOKEN_HERE"
+SEND_PAY_BASE_URL  = "https://pay.crypt.bot/api"   # тестнет: https://testnet-pay.crypt.bot/api
+SEND_PAY_ASSET     = "USDT"
+
+#  xRocket — Rocket Pay API.
+#    Токен: открой @xrocket -> Rocket Pay -> Создать кассу -> API token
+#    Докс:  https://pay.ton-rocket.com/api
+#
+ROCKET_PAY_API_KEY  = "PASTE_YOUR_XROCKET_API_KEY_HERE"
+ROCKET_PAY_BASE_URL = "https://pay.ton-rocket.com"
+ROCKET_PAY_CURRENCY = "USDT"
+
+# Крипто-платёжки не примут микро-суммы — держим минимум по инвойсу
+CRYPTO_MIN_USDT = 0.10
+
+PAYMENT_PROVIDERS = {
+    "stars":   {"label": "Telegram Stars", "emoji": "⭐"},
+    "send":    {"label": "@send (USDT)",   "emoji": "💳"},
+    "xrocket": {"label": "xRocket (USDT)", "emoji": "🚀"},
+}
 
 # ============================================================
 #  УТИЛИТЫ
@@ -189,6 +221,16 @@ def _fmt_stars(s: int) -> str:
 def _fmt_usd(stars: int) -> str:
     """Приблизительная сумма в USD по курсу STAR_TO_USD."""
     return f"${stars * STAR_TO_USD:.2f}"
+
+
+def _stars_to_usdt(stars: int) -> float:
+    """
+    Переводит цену пакета из Stars в USDT по курсу STAR_TO_USD.
+    Округляет до 2 знаков и подтягивает к CRYPTO_MIN_USDT, если сумма
+    слишком мала — иначе платёжка отклонит инвойс.
+    """
+    amount = round(stars * STAR_TO_USD, 2)
+    return max(amount, CRYPTO_MIN_USDT)
 
 
 # ============================================================
@@ -314,30 +356,259 @@ def donate_main_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
 
 
 def donate_package_keyboard(pkg_key: str, invoice_url: str = None, lang: str = "ru") -> InlineKeyboardMarkup:
-    """Экран конкретного пакета — кнопка купить + назад."""
+    """
+    Экран конкретного пакета.
+    Пока Stars-инвойс ещё не создан (invoice_url=None) — показываем выбор
+    из трёх способов оплаты: Stars / @send / xRocket.
+    После того как для Stars уже создана invoice_url — как раньше, одна
+    кнопка "Купить" со ссылкой на её оплату.
+    """
     builder = InlineKeyboardBuilder()
     p = DONATE_BY_KEY.get(pkg_key)
     stars_str = _fmt_stars(p["stars"]) if p else "?"
-    buy_label = f"{_L(lang, 'Купить', 'Buy')} {stars_str}"
+    usdt_str  = f"{_stars_to_usdt(p['stars']):.2f} USDT" if p else "?"
 
     if invoice_url:
         builder.row(InlineKeyboardButton(
-            text=buy_label,
+            text=f"{_L(lang, 'Купить', 'Buy')} {stars_str}",
             url=invoice_url,
             icon_custom_emoji_id=_STAR_EMOJI_ID,
             style="success",
         ))
     else:
         builder.row(InlineKeyboardButton(
-            text=buy_label,
+            text=f"⭐ Stars — {stars_str}",
             callback_data=f"donate_buy_{pkg_key}",
             icon_custom_emoji_id=_STAR_EMOJI_ID,
+        ))
+        builder.row(InlineKeyboardButton(
+            text=f"💳 @send — {usdt_str}",
+            callback_data=f"donate_pay_send_{pkg_key}",
+        ))
+        builder.row(InlineKeyboardButton(
+            text=f"🚀 xRocket — {usdt_str}",
+            callback_data=f"donate_pay_xrocket_{pkg_key}",
         ))
 
     builder.row(InlineKeyboardButton(
         text=_L(lang, "Мои звёзды", "My stars"),
         url="tg://stars/",
         icon_custom_emoji_id=_CROWN_EMOJI_ID,
+    ))
+    builder.row(InlineKeyboardButton(
+        text=_L(lang, " Все пакеты", " All packages"),
+        callback_data="donate_main",
+        icon_custom_emoji_id=_BACK_EMOJI_ID,
+    ))
+    return builder.as_markup()
+
+
+# ============================================================
+#  @send (Crypto Pay API) — создание и проверка счёта
+# ============================================================
+
+async def create_send_invoice(pkg_key: str, uid: int) -> tuple[bool, str, str]:
+    """
+    Создаёт счёт на оплату через @send (Crypto Pay API).
+    Возвращает (ok, pay_url, invoice_id).
+    """
+    p = DONATE_BY_KEY.get(pkg_key)
+    if not p or not SEND_PAY_API_TOKEN or "PASTE_YOUR" in SEND_PAY_API_TOKEN:
+        return False, "", ""
+
+    amount = _stars_to_usdt(p["stars"])
+    headers = {"Crypto-Pay-API-Token": SEND_PAY_API_TOKEN}
+    body = {
+        "asset": SEND_PAY_ASSET,
+        "amount": f"{amount:.2f}",
+        "description": f"TGStellar — пакет «{p['label']}» ({p['samosvety']} самосветов)",
+        "payload": f"send_donate:{pkg_key}:{uid}",
+        "expires_in": 3600,
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{SEND_PAY_BASE_URL}/createInvoice",
+                headers=headers, json=body,
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json()
+    except Exception as e:
+        print(f"[donate] @send createInvoice error: {e}")
+        return False, "", ""
+
+    if not data.get("ok"):
+        print(f"[donate] @send createInvoice failed: {data}")
+        return False, "", ""
+
+    result = data["result"]
+    pay_url = (
+        result.get("bot_invoice_url")
+        or result.get("mini_app_invoice_url")
+        or result.get("pay_url")
+    )
+    invoice_id = str(result.get("invoice_id", ""))
+    if not pay_url or not invoice_id:
+        return False, "", ""
+    return True, pay_url, invoice_id
+
+
+async def check_send_invoice(invoice_id: str) -> str:
+    """
+    Проверяет статус счёта @send.
+    Возвращает "paid" / "active" / "expired" / "error".
+    """
+    if not SEND_PAY_API_TOKEN or "PASTE_YOUR" in SEND_PAY_API_TOKEN:
+        return "error"
+    headers = {"Crypto-Pay-API-Token": SEND_PAY_API_TOKEN}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{SEND_PAY_BASE_URL}/getInvoices",
+                headers=headers, params={"invoice_ids": invoice_id},
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json()
+    except Exception as e:
+        print(f"[donate] @send getInvoices error: {e}")
+        return "error"
+
+    if not data.get("ok"):
+        return "error"
+    items = data["result"].get("items", [])
+    if not items:
+        return "error"
+    return items[0].get("status", "error")
+
+
+# ============================================================
+#  xRocket (Rocket Pay API) — создание и проверка счёта
+# ============================================================
+
+async def create_xrocket_invoice(pkg_key: str, uid: int) -> tuple[bool, str, str]:
+    """
+    Создаёт счёт на оплату через xRocket (Rocket Pay API).
+    Возвращает (ok, pay_url, invoice_id).
+    """
+    p = DONATE_BY_KEY.get(pkg_key)
+    if not p or not ROCKET_PAY_API_KEY or "PASTE_YOUR" in ROCKET_PAY_API_KEY:
+        return False, "", ""
+
+    amount = _stars_to_usdt(p["stars"])
+    headers = {"Rocket-Pay-Key": ROCKET_PAY_API_KEY}
+    body = {
+        "amount": amount,
+        "currency": ROCKET_PAY_CURRENCY,
+        "description": f"TGStellar — пакет «{p['label']}» ({p['samosvety']} самосветов)",
+        "payload": f"xrocket_donate:{pkg_key}:{uid}",
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{ROCKET_PAY_BASE_URL}/tg-invoices",
+                headers=headers, json=body,
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json()
+    except Exception as e:
+        print(f"[donate] xRocket create invoice error: {e}")
+        return False, "", ""
+
+    # Ответ API обёрнут в {"success": bool, "data": {...}}
+    if not data.get("success"):
+        print(f"[donate] xRocket create invoice failed: {data}")
+        return False, "", ""
+
+    result = data.get("data", {})
+    pay_url = result.get("link") or result.get("payLink") or result.get("url")
+    invoice_id = str(result.get("id", ""))
+    if not pay_url or not invoice_id:
+        return False, "", ""
+    return True, pay_url, invoice_id
+
+
+async def check_xrocket_invoice(invoice_id: str) -> str:
+    """
+    Проверяет статус счёта xRocket.
+    Возвращает "paid" / "active" / "expired" / "error".
+    """
+    if not ROCKET_PAY_API_KEY or "PASTE_YOUR" in ROCKET_PAY_API_KEY:
+        return "error"
+    headers = {"Rocket-Pay-Key": ROCKET_PAY_API_KEY}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{ROCKET_PAY_BASE_URL}/tg-invoices/{invoice_id}",
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json()
+    except Exception as e:
+        print(f"[donate] xRocket check invoice error: {e}")
+        return "error"
+
+    if not data.get("success"):
+        return "error"
+    result = data.get("data", {})
+    # В разных версиях API поле может называться по-разному — подстраховываемся
+    status = result.get("status") or ("paid" if result.get("paid") else "active")
+    return status
+
+
+# ============================================================
+#  ТЕКСТ И КЛАВИАТУРА — КРИПТО-СЧЁТ (@send / xRocket)
+# ============================================================
+
+def donate_crypto_invoice_text(pkg_key: str, provider: str, lang: str = "ru") -> str:
+    p = DONATE_BY_KEY.get(pkg_key)
+    if not p:
+        return "❌ Пакет не найден." if lang == "ru" else "❌ Package not found."
+
+    prov = PAYMENT_PROVIDERS.get(provider, {"label": provider, "emoji": "💳"})
+    name = p["label_en"] if lang == "en" else p["label"]
+    samosvety_str = _fmt_num(p["samosvety"])
+    usdt_str = f"{_stars_to_usdt(p['stars']):.2f} USDT"
+
+    if lang == "en":
+        return (
+            f"<blockquote>"
+            f"{prov['emoji']} <b>Payment via {prov['label']}</b>\n"
+            f"{_samosvet()} <b>Package:</b> «{name}» — {samosvety_str} Samosvets\n"
+            f"{prov['emoji']} <b>Amount:</b> {usdt_str}"
+            f"</blockquote>\n"
+            f"\n<blockquote>"
+            f"<i>Tap “Pay”, complete the payment in the opened app, "
+            f"then come back and tap “Check payment”.</i>"
+            f"</blockquote>"
+        )
+    else:
+        return (
+            f"<blockquote>"
+            f"{prov['emoji']} <b>Оплата через {prov['label']}</b>\n"
+            f"{_samosvet()} <b>Пакет:</b> «{name}» — {samosvety_str} Самосветов\n"
+            f"{prov['emoji']} <b>Сумма:</b> {usdt_str}"
+            f"</blockquote>\n"
+            f"\n<blockquote>"
+            f"<i>Нажми «Оплатить», заверши платёж в открывшемся приложении, "
+            f"затем вернись сюда и нажми «Проверить оплату».</i>"
+            f"</blockquote>"
+        )
+
+
+def donate_crypto_invoice_keyboard(
+    pkg_key: str, provider: str, pay_url: str, invoice_id: str, lang: str = "ru"
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=_L(lang, "Оплатить", "Pay"),
+        url=pay_url,
+        icon_custom_emoji_id=_STAR_EMOJI_ID,
+        style="success",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=_L(lang, "Проверить оплату", "Check payment"),
+        callback_data=f"donate_check_{provider}:{invoice_id}:{pkg_key}",
+        icon_custom_emoji_id=_FIRE_EMOJI_ID,
     ))
     builder.row(InlineKeyboardButton(
         text=_L(lang, " Все пакеты", " All packages"),
@@ -438,3 +709,28 @@ def apply_donate(data: dict, pkg_key: str) -> tuple[bool, str, int]:
 #       # сохранить user_data в БД
 #       await bot.send_message(user_id, msg)
 #       await notify_new_achievements(bot, user_id, newly, user_data.get("lang", "ru"))
+#
+#  6. Способы оплаты @send и xRocket работают иначе, чем Stars: у них нет
+#     pre_checkout_query/successful_payment — это внешние платёжки со своим
+#     REST API, поэтому оплата подтверждается через кнопку "Проверить оплату":
+#
+#       Хендлер callback "donate_pay_send_{pkg_key}" / "donate_pay_xrocket_{pkg_key}":
+#           ok, pay_url, invoice_id = await create_send_invoice(pkg_key, uid)      # или create_xrocket_invoice
+#           await call.message.edit_text(
+#               donate_crypto_invoice_text(pkg_key, "send", lang),                 # или "xrocket"
+#               reply_markup=donate_crypto_invoice_keyboard(pkg_key, "send", pay_url, invoice_id, lang),
+#           )
+#
+#       Хендлер callback "donate_check_send:{invoice_id}:{pkg_key}" (аналогично для xrocket):
+#           status = await check_send_invoice(invoice_id)                          # или check_xrocket_invoice
+#           if status != "paid":
+#               await call.answer("Оплата ещё не поступила", show_alert=True)
+#               return
+#           # защита от повторного зачисления по одному и тому же invoice_id —
+#           # тем же charge-processed механизмом, что и для Stars
+#           ok, msg, samosvety = apply_donate(user_data, pkg_key)
+#           # сохранить user_data, показать achievements, отредактировать сообщение
+#
+#     Для продакшена лучше не только на "Проверить оплату" полагаться, а ещё
+#     поднять вебхук-эндпоинт (callbackUrl у xRocket / Webhooks у @send Crypto Pay),
+#     чтобы зачисление происходило мгновенно даже если пользователь не нажал кнопку.
