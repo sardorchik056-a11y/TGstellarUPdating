@@ -287,7 +287,7 @@ def status_insufficient_keyboard(lang: str = "ru", back_cb: str = "status") -> I
     """Клавиатура, показываемая при нехватке Самосветов — ведёт в раздел Донат."""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
-        text=_L(lang, "💠 Пополнить Самосветы (Донат)", "💠 Top up Samosvety (Donate)"),
+        text=_L(lang, "Пополнить Самосветы (Донат)", "Top up Samosvety (Donate)"),
         callback_data="donate_main",
         icon_custom_emoji_id=_E["samosvet"]
     ))
@@ -408,19 +408,19 @@ def status_vip_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
     elif active == "vip":
         # Продление VIP + улучшение до Premium
         builder.row(InlineKeyboardButton(
-            text=_L(lang, f"Продлить VIP — {VIP_COST_SAMOSVETY} 💠", f"Renew VIP — {VIP_COST_SAMOSVETY} 💠"),
+            text=_L(lang, f"Продлить VIP — {VIP_COST_SAMOSVETY}", f"Renew VIP — {VIP_COST_SAMOSVETY}"),
             callback_data="status_buy_vip",
             icon_custom_emoji_id=_E["vip"]
         ))
         builder.row(InlineKeyboardButton(
-            text=_L(lang, f"Улучшить до Premium — {UPGRADE_COST_SAMOSVETY} 💠", f"Upgrade to Premium — {UPGRADE_COST_SAMOSVETY} 💠"),
+            text=_L(lang, f"Улучшить до Premium — {UPGRADE_COST_SAMOSVETY}", f"Upgrade to Premium — {UPGRADE_COST_SAMOSVETY}"),
             callback_data="status_upgrade_premium",
             icon_custom_emoji_id=_E["premium"]
         ))
     else:
         # Standart — обычная покупка
         builder.row(InlineKeyboardButton(
-            text=_L(lang, f"Купить VIP — {VIP_COST_SAMOSVETY} 💠", f"Buy VIP — {VIP_COST_SAMOSVETY} 💠"),
+            text=_L(lang, f"Купить VIP — {VIP_COST_SAMOSVETY}", f"Buy VIP — {VIP_COST_SAMOSVETY}"),
             callback_data="status_buy_vip",
             icon_custom_emoji_id=_E["vip"]
         ))
@@ -447,7 +447,7 @@ def status_premium_text(data: dict, lang: str = "ru") -> str:
     elif active == "vip":
         active_line = (
             f'\n\n<blockquote>{_pe("ok", "✅")} <b><i>{_L(lang, "У тебя активен VIP.", "You have an active VIP.")}</i></b>\n'
-            f'<b><i>{_L(lang, f"Можешь улучшить до Premium за {UPGRADE_COST_SAMOSVETY} 💠", f"You can upgrade to Premium for {UPGRADE_COST_SAMOSVETY} 💠")}</i></b></blockquote>'
+            f'<b><i>{_L(lang, f"Можешь улучшить до Premium за {UPGRADE_COST_SAMOSVETY}", f"You can upgrade to Premium for {UPGRADE_COST_SAMOSVETY}")}</i></b></blockquote>'
         )
 
     return (
@@ -482,21 +482,21 @@ def status_premium_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarku
     if active == "vip":
         # Улучшение VIP → Premium за Самосветы
         builder.row(InlineKeyboardButton(
-            text=_L(lang, f"Улучшить до Premium — {UPGRADE_COST_SAMOSVETY} 💠", f"Upgrade to Premium — {UPGRADE_COST_SAMOSVETY} 💠"),
+            text=_L(lang, f"Улучшить до Premium — {UPGRADE_COST_SAMOSVETY}", f"Upgrade to Premium — {UPGRADE_COST_SAMOSVETY}"),
             callback_data="status_upgrade_premium",
             icon_custom_emoji_id=_E["premium"]
         ))
     elif active == "premium":
         # Продление Premium
         builder.row(InlineKeyboardButton(
-            text=_L(lang, f"Продлить Premium — {PREMIUM_COST_SAMOSVETY} 💠", f"Renew Premium — {PREMIUM_COST_SAMOSVETY} 💠"),
+            text=_L(lang, f"Продлить Premium — {PREMIUM_COST_SAMOSVETY}", f"Renew Premium — {PREMIUM_COST_SAMOSVETY}"),
             callback_data="status_buy_premium",
             icon_custom_emoji_id=_E["premium"]
         ))
     else:
         # Standart — обычная покупка
         builder.row(InlineKeyboardButton(
-            text=_L(lang, f"Купить Premium — {PREMIUM_COST_SAMOSVETY} 💠", f"Buy Premium — {PREMIUM_COST_SAMOSVETY} 💠"),
+            text=_L(lang, f"Купить Premium — {PREMIUM_COST_SAMOSVETY}", f"Buy Premium — {PREMIUM_COST_SAMOSVETY}"),
             callback_data="status_buy_premium",
             icon_custom_emoji_id=_E["premium"]
         ))
