@@ -15,10 +15,15 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 STATUS_DURATION = 30 * 24 * 3600   # 30 дней в секундах
 
-# Стоимость в Telegram Stars
-VIP_COST_STARS        = 89
-PREMIUM_COST_STARS    = 149
-UPGRADE_COST_STARS    = 59   # улучшение VIP → Premium
+# Стоимость в Самосветах (донатная валюта, см. donate.py)
+VIP_COST_SAMOSVETY        = 89
+PREMIUM_COST_SAMOSVETY    = 149
+UPGRADE_COST_SAMOSVETY    = 59   # улучшение VIP → Premium
+
+# Обратная совместимость со старыми именами (если где-то ещё используются)
+VIP_COST_STARS        = VIP_COST_SAMOSVETY
+PREMIUM_COST_STARS    = PREMIUM_COST_SAMOSVETY
+UPGRADE_COST_STARS    = UPGRADE_COST_SAMOSVETY
 
 # Ключи ядов-бонусов (берём из shop.py: poison_1 = Гадюка, poison_2 = Кобра)
 VIP_BONUS_POISON_KEY     = "poison_1"   # Яд Гадюки
@@ -48,6 +53,8 @@ _E = {
     "coin":       "5199552030615558774",   # монета
     "boost":      "5438571934210082705",   # молния
     "calendar":   "5440621591387980068",   # таймер/календарь
+    "samosvet":   "5465501598199342448",   # 💠 Самосвет (донатная валюта, как в donate.py)
+    "gift":       "5222113468051629260",   # 🎁 подарок
 }
 
 
@@ -200,6 +207,95 @@ def activate_status(data: dict, tier: str, lang: str = "ru") -> tuple[bool, str]
 
 
 # ────────────────────────────────────────────────────────────
+#  ПОКУПКА СТАТУСОВ ЗА САМОСВЕТЫ
+# ────────────────────────────────────────────────────────────
+
+def get_samosvety(data: dict) -> int:
+    """Текущий баланс Самосветов пользователя."""
+    return data.get("samosvety", 0)
+
+
+def _insufficient_samosvety_text(cost: int, balance: int, lang: str = "ru") -> str:
+    """Текст-инструкция при нехватке Самосветов для покупки статуса."""
+    missing = cost - balance
+    return (
+        f'<blockquote>'
+        f'{_pe("warn", "⚠️")} <b><i>{_L(lang, "Недостаточно Самосветов", "Not enough Samosvety")}</i></b>\n'
+        f'{_pe("samosvet", "💠")} <b><i>{_L(lang, f"Нужно: {cost} · У тебя: {balance}", f"Needed: {cost} · You have: {balance}")}</i></b>\n'
+        f'{_pe("samosvet", "💠")} <b><i>{_L(lang, f"Не хватает: {missing}", f"Missing: {missing}")}</i></b>'
+        f'</blockquote>\n\n'
+        f'<blockquote>'
+        f'{_pe("gift", "🎁")} <b><i>{_L(lang, "Пополни баланс в разделе «Донат» — Самосветы можно купить за Telegram Stars или крипту.", "Top up your balance in the “Donate” section — you can buy Samosvety with Telegram Stars or crypto.")}</i></b>'
+        f'</blockquote>'
+    )
+
+
+def buy_status(data: dict, tier: str, lang: str = "ru") -> tuple[bool, str]:
+    """
+    Купить / продлить статус за Самосветы.
+    tier: 'vip' или 'premium'
+    Списывает Самосветы с data["samosvety"] и активирует статус через activate_status().
+    Возвращает (ok, message_text). Если Самосветов не хватает — ok=False и
+    текст с инструкцией, как пополнить баланс (раздел «Донат»).
+    """
+    if tier == "vip" and get_active_status(data) == "premium":
+        return False, (
+            f'<blockquote>{_pe("warn", "⚠️")} <b><i>{_L(lang, "У тебя активен Premium — VIP недоступен.", "You have an active Premium — VIP is unavailable.")}</i></b>\n'
+            f'<b><i>{_L(lang, "Более высокий статус нельзя заменить на низкий.", "A higher status cannot be downgraded to a lower one.")}</i></b></blockquote>'
+        )
+
+    cost = VIP_COST_SAMOSVETY if tier == "vip" else PREMIUM_COST_SAMOSVETY
+    balance = get_samosvety(data)
+    if balance < cost:
+        return False, _insufficient_samosvety_text(cost, balance, lang)
+
+    data["samosvety"] = balance - cost
+    ok, msg = activate_status(data, tier, lang)
+    if not ok:
+        # откатываем списание, если активация неожиданно не удалась
+        data["samosvety"] = balance
+        return ok, msg
+
+    new_balance = data["samosvety"]
+    spent_line = f'\n{_pe("samosvet", "💠")} <b><i>{_L(lang, f"Потрачено: {cost} Самосветов · Остаток: {new_balance}", f"Spent: {cost} Samosvety · Balance: {new_balance}")}</i></b>'
+    return ok, msg + spent_line
+
+
+def buy_upgrade_premium(data: dict, lang: str = "ru") -> tuple[bool, str]:
+    """Улучшение VIP → Premium за Самосветы (UPGRADE_COST_SAMOSVETY)."""
+    if get_active_status(data) != "vip":
+        return False, (
+            f'{_pe("warn", "⚠️")} <b><i>{_L(lang, "Апгрейд доступен только при активном VIP.", "Upgrade is only available with active VIP.")}</i></b>'
+        )
+
+    balance = get_samosvety(data)
+    if balance < UPGRADE_COST_SAMOSVETY:
+        return False, _insufficient_samosvety_text(UPGRADE_COST_SAMOSVETY, balance, lang)
+
+    data["samosvety"] = balance - UPGRADE_COST_SAMOSVETY
+    ok, msg = activate_status(data, "premium", lang)
+    if not ok:
+        data["samosvety"] = balance
+        return ok, msg
+
+    new_balance = data["samosvety"]
+    spent_line = f'\n{_pe("samosvet", "💠")} <b><i>{_L(lang, f"Потрачено: {UPGRADE_COST_SAMOSVETY} Самосветов · Остаток: {new_balance}", f"Spent: {UPGRADE_COST_SAMOSVETY} Samosvety · Balance: {new_balance}")}</i></b>'
+    return ok, msg + spent_line
+
+
+def status_insufficient_keyboard(lang: str = "ru", back_cb: str = "status") -> InlineKeyboardMarkup:
+    """Клавиатура, показываемая при нехватке Самосветов — ведёт в раздел Донат."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=_L(lang, "💠 Пополнить Самосветы (Донат)", "💠 Top up Samosvety (Donate)"),
+        callback_data="donate_main",
+        icon_custom_emoji_id=_E["samosvet"]
+    ))
+    builder.row(_back_btn(back_cb, _L(lang, "Назад", "Back")))
+    return builder.as_markup()
+
+
+# ────────────────────────────────────────────────────────────
 #  ТЕКСТЫ
 # ────────────────────────────────────────────────────────────
 
@@ -224,12 +320,15 @@ def status_main_text(data: dict, lang: str = "ru") -> str:
             f'<b><i>{_L(lang, "Подпишись, чтобы получить привилегии", "Subscribe to unlock privileges")}</i></b>'
         )
 
+    balance = get_samosvety(data)
+    balance_line = f'\n{_pe("samosvet", "💠")} <b><i>{_L(lang, f"Баланс Самосветов: {balance}", f"Samosvety balance: {balance}")}</i></b>'
+
     return (
         f'<blockquote>{_pe("vip", "👑")} <b><i>{_L(lang, "СТАТУСЫ TGStellar", "TGStellar STATUSES")}</i></b>\n\n'
-        f'{current_line}</blockquote>\n\n'
+        f'{current_line}{balance_line}</blockquote>\n\n'
 
         f'<blockquote>'
-        f'{_pe("vip", "👑")} <b><i>VIP</i></b> — {VIP_COST_STARS} {_pe("star", "⭐")} / {_L(lang, "30 дней", "30 days")}\n'
+        f'{_pe("vip", "👑")} <b><i>VIP</i></b> — {VIP_COST_SAMOSVETY} {_pe("samosvet", "💠")} / {_L(lang, "30 дней", "30 days")}\n'
         f'{_pe("mine", "⛏")} <b><i>{_L(lang, "+1.3× ко всем видам добычи", "+1.3× to all types of mining/farming")}</i></b>\n'
         f'{_pe("crit", "⚡")} <b><i>{_L(lang, "Шанс крита", "Crit chance")}: +15%</i></b>\n'
         f'{_pe("luck", "🍀")} <b><i>{_L(lang, "Повышенная удача в кейсах", "Increased luck in cases")}</i></b>\n'
@@ -237,7 +336,7 @@ def status_main_text(data: dict, lang: str = "ru") -> str:
         f'</blockquote>\n\n'
 
         f'<blockquote>'
-        f'{_pe("premium", "⭐")} <b><i>Premium</i></b> — {PREMIUM_COST_STARS} {_pe("star", "⭐")} / {_L(lang, "30 дней", "30 days")}\n'
+        f'{_pe("premium", "⭐")} <b><i>Premium</i></b> — {PREMIUM_COST_SAMOSVETY} {_pe("samosvet", "💠")} / {_L(lang, "30 дней", "30 days")}\n'
         f'{_pe("mine", "⛏")} <b><i>{_L(lang, "+1.6× ко всем видам добычи", "+1.6× to all types of mining/farming")}</i></b>\n'
         f'{_pe("crit", "⚡")} <b><i>{_L(lang, "Шанс крита", "Crit chance")}: +25%</i></b>\n'
         f'{_pe("luck", "🍀")} <b><i>{_L(lang, "Максимальная удача в кейсах", "Maximum luck in cases")}</i></b>\n'
@@ -275,7 +374,7 @@ def status_vip_text(data: dict, lang: str = "ru") -> str:
         f'<blockquote>'
         f'{_pe("vip", "👑")} <b><i>{_L(lang, "Статус VIP", "VIP Status")}</i></b>\n\n'
         f'{_pe("calendar", "📅")} <b><i>{_L(lang, "Срок: 30 дней", "Duration: 30 days")}</i></b>\n'
-        f'{_pe("star", "⭐")} <b><i>{_L(lang, "Стоимость", "Cost")}: {VIP_COST_STARS} Stars</i></b>'
+        f'{_pe("samosvet", "💠")} <b><i>{_L(lang, "Стоимость", "Cost")}: {VIP_COST_SAMOSVETY} {_L(lang, "Самосветов", "Samosvety")}</i></b>'
         f'</blockquote>\n\n'
 
         f'<blockquote>'
@@ -309,26 +408,27 @@ def status_vip_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
     elif active == "vip":
         # Продление VIP + улучшение до Premium
         builder.row(InlineKeyboardButton(
-            text=_L(lang, f"Продлить VIP — {VIP_COST_STARS} Stars", f"Renew VIP — {VIP_COST_STARS} Stars"),
+            text=_L(lang, f"Продлить VIP — {VIP_COST_SAMOSVETY} 💠", f"Renew VIP — {VIP_COST_SAMOSVETY} 💠"),
             callback_data="status_buy_vip",
             icon_custom_emoji_id=_E["vip"]
         ))
         builder.row(InlineKeyboardButton(
-            text=_L(lang, f"Улучшить до Premium — {UPGRADE_COST_STARS} ⭐", f"Upgrade to Premium — {UPGRADE_COST_STARS} ⭐"),
+            text=_L(lang, f"Улучшить до Premium — {UPGRADE_COST_SAMOSVETY} 💠", f"Upgrade to Premium — {UPGRADE_COST_SAMOSVETY} 💠"),
             callback_data="status_upgrade_premium",
             icon_custom_emoji_id=_E["premium"]
         ))
     else:
         # Standart — обычная покупка
         builder.row(InlineKeyboardButton(
-            text=_L(lang, f"Купить VIP — {VIP_COST_STARS} Stars", f"Buy VIP — {VIP_COST_STARS} Stars"),
+            text=_L(lang, f"Купить VIP — {VIP_COST_SAMOSVETY} 💠", f"Buy VIP — {VIP_COST_SAMOSVETY} 💠"),
             callback_data="status_buy_vip",
             icon_custom_emoji_id=_E["vip"]
         ))
+    balance = get_samosvety(data)
     builder.row(InlineKeyboardButton(
-        text=_L(lang, "Мои звёзды", "My Stars"),
-        url="tg://stars/",
-        icon_custom_emoji_id=_E["star"]
+        text=_L(lang, f"Мои Самосветы: {balance} (Донат)", f"My Samosvety: {balance} (Donate)"),
+        callback_data="donate_main",
+        icon_custom_emoji_id=_E["samosvet"]
     ))
     builder.row(_back_btn("status", _L(lang, "Назад", "Back")))
     return builder.as_markup()
@@ -347,14 +447,14 @@ def status_premium_text(data: dict, lang: str = "ru") -> str:
     elif active == "vip":
         active_line = (
             f'\n\n<blockquote>{_pe("ok", "✅")} <b><i>{_L(lang, "У тебя активен VIP.", "You have an active VIP.")}</i></b>\n'
-            f'<b><i>{_L(lang, f"Можешь улучшить до Premium за {UPGRADE_COST_STARS} ⭐", f"You can upgrade to Premium for {UPGRADE_COST_STARS} ⭐")}</i></b></blockquote>'
+            f'<b><i>{_L(lang, f"Можешь улучшить до Premium за {UPGRADE_COST_SAMOSVETY} 💠", f"You can upgrade to Premium for {UPGRADE_COST_SAMOSVETY} 💠")}</i></b></blockquote>'
         )
 
     return (
         f'<blockquote>'
         f'{_pe("premium", "⭐")} <b><i>{_L(lang, "Статус Premium", "Premium Status")}</i></b>\n\n'
         f'{_pe("calendar", "📅")} <b><i>{_L(lang, "Срок: 30 дней", "Duration: 30 days")}</i></b>\n'
-        f'{_pe("star", "⭐")} <b><i>{_L(lang, "Стоимость", "Cost")}: {PREMIUM_COST_STARS} Stars</i></b>'
+        f'{_pe("samosvet", "💠")} <b><i>{_L(lang, "Стоимость", "Cost")}: {PREMIUM_COST_SAMOSVETY} {_L(lang, "Самосветов", "Samosvety")}</i></b>'
         f'</blockquote>\n\n'
 
         f'<blockquote>'
@@ -380,82 +480,31 @@ def status_premium_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarku
     active = get_active_status(data)
     builder = InlineKeyboardBuilder()
     if active == "vip":
-        # Улучшение VIP → Premium за 59 звёзд
+        # Улучшение VIP → Premium за Самосветы
         builder.row(InlineKeyboardButton(
-            text=_L(lang, f"Улучшить до Premium — {UPGRADE_COST_STARS} ⭐", f"Upgrade to Premium — {UPGRADE_COST_STARS} ⭐"),
+            text=_L(lang, f"Улучшить до Premium — {UPGRADE_COST_SAMOSVETY} 💠", f"Upgrade to Premium — {UPGRADE_COST_SAMOSVETY} 💠"),
             callback_data="status_upgrade_premium",
             icon_custom_emoji_id=_E["premium"]
         ))
     elif active == "premium":
         # Продление Premium
         builder.row(InlineKeyboardButton(
-            text=_L(lang, f"Продлить Premium — {PREMIUM_COST_STARS} Stars", f"Renew Premium — {PREMIUM_COST_STARS} Stars"),
+            text=_L(lang, f"Продлить Premium — {PREMIUM_COST_SAMOSVETY} 💠", f"Renew Premium — {PREMIUM_COST_SAMOSVETY} 💠"),
             callback_data="status_buy_premium",
             icon_custom_emoji_id=_E["premium"]
         ))
     else:
         # Standart — обычная покупка
         builder.row(InlineKeyboardButton(
-            text=_L(lang, f"Купить Premium — {PREMIUM_COST_STARS} Stars", f"Buy Premium — {PREMIUM_COST_STARS} Stars"),
+            text=_L(lang, f"Купить Premium — {PREMIUM_COST_SAMOSVETY} 💠", f"Buy Premium — {PREMIUM_COST_SAMOSVETY} 💠"),
             callback_data="status_buy_premium",
             icon_custom_emoji_id=_E["premium"]
         ))
+    balance = get_samosvety(data)
     builder.row(InlineKeyboardButton(
-        text=_L(lang, "Мои звёзды", "My Stars"),
-        url="tg://stars/",
-        icon_custom_emoji_id=_E["star"]
+        text=_L(lang, f"Мои Самосветы: {balance} (Донат)", f"My Samosvety: {balance} (Donate)"),
+        callback_data="donate_main",
+        icon_custom_emoji_id=_E["samosvet"]
     ))
     builder.row(_back_btn("status", _L(lang, "Назад", "Back")))
-    return builder.as_markup()
-
-
-def status_vip_keyboard_invoice(invoice_url: str, lang: str = "ru") -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text=_L(lang, f"Купить VIP — {VIP_COST_STARS} ⭐", f"Buy VIP — {VIP_COST_STARS} ⭐"),
-        url=invoice_url,
-        icon_custom_emoji_id=_E["pay_btn"],
-        style="success"
-    ))
-    builder.row(InlineKeyboardButton(
-        text=_L(lang, "Мои звёзды", "My Stars"),
-        url="tg://stars/",
-        icon_custom_emoji_id=_E["star"]
-    ))
-    builder.row(_back_btn("status_vip_info", _L(lang, "Назад", "Back")))
-    return builder.as_markup()
-
-
-def status_premium_keyboard_invoice(invoice_url: str, lang: str = "ru") -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text=_L(lang, f"Купить Premium — {PREMIUM_COST_STARS} ⭐", f"Buy Premium — {PREMIUM_COST_STARS} ⭐"),
-        url=invoice_url,
-        icon_custom_emoji_id=_E["pay_btn"],
-        style="success"
-    ))
-    builder.row(InlineKeyboardButton(
-        text=_L(lang, "Мои звёзды", "My Stars"),
-        url="tg://stars/",
-        icon_custom_emoji_id=_E["star"]
-    ))
-    builder.row(_back_btn("status_premium_info", _L(lang, "Назад", "Back")))
-    return builder.as_markup()
-
-
-def status_upgrade_keyboard_invoice(invoice_url: str, lang: str = "ru") -> InlineKeyboardMarkup:
-    """Клавиатура для апгрейда VIP → Premium за 59 звёзд."""
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text=_L(lang, f"Улучшить до Premium — {UPGRADE_COST_STARS} ⭐", f"Upgrade to Premium — {UPGRADE_COST_STARS} ⭐"),
-        url=invoice_url,
-        icon_custom_emoji_id=_E["pay_btn"],
-        style="success"
-    ))
-    builder.row(InlineKeyboardButton(
-        text=_L(lang, "Мои звёзды", "My Stars"),
-        url="tg://stars/",
-        icon_custom_emoji_id=_E["star"]
-    ))
-    builder.row(_back_btn("status_premium_info", _L(lang, "Назад", "Back")))
     return builder.as_markup()
