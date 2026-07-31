@@ -43,6 +43,11 @@ def _L(lang: str, ru: str, en: str) -> str:
 # и кейсы перестали открываться после оплаты).
 STAR = '<tg-emoji emoji-id="5798819377088307477">⭐</tg-emoji>'
 
+# Самосветы (донатная валюта, см. donate.py) — используется для покупки
+# артефактов и статусов вместо прямой оплаты Stars.
+SAMOSVET_EMOJI_ID = "5465501598199342448"
+SAMOSVET = f'<tg-emoji emoji-id="{SAMOSVET_EMOJI_ID}">💠</tg-emoji>'
+
 
 _E = {
     "case":       "5438571934210082705",
@@ -215,50 +220,50 @@ POISON_BY_KEY   = {x["key"]: x for x in _POISON_POOL}
 MAX_ENH_INVENTORY = 10
 
 # ============================================================
-#  МАГАЗИН АРТЕФАКТОВ (прямая покупка за Telegram Stars)
+#  МАГАЗИН АРТЕФАКТОВ (прямая покупка за Самосветы)
 #  Раньше здесь был гача-кейс артефактов (случайный дроп за Stars).
 #  Теперь каждый артефакт — самостоятельный товар с фиксированной
-#  ценой в Stars: игрок открывает отдельное окно артефакта с описанием
-#  и жмёт «Купить», без рандома. Ключи "key" у первых 10 артефактов
-#  оставлены без изменений — это сохраняет совместимость с уже
-#  выданными артефактами в data["artifacts"] у существующих игроков.
+#  ценой в Самосветах: игрок открывает отдельное окно артефакта с
+#  описанием и жмёт «Купить», без рандома. Ключи "key" у первых 10
+#  артефактов оставлены без изменений — это сохраняет совместимость с
+#  уже выданными артефактами в data["artifacts"] у существующих игроков.
 # ============================================================
 
 ARTIFACT_SHOP_POOL = [
     # ── Tier 1: 1.25× — 169⭐ ────────────────────────────────
-    {"key": "art_kulon_iskazheniya",        "type": "artifact", "name": "Кулон Искажения",             "name_en": "Distortion Pendant",       "emoji_id": "5938541999031325561", "effect": "mine",   "multiplier": 1.25, "price_stars": 169, "tier": "t125"},
-    {"key": "art_oracle",                   "type": "artifact", "name": "Оракул",                      "name_en": "Oracle",                   "emoji_id": "5165898384870999138", "effect": "damage", "multiplier": 1.25, "price_stars": 169, "tier": "t125"},
-    {"key": "art_amulet_hranitelya",        "type": "artifact", "name": "Амулет Хранителя",            "name_en": "Guardian Amulet",           "emoji_id": "5938082716703528871", "effect": "pets",   "multiplier": 1.25, "price_stars": 169, "tier": "t125"},
-    {"key": "art_oskolok_zvezdnoy_pyli",    "type": "artifact", "name": "Осколок Звёздной Пыли",       "name_en": "Shard of Stardust",         "emoji_id": "5399955939086314661",                     "effect": "mine",   "multiplier": 1.25, "price_stars": 169, "tier": "t125"},
-    {"key": "art_klinok_nemezidy",          "type": "artifact", "name": "Клинок Немезиды",             "name_en": "Blade of Nemesis",          "emoji_id": "5467879180425252211",                     "effect": "damage", "multiplier": 1.25, "price_stars": 169, "tier": "t125"},
-    {"key": "art_osheynik_vernosti",        "type": "artifact", "name": "Ошейник Верности",            "name_en": "Collar of Loyalty",         "emoji_id": "5296313099719043752",                     "effect": "pets",   "multiplier": 1.25, "price_stars": 169, "tier": "t125"},
+    {"key": "art_kulon_iskazheniya",        "type": "artifact", "name": "Кулон Искажения",             "name_en": "Distortion Pendant",       "emoji_id": "5938541999031325561", "effect": "mine",   "multiplier": 1.25, "price_samosvety": 169, "tier": "t125"},
+    {"key": "art_oracle",                   "type": "artifact", "name": "Оракул",                      "name_en": "Oracle",                   "emoji_id": "5165898384870999138", "effect": "damage", "multiplier": 1.25, "price_samosvety": 169, "tier": "t125"},
+    {"key": "art_amulet_hranitelya",        "type": "artifact", "name": "Амулет Хранителя",            "name_en": "Guardian Amulet",           "emoji_id": "5938082716703528871", "effect": "pets",   "multiplier": 1.25, "price_samosvety": 169, "tier": "t125"},
+    {"key": "art_oskolok_zvezdnoy_pyli",    "type": "artifact", "name": "Осколок Звёздной Пыли",       "name_en": "Shard of Stardust",         "emoji_id": "5399955939086314661",                     "effect": "mine",   "multiplier": 1.25, "price_samosvety": 169, "tier": "t125"},
+    {"key": "art_klinok_nemezidy",          "type": "artifact", "name": "Клинок Немезиды",             "name_en": "Blade of Nemesis",          "emoji_id": "5467879180425252211",                     "effect": "damage", "multiplier": 1.25, "price_samosvety": 169, "tier": "t125"},
+    {"key": "art_osheynik_vernosti",        "type": "artifact", "name": "Ошейник Верности",            "name_en": "Collar of Loyalty",         "emoji_id": "5296313099719043752",                     "effect": "pets",   "multiplier": 1.25, "price_samosvety": 169, "tier": "t125"},
 
     # ── Tier 2: 1.4× — 249⭐ ─────────────────────────────────
-    {"key": "art_lunnaya_relikviya",        "type": "artifact", "name": "Лунная Реликвия",             "name_en": "Lunar Relic",               "emoji_id": "5226662903569989373", "effect": "mine",   "multiplier": 1.4, "price_stars": 249, "tier": "t140"},
-    {"key": "art_sfera_zhadnosti",          "type": "artifact", "name": "Сфера Жадности",              "name_en": "Sphere of Greed",           "emoji_id": "5080262187302257610", "effect": "damage", "multiplier": 1.4, "price_stars": 249, "tier": "t140"},
-    {"key": "art_amulet_zhizni",            "type": "artifact", "name": "Амулет Жизни и Смерти",       "name_en": "Amulet of Life & Death",    "emoji_id": "6228938636428052300", "effect": "pets",   "multiplier": 1.4, "price_stars": 249, "tier": "t140"},
-    {"key": "art_zhezl_glubin",             "type": "artifact", "name": "Жезл Глубин",                 "name_en": "Rod of the Depths",         "emoji_id": "5170593338176308141",                     "effect": "mine",   "multiplier": 1.4, "price_stars": 249, "tier": "t140"},
-    {"key": "art_pechat_vozmezdiya",        "type": "artifact", "name": "Печать Возмездия",            "name_en": "Seal of Retribution",       "emoji_id": "5298737505678407110",                     "effect": "damage", "multiplier": 1.4, "price_stars": 249, "tier": "t140"},
-    {"key": "art_svistok_povelitelya_zverey","type": "artifact", "name": "Свисток Повелителя Зверей",  "name_en": "Beastmaster's Whistle",     "emoji_id": "5397797168264260168",                     "effect": "pets",   "multiplier": 1.4, "price_stars": 249, "tier": "t140"},
+    {"key": "art_lunnaya_relikviya",        "type": "artifact", "name": "Лунная Реликвия",             "name_en": "Lunar Relic",               "emoji_id": "5226662903569989373", "effect": "mine",   "multiplier": 1.4, "price_samosvety": 249, "tier": "t140"},
+    {"key": "art_sfera_zhadnosti",          "type": "artifact", "name": "Сфера Жадности",              "name_en": "Sphere of Greed",           "emoji_id": "5080262187302257610", "effect": "damage", "multiplier": 1.4, "price_samosvety": 249, "tier": "t140"},
+    {"key": "art_amulet_zhizni",            "type": "artifact", "name": "Амулет Жизни и Смерти",       "name_en": "Amulet of Life & Death",    "emoji_id": "6228938636428052300", "effect": "pets",   "multiplier": 1.4, "price_samosvety": 249, "tier": "t140"},
+    {"key": "art_zhezl_glubin",             "type": "artifact", "name": "Жезл Глубин",                 "name_en": "Rod of the Depths",         "emoji_id": "5170593338176308141",                     "effect": "mine",   "multiplier": 1.4, "price_samosvety": 249, "tier": "t140"},
+    {"key": "art_pechat_vozmezdiya",        "type": "artifact", "name": "Печать Возмездия",            "name_en": "Seal of Retribution",       "emoji_id": "5298737505678407110",                     "effect": "damage", "multiplier": 1.4, "price_samosvety": 249, "tier": "t140"},
+    {"key": "art_svistok_povelitelya_zverey","type": "artifact", "name": "Свисток Повелителя Зверей",  "name_en": "Beastmaster's Whistle",     "emoji_id": "5397797168264260168",                     "effect": "pets",   "multiplier": 1.4, "price_samosvety": 249, "tier": "t140"},
 
     # ── Tier 3: 1.65× — 359⭐ ────────────────────────────────
-    {"key": "art_sfera_illyuziy",           "type": "artifact", "name": "Сфера Иллюзий",               "name_en": "Sphere of Illusions",       "emoji_id": "5343583990815156847", "effect": "mine",   "multiplier": 1.65, "price_stars": 359, "tier": "t165"},
-    {"key": "art_serdtse_morey",            "type": "artifact", "name": "Сердце Морей",                "name_en": "Heart of the Seas",         "emoji_id": "6201647288947839133", "effect": "damage", "multiplier": 1.65, "price_stars": 359, "tier": "t165"},
-    {"key": "art_kristall_egzorcizma",      "type": "artifact", "name": "Кристалл Экзорцизма",         "name_en": "Exorcism Crystal",          "emoji_id": "5451889386549425709", "effect": "pets",   "multiplier": 1.65, "price_stars": 359, "tier": "t165"},
-    {"key": "art_korona_podzemnogo_korolya","type": "artifact", "name": "Корона Подземного Короля",    "name_en": "Crown of the Underground King", "emoji_id": "5433758796289685818",                  "effect": "mine",   "multiplier": 1.65, "price_stars": 359, "tier": "t165"},
-    {"key": "art_sekira_titana",            "type": "artifact", "name": "Секира Титана",               "name_en": "Titan's Axe",               "emoji_id": "4978927175597032385",                     "effect": "damage", "multiplier": 1.65, "price_stars": 359, "tier": "t165"},
-    {"key": "art_totem_drevnego_lesa",      "type": "artifact", "name": "Тотем Древнего Леса",         "name_en": "Totem of the Ancient Forest","emoji_id": "5323638849887290800",                    "effect": "pets",   "multiplier": 1.65, "price_stars": 359, "tier": "t165"},
+    {"key": "art_sfera_illyuziy",           "type": "artifact", "name": "Сфера Иллюзий",               "name_en": "Sphere of Illusions",       "emoji_id": "5343583990815156847", "effect": "mine",   "multiplier": 1.65, "price_samosvety": 359, "tier": "t165"},
+    {"key": "art_serdtse_morey",            "type": "artifact", "name": "Сердце Морей",                "name_en": "Heart of the Seas",         "emoji_id": "6201647288947839133", "effect": "damage", "multiplier": 1.65, "price_samosvety": 359, "tier": "t165"},
+    {"key": "art_kristall_egzorcizma",      "type": "artifact", "name": "Кристалл Экзорцизма",         "name_en": "Exorcism Crystal",          "emoji_id": "5451889386549425709", "effect": "pets",   "multiplier": 1.65, "price_samosvety": 359, "tier": "t165"},
+    {"key": "art_korona_podzemnogo_korolya","type": "artifact", "name": "Корона Подземного Короля",    "name_en": "Crown of the Underground King", "emoji_id": "5433758796289685818",                  "effect": "mine",   "multiplier": 1.65, "price_samosvety": 359, "tier": "t165"},
+    {"key": "art_sekira_titana",            "type": "artifact", "name": "Секира Титана",               "name_en": "Titan's Axe",               "emoji_id": "4978927175597032385",                     "effect": "damage", "multiplier": 1.65, "price_samosvety": 359, "tier": "t165"},
+    {"key": "art_totem_drevnego_lesa",      "type": "artifact", "name": "Тотем Древнего Леса",         "name_en": "Totem of the Ancient Forest","emoji_id": "5323638849887290800",                    "effect": "pets",   "multiplier": 1.65, "price_samosvety": 359, "tier": "t165"},
 
     # ── Tier 4: 1.8× — 489⭐ (новый) ─────────────────────────
-    {"key": "art_serdtse_gory",             "type": "artifact", "name": "Сердце Горы",                 "name_en": "Heart of the Mountain",     "emoji_id": "5087371165630989886",                     "effect": "mine",   "multiplier": 1.8, "price_stars": 489, "tier": "t180"},
-    {"key": "art_kogot_drakona",            "type": "artifact", "name": "Коготь Дракона",              "name_en": "Dragon's Claw",             "emoji_id": "5364278388787786116",                     "effect": "damage", "multiplier": 1.8, "price_stars": 489, "tier": "t180"},
-    {"key": "art_svitok_prirucheniya",      "type": "artifact", "name": "Свиток Приручения",           "name_en": "Scroll of Taming",          "emoji_id": "5240116609451842590",                     "effect": "pets",   "multiplier": 1.8, "price_stars": 489, "tier": "t180"},
+    {"key": "art_serdtse_gory",             "type": "artifact", "name": "Сердце Горы",                 "name_en": "Heart of the Mountain",     "emoji_id": "5087371165630989886",                     "effect": "mine",   "multiplier": 1.8, "price_samosvety": 489, "tier": "t180"},
+    {"key": "art_kogot_drakona",            "type": "artifact", "name": "Коготь Дракона",              "name_en": "Dragon's Claw",             "emoji_id": "5364278388787786116",                     "effect": "damage", "multiplier": 1.8, "price_samosvety": 489, "tier": "t180"},
+    {"key": "art_svitok_prirucheniya",      "type": "artifact", "name": "Свиток Приручения",           "name_en": "Scroll of Taming",          "emoji_id": "5240116609451842590",                     "effect": "pets",   "multiplier": 1.8, "price_samosvety": 489, "tier": "t180"},
 
     # ── Легендарные — множат ВСЕ три вида добычи сразу ──────
-    {"key": "art_vsevlastniy",              "type": "artifact", "name": "Кольцо Перерождений",         "name_en": "Ring of Rebirths",          "emoji_id": "5872990619021875271", "effect": "all", "multiplier": 1.35, "price_stars": 699,  "tier": "tall"},
-    {"key": "art_korona_vechnosti",         "type": "artifact", "name": "Корона Вечности",             "name_en": "Crown of Eternity",         "emoji_id": "5474515531962795294",                     "effect": "all", "multiplier": 1.6,  "price_stars": 999,  "tier": "tall"},
-    {"key": "art_serdtse_vselennoy",        "type": "artifact", "name": "Сердце Вселенной",            "name_en": "Heart of the Universe",     "emoji_id": "5453997820354771233",                     "effect": "all", "multiplier": 1.95, "price_stars": 1399, "tier": "tall"},
-    {"key": "art_tron_bogov",               "type": "artifact", "name": "Трон Гибели",                 "name_en": "Throne of Doom",        "emoji_id": "5249396161172757849",                     "effect": "all", "multiplier": 2.25, "price_stars": 1899, "tier": "tall"},
+    {"key": "art_vsevlastniy",              "type": "artifact", "name": "Кольцо Перерождений",         "name_en": "Ring of Rebirths",          "emoji_id": "5872990619021875271", "effect": "all", "multiplier": 1.35, "price_samosvety": 699,  "tier": "tall"},
+    {"key": "art_korona_vechnosti",         "type": "artifact", "name": "Корона Вечности",             "name_en": "Crown of Eternity",         "emoji_id": "5474515531962795294",                     "effect": "all", "multiplier": 1.6,  "price_samosvety": 999,  "tier": "tall"},
+    {"key": "art_serdtse_vselennoy",        "type": "artifact", "name": "Сердце Вселенной",            "name_en": "Heart of the Universe",     "emoji_id": "5453997820354771233",                     "effect": "all", "multiplier": 1.95, "price_samosvety": 1399, "tier": "tall"},
+    {"key": "art_tron_bogov",               "type": "artifact", "name": "Трон Гибели",                 "name_en": "Throne of Doom",        "emoji_id": "5249396161172757849",                     "effect": "all", "multiplier": 2.25, "price_samosvety": 1899, "tier": "tall"},
 ]
 
 # Обратная совместимость: часть кода (и, возможно, внешние модули)
@@ -277,11 +282,11 @@ for _a in ARTIFACT_SHOP_POOL:
 del _a, _cp
 
 ARTIFACT_TIERS = [
-    {"tier": "t125", "multiplier": 1.25, "price_stars": 169,  "price_coins": 280_000_000_000_000, "name": "Обычные",     "name_en": "Common",    "icon": "🔹"},
-    {"tier": "t140", "multiplier": 1.4,  "price_stars": 249,  "price_coins": 550_000_000_000_000, "name": "Редкие",      "name_en": "Rare",      "icon": "🔷"},
-    {"tier": "t165", "multiplier": 1.65, "price_stars": 359,  "name": "Эпические",   "name_en": "Epic",      "icon": "💠"},
-    {"tier": "t180", "multiplier": 1.8,  "price_stars": 489,  "name": "Мифические",  "name_en": "Mythic",    "icon": "🔶"},
-    {"tier": "tall", "multiplier": None, "price_stars": None, "name": "Легендарные (× ко всей добыче)", "name_en": "Legendary (× to all income)", "icon": "👑"},
+    {"tier": "t125", "multiplier": 1.25, "price_samosvety": 169,  "price_coins": 280_000_000_000_000, "name": "Обычные",     "name_en": "Common",    "icon": "🔹"},
+    {"tier": "t140", "multiplier": 1.4,  "price_samosvety": 249,  "price_coins": 550_000_000_000_000, "name": "Редкие",      "name_en": "Rare",      "icon": "🔷"},
+    {"tier": "t165", "multiplier": 1.65, "price_samosvety": 359,  "name": "Эпические",   "name_en": "Epic",      "icon": "💠"},
+    {"tier": "t180", "multiplier": 1.8,  "price_samosvety": 489,  "name": "Мифические",  "name_en": "Mythic",    "icon": "🔶"},
+    {"tier": "tall", "multiplier": None, "price_samosvety": None, "name": "Легендарные (× ко всей добыче)", "name_en": "Legendary (× to all income)", "icon": "👑"},
 ]
 ARTIFACT_TIERS_BY_KEY = {t["tier"]: t for t in ARTIFACT_TIERS}
 
@@ -354,9 +359,9 @@ def is_artifact_owned(data: dict, artifact_key: str) -> bool:
 
 def buy_artifact(data: dict, artifact_key: str, lang: str = "ru") -> tuple:
     """
-    Выдаёт артефакт покупателю. Вызывается ПОСЛЕ успешной оплаты
-    Telegram Stars (сама оплата/инвойс обрабатываются на стороне бота,
-    эта функция только добавляет артефакт в коллекцию — без рандома).
+    Выдаёт артефакт покупателю. Вызывается ПОСЛЕ того, как оплата (списание
+    Самосветов) уже произведена — эта функция только добавляет артефакт
+    в коллекцию, без рандома.
     Возвращает (ok, сообщение).
     """
     art = ARTIFACT_POOL_BY_KEY.get(artifact_key)
@@ -385,9 +390,78 @@ def buy_artifact(data: dict, artifact_key: str, lang: str = "ru") -> tuple:
     return True, msg
 
 
+def get_samosvety(data: dict) -> int:
+    """Текущий баланс Самосветов пользователя (донатная валюта, см. donate.py)."""
+    return data.get("samosvety", 0)
+
+
+def _artifact_insufficient_samosvety_text(cost: int, balance: int, lang: str = "ru") -> str:
+    """Текст-инструкция при нехватке Самосветов для покупки артефакта."""
+    missing = cost - balance
+    return (
+        f'<blockquote>'
+        f'{_pe("warn", "⚠️")} <b><i>{_L(lang, "Недостаточно Самосветов", "Not enough Samosvety")}</i></b>\n'
+        f'{SAMOSVET} <b><i>{_L(lang, f"Нужно: {cost} · У тебя: {balance}", f"Needed: {cost} · You have: {balance}")}</i></b>\n'
+        f'{SAMOSVET} <b><i>{_L(lang, f"Не хватает: {missing}", f"Missing: {missing}")}</i></b>'
+        f'</blockquote>\n\n'
+        f'<blockquote>'
+        f'{_pe("ok", "🎁")} <b><i>{_L(lang, "Пополни баланс в разделе «Донат» — Самосветы можно купить за Telegram Stars или крипту.", "Top up your balance in the “Donate” section — you can buy Samosvety with Telegram Stars or crypto.")}</i></b>'
+        f'</blockquote>'
+    )
+
+
+def artifact_insufficient_keyboard(artifact_key: str, lang: str = "ru") -> InlineKeyboardMarkup:
+    """Клавиатура при нехватке Самосветов на артефакт — ведёт в раздел Донат."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=_L(lang, "Пополнить Самосветы (Донат)", "Top up Samosvety (Donate)"),
+        callback_data="donate_main",
+        icon_custom_emoji_id=SAMOSVET_EMOJI_ID,
+    ))
+    builder.row(_back_btn(f"artifact_info_{artifact_key}", _L(lang, "Назад", "Back")))
+    return builder.as_markup()
+
+
+def buy_artifact_with_samosvety(data: dict, artifact_key: str, lang: str = "ru") -> tuple:
+    """
+    Покупка артефакта за Самосветы. Списывает Самосветы с data["samosvety"]
+    и сразу выдаёт артефакт через buy_artifact() — без инвойса.
+    Возвращает (ok, сообщение). Если Самосветов не хватает — ok=False и
+    текст с инструкцией, как пополнить баланс (раздел «Донат»).
+    """
+    art = ARTIFACT_POOL_BY_KEY.get(artifact_key)
+    if not art:
+        err = "Неизвестный артефакт." if lang == "ru" else "Unknown artifact."
+        return False, f"❌ {err}"
+
+    if is_artifact_owned(data, artifact_key):
+        err = (
+            "Этот артефакт у тебя уже есть — покупать второй раз не нужно."
+            if lang == "ru"
+            else "You already own this artifact — no need to buy it again."
+        )
+        return False, f"⚠️ {err}"
+
+    cost = art["price_samosvety"]
+    balance = get_samosvety(data)
+    if balance < cost:
+        return False, _artifact_insufficient_samosvety_text(cost, balance, lang)
+
+    data["samosvety"] = balance - cost
+    ok, msg = buy_artifact(data, artifact_key, lang)
+    if not ok:
+        # откатываем списание, если выдача неожиданно не удалась
+        data["samosvety"] = balance
+        return ok, msg
+
+    new_balance = data["samosvety"]
+    spent_line = f'\n{SAMOSVET} <b><i>{_L(lang, f"Потрачено: {cost} Самосветов · Остаток: {new_balance}", f"Spent: {cost} Samosvety · Balance: {new_balance}")}</i></b>'
+    return ok, msg + spent_line
+
+
 def buy_artifact_with_coins(data: dict, artifact_key: str, lang: str = "ru") -> tuple:
     """
-    Покупка артефакта за монеты вместо Stars. Доступно только для
+    Покупка артефакта за монеты вместо Самосветов. Доступно только для
     артефактов с заданным "price_coins" (тиры t125/t140 — обычные и
     редкие). Списывает баланс сразу же, без инвойса.
     Возвращает (ok, сообщение).
@@ -408,9 +482,9 @@ def buy_artifact_with_coins(data: dict, artifact_key: str, lang: str = "ru") -> 
     cost = art.get("price_coins")
     if not cost:
         err = (
-            "Этот артефакт нельзя купить за монеты — только за Stars."
+            "Этот артефакт нельзя купить за монеты — только за Самосветы."
             if lang == "ru"
-            else "This artifact can't be bought with coins — Stars only."
+            else "This artifact can't be bought with coins — Samosvety only."
         )
         return False, f"❌ {err}"
 
@@ -1604,28 +1678,30 @@ def artifact_shop_list_text(data: dict, lang: str = "ru") -> str:
         have  = sum(1 for a in items if a["key"] in owned_keys)
         tname = t["name_en"] if lang == "en" else t["name"]
         if t["tier"] == "tall":
-            price_str = f"699–1899 {STAR}"
+            price_str = f"699–1899 {SAMOSVET}"
             mult_str  = _L(lang, "1.35×–2.25× ко ВСЕЙ добыче сразу", "1.35×–2.25× to ALL income at once")
         else:
-            price_str = f'{t["price_stars"]} {STAR}'
+            price_str = f'{t["price_samosvety"]} {SAMOSVET}'
             mult_str  = _L(lang, f'{t["multiplier"]}× к руде / урону / питомцам', f'{t["multiplier"]}× to ore / damage / pets')
         lines.append(
             f'{_tier_icon(t)} <b><i>{tname}</i></b> — <b><i>{mult_str}</i></b>\n'
-            f'{_pe("balance","⭐")} <b><i>{price_str}</i></b>  |  '
+            f'<b><i>{price_str}</i></b>  |  '
             f'{_pe("stats","💎")} <b><i>{have}/{len(items)}</i></b>\n'
         )
 
+    balance = get_samosvety(data)
     total_owned = len(owned)
     return (
         f'<blockquote><tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> '
         f'<b><i>{_L(lang, "МАГАЗИН АРТЕФАКТОВ", "ARTIFACT SHOP")}</i></b>\n'
-        f'{_pe("stats","💎")} <b><i>{_L(lang, "Собрано", "Collected")}: {total_owned}/{MAX_ARTIFACTS}</i></b></blockquote>\n'
+        f'{_pe("stats","💎")} <b><i>{_L(lang, "Собрано", "Collected")}: {total_owned}/{MAX_ARTIFACTS}</i></b>\n'
+        f'{SAMOSVET} <b><i>{_L(lang, f"Баланс Самосветов: {balance}", f"Samosvety balance: {balance}")}</i></b></blockquote>\n'
         f'\n<blockquote>{"".join(lines)}</blockquote>\n'
-        f'\n<blockquote>{_pe("ok","✨")} <b><i>{_L(lang, "Каждый артефакт — постоянный бонус навсегда, без рандома. Выбери тир, затем артефакт, и купи его за Stars.", "Every artifact is a permanent bonus forever, no randomness. Pick a tier, then an artifact, and buy it with Stars.")}</i></b></blockquote>'
+        f'\n<blockquote>{_pe("ok","✨")} <b><i>{_L(lang, "Каждый артефакт — постоянный бонус навсегда, без рандома. Выбери тир, затем артефакт, и купи его за Самосветы.", "Every artifact is a permanent bonus forever, no randomness. Pick a tier, then an artifact, and buy it with Samosvety.")}</i></b></blockquote>'
     )
 
 
-def artifact_shop_list_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+def artifact_shop_list_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for t in ARTIFACT_TIERS:
         tname = t["name_en"] if lang == "en" else t["name"]
@@ -1640,10 +1716,11 @@ def artifact_shop_list_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         callback_data="artifact_collection",
         icon_custom_emoji_id="5222113468051629260"
     ))
+    balance = get_samosvety(data)
     builder.row(InlineKeyboardButton(
-        text=_L(lang, "Мои звёзды", "My stars"),
-        url="tg://stars/",
-        icon_custom_emoji_id="5348570868752595928"
+        text=_L(lang, f"Мои Самосветы: {balance} (Донат)", f"My Samosvety: {balance} (Donate)"),
+        callback_data="donate_main",
+        icon_custom_emoji_id=SAMOSVET_EMOJI_ID
     ))
     builder.row(_back_btn("shop_cases", _L(lang, "Назад", "Back")))
     return builder.as_markup()
@@ -1663,7 +1740,7 @@ def artifact_tier_text(data: dict, tier_key: str, lang: str = "ru") -> str:
         coin_part = f' / {_fmt_num(a["price_coins"])} {_pe("coin", "💰")}' if a.get("price_coins") else ""
         rows.append(
             f'{status} {_artifact_icon(a)} <b><i>{aname}</i></b> — '
-            f'<b><i>{a["multiplier"]}× {eff}</i></b> · <b><i>{a["price_stars"]} {STAR}{coin_part}</i></b>\n'
+            f'<b><i>{a["multiplier"]}× {eff}</i></b> · <b><i>{a["price_samosvety"]} {SAMOSVET}{coin_part}</i></b>\n'
         )
 
     return (
@@ -1688,8 +1765,8 @@ def artifact_tier_keyboard(data: dict, tier_key: str, lang: str = "ru") -> Inlin
                 style="success",
             ))
         else:
-            coin_part = f' / {_fmt_num(a["price_coins"])}💰' if a.get("price_coins") else ""
-            label = f'{aname} — {a["price_stars"]}⭐{coin_part}'
+            coin_part = f' / {_fmt_num(a["price_coins"])}' if a.get("price_coins") else ""
+            label = f'{aname} — {a["price_samosvety"]}{coin_part}'
             builder.row(InlineKeyboardButton(
                 text=label,
                 callback_data=f'artifact_info_{a["key"]}',
@@ -1713,7 +1790,7 @@ def artifact_info_text(data: dict, artifact_key: str, lang: str = "ru") -> str:
     if owned:
         status_line = f'{_pe("ok","✅")} <b><i>{_L(lang, "Уже в твоей коллекции", "Already in your collection")}</i></b>'
     else:
-        status_line = f'{_pe("art_locked","🔒")} <b><i>{_L(lang, "Цена", "Price")}: {a["price_stars"]} Telegram Stars</i></b>'
+        status_line = f'{_pe("art_locked","🔒")} <b><i>{_L(lang, "Цена", "Price")}: {a["price_samosvety"]} {_L(lang, "Самосветов", "Samosvety")}</i></b>'
         if a.get("price_coins"):
             status_line += f'\n{_pe("coin","💰")} <b><i>{_L(lang, "или", "or")}: {_fmt_num(a["price_coins"])} {_L(lang, "монет", "coins")}</i></b>'
 
@@ -1734,7 +1811,7 @@ def artifact_info_text(data: dict, artifact_key: str, lang: str = "ru") -> str:
     )
 
 
-def artifact_info_keyboard(data: dict, artifact_key: str, invoice_url: str = None, lang: str = "ru") -> InlineKeyboardMarkup:
+def artifact_info_keyboard(data: dict, artifact_key: str, lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     a = ARTIFACT_POOL_BY_KEY.get(artifact_key)
     owned = is_artifact_owned(data, artifact_key)
@@ -1747,15 +1824,11 @@ def artifact_info_keyboard(data: dict, artifact_key: str, invoice_url: str = Non
             style="success",
         ))
     else:
-        if invoice_url:
-            builder.row(InlineKeyboardButton(
-                text=_L(lang, f'Купить за {a["price_stars"]} ⭐', f'Buy for {a["price_stars"]} ⭐'),
-                url=invoice_url,
-                icon_custom_emoji_id=(a["emoji_id"] if a else "") or "5999336376342940892",
-                style="success"
-            ))
-        else:
-            builder.row(_btn((a["emoji_id"] if a else "") or _E["stats"], _L(lang, f'Купить за {a["price_stars"]} ⭐', f'Buy for {a["price_stars"]} ⭐'), f"artifact_buy_{artifact_key}"))
+        builder.row(_btn(
+            (a["emoji_id"] if a else "") or SAMOSVET_EMOJI_ID,
+            _L(lang, f'Купить за {a["price_samosvety"]}', f'Buy for {a["price_samosvety"]}'),
+            f"artifact_buy_{artifact_key}",
+        ))
         if a and a.get("price_coins"):
             builder.row(_btn(
                 a["emoji_id"] or _E["coin"],
