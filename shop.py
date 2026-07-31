@@ -23,8 +23,11 @@ from miner import (
 )
 
 
-def _btn(emoji_id: str, label: str, cb: str) -> InlineKeyboardButton:
-    return InlineKeyboardButton(text=label, callback_data=cb, icon_custom_emoji_id=emoji_id)
+def _btn(emoji_id: str, label: str, cb: str, style: str = None) -> InlineKeyboardButton:
+    kwargs = {"text": label, "callback_data": cb, "icon_custom_emoji_id": emoji_id}
+    if style:
+        kwargs["style"] = style
+    return InlineKeyboardButton(**kwargs)
 
 
 def _back_btn(cb: str, label: str = "Назад") -> InlineKeyboardButton:
@@ -1825,9 +1828,10 @@ def artifact_info_keyboard(data: dict, artifact_key: str, lang: str = "ru") -> I
         ))
     else:
         builder.row(_btn(
-            (a["emoji_id"] if a else "") or SAMOSVET_EMOJI_ID,
+            SAMOSVET_EMOJI_ID,
             _L(lang, f'Купить за {a["price_samosvety"]}', f'Buy for {a["price_samosvety"]}'),
             f"artifact_buy_{artifact_key}",
+            style="success",
         ))
         if a and a.get("price_coins"):
             builder.row(_btn(
