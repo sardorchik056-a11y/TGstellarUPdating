@@ -410,19 +410,22 @@ def status_vip_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
         builder.row(InlineKeyboardButton(
             text=_L(lang, f"Продлить VIP — {VIP_COST_SAMOSVETY}", f"Renew VIP — {VIP_COST_SAMOSVETY}"),
             callback_data="status_buy_vip",
-            icon_custom_emoji_id=_E["vip"]
+            icon_custom_emoji_id=_E["samosvet"],
+            style="success",
         ))
         builder.row(InlineKeyboardButton(
             text=_L(lang, f"Улучшить до Premium — {UPGRADE_COST_SAMOSVETY}", f"Upgrade to Premium — {UPGRADE_COST_SAMOSVETY}"),
             callback_data="status_upgrade_premium",
-            icon_custom_emoji_id=_E["premium"]
+            icon_custom_emoji_id=_E["samosvet"],
+            style="success",
         ))
     else:
         # Standart — обычная покупка
         builder.row(InlineKeyboardButton(
             text=_L(lang, f"Купить VIP — {VIP_COST_SAMOSVETY}", f"Buy VIP — {VIP_COST_SAMOSVETY}"),
             callback_data="status_buy_vip",
-            icon_custom_emoji_id=_E["vip"]
+            icon_custom_emoji_id=_E["samosvet"],
+            style="success",
         ))
     balance = get_samosvety(data)
     builder.row(InlineKeyboardButton(
@@ -484,21 +487,24 @@ def status_premium_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarku
         builder.row(InlineKeyboardButton(
             text=_L(lang, f"Улучшить до Premium — {UPGRADE_COST_SAMOSVETY}", f"Upgrade to Premium — {UPGRADE_COST_SAMOSVETY}"),
             callback_data="status_upgrade_premium",
-            icon_custom_emoji_id=_E["premium"]
+            icon_custom_emoji_id=_E["samosvet"],
+            style="success",
         ))
     elif active == "premium":
         # Продление Premium
         builder.row(InlineKeyboardButton(
             text=_L(lang, f"Продлить Premium — {PREMIUM_COST_SAMOSVETY}", f"Renew Premium — {PREMIUM_COST_SAMOSVETY}"),
             callback_data="status_buy_premium",
-            icon_custom_emoji_id=_E["premium"]
+            icon_custom_emoji_id=_E["samosvet"],
+            style="success",
         ))
     else:
         # Standart — обычная покупка
         builder.row(InlineKeyboardButton(
             text=_L(lang, f"Купить Premium — {PREMIUM_COST_SAMOSVETY}", f"Buy Premium — {PREMIUM_COST_SAMOSVETY}"),
             callback_data="status_buy_premium",
-            icon_custom_emoji_id=_E["premium"]
+            icon_custom_emoji_id=_E["samosvet"],
+            style="success",
         ))
     balance = get_samosvety(data)
     builder.row(InlineKeyboardButton(
