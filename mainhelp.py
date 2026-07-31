@@ -128,11 +128,11 @@ from leaders_crystals import (
 
 from status import (
     status_main_text, status_main_keyboard,
-    status_vip_text, status_vip_keyboard, status_vip_keyboard_invoice,
-    status_premium_text, status_premium_keyboard, status_premium_keyboard_invoice,
-    status_upgrade_keyboard_invoice,
-    activate_status,
-    VIP_COST_STARS, PREMIUM_COST_STARS, UPGRADE_COST_STARS,
+    status_vip_text, status_vip_keyboard,
+    status_premium_text, status_premium_keyboard,
+    status_insufficient_keyboard,
+    activate_status, buy_status, buy_upgrade_premium, get_active_status,
+    VIP_COST_SAMOSVETY, PREMIUM_COST_SAMOSVETY, UPGRADE_COST_SAMOSVETY,
 )
 from refs import (
     init_refs_db,
@@ -443,7 +443,6 @@ _pending_stars_msg: dict[int, tuple] = {}
 _pending_artifact_msg: dict[int, tuple] = {}  # uid -> (chat_id, msg_id, artifact_key)
 
 # Хранит message_id экрана статуса перед оплатой: uid -> (chat_id, message_id, tier)
-_pending_status_msg: dict[int, tuple] = {}
 
 # Хранит message_id экрана зелий перед оплатой: uid -> (chat_id, message_id)
 _pending_potion_msg: dict[int, tuple] = {}
@@ -5823,119 +5822,58 @@ async def handle_callback(call: CallbackQuery):
         # ===== СТАТУС: карточка VIP =====
         if cd == "status_vip_info":
             await call.answer()
-            _pending_status_msg.pop(call.from_user.id, None)
             await edit(status_vip_text(data, lang), status_vip_keyboard(data, lang))
             return
 
         # ===== СТАТУС: карточка Premium =====
         if cd == "status_premium_info":
             await call.answer()
-            _pending_status_msg.pop(call.from_user.id, None)
             await edit(status_premium_text(data, lang), status_premium_keyboard(data, lang))
             return
 
-        # ===== СТАТУС: купить VIP (создать инвойс) =====
+        # ===== СТАТУС: купить/продлить VIP за Самосветы =====
         if cd == "status_buy_vip":
-            invoice_url = None
-            if lang == "en":
-                _title = "VIP Status — 30 days"
-                _desc  = "×1.3 to mining, +15% crit, luck in cases, Viper Poison as a gift"
-                _label = "VIP for 30 days"
+            ok, msg = buy_status(data, "vip", lang)
+            if ok:
+                _ach_newly = check_achievements(data)
+                await aio_save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
+                await call.answer("👑 VIP активирован!" if lang == "ru" else "👑 VIP activated!", show_alert=True)
+                await edit(status_vip_text(data, lang), status_vip_keyboard(data, lang))
             else:
-                _title = "Статус VIP — 30 дней"
-                _desc  = "×1.3 к добыче, +15% крит, удача в кейсах, Яд Гадюки в подарок"
-                _label = "VIP на 30 дней"
-            try:
-                invoice_url = await bot.create_invoice_link(
-                    title=_title,
-                    description=_desc,
-                    payload="status_vip",
-                    provider_token="",
-                    currency="XTR",
-                    prices=[LabeledPrice(label=_label, amount=VIP_COST_STARS)],
-                )
-            except Exception as e:
-                print(f"VIP invoice error: {e}")
-                await call.answer("❌ Ошибка при создании инвойса." if lang == "ru" else "❌ Invoice creation error.", show_alert=True)
-                return
-            await call.answer()
-            _pending_status_msg[call.from_user.id] = (
-                call.message.chat.id,
-                call.message.message_id,
-                "vip",
-            )
-            await edit(status_vip_text(data, lang), status_vip_keyboard_invoice(invoice_url, lang))
+                await call.answer()
+                await edit(msg, status_insufficient_keyboard(lang, "status_vip_info"))
             return
 
-        # ===== СТАТУС: купить Premium (создать инвойс) =====
+        # ===== СТАТУС: купить/продлить Premium за Самосветы =====
         if cd == "status_buy_premium":
-            invoice_url = None
-            if lang == "en":
-                _title = "Premium Status — 30 days"
-                _desc  = "×1.6 to mining, +25% crit, max luck, Cobra Poison as a gift"
-                _label = "Premium for 30 days"
+            ok, msg = buy_status(data, "premium", lang)
+            if ok:
+                _ach_newly = check_achievements(data)
+                await aio_save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
+                await call.answer("⭐ Premium активирован!" if lang == "ru" else "⭐ Premium activated!", show_alert=True)
+                await edit(status_premium_text(data, lang), status_premium_keyboard(data, lang))
             else:
-                _title = "Статус Premium — 30 дней"
-                _desc  = "×1.6 к добыче, +25% крит, макс. удача, Яд Кобры в подарок"
-                _label = "Premium на 30 дней"
-            try:
-                invoice_url = await bot.create_invoice_link(
-                    title=_title,
-                    description=_desc,
-                    payload="status_premium",
-                    provider_token="",
-                    currency="XTR",
-                    prices=[LabeledPrice(label=_label, amount=PREMIUM_COST_STARS)],
-                )
-            except Exception as e:
-                print(f"Premium invoice error: {e}")
-                await call.answer("❌ Ошибка при создании инвойса." if lang == "ru" else "❌ Invoice creation error.", show_alert=True)
-                return
-            await call.answer()
-            _pending_status_msg[call.from_user.id] = (
-                call.message.chat.id,
-                call.message.message_id,
-                "premium",
-            )
-            await edit(status_premium_text(data, lang), status_premium_keyboard_invoice(invoice_url, lang))
+                await call.answer()
+                await edit(msg, status_insufficient_keyboard(lang, "status_premium_info"))
             return
 
-        # ===== СТАТУС: апгрейд VIP → Premium (создать инвойс за 59 Stars) =====
+        # ===== СТАТУС: апгрейд VIP → Premium за Самосветы =====
         if cd == "status_upgrade_premium":
-            # Только если VIP активен
-            from status import get_active_status as _gas
-            if _gas(data) != "vip":
+            if get_active_status(data) != "vip":
                 await call.answer("❌ Апгрейд доступен только при активном VIP." if lang == "ru" else "❌ Upgrade is only available with active VIP.", show_alert=True)
                 return
-            invoice_url = None
-            if lang == "en":
-                _title = "VIP → Premium Upgrade"
-                _desc  = "×1.6 to mining, +25% crit, max luck, Cobra Poison as a gift"
-                _label = "Upgrade to Premium"
+            ok, msg = buy_upgrade_premium(data, lang)
+            if ok:
+                _ach_newly = check_achievements(data)
+                await aio_save_user(data["id"], data)
+                await _notify_ach(data["id"], data, _ach_newly)
+                await call.answer("⭐ Улучшено до Premium!" if lang == "ru" else "⭐ Upgraded to Premium!", show_alert=True)
+                await edit(status_premium_text(data, lang), status_premium_keyboard(data, lang))
             else:
-                _title = "Улучшение VIP → Premium"
-                _desc  = "×1.6 к добыче, +25% крит, макс. удача, Яд Кобры в подарок"
-                _label = "Апгрейд до Premium"
-            try:
-                invoice_url = await bot.create_invoice_link(
-                    title=_title,
-                    description=_desc,
-                    payload="status_upgrade_premium",
-                    provider_token="",
-                    currency="XTR",
-                    prices=[LabeledPrice(label=_label, amount=UPGRADE_COST_STARS)],
-                )
-            except Exception as e:
-                print(f"Upgrade invoice error: {e}")
-                await call.answer("❌ Ошибка при создании инвойса." if lang == "ru" else "❌ Invoice creation error.", show_alert=True)
-                return
-            await call.answer()
-            _pending_status_msg[call.from_user.id] = (
-                call.message.chat.id,
-                call.message.message_id,
-                "premium",
-            )
-            await edit(status_premium_text(data, lang), status_upgrade_keyboard_invoice(invoice_url, lang))
+                await call.answer()
+                await edit(msg, status_insufficient_keyboard(lang, "status_vip_info"))
             return
 
 
@@ -6892,125 +6830,6 @@ async def handle_successful_payment(message: Message):
                 parse_mode="HTML"
             )
 
-    # ===== ОПЛАТА: Статус VIP =====
-    if payload == "status_vip":
-        from database import aio_get_user, aio_save_user
-        paid_amount = message.successful_payment.total_amount
-        if paid_amount != VIP_COST_STARS:
-            await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
-            return
-        charge_id = message.successful_payment.telegram_payment_charge_id
-        if await aio_is_charge_processed(charge_id):
-            return
-        await aio_mark_charge_processed(charge_id, message.from_user.id, payload)
-        uid = message.from_user.id
-        lock = await _get_user_lock(uid)
-        async with lock:
-            data = await aio_get_user(uid)
-            if not data:
-                return
-            _lang = data.get("lang", "ru")
-            ok, msg = activate_status(data, "vip", _lang)
-            if ok:
-                _ach_newly = check_achievements(data)
-                await aio_save_user(data["id"], data)
-                await _notify_ach(data["id"], data, _ach_newly)
-            # Обновляем старое сообщение
-            pending = _pending_status_msg.pop(uid, None)
-            if pending:
-                old_chat_id, old_msg_id, _ = pending
-                try:
-                    await bot.edit_message_text(
-                        status_vip_text(data, _lang),
-                        chat_id=old_chat_id,
-                        message_id=old_msg_id,
-                        reply_markup=status_vip_keyboard(data, _lang),
-                        parse_mode="HTML"
-                    )
-                except Exception:
-                    pass
-            if _lang == "en":
-                success_text = (
-                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
-                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                    f'<blockquote>'
-                    f'<tg-emoji emoji-id="5325547803936572038">👑</tg-emoji> <b>VIP status activated for 30 days!</b>\n'
-                    f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <b>×1.3 to mining · +15% crit · Luck in cases</b>\n'
-                    f'<tg-emoji emoji-id="5348570868752595928">⭐</tg-emoji> <b>Spent: {VIP_COST_STARS} Stars</b>'
-                    f'</blockquote>'
-                )
-            else:
-                success_text = (
-                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
-                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                    f'<blockquote>'
-                    f'<tg-emoji emoji-id="5325547803936572038">👑</tg-emoji> <b>Статус VIP активирован на 30 дней!</b>\n'
-                    f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <b>×1.3 к добыче · +15% крит · Удача в кейсах</b>\n'
-                    f'<tg-emoji emoji-id="5348570868752595928">⭐</tg-emoji> <b>Потрачено: {VIP_COST_STARS} Stars</b>'
-                    f'</blockquote>'
-                )
-            await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
-        return
-
-    # ===== ОПЛАТА: Статус Premium =====
-    if payload == "status_premium":
-        from database import aio_get_user, aio_save_user
-        paid_amount = message.successful_payment.total_amount
-        if paid_amount != PREMIUM_COST_STARS:
-            await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
-            return
-        charge_id = message.successful_payment.telegram_payment_charge_id
-        if await aio_is_charge_processed(charge_id):
-            return
-        await aio_mark_charge_processed(charge_id, message.from_user.id, payload)
-        uid = message.from_user.id
-        lock = await _get_user_lock(uid)
-        async with lock:
-            data = await aio_get_user(uid)
-            if not data:
-                return
-            _lang = data.get("lang", "ru")
-            ok, msg = activate_status(data, "premium", _lang)
-            if ok:
-                _ach_newly = check_achievements(data)
-                await aio_save_user(data["id"], data)
-                await _notify_ach(data["id"], data, _ach_newly)
-            pending = _pending_status_msg.pop(uid, None)
-            if pending:
-                old_chat_id, old_msg_id, _ = pending
-                try:
-                    await bot.edit_message_text(
-                        status_premium_text(data, _lang),
-                        chat_id=old_chat_id,
-                        message_id=old_msg_id,
-                        reply_markup=status_premium_keyboard(data, _lang),
-                        parse_mode="HTML"
-                    )
-                except Exception:
-                    pass
-            if _lang == "en":
-                success_text = (
-                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
-                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                    f'<blockquote>'
-                    f'<tg-emoji emoji-id="5427168083074628963">⭐</tg-emoji> <b>Premium status activated for 30 days!</b>\n'
-                    f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <b>×1.6 to mining · +25% crit · Max luck</b>\n'
-                    f'<tg-emoji emoji-id="5348570868752595928">⭐</tg-emoji> <b>Spent: {PREMIUM_COST_STARS} Stars</b>'
-                    f'</blockquote>'
-                )
-            else:
-                success_text = (
-                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
-                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                    f'<blockquote>'
-                    f'<tg-emoji emoji-id="5427168083074628963">⭐</tg-emoji> <b>Статус Premium активирован на 30 дней!</b>\n'
-                    f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <b>×1.6 к добыче · +25% крит · Макс. удача</b>\n'
-                    f'<tg-emoji emoji-id="5348570868752595928">⭐</tg-emoji> <b>Потрачено: {PREMIUM_COST_STARS} Stars</b>'
-                    f'</blockquote>'
-                )
-            await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
-        return
-
     # ===== ОПЛАТА: Донат (пакет монет) =====
     if payload.startswith("donate:"):
         from database import aio_get_user, aio_save_user
@@ -7075,64 +6894,6 @@ async def handle_successful_payment(message: Message):
                     f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
                     f'━━━━━━━━━━━━━━━━━━━━\n\n'
                     f'{msg}'
-                )
-            await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
-        return
-
-    if payload == "status_upgrade_premium":
-        from database import aio_get_user, aio_save_user
-        paid_amount = message.successful_payment.total_amount
-        if paid_amount != UPGRADE_COST_STARS:
-            await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
-            return
-        charge_id = message.successful_payment.telegram_payment_charge_id
-        if await aio_is_charge_processed(charge_id):
-            return
-        await aio_mark_charge_processed(charge_id, message.from_user.id, payload)
-        uid = message.from_user.id
-        lock = await _get_user_lock(uid)
-        async with lock:
-            data = await aio_get_user(uid)
-            if not data:
-                return
-            _lang = data.get("lang", "ru")
-            ok, msg = activate_status(data, "premium", _lang)
-            if ok:
-                _ach_newly = check_achievements(data)
-                await aio_save_user(data["id"], data)
-                await _notify_ach(data["id"], data, _ach_newly)
-            pending = _pending_status_msg.pop(uid, None)
-            if pending:
-                old_chat_id, old_msg_id, _ = pending
-                try:
-                    await bot.edit_message_text(
-                        status_premium_text(data, _lang),
-                        chat_id=old_chat_id,
-                        message_id=old_msg_id,
-                        reply_markup=status_premium_keyboard(data, _lang),
-                        parse_mode="HTML"
-                    )
-                except Exception:
-                    pass
-            if _lang == "en":
-                success_text = (
-                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Payment successful!</b>\n'
-                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                    f'<blockquote>'
-                    f'<tg-emoji emoji-id="5427168083074628963">⭐</tg-emoji> <b>VIP upgraded to Premium for 30 days!</b>\n'
-                    f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <b>×1.6 to mining · +25% crit · Max luck</b>\n'
-                    f'<tg-emoji emoji-id="5348570868752595928">⭐</tg-emoji> <b>Spent: {UPGRADE_COST_STARS} Stars</b>'
-                    f'</blockquote>'
-                )
-            else:
-                success_text = (
-                    f'<tg-emoji emoji-id="5267500801240092311">⭐</tg-emoji> <b>Оплата прошла успешно!</b>\n'
-                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                    f'<blockquote>'
-                    f'<tg-emoji emoji-id="5427168083074628963">⭐</tg-emoji> <b>VIP улучшен до Premium на 30 дней!</b>\n'
-                    f'<tg-emoji emoji-id="5197371802136892976">⛏</tg-emoji> <b>×1.6 к добыче · +25% крит · Макс. удача</b>\n'
-                    f'<tg-emoji emoji-id="5348570868752595928">⭐</tg-emoji> <b>Потрачено: {UPGRADE_COST_STARS} Stars</b>'
-                    f'</blockquote>'
                 )
             await bot.send_message(message.chat.id, success_text, parse_mode="HTML")
         return
