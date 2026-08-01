@@ -709,6 +709,99 @@ def _now_ts() -> float:
 
 
 # ============================================================
+#  УВЕДОМЛЕНИЯ ОБ ОКОНЧАНИИ УСКОРИТЕЛЕЙ / ЯДОВ
+# ============================================================
+#  Вызывается фоновым циклом _boosters_expiry_loop в mainhelp.py.
+#  Флаг "notified_expired" хранится ВНУТРИ самого объекта активного
+#  бустера (active_booster / active_xp_booster / active_enh_booster /
+#  active_poison) — переживает рестарт бота и не требует отдельной
+#  таблицы или доп. похода в БД.
+#
+#  Сами объекты здесь НЕ удаляются и не обнуляются — их по-прежнему
+#  лениво чистят get_active_*_multiplier/_info при первом реальном
+#  обращении (mine.py/hunt.py/pets.py), чтобы не было двух разных
+#  мест, которые могут разойтись в логике "когда именно бустер
+#  считается закончившимся".
+# ============================================================
+
+_BOOST_FIELDS = ("active_booster", "active_xp_booster", "active_enh_booster", "active_poison")
+
+_POISON_NAMES_EN = {
+    "Яд Гадюки":       "Viper Venom",
+    "Яд Кобры":        "Cobra Venom",
+    "Яд Чёрной Мамбы": "Black Mamba Venom",
+    "Яд Василиска":    "Basilisk Venom",
+    "Яд Левиафана":    "Leviathan Venom",
+}
+
+
+def _boost_expired_text(field: str, b: dict, lang: str = "ru") -> str:
+    if field == "active_booster":
+        mult = _multiplier_label(b.get("multiplier", 1))
+        if lang == "en":
+            return (
+                f'{_pe("boost", "⚡")} <b><i>Your pickaxe booster {mult} has ended.</i></b>\n'
+                f'<i>Pickaxe stats are back to normal.</i>'
+            )
+        return (
+            f'{_pe("boost", "⚡")} <b><i>Ускоритель кирки {mult} закончился.</i></b>\n'
+            f'<i>Показатели кирки вернулись к обычным.</i>'
+        )
+    if field == "active_xp_booster":
+        mult = _multiplier_label(b.get("multiplier", 1))
+        if lang == "en":
+            return (
+                f'{_pe("xp_boost", "🔮")} <b><i>Your XP booster {mult} has ended.</i></b>\n'
+                f'<i>XP gain is back to normal.</i>'
+            )
+        return (
+            f'{_pe("xp_boost", "🔮")} <b><i>XP-ускоритель {mult} закончился.</i></b>\n'
+            f'<i>Получение опыта вернулось к обычному.</i>'
+        )
+    if field == "active_enh_booster":
+        mult = _multiplier_label(b.get("multiplier", 1))
+        if lang == "en":
+            return (
+                f'{_pe("enh_boost", "⚡")} <b><i>Your damage booster {mult} has ended.</i></b>\n'
+                f'<i>Boss damage is back to normal.</i>'
+            )
+        return (
+            f'{_pe("enh_boost", "⚡")} <b><i>Усилитель урона {mult} закончился.</i></b>\n'
+            f'<i>Урон по боссу вернулся к обычному.</i>'
+        )
+    if field == "active_poison":
+        name  = b.get("name", "")
+        pname = _POISON_NAMES_EN.get(name, name) if lang == "en" else name
+        if lang == "en":
+            return f'{_pe("poison", "☠️")} <b><i>{pname} has stopped applying damage.</i></b>'
+        return f'{_pe("poison", "☠️")} <b><i>{pname} перестал наносить урон.</i></b>'
+    return ""
+
+
+def collect_expired_boost_notifications(data: dict, lang: str = "ru", now: float | None = None) -> list:
+    """
+    Проходит по всем активным ускорителям/ядам игрока. Для каждого, что
+    только что истёк (ends_at <= now) и ещё НЕ уведомлён (нет флага
+    notified_expired) — ставит notified_expired=True (мутирует data на
+    месте) и добавляет готовый HTML-текст уведомления в результат.
+
+    Ничего не пишет в БД и не шлёт сообщений сама — только готовит
+    тексты и мутирует переданный data. Вызывающий код (фоновый цикл в
+    mainhelp.py) должен сам сохранить data, если список непустой, и
+    сам отправить тексты через bot.send_message.
+    """
+    if now is None:
+        now = _now_ts()
+    out = []
+    for field in _BOOST_FIELDS:
+        b = data.get(field)
+        if b and b.get("ends_at", 0) <= now and not b.get("notified_expired"):
+            b["notified_expired"] = True
+            out.append(_boost_expired_text(field, b, lang))
+    return out
+
+
+# ============================================================
 #  АНТИСПАМ: ЛИМИТ НА ОТКРЫТИЕ КЕЙСОВ
 # ============================================================
 
