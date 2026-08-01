@@ -107,15 +107,13 @@ async def rass_start(message: Message, admin_ids: set[int]) -> None:
     await message.answer(
         '📢 <b>Рассылка — шаг 1 из 3</b>\n\n'
         '<blockquote>'
-        '<b>Отправь текст сообщения.</b>\n'
-        'HTML-разметка поддерживается:\n'
-        '• <code>&lt;b&gt;жирный&lt;/b&gt;</code>\n'
-        '• <code>&lt;i&gt;курсив&lt;/i&gt;</code>\n'
-        '• <code>&lt;blockquote&gt;цитата&lt;/blockquote&gt;</code>\n'
-        '• <code>&lt;tg-emoji emoji-id="..."&gt;🌟&lt;/tg-emoji&gt;</code>\n'
-        '• <code>&lt;a href="..."&gt;ссылка&lt;/a&gt;</code>\n\n'
+        '<b>Просто пришли сообщение как обычно.</b>\n'
+        'Жирный, курсив, спойлеры, ссылки, кастомные emoji (в т.ч. премиум) — '
+        'всё будет скопировано <b>точь-в-точь</b>, как в твоём сообщении. '
+        'HTML-теги руками писать не нужно.\n\n'
         '<b>Хочешь прикрепить фото/видео?</b>\n'
-        'Пришли медиа с текстом в подписи (caption).'
+        'Пришли медиа с текстом в подписи (caption) — форматирование подписи '
+        'тоже скопируется как есть.'
         '</blockquote>\n\n'
         '<i>Отправь /rass_cancel чтобы отменить.</i>',
         parse_mode="HTML",
@@ -153,14 +151,17 @@ async def rass_fsm_message(message: Message, admin_ids: set[int]) -> bool:
             state["media_type"] = "photo"
             state["media_id"]   = message.photo[-1].file_id
             state["text"]       = message.caption or ""
+            state["entities"]   = message.caption_entities or []
         elif message.video:
             state["media_type"] = "video"
             state["media_id"]   = message.video.file_id
             state["text"]       = message.caption or ""
+            state["entities"]   = message.caption_entities or []
         elif message.text and not message.text.startswith("/"):
             state["media_type"] = None
             state["media_id"]   = None
             state["text"]       = message.text
+            state["entities"]   = message.entities or []
         else:
             return False  # команды пропускаем
 
@@ -217,8 +218,7 @@ async def rass_fsm_message(message: Message, admin_ids: set[int]) -> bool:
             await _send_one(message.bot, uid, state, preview=True)
         except Exception as e:
             await message.answer(
-                f'⚠️ Не удалось показать превью: <code>{e}</code>\n'
-                f'Проверь HTML-разметку.',
+                f'⚠️ Не удалось показать превью: <code>{e}</code>',
                 parse_mode="HTML",
             )
             state["step"] = STEP_TEXT
@@ -339,8 +339,18 @@ async def rass_fsm_callback(call: CallbackQuery, admin_ids: set[int], bot: Bot) 
 # ─────────────────────────────────────────────────────────────────────
 
 async def _send_one(bot: Bot, chat_id: int, state: dict, preview: bool = False) -> None:
-    """Отправляет одно сообщение согласно state."""
+    """Отправляет одно сообщение согласно state.
+
+    Форматирование (жирный/курсив/спойлер/ссылки/кастомные emoji и т.д.)
+    копируется 1-в-1 через entities/caption_entities — те самые сущности,
+    что Telegram прислал вместе с исходным сообщением админа. Поэтому
+    parse_mode здесь НЕ используется: entities и parse_mode — взаимно
+    исключающие способы задать разметку, а entities уже содержат готовый
+    результат, включая кастомные emoji, которые через HTML пришлось бы
+    вписывать вручную по emoji-id.
+    """
     text       = state.get("text", "")
+    entities   = state.get("entities") or None
     media_type = state.get("media_type")
     media_id   = state.get("media_id")
     buttons    = state.get("buttons")
@@ -352,7 +362,7 @@ async def _send_one(bot: Bot, chat_id: int, state: dict, preview: bool = False) 
             chat_id,
             photo=media_id,
             caption=text or None,
-            parse_mode="HTML",
+            caption_entities=entities,
             reply_markup=kbd,
         )
     elif media_type == "video":
@@ -360,14 +370,14 @@ async def _send_one(bot: Bot, chat_id: int, state: dict, preview: bool = False) 
             chat_id,
             video=media_id,
             caption=text or None,
-            parse_mode="HTML",
+            caption_entities=entities,
             reply_markup=kbd,
         )
     else:
         await bot.send_message(
             chat_id,
             text=text,
-            parse_mode="HTML",
+            entities=entities,
             reply_markup=kbd,
             disable_web_page_preview=True,
         )
