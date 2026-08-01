@@ -614,6 +614,11 @@ def main_menu_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=t(lang, "btn_leaders"),  callback_data="leaders",  icon_custom_emoji_id=EMOJI_LEADERS),
         InlineKeyboardButton(text=t(lang, "btn_settings"), callback_data="settings", icon_custom_emoji_id=EMOJI_SETTINGS),
     )
+    builder.row(InlineKeyboardButton(
+        text="BIO Bonus",
+        callback_data="bio_bonus",
+        icon_custom_emoji_id="5199552030615558774",
+    ))
     return builder.as_markup()
 
 
@@ -1637,6 +1642,87 @@ async def cmd_rass_cancel(message: Message):
 
 _COIN_DAILY = '<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji>'
 
+
+def _bio_bonus_status_text(u: dict, lang: str = "ru") -> str:
+    """
+    Строит текст статуса bio-бонуса. Вынесено в отдельную функцию, чтобы
+    использовать один и тот же экран и в команде /daily, и в кнопке
+    "BIO Bonus" из главного меню — раньше текст был только внутри
+    cmd_daily.
+    """
+    from bio_bonus import get_bio_bonus_multiplier, BOT_USERNAME, BIO_BONUS_MULTIPLIER
+
+    active   = get_bio_bonus_multiplier(u) > 1.0
+    mult_str = str(BIO_BONUS_MULTIPLIER).rstrip("0").rstrip(".")
+
+    _OK    = '<tg-emoji emoji-id="5206607081334906820">✅</tg-emoji>'
+    _GEM   = '<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji>'
+    _DMG   = '<tg-emoji emoji-id="5373173798633752502">⚔️</tg-emoji>'
+    _TROPHY = '<tg-emoji emoji-id="5449683594425410231">🏆</tg-emoji>'
+    _TIMER = '<tg-emoji emoji-id="5440621591387980068">⏱</tg-emoji>'
+    _LOCK  = '<tg-emoji emoji-id="5240241223632954241">🔒</tg-emoji>'
+    _STAR  = '<tg-emoji emoji-id="5262643974912355126">✨</tg-emoji>'
+
+    if active:
+        if lang == "en":
+            return (
+                f'{_COIN_DAILY} <b>BIO BONUS — ACTIVE</b>\n'
+                f'━━━━━━━━━━━━━━━━━━━━\n\n'
+                f'<blockquote>'
+                f'{_OK} <b><i>@{BOT_USERNAME}</i></b> <i>found in your profile bio</i>\n\n'
+                f'{_GEM} <b><i>+{mult_str}× to all ore mining loot</i></b>\n'
+                f'{_DMG} <b><i>+{mult_str}× to boss damage</i></b>\n'
+                f'{_TROPHY} <b><i>+{mult_str}× to boss kill rewards</i></b>'
+                f'</blockquote>\n\n'
+                f'{_TIMER} <i>Rechecked automatically every 30 minutes — '
+                f'keep the tag in your bio and the bonus stays with you.</i>'
+            )
+        return (
+            f'{_COIN_DAILY} <b>BIO-БОНУС — АКТИВЕН</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'<blockquote>'
+            f'{_OK} <b><i>@{BOT_USERNAME}</i></b> <i>найден в описании профиля</i>\n\n'
+            f'{_GEM} <b><i>+{mult_str}× ко всей добыче руды</i></b>\n'
+            f'{_DMG} <b><i>+{mult_str}× к урону по боссу</i></b>\n'
+            f'{_TROPHY} <b><i>+{mult_str}× к награде за убийство босса</i></b>'
+            f'</blockquote>\n\n'
+            f'{_TIMER} <i>Статус обновляется автоматически каждые 30 минут — '
+            f'держи метку в bio, и бонус останется с тобой.</i>'
+        )
+
+    if lang == "en":
+        return (
+            f'{_LOCK} <b>BIO BONUS — NOT ACTIVE</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'<blockquote>'
+            f'<b><i>1.</i></b> <i>Open Telegram → Settings → Edit Profile</i>\n'
+            f'<b><i>2.</i></b> <i>In the "Bio" field add:</i> <code>@{BOT_USERNAME}</code>\n'
+            f'<b><i>3.</i></b> <i>Save changes</i>'
+            f'</blockquote>\n\n'
+            f'{_STAR} <b><i>Reward for it:</i></b>\n'
+            f'{_GEM} <i>+{mult_str}× ore mining loot</i>\n'
+            f'{_DMG} <i>+{mult_str}× boss damage</i>\n'
+            f'{_TROPHY} <i>+{mult_str}× boss kill rewards</i>\n\n'
+            f'{_TIMER} <i>Checked automatically every 30 minutes — or just '
+            f'send /daily again right after editing your bio.</i>'
+        )
+    return (
+        f'{_LOCK} <b>BIO-БОНУС — НЕ АКТИВЕН</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>'
+        f'<b><i>1.</i></b> <i>Открой Telegram → Настройки → Изменить профиль</i>\n'
+        f'<b><i>2.</i></b> <i>В поле «О себе» (bio) добавь:</i> <code>@{BOT_USERNAME}</code>\n'
+        f'<b><i>3.</i></b> <i>Сохрани изменения</i>'
+        f'</blockquote>\n\n'
+        f'{_STAR} <b><i>Награда за это:</i></b>\n'
+        f'{_GEM} <i>+{mult_str}× к добыче руды</i>\n'
+        f'{_DMG} <i>+{mult_str}× к урону по боссу</i>\n'
+        f'{_TROPHY} <i>+{mult_str}× к награде за убийство босса</i>\n\n'
+        f'{_TIMER} <i>Проверяется автоматически каждые 30 минут — либо '
+        f'просто пришли /daily ещё раз сразу после правки bio.</i>'
+    )
+
+
 @dp.message(Command("daily", "бонус", "bonus", ignore_case=True))
 @dp.message(_text_in("daily", "бонус", "bonus"))
 async def cmd_daily(message: Message):
@@ -1648,10 +1734,7 @@ async def cmd_daily(message: Message):
         if not u.get("onboarded", True):
             return  # онбординг ещё не пройден — молча игнорируем
 
-        from bio_bonus import (
-            refresh_bio_bonus, get_bio_bonus_multiplier,
-            BOT_USERNAME, BIO_BONUS_MULTIPLIER,
-        )
+        from bio_bonus import refresh_bio_bonus
 
         # Форсируем свежую проверку прямо сейчас (не ждём фоновый цикл раз
         # в 30 мин) — так пользователь сразу видит актуальный статус после
@@ -1662,79 +1745,8 @@ async def cmd_daily(message: Message):
         if ok:
             await aio_save_user(uid, u)
 
-        active = get_bio_bonus_multiplier(u) > 1.0
-        lang   = get_lang(u)
-        mult_str = str(BIO_BONUS_MULTIPLIER).rstrip("0").rstrip(".")
-
-        _OK    = '<tg-emoji emoji-id="5206607081334906820">✅</tg-emoji>'
-        _GEM   = '<tg-emoji emoji-id="5442939099906325301">💎</tg-emoji>'
-        _DMG   = '<tg-emoji emoji-id="5373173798633752502">⚔️</tg-emoji>'
-        _TROPHY = '<tg-emoji emoji-id="5449683594425410231">🏆</tg-emoji>'
-        _TIMER = '<tg-emoji emoji-id="5440621591387980068">⏱</tg-emoji>'
-        _LOCK  = '<tg-emoji emoji-id="5240241223632954241">🔒</tg-emoji>'
-        _STAR  = '<tg-emoji emoji-id="5262643974912355126">✨</tg-emoji>'
-
-        if active:
-            if lang == "en":
-                text = (
-                    f'{_COIN_DAILY} <b>BIO BONUS — ACTIVE</b>\n'
-                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                    f'<blockquote>'
-                    f'{_OK} <b><i>@{BOT_USERNAME}</i></b> <i>found in your profile bio</i>\n\n'
-                    f'{_GEM} <b><i>+{mult_str}× to all ore mining loot</i></b>\n'
-                    f'{_DMG} <b><i>+{mult_str}× to boss damage</i></b>\n'
-                    f'{_TROPHY} <b><i>+{mult_str}× to boss kill rewards</i></b>'
-                    f'</blockquote>\n\n'
-                    f'{_TIMER} <i>Rechecked automatically every 30 minutes — '
-                    f'keep the tag in your bio and the bonus stays with you.</i>'
-                )
-            else:
-                text = (
-                    f'{_COIN_DAILY} <b>BIO-БОНУС — АКТИВЕН</b>\n'
-                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                    f'<blockquote>'
-                    f'{_OK} <b><i>@{BOT_USERNAME}</i></b> <i>найден в описании профиля</i>\n\n'
-                    f'{_GEM} <b><i>+{mult_str}× ко всей добыче руды</i></b>\n'
-                    f'{_DMG} <b><i>+{mult_str}× к урону по боссу</i></b>\n'
-                    f'{_TROPHY} <b><i>+{mult_str}× к награде за убийство босса</i></b>'
-                    f'</blockquote>\n\n'
-                    f'{_TIMER} <i>Статус обновляется автоматически каждые 30 минут — '
-                    f'держи метку в bio, и бонус останется с тобой.</i>'
-                )
-        else:
-            if lang == "en":
-                text = (
-                    f'{_LOCK} <b>BIO BONUS — NOT ACTIVE</b>\n'
-                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                    f'<blockquote>'
-                    f'<b><i>1.</i></b> <i>Open Telegram → Settings → Edit Profile</i>\n'
-                    f'<b><i>2.</i></b> <i>In the "Bio" field add:</i> <code>@{BOT_USERNAME}</code>\n'
-                    f'<b><i>3.</i></b> <i>Save changes</i>'
-                    f'</blockquote>\n\n'
-                    f'{_STAR} <b><i>Reward for it:</i></b>\n'
-                    f'{_GEM} <i>+{mult_str}× ore mining loot</i>\n'
-                    f'{_DMG} <i>+{mult_str}× boss damage</i>\n'
-                    f'{_TROPHY} <i>+{mult_str}× boss kill rewards</i>\n\n'
-                    f'{_TIMER} <i>Checked automatically every 30 minutes — or just '
-                    f'send /daily again right after editing your bio.</i>'
-                )
-            else:
-                text = (
-                    f'{_LOCK} <b>BIO-БОНУС — НЕ АКТИВЕН</b>\n'
-                    f'━━━━━━━━━━━━━━━━━━━━\n\n'
-                    f'<blockquote>'
-                    f'<b><i>1.</i></b> <i>Открой Telegram → Настройки → Изменить профиль</i>\n'
-                    f'<b><i>2.</i></b> <i>В поле «О себе» (bio) добавь:</i> <code>@{BOT_USERNAME}</code>\n'
-                    f'<b><i>3.</i></b> <i>Сохрани изменения</i>'
-                    f'</blockquote>\n\n'
-                    f'{_STAR} <b><i>Награда за это:</i></b>\n'
-                    f'{_GEM} <i>+{mult_str}× к добыче руды</i>\n'
-                    f'{_DMG} <i>+{mult_str}× к урону по боссу</i>\n'
-                    f'{_TROPHY} <i>+{mult_str}× к награде за убийство босса</i>\n\n'
-                    f'{_TIMER} <i>Проверяется автоматически каждые 30 минут — либо '
-                    f'просто пришли /daily ещё раз сразу после правки bio.</i>'
-                )
-
+        lang = get_lang(u)
+        text = _bio_bonus_status_text(u, lang)
         await message.reply(text, parse_mode="HTML")
 
 
@@ -4788,6 +4800,22 @@ async def handle_callback(call: CallbackQuery):
             await edit(profile_text(data), profile_keyboard(lang))
             return
 
+        # ===== BIO BONUS — статус бонуса за @username бота в описании профиля =====
+        if cd == "bio_bonus":
+            from bio_bonus import refresh_bio_bonus
+
+            # Форсируем свежую проверку прямо сейчас (см. cmd_daily) — так
+            # пользователь сразу видит актуальный статус, а не ждёт до
+            # 30 минут фонового цикла. Ошибка Telegram API просто не
+            # трогает флаг, ничего не ломаем.
+            ok = await refresh_bio_bonus(bot, user.id, data)
+            if ok:
+                await aio_save_user(user.id, data)
+
+            await edit(_bio_bonus_status_text(data, lang), back_button(lang))
+            await call.answer()
+            return
+
         # ===== ПРОМОКОД — кнопка в профиле =====
         if cd == "promo_input":
             uid = call.from_user.id
@@ -6983,6 +7011,69 @@ async def _users_scan_loop():
         await asyncio.sleep(_USERS_SCAN_INTERVAL)
 
 
+_BOOSTERS_EXPIRY_CHECK_INTERVAL = 60  # раз в минуту — этого достаточно для своевременного уведомления
+
+
+async def _boosters_expiry_loop():
+    """
+    Раз в минуту проверяет, не закончился ли у игрока активный ускоритель
+    кирки / XP-ускоритель / усилитель урона / яд — и если да, шлёт ОДНО
+    уведомление (флаг notified_expired внутри самого объекта бустера не
+    даёт слать повторно и переживает рестарт бота, см. shop.py
+    collect_expired_boost_notifications).
+
+    Как и другие фоновые сканы (_users_scan_loop, _hp_regen_notify_loop):
+    полный список пользователей читается через asyncio.to_thread —
+    get_all_users делает синхронный SQLite-запрос, и оборачивание в
+    to_thread не даёт ему заблокировать event loop для всех остальных
+    игроков бота. По снапшоту _d сначала дёшево (без похода в БД)
+    проверяем, есть ли вообще что уведомлять — и только тогда берём
+    персональный лок и перечитываем СВЕЖИЕ данные игрока (снова через
+    asyncio.to_thread), чтобы не затереть параллельное действие игрока
+    (активацию/замену бустера и т.п.) устаревшим снапшотом всей записи.
+    """
+    from database import get_all_users, save_user as _sv, get_user as _gu_fresh
+    from shop import collect_expired_boost_notifications
+    import time as _time
+
+    while True:
+        try:
+            now = _time.time()
+            for _d in await asyncio.to_thread(get_all_users):
+                uid = _d.get("id")
+                if not uid:
+                    continue
+
+                due = False
+                for _f in ("active_booster", "active_xp_booster", "active_enh_booster", "active_poison"):
+                    _b = _d.get(_f)
+                    if _b and _b.get("ends_at", 0) <= now and not _b.get("notified_expired"):
+                        due = True
+                        break
+                if not due:
+                    continue
+
+                try:
+                    async with await _get_user_lock(uid):
+                        fresh = await asyncio.to_thread(_gu_fresh, uid)
+                        if not fresh:
+                            continue
+                        lang  = fresh.get("lang", "ru")
+                        texts = collect_expired_boost_notifications(fresh, lang, now)
+                        if texts:
+                            await asyncio.to_thread(_sv, uid, fresh)
+                            for text in texts:
+                                try:
+                                    await bot.send_message(uid, text, parse_mode="HTML")
+                                except Exception:
+                                    pass
+                except Exception as _e:
+                    print(f"[boosters_expiry_loop] user {uid}: {_e}")
+        except Exception as _e:
+            print(f"[boosters_expiry_loop] {_e}")
+        await asyncio.sleep(_BOOSTERS_EXPIRY_CHECK_INTERVAL)
+
+
 async def _poison_loop():
     """Фоновая задача: яд наносит урон боссу каждую минуту.
     Суммарный урон = damage, распределённый равномерно по 30 тикам (30 мин).
@@ -7231,6 +7322,9 @@ async def run_bot():
 
     # ── Запускаем фоновую задачу регенерации HP вне боя ──
     asyncio.create_task(_hp_regen_notify_loop())
+
+    # ── Уведомление об окончании ускорителя кирки / XP / урона / яда ──
+    asyncio.create_task(_boosters_expiry_loop())
 
     # ── Запускаем фоновые задачи города (цены / путешествия / новости) ──
     asyncio.create_task(city_prices_loop())
