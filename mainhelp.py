@@ -3461,7 +3461,7 @@ async def cmd_open_case_multi(message: Message):
     lock = await _get_user_lock(uid)
     async with lock:
         u = await aio_get_or_create_user(message.from_user)
-        ok, msg = open_case_multi(u, case_num, qty, lang)
+        ok, msg = open_case_multi(u, case_num, qty, lang, chat_type=message.chat.type)
         if ok:
             _ach_newly = check_achievements(u)
             await aio_save_user(uid, u)
