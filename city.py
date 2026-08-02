@@ -212,6 +212,8 @@ CART_LEVELS = [
     {"level": 3, "capacity": 500_000,   "cost": 45_000,  "name": "Большой караван"},
     {"level": 4, "capacity": 700_000,   "cost": 80_000,  "name": "Купеческий обоз"},
     {"level": 5, "capacity": 1_000_000, "cost": 150_000, "name": "Королевский обоз"},
+    {"level": 6, "capacity": 2_000_000, "cost": 300_000, "name": "Звёздный караван"},
+    {"level": 7, "capacity": 5_000_000, "cost": 750_000, "name": "Галактический обоз"},
 ]
 CART_MAX_LEVEL = len(CART_LEVELS) - 1
 
