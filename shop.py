@@ -806,13 +806,13 @@ def collect_expired_boost_notifications(data: dict, lang: str = "ru", now: float
 # ============================================================
 
 CASE_OPEN_COOLDOWN_BUTTON_SEC  = 1   # открытие кнопкой (одиночный кейс)
-CASE_OPEN_COOLDOWN_COMMAND_SEC = 10  # открытие текстовой командой (в т.ч. массовое)
+CASE_OPEN_COOLDOWN_COMMAND_SEC = 1   # открытие текстовой командой (в т.ч. массовое)
 
 
 def _check_case_cooldown(data: dict, lang: str = "ru", via_command: bool = False) -> tuple[bool, str]:
     """
     Проверяет, прошло ли достаточно времени с последнего открытия кейса.
-    via_command=True — открытие через текстовую команду (10 сек),
+    via_command=True — открытие через текстовую команду (1 сек),
     via_command=False — открытие кнопкой (1 сек).
     Возвращает (ok, сообщение_об_ошибке).
     Метку времени ставит _mark_case_opened() ПОСЛЕ успешного открытия —
@@ -1039,14 +1039,28 @@ CASE_NUM_TO_KEY = {1: "common", 2: "xp", 3: "enhancer"}
 CASE_KEY_TO_NUM = {v: k for k, v in CASE_NUM_TO_KEY.items()}
 
 
-def open_case_multi(data: dict, case_num: int, qty: int, lang: str = "ru", via_command: bool = True) -> tuple:
+def open_case_multi(data: dict, case_num: int, qty: int, lang: str = "ru", via_command: bool = True, chat_type: str = "private") -> tuple:
     """
     Открывает qty кейсов с номером case_num (#1/#2/#3).
     Команды: открыть #1 5  /купить #2 10  open #1 5  /open #3 3
-    via_command: True — вызов текстовой командой (кулдаун 10 сек, по умолчанию),
+    via_command: True — вызов текстовой командой (кулдаун 1 сек, по умолчанию),
                  False — вызов кнопкой (кулдаун 1 сек).
+    chat_type: тип чата, откуда пришла команда ("private", "group", "supergroup", "channel").
+               Текстовые команды (via_command=True) работают только в личных сообщениях —
+               в группах/супергруппах открытие кейсов доступно только через меню (кнопки),
+               т.е. с via_command=False.
     Возвращает (ok, итоговое_сообщение).
     """
+    if via_command and chat_type != "private":
+        err = (
+            "Эта команда доступна только в личных сообщениях с ботом. "
+            "В чате открывайте кейсы через меню (кнопки)."
+            if lang == "ru"
+            else "This command only works in private messages with the bot. "
+                 "In group chats, open cases via the menu buttons."
+        )
+        return False, f"❌ {err}"
+
     case_key = CASE_NUM_TO_KEY.get(case_num)
     if not case_key:
         if lang == "en":
