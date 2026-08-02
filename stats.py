@@ -3,6 +3,7 @@
 # ============================================================
 
 import sqlite3
+import json
 import time
 import asyncio
 from database import DB_PATH
@@ -23,9 +24,26 @@ def init_stats_db():
 
 # ---------- Трекинг ----------
 
+def _is_onboarded(conn: sqlite3.Connection, uid: int) -> bool:
+    """
+    Прошёл ли пользователь онбординг (капча → язык).
+    Пока не прошёл — это просто голый /start, который может быть накруткой
+    (боты, реф-фарм и т.п.), поэтому такие uid не должны попадать в статистику.
+    """
+    row = conn.execute("SELECT data_json FROM users WHERE uid=?", (uid,)).fetchone()
+    if row is None:
+        return False
+    try:
+        return bool(json.loads(row[0]).get("onboarded", True))
+    except Exception:
+        return True
+
+
 def track_user(uid: int, joined_ts: int = 0):
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as conn:
+        if not _is_onboarded(conn, uid):
+            return
         conn.execute("""
             INSERT INTO user_stats (uid, last_seen, joined_ts)
             VALUES (?, ?, ?)
@@ -41,6 +59,48 @@ def track_user(uid: int, joined_ts: int = 0):
 
 async def aio_track_user(uid: int, joined_ts: int = 0) -> None:
     await asyncio.to_thread(track_user, uid, joined_ts)
+
+
+# ---------- Очистка накрутки (/clear) ----------
+# Раньше track_user() писался в user_stats на КАЖДЫЙ /start, даже если
+# пользователь не прошёл капчу/выбор языка (onboarded=False) — отсюда
+# расхождение между "статистикой" и реальным числом получателей рассылки
+# (rass.py шлёт только тем, у кого onboarded=True). Новые /start такие
+# uid'ы больше не создают (см. _is_onboarded выше), но старые записи
+# нужно вычистить один раз вручную.
+
+def clear_unregistered() -> int:
+    """
+    Удаляет из user_stats всех uid, которые так и не прошли онбординг
+    (onboarded=False), а также uid, которых вообще нет в таблице users
+    (данные потерялись/уже удалены). Возвращает число удалённых записей.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        stats_uids = [r[0] for r in conn.execute("SELECT uid FROM user_stats").fetchall()]
+        if not stats_uids:
+            return 0
+
+        onboarded_map: dict[int, bool] = {}
+        for row_uid, data_json in conn.execute("SELECT uid, data_json FROM users").fetchall():
+            try:
+                onboarded_map[row_uid] = bool(json.loads(data_json).get("onboarded", True))
+            except Exception:
+                onboarded_map[row_uid] = True
+
+        to_delete = [uid for uid in stats_uids if not onboarded_map.get(uid, False)]
+
+        if to_delete:
+            conn.executemany(
+                "DELETE FROM user_stats WHERE uid=?",
+                [(uid,) for uid in to_delete]
+            )
+            conn.commit()
+
+    return len(to_delete)
+
+
+async def aio_clear_unregistered() -> int:
+    return await asyncio.to_thread(clear_unregistered)
 
 
 # ---------- Онлайн ----------
