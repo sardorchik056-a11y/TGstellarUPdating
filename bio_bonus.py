@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 # ─────────────────────────────────────────
 #  НАСТРОЙКИ
 # ─────────────────────────────────────────
-BOT_USERNAME          = "Rpguniverse_bot"     # без @
+BOT_USERNAME          = "TGStellarr_bot"     # без @
 BIO_BONUS_MULTIPLIER  = 1.1                  # +10% ко всей добыче/урону
 BIO_CHECK_INTERVAL    = 1800                 # 30 минут — период фоновой проверки
 BIO_STALE_AFTER       = BIO_CHECK_INTERVAL * 2  # если проверка не обновлялась дольше — бонус не действует
