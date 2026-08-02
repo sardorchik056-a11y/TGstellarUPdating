@@ -98,7 +98,10 @@ from achieves import (
     DEFAULT_CATEGORY,
 )
 
-from stats import init_stats_db, track_user, aio_track_user, stats_text, aio_stats_text, stats_keyboard
+from stats import (
+    init_stats_db, track_user, aio_track_user, stats_text, aio_stats_text,
+    stats_keyboard, aio_clear_unregistered,
+)
 from settings import (
     settings_text, settings_keyboard,
     lang_choose_text, lang_choose_keyboard, lang_choose_keyboard_start,
@@ -1619,6 +1622,26 @@ async def cmd_delpromo(message: Message):
         return
     ok = await delete_promo(parts[1])
     await message.reply("✅ Промокод удалён." if ok else "❌ Промокод не найден.", parse_mode="HTML")
+
+
+# ── /clear — чистка накрутки в статистике ────────────────────────────
+
+@dp.message(Command("clear"))
+async def cmd_clear_stats(message: Message):
+    """
+    Удаляет из статистики (/stats) пользователей, которые нажали /start,
+    но так и не прошли онбординг (капчу/выбор языка) — они не реальные
+    пользователи и не попадают в рассылку (/rass), поэтому не должны
+    учитываться и в счётчиках.
+    """
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    removed = await aio_clear_unregistered()
+    await message.reply(
+        f'🧹 <b>Очистка завершена.</b>\n\n'
+        f'<blockquote>Удалено незавершённых регистраций: <b>{removed}</b></blockquote>',
+        parse_mode="HTML",
+    )
 
 
 # ── /rass — рассылка ─────────────────────────────────────────────────
