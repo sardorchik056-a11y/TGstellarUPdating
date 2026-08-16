@@ -80,7 +80,7 @@ from hunt import (
     my_potions_text, my_potions_keyboard,
     potion_use_detail_text, potion_use_detail_keyboard,
     potion_detail_text, potion_detail_keyboard,
-    potion_invoice_params, confirm_potion_purchase,
+    confirm_potion_purchase,
     try_buy_potion_with_samosvety,
     _consume_potion_from_inventory as _potion_rollback,
     is_potion_cmd,
