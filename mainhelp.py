@@ -3720,8 +3720,8 @@ async def handle_captcha_answer(message: Message):
 
     if result["status"] == "ok":
         # Капча пройдена — начисляем награду пригласителю
-        is_premium       = bool(getattr(message.from_user, "is_premium", False))
-        rewarded, amount = await reward_inviter(uid, is_premium)
+        is_premium                  = bool(getattr(message.from_user, "is_premium", False))
+        rewarded, amount, samosvety = await reward_inviter(uid, is_premium)
 
         # Уведомление пригласителю
         if rewarded:
@@ -3734,7 +3734,7 @@ async def handle_captcha_answer(message: Message):
                 try:
                     await bot.send_message(
                         inv_uid,
-                        refs_notif_text(name, amount, is_premium, _inv_lang),
+                        refs_notif_text(name, amount, is_premium, _inv_lang, samosvety),
                         parse_mode="HTML",
                     )
                 except Exception:
