@@ -75,6 +75,7 @@ from green import (
     mass_plant_inventory_text, mass_plant_inventory_keyboard,
     mass_plant_toggle_pick, mass_plant_confirm,
     MASS_ACTIONS_MIN_PLOTS,
+    RELICS, RELIC_ORDER, relics_menu_text, relics_menu_keyboard, buy_relic,
 )
 
 # ── Реферальный ивент "Реферальный марафон" — глобальный бафф добычи
@@ -856,6 +857,64 @@ async def cb_garden_expand(call: CallbackQuery):
     await call.answer(f'🪴 Грядка открыта! Теперь их: {result["plot_count"]}')
 
 
+# ── Реликвии сада — постоянные артефакты за мистическую пыльцу, каждый
+# покупается один раз и усиливает весь сад навсегда (см. RELICS в green.py). ──
+
+@dp.callback_query(F.data == "garden_relics")
+async def cb_garden_relics(call: CallbackQuery):
+    if not await _garden_owner_ok(call):
+        return
+    uid = call.from_user.id
+    u = await aio_get_user(uid)
+    if not u:
+        await call.answer()
+        return
+    ensure_garden(u)
+    await call.message.edit_text(
+        relics_menu_text(u), parse_mode="HTML",
+        reply_markup=relics_menu_keyboard(u),
+    )
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("garden_relicbuy:"))
+async def cb_garden_relicbuy(call: CallbackQuery):
+    if not await _garden_owner_ok(call):
+        return
+    parts = call.data.split(":")
+    if len(parts) < 2:
+        await call.answer()
+        return
+    relic_key = parts[1]
+    if relic_key not in RELICS:
+        await call.answer()
+        return
+    uid = call.from_user.id
+
+    async with await _get_user_lock(uid):
+        u = await aio_get_user(uid)
+        if not u:
+            await call.answer()
+            return
+        result = buy_relic(u, relic_key)
+        if not result["ok"]:
+            reasons = {
+                "already_owned": "✅ Эта реликвия уже куплена.",
+                "no_essence": f'{ESSENCE_ICON} Не хватает {ESSENCE_NAME.lower()} (нужно {fmt_essence(result.get("cost", 0))}).',
+                "unknown_relic": "❌ Неизвестная реликвия.",
+            }
+            await call.answer(reasons.get(result["reason"], "❌ Не удалось купить реликвию."), show_alert=True)
+            return
+        await aio_save_user(uid, u)
+
+    await call.message.edit_text(
+        relics_menu_text(u), parse_mode="HTML",
+        reply_markup=relics_menu_keyboard(u),
+    )
+    relic = result["relic"]
+    await call.answer(f'🏺 Реликвия приобретена: {relic["emoji"]} {relic["name"]}!', show_alert=True)
+
+
 # ── Массовая посадка / массовый сбор урожая — работают только после
 # MASS_ACTIONS_MIN_PLOTS открытых грядок (см. mass_actions_unlocked в
 # green.py). Кнопки в garden_keyboard видны всегда, но до этого порога
@@ -1066,6 +1125,7 @@ _prioritize_callback_handlers(
     cb_garden_collection, cb_garden_colltier, cb_garden_collflower,
     cb_garden_massplant_inv, cb_garden_massplant_menu, cb_garden_masspick,
     cb_garden_massplantgo, cb_garden_massharvest,
+    cb_garden_relics, cb_garden_relicbuy,
 )
 
 
