@@ -76,6 +76,7 @@ from green import (
     mass_plant_toggle_pick, mass_plant_confirm,
     MASS_ACTIONS_MIN_PLOTS,
     RELICS, RELIC_ORDER, relics_menu_text, relics_menu_keyboard, buy_relic,
+    relic_detail_text, relic_detail_keyboard,
 )
 
 # ── Реферальный ивент "Реферальный марафон" — глобальный бафф добычи
@@ -877,6 +878,31 @@ async def cb_garden_relics(call: CallbackQuery):
     await call.answer()
 
 
+@dp.callback_query(F.data.startswith("garden_relicview:"))
+async def cb_garden_relicview(call: CallbackQuery):
+    if not await _garden_owner_ok(call):
+        return
+    parts = call.data.split(":")
+    if len(parts) < 2:
+        await call.answer()
+        return
+    relic_key = parts[1]
+    if relic_key not in RELICS:
+        await call.answer()
+        return
+    uid = call.from_user.id
+    u = await aio_get_user(uid)
+    if not u:
+        await call.answer()
+        return
+    ensure_garden(u)
+    await call.message.edit_text(
+        relic_detail_text(u, relic_key), parse_mode="HTML",
+        reply_markup=relic_detail_keyboard(u, relic_key),
+    )
+    await call.answer()
+
+
 @dp.callback_query(F.data.startswith("garden_relicbuy:"))
 async def cb_garden_relicbuy(call: CallbackQuery):
     if not await _garden_owner_ok(call):
@@ -908,8 +934,8 @@ async def cb_garden_relicbuy(call: CallbackQuery):
         await aio_save_user(uid, u)
 
     await call.message.edit_text(
-        relics_menu_text(u), parse_mode="HTML",
-        reply_markup=relics_menu_keyboard(u),
+        relic_detail_text(u, relic_key), parse_mode="HTML",
+        reply_markup=relic_detail_keyboard(u, relic_key),
     )
     relic = result["relic"]
     await call.answer(f'🏺 Реликвия приобретена: {relic["emoji"]} {relic["name"]}!', show_alert=True)
@@ -1125,7 +1151,7 @@ _prioritize_callback_handlers(
     cb_garden_collection, cb_garden_colltier, cb_garden_collflower,
     cb_garden_massplant_inv, cb_garden_massplant_menu, cb_garden_masspick,
     cb_garden_massplantgo, cb_garden_massharvest,
-    cb_garden_relics, cb_garden_relicbuy,
+    cb_garden_relics, cb_garden_relicview, cb_garden_relicbuy,
 )
 
 
