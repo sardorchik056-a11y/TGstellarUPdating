@@ -25,6 +25,12 @@ REF_REWARD_PREMIUM = 8_000
 CAPTCHA_MAX_TRIES  = 5
 CAPTCHA_BLOCK_SEC  = 30 * 60
 
+# Дополнительная награда донатной валютой (самосветы) за каждого реферала —
+# выдаётся вместе с монетами в reward_inviter(), одним и тем же
+# атомарным захватом rewarded=1 (см. reward_inviter).
+REF_SAMOSVETY_NORMAL  = 2
+REF_SAMOSVETY_PREMIUM = 5
+
 # Процент от ЛЮБОГО дохода реферала, который автоматически уходит
 # рефереру (пассивный доход). Считается от каждого положительного
 # изменения баланса (начисление монет), не только от разовой награды
@@ -41,8 +47,10 @@ _E_BAL     = "5278467510604160626"
 _E_STAR    = "5267500801240092311"
 _E_STATUS  = "5438496463044752972"
 _E_FRIENDS = "5332724926216428039"
+_E_SAMOSVET = "5465501598199342448"  # самосвет (донатная валюта) — тот же ID, что в donate.py
 
-COIN = f'<tg-emoji emoji-id="{_E_COIN}">🪙</tg-emoji>'
+COIN     = f'<tg-emoji emoji-id="{_E_COIN}">🪙</tg-emoji>'
+SAMOSVET = f'<tg-emoji emoji-id="{_E_SAMOSVET}">💠</tg-emoji>'
 
 # ─────────────────────────────────────────
 #  ТОП РЕФЕРЕРОВ — константы
@@ -175,6 +183,14 @@ def init_refs_db():
             c.execute("ALTER TABLE refs ADD COLUMN is_premium INTEGER DEFAULT 0")
         if "percent" not in ref_cols:
             c.execute(f"ALTER TABLE refs ADD COLUMN percent INTEGER DEFAULT {REF_PERCENT_NORMAL}")
+        c.commit()
+
+        # ── Миграция: колонка earned_samosvety в ref_stats ──
+        # Хранит сумму донатной валюты (самосветов), полученной рефером
+        # за приглашённых друзей (2 за обычного, 5 за Telegram Premium).
+        stats_cols = {row["name"] for row in c.execute("PRAGMA table_info(ref_stats)").fetchall()}
+        if "earned_samosvety" not in stats_cols:
+            c.execute("ALTER TABLE ref_stats ADD COLUMN earned_samosvety INTEGER DEFAULT 0")
         c.commit()
 
         # ── Индексы для get_reftop() ──
@@ -453,12 +469,12 @@ def is_new_user(uid: int) -> bool:
     return row is None
 
 
-def reward_inviter(uid: int, is_premium: bool) -> tuple[bool, int]:
+def reward_inviter(uid: int, is_premium: bool) -> tuple[bool, int, int]:
     """
-    Начисляет награду пригласившему за реферала `uid`.
-    Защита от дюпа: флаг rewarded "захватывается" одной атомарной
-    UPDATE ... WHERE rewarded=0, поэтому даже при параллельном вызове
-    (повторный апдейт от Telegram, гонка хендлеров) награду сможет
+    Начисляет награду пригласившему за реферала `uid`: монеты + самосветы
+    (донатная валюта). Защита от дюпа: флаг rewarded "захватывается" одной
+    атомарной UPDATE ... WHERE rewarded=0, поэтому даже при параллельном
+    вызове (повторный апдейт от Telegram, гонка хендлеров) награду сможет
     забрать только один вызов — остальные сразу увидят rowcount=0
     и завершатся без начисления. Дополнительно операция сериализуется
     локом по uid, чтобы исключить гонки и на уровне save_user().
@@ -487,13 +503,14 @@ def reward_inviter(uid: int, is_premium: bool) -> tuple[bool, int]:
             c.commit()
             if cur.rowcount == 0:
                 # Либо записи нет, либо уже была вознаграждена, либо нет inviter_uid.
-                return False, 0
+                return False, 0, 0
             ref_row = c.execute(
                 "SELECT inviter_uid FROM refs WHERE uid=?", (uid,)
             ).fetchone()
 
-        inviter = ref_row["inviter_uid"]
-        coins   = REF_REWARD_PREMIUM if is_premium else REF_REWARD_NORMAL
+        inviter   = ref_row["inviter_uid"]
+        coins     = REF_REWARD_PREMIUM if is_premium else REF_REWARD_NORMAL
+        samosvety = REF_SAMOSVETY_PREMIUM if is_premium else REF_SAMOSVETY_NORMAL
 
         from database import get_user, save_user
         d = get_user(inviter)
@@ -504,34 +521,36 @@ def reward_inviter(uid: int, is_premium: bool) -> tuple[bool, int]:
             with _conn() as c:
                 c.execute("UPDATE refs SET rewarded=0 WHERE uid=?", (uid,))
                 c.commit()
-            return False, 0
+            return False, 0, 0
 
-        d["balance"] = d.get("balance", 0) + coins
+        d["balance"]   = d.get("balance", 0) + coins
+        d["samosvety"] = d.get("samosvety", 0) + samosvety
         save_user(inviter, d)
 
         with _conn() as c:
             if is_premium:
                 c.execute("""
-                    INSERT INTO ref_stats (uid, total_refs, premium_refs, earned_coins)
-                    VALUES (?, 1, 1, ?)
+                    INSERT INTO ref_stats (uid, total_refs, premium_refs, earned_coins, earned_samosvety)
+                    VALUES (?, 1, 1, ?, ?)
                     ON CONFLICT(uid) DO UPDATE SET
-                        total_refs=total_refs+1, premium_refs=premium_refs+1, earned_coins=earned_coins+?
-                """, (inviter, coins, coins))
+                        total_refs=total_refs+1, premium_refs=premium_refs+1,
+                        earned_coins=earned_coins+?, earned_samosvety=earned_samosvety+?
+                """, (inviter, coins, samosvety, coins, samosvety))
             else:
                 c.execute("""
-                    INSERT INTO ref_stats (uid, total_refs, premium_refs, earned_coins)
-                    VALUES (?, 1, 0, ?)
+                    INSERT INTO ref_stats (uid, total_refs, premium_refs, earned_coins, earned_samosvety)
+                    VALUES (?, 1, 0, ?, ?)
                     ON CONFLICT(uid) DO UPDATE SET
-                        total_refs=total_refs+1, earned_coins=earned_coins+?
-                """, (inviter, coins, coins))
+                        total_refs=total_refs+1, earned_coins=earned_coins+?, earned_samosvety=earned_samosvety+?
+                """, (inviter, coins, samosvety, coins, samosvety))
             c.commit()
-        return True, coins
+        return True, coins, samosvety
 
 
 def get_ref_stats(uid: int) -> dict:
     with _conn() as c:
         row = c.execute("SELECT * FROM ref_stats WHERE uid=?", (uid,)).fetchone()
-    return dict(row) if row else {"uid": uid, "total_refs": 0, "premium_refs": 0, "earned_coins": 0}
+    return dict(row) if row else {"uid": uid, "total_refs": 0, "premium_refs": 0, "earned_coins": 0, "earned_samosvety": 0}
 
 
 def get_referrals_list(uid: int) -> list[dict]:
@@ -576,25 +595,26 @@ def get_ref_percent_info(uid: int) -> dict:
 
 def refs_main_text(uid: int, bot_username: str, lang: str = "ru") -> str:
     from lang import t
-    stats    = get_ref_stats(uid)
-    ref_link = f"https://t.me/{bot_username}?start=ref_{uid}"
-    total    = stats["total_refs"]
-    premium  = stats["premium_refs"]
-    earned   = stats["earned_coins"]
+    stats     = get_ref_stats(uid)
+    ref_link  = f"https://t.me/{bot_username}?start=ref_{uid}"
+    total     = stats["total_refs"]
+    premium   = stats["premium_refs"]
+    earned    = stats["earned_coins"]
+    earned_sv = stats.get("earned_samosvety", 0)
 
     return (
         f'<tg-emoji emoji-id="{_E_FRIENDS}">👥</tg-emoji> <b>{t(lang, "refs_title")}</b>\n\n'
         f'<blockquote>'
         f'<tg-emoji emoji-id="{_E_STAR}">🎯</tg-emoji> <b>{t(lang, "refs_rewards_title")}</b>\n'
-        f'<tg-emoji emoji-id="5452085950022707790">🪙</tg-emoji> <i>{t(lang, "refs_reward_normal")} — <b>+{REF_REWARD_NORMAL:,}</b> {COIN}\n'
-        f'<tg-emoji emoji-id="{_E_PREMIUM}">⭐</tg-emoji> {t(lang, "refs_reward_premium")} — <b>+{REF_REWARD_PREMIUM:,}</b> </i>{COIN}\n'
+        f'<tg-emoji emoji-id="5452085950022707790">🪙</tg-emoji> <i>{t(lang, "refs_reward_normal")} — <b>+{REF_REWARD_NORMAL:,}</b> {COIN} <b>+{REF_SAMOSVETY_NORMAL}</b> {SAMOSVET}\n'
+        f'<tg-emoji emoji-id="{_E_PREMIUM}">⭐</tg-emoji> {t(lang, "refs_reward_premium")} — <b>+{REF_REWARD_PREMIUM:,}</b> {COIN} <b>+{REF_SAMOSVETY_PREMIUM}</b> </i>{SAMOSVET}\n'
         f'<tg-emoji emoji-id="5199552030615558774">📈</tg-emoji> <i>+ {REF_PERCENT_NORMAL}% / {REF_PERCENT_PREMIUM}% <tg-emoji emoji-id="{_E_PREMIUM}">⭐</tg-emoji> {"от дохода реферала — навсегда" if lang != "en" else "of referral income — forever"}</i>'
         f'</blockquote>\n\n'
         f'<blockquote>'
         f'<tg-emoji emoji-id="5231200819986047254">📊</tg-emoji> <b>{t(lang, "refs_stats_title")}</b>\n'
         f'<tg-emoji emoji-id="{_E_FRIENDS}">👤</tg-emoji> <i>{t(lang, "refs_total")} — <b>{total}</b>\n'
         f'<tg-emoji emoji-id="{_E_PREMIUM}">⭐</tg-emoji> {t(lang, "refs_premium_count")} — <b>{premium}</b>\n'
-        f'<tg-emoji emoji-id="5449683594425410231">🪙</tg-emoji> {t(lang, "refs_earned")} — <b>{earned:,}</b></i> {COIN}'
+        f'<tg-emoji emoji-id="5449683594425410231">🪙</tg-emoji> {t(lang, "refs_earned")} — <b>{earned:,}</b> {COIN} <b>+{earned_sv:,}</b></i> {SAMOSVET}'
         f'</blockquote>\n'
         f'<blockquote>'
         f'<tg-emoji emoji-id="5271604874419647061">🔗</tg-emoji> <code>{ref_link}</code>\n\n'
@@ -616,12 +636,15 @@ def captcha_blocked_text(unblock_in_min: int, lang: str = "ru") -> str:
     return f'❗️ <b>{t(lang, "captcha_blocked").format(min=unblock_in_min)}</b>'
 
 
-def refs_notif_text(new_user_name: str, reward: int, is_premium: bool, lang: str = "ru") -> str:
+def refs_notif_text(new_user_name: str, reward: int, is_premium: bool, lang: str = "ru", samosvety: int = 0) -> str:
     from lang import t
+    samosvet_part = f' <b>+{samosvety}</b>{SAMOSVET}' if samosvety else ''
     if is_premium:
-        return f'<tg-emoji emoji-id="5262643974912355126">⭐</tg-emoji> <b>{t(lang, "refs_notif_premium")} | +{reward:,}<tg-emoji emoji-id="5199552030615558774">⭐</tg-emoji></b>'
+        return (f'<tg-emoji emoji-id="5262643974912355126">⭐</tg-emoji> <b>{t(lang, "refs_notif_premium")} | '
+                f'+{reward:,}<tg-emoji emoji-id="5199552030615558774">⭐</tg-emoji>{samosvet_part}</b>')
     else:
-        return f'<tg-emoji emoji-id="{_E_FRIENDS}">✨</tg-emoji> <b>{t(lang, "refs_notif_normal")} | +{reward:,}<tg-emoji emoji-id="5199552030615558774">⭐</tg-emoji></b>'
+        return (f'<tg-emoji emoji-id="{_E_FRIENDS}">✨</tg-emoji> <b>{t(lang, "refs_notif_normal")} | '
+                f'+{reward:,}<tg-emoji emoji-id="5199552030615558774">⭐</tg-emoji>{samosvet_part}</b>')
 
 
 def refs_list_text(uid: int, lang: str = "ru") -> str:
@@ -656,7 +679,7 @@ def refs_list_text(uid: int, lang: str = "ru") -> str:
         f'<blockquote>'
         f'<tg-emoji emoji-id="5258513401784573443">📋</tg-emoji> {t(lang, "refs_list_invited")} — <b>{stats["total_refs"]}</b>\n'
         f'<tg-emoji emoji-id="{_E_PREMIUM}">⭐</tg-emoji> {t(lang, "refs_list_premium")} — <b>{stats["premium_refs"]}</b>\n'
-        f'<tg-emoji emoji-id="5449683594425410231">🪙</tg-emoji> {t(lang, "refs_list_earned")} — <b>{stats["earned_coins"]:,}</b> {COIN}'
+        f'<tg-emoji emoji-id="5449683594425410231">🪙</tg-emoji> {t(lang, "refs_list_earned")} — <b>{stats["earned_coins"]:,}</b> {COIN} <b>+{stats.get("earned_samosvety", 0):,}</b> {SAMOSVET}'
         f'</blockquote>\n'
         f'{body}'
     )
@@ -902,7 +925,7 @@ async def aio_is_new_user(uid: int) -> bool:
     return await _asyncio.to_thread(is_new_user, uid)
 
 
-async def aio_reward_inviter(uid: int, is_premium: bool) -> tuple[bool, int]:
+async def aio_reward_inviter(uid: int, is_premium: bool) -> tuple[bool, int, int]:
     return await _asyncio.to_thread(reward_inviter, uid, is_premium)
 
 
