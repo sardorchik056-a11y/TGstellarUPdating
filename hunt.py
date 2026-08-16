@@ -683,6 +683,9 @@ SLOT_TO_TIER: dict[int, str] = {
 # Общее число активных слотов боссов (25 простых + 10 средних + 3 сложных = 38).
 ACTIVE_BOSS_SLOTS = _slot_cursor
 
+# Пагинация списка боссов внутри уровня сложности: сколько боссов на одной странице.
+BOSSES_PER_PAGE = 5
+
 def _tier_for_slot(slot: int) -> dict:
     """Возвращает уровень сложности, закреплённый за данным слотом."""
     tier_key = SLOT_TO_TIER.get(slot)
@@ -2830,13 +2833,19 @@ def boss_tier_menu_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
 
 # ─── Экран выбора конкретного босса внутри уровня сложности ───
 
-def boss_select_text(lang: str = "ru", tier_key: str = "easy") -> str:
+def boss_select_text(lang: str = "ru", tier_key: str = "easy", page: int = 0) -> str:
     tier = BOSS_TIERS_BY_KEY.get(tier_key, BOSS_TIERS[0])
     tier_slots = TIER_SLOT_RANGES.get(tier["key"], [])
     slots = [(s, st) for s, st in get_all_slots() if s in tier_slots]
+
+    total_pages = max(1, (len(slots) + BOSSES_PER_PAGE - 1) // BOSSES_PER_PAGE)
+    page = max(0, min(page, total_pages - 1))
+    start = page * BOSSES_PER_PAGE
+    page_slots = slots[start:start + BOSSES_PER_PAGE]
+
     now   = _now_ts()
     lines = []
-    for i, (slot_idx, st) in enumerate(slots, start=1):
+    for i, (slot_idx, st) in enumerate(page_slots, start=start + 1):
         boss_key = st.get("boss_key")
         boss     = BOSSES_BY_KEY.get(boss_key)
         if st.get("boss_alive") and boss:
@@ -2853,18 +2862,25 @@ def boss_select_text(lang: str = "ru", tier_key: str = "easy") -> str:
 
     body = "\n".join(lines)
     tname = tier.get("name_en", tier["name"]) if lang == "en" else tier["name"]
+    page_line = (f'\n\n<i>Page {page + 1}/{total_pages}</i>' if lang == "en" else
+                 f'\n\n<i>Страница {page + 1}/{total_pages}</i>')
     if lang == "en":
-        return f'<blockquote>{_tg(tier["emoji_id"], "💀")} <b><i>{tname.upper()} BOSSES</i></b>\n\n{body}\n</blockquote>'
-    return f'<blockquote>{_tg(tier["emoji_id"], "💀")} <b><i>{tname.upper()} БОССЫ</i></b>\n\n{body}\n</blockquote>'
+        return f'<blockquote>{_tg(tier["emoji_id"], "💀")} <b><i>{tname.upper()} BOSSES</i></b>\n\n{body}{page_line}\n</blockquote>'
+    return f'<blockquote>{_tg(tier["emoji_id"], "💀")} <b><i>{tname.upper()} БОССЫ</i></b>\n\n{body}{page_line}\n</blockquote>'
 
 
-def boss_select_keyboard(lang: str = "ru", tier_key: str = "easy") -> InlineKeyboardMarkup:
+def boss_select_keyboard(lang: str = "ru", tier_key: str = "easy", page: int = 0) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     tier = BOSS_TIERS_BY_KEY.get(tier_key, BOSS_TIERS[0])
     tier_slots = TIER_SLOT_RANGES.get(tier["key"], [])
     slots = [(s, st) for s, st in get_all_slots() if s in tier_slots]
 
-    for i, (slot_idx, st) in enumerate(slots, start=1):
+    total_pages = max(1, (len(slots) + BOSSES_PER_PAGE - 1) // BOSSES_PER_PAGE)
+    page = max(0, min(page, total_pages - 1))
+    start = page * BOSSES_PER_PAGE
+    page_slots = slots[start:start + BOSSES_PER_PAGE]
+
+    for i, (slot_idx, st) in enumerate(page_slots, start=start + 1):
         boss_key = st.get("boss_key")
         boss     = BOSSES_BY_KEY.get(boss_key)
         alive    = st.get("boss_alive", False)
@@ -2885,6 +2901,26 @@ def boss_select_keyboard(lang: str = "ru", tier_key: str = "easy") -> InlineKeyb
                 callback_data="hunt_boss_dead",
                 icon_custom_emoji_id=_E["timer"]
             ))
+
+    if total_pages > 1:
+        nav_row = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton(
+                text="◀",
+                callback_data=f"boss_page_{tier_key}_{page - 1}",
+                icon_custom_emoji_id=_E["back_page"]
+            ))
+        nav_row.append(InlineKeyboardButton(
+            text=f"{page + 1}/{total_pages}",
+            callback_data="noop"
+        ))
+        if page < total_pages - 1:
+            nav_row.append(InlineKeyboardButton(
+                text="▶",
+                callback_data=f"boss_page_{tier_key}_{page + 1}",
+                icon_custom_emoji_id=_E["forward"]
+            ))
+        builder.row(*nav_row)
 
     builder.row(InlineKeyboardButton(
         text="Back" if lang == "en" else "Назад",
