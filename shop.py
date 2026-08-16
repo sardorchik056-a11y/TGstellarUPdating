@@ -510,29 +510,35 @@ def buy_artifact_with_coins(data: dict, artifact_key: str, lang: str = "ru") -> 
 
 
 def get_artifact_mine_multiplier(data: dict) -> float:
+    """
+    Бонусы артефактов складываются, а не перемножаются: два артефакта
+    по +25% (multiplier=1.25) дают в сумме +50% (1.5), а не +56.25% (1.25*1.25).
+    """
     total = 1.0
     for entry in data.get("artifacts", []):
         a = ARTIFACT_POOL_BY_KEY.get(entry["key"])
         if a and a["effect"] in ("mine", "all"):
-            total *= a["multiplier"]
+            total += a["multiplier"] - 1
     return round(total, 4)
 
 
 def get_artifact_damage_multiplier(data: dict) -> float:
+    """См. комментарий в get_artifact_mine_multiplier — бонусы складываются."""
     total = 1.0
     for entry in data.get("artifacts", []):
         a = ARTIFACT_POOL_BY_KEY.get(entry["key"])
         if a and a["effect"] in ("damage", "all"):
-            total *= a["multiplier"]
+            total += a["multiplier"] - 1
     return round(total, 4)
 
 
 def get_artifact_pets_multiplier(data: dict) -> float:
+    """См. комментарий в get_artifact_mine_multiplier — бонусы складываются."""
     total = 1.0
     for entry in data.get("artifacts", []):
         a = ARTIFACT_POOL_BY_KEY.get(entry["key"])
         if a and a["effect"] in ("pets", "all"):
-            total *= a["multiplier"]
+            total += a["multiplier"] - 1
     return round(total, 4)
 
 
