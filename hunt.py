@@ -2906,7 +2906,7 @@ def boss_select_keyboard(lang: str = "ru", tier_key: str = "easy", page: int = 0
         nav_row = []
         if page > 0:
             nav_row.append(InlineKeyboardButton(
-                text="◀",
+                text="Back" if lang == "en" else "Назад",
                 callback_data=f"boss_page_{tier_key}_{page - 1}",
                 icon_custom_emoji_id=_E["back_page"]
             ))
@@ -2916,7 +2916,7 @@ def boss_select_keyboard(lang: str = "ru", tier_key: str = "easy", page: int = 0
         ))
         if page < total_pages - 1:
             nav_row.append(InlineKeyboardButton(
-                text="▶",
+                text="Next" if lang == "en" else "Вперёд",
                 callback_data=f"boss_page_{tier_key}_{page + 1}",
                 icon_custom_emoji_id=_E["forward"]
             ))
