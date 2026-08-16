@@ -81,7 +81,7 @@ from hunt import (
     potion_use_detail_text, potion_use_detail_keyboard,
     potion_detail_text, potion_detail_keyboard,
     potion_invoice_params, confirm_potion_purchase,
-    try_buy_potion_with_crystals,
+    try_buy_potion_with_samosvety,
     _consume_potion_from_inventory as _potion_rollback,
     is_potion_cmd,
     ACTIVE_BOSS_SLOTS,
@@ -5455,7 +5455,7 @@ async def handle_callback(call: CallbackQuery):
             await edit(potions_shop_text(lang), potions_shop_keyboard(lang))
             return
 
-        # ===== ОХОТА: купить зелье за кристаллы =====
+        # ===== ОХОТА: купить зелье за самосветы =====
         if cd.startswith("buy_potion_"):
             potion_key = cd.removeprefix("buy_potion_")
             p = POTIONS_BY_KEY.get(potion_key)
@@ -5463,19 +5463,19 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer("❌ Неизвестное зелье." if lang == "ru" else "❌ Unknown potion.", show_alert=True)
                 return
 
-            crystals = data.get("crystals", 0)
+            samosvety = data.get("samosvety", 0)
             # Порядок операций (тот же принцип, что и в фиксе бага cdl.py:
             # сначала выдаём товар, потом списываем деньги, а не наоборот —
-            # чтобы кристаллы не пропадали без выдачи зелья при сбое):
+            # чтобы самосветы не пропадали без выдачи зелья при сбое):
             ok, msg, price = await asyncio.to_thread(
-                try_buy_potion_with_crystals, potion_key, user.id, crystals, lang
+                try_buy_potion_with_samosvety, potion_key, user.id, samosvety, lang
             )
             if not ok:
-                # Недостаточно кристаллов — ничего не списано и не выдано.
+                # Недостаточно самосветов — ничего не списано и не выдано.
                 await call.answer(msg, show_alert=True)
                 return
 
-            data["crystals"] = crystals - price
+            data["samosvety"] = samosvety - price
             try:
                 await aio_save_user(user.id, data)
             except Exception as e:
