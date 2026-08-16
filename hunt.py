@@ -55,7 +55,8 @@ _E = {
     "potion_antistun": "5258304747978385987",  # зелье антизаглушения — TODO: заменить на свой премиум-эмодзи
     "potion_antisupp": "5292050714044952143",  # зелье антиподавления — TODO: заменить на свой премиум-эмодзи
     "star":         "5262643974912355126",  # звезда (валюта Telegram Stars) — TODO: заменить
-    "crystal":      "5442939099906325301",  # кристалл (валюта покупки зелий)
+    "crystal":      "5442939099906325301",  # кристалл (валюта города, больше не используется для зелий)
+    "samosvet":     "5465501598199342448",  # самосвет (донатная валюта, покупка зелий)
 }
 
 # ─────────────────────────────────────────
@@ -445,7 +446,7 @@ POTIONS = [
         "desc_en": "<b><i>Brewed from the boss's own blood — it brings him back to life ahead of time.</i></b>",
         "effect": "<b><i>Мгновенно возрождает босса, минуя время отката после смерти.</i></b>",
         "effect_en": "<b><i>Instantly revives the boss, skipping the respawn cooldown after death.</i></b>",
-        "price_crystals": 8,
+        "price_samosvety": 8,
     },
     {
         "key": "anti_stun",
@@ -455,7 +456,7 @@ POTIONS = [
         "desc_en": "<b><i>A bitter brew of herbs that grow only where the boss once roared in helpless rage.</i></b>",
         "effect": f"<b><i>Даёт {ANTI_STUN_CHARGES} заряда защиты: следующие {ANTI_STUN_CHARGES} попытки заглушить тебя гасятся зельем без последствий.</i></b>",
         "effect_en": f"<b><i>Grants {ANTI_STUN_CHARGES} protection charges: the next {ANTI_STUN_CHARGES} stun attempts against you are absorbed with no effect.</i></b>",
-        "price_crystals": 6,
+        "price_samosvety": 6,
     },
     {
         "key": "anti_suppression",
@@ -465,7 +466,7 @@ POTIONS = [
         "desc_en": "<b><i>An icy elixir that snuffs out the suppression aura before it can touch your blade.</i></b>",
         "effect": "<b><i>На 10 часов после применения босс не может подавить твой урон, даже под аурой подавления.</i></b>",
         "effect_en": "<b><i>For 10 hours after use, the boss cannot suppress your damage, even under the suppression aura.</i></b>",
-        "price_crystals": 5,
+        "price_samosvety": 5,
     },
 ]
 
@@ -2252,7 +2253,7 @@ def potions_shop_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     for p in POTIONS:
         name = p.get("name_en", p["name"]) if lang == "en" else p["name"]
         builder.row(InlineKeyboardButton(
-            text=f'{name} — {p["price_crystals"]} 💎',
+            text=f'{name} — {p["price_samosvety"]} 💠',
             callback_data=f'potion_info_{p["key"]}',
             icon_custom_emoji_id=p["emoji_id"]
         ))
@@ -2272,7 +2273,7 @@ def potion_detail_text(potion_key: str, uid: int | None = None, lang: str = "ru"
         return "<b><i>❌ Potion not found.</i></b>" if lang == "en" else "<b><i>❌ Зелье не найдено.</i></b>"
 
     en = lang == "en"
-    crystal = _tg(_E["crystal"], "💎")
+    samosvet = _tg(_E["samosvet"], "💠")
     name   = p.get("name_en", p["name"]) if en else p["name"]
     desc   = p.get("desc_en", p["desc"]) if en else p["desc"]
     effect = p.get("effect_en", p["effect"]) if en else p["effect"]
@@ -2285,7 +2286,7 @@ def potion_detail_text(potion_key: str, uid: int | None = None, lang: str = "ru"
             owned_line = (f'\n{_tg(_E["ok"], "✅")} <b><i>In inventory: {have}</i></b>' if en else
                           f'\n{_tg(_E["ok"], "✅")} <b><i>В инвентаре: {have}</i></b>')
 
-    price_label = f'<b><i>{"Price" if en else "Цена"}: {p["price_crystals"]} {crystal}</i></b>'
+    price_label = f'<b><i>{"Price" if en else "Цена"}: {p["price_samosvety"]} {samosvet}</i></b>'
 
     return (
         f'<blockquote>'
@@ -2307,7 +2308,7 @@ def potion_detail_keyboard(potion_key: str, lang: str = "ru") -> InlineKeyboardM
     p = POTIONS_BY_KEY.get(potion_key)
     if p:
         builder.row(InlineKeyboardButton(
-            text=f'{"Buy" if lang == "en" else "Купить"} — {p["price_crystals"]} 💎',
+            text=f'{"Buy" if lang == "en" else "Купить"} — {p["price_samosvety"]} 💠',
             callback_data=f'buy_potion_{potion_key}',
             icon_custom_emoji_id=p["emoji_id"]
         ))
@@ -2319,16 +2320,17 @@ def potion_detail_keyboard(potion_key: str, lang: str = "ru") -> InlineKeyboardM
     return builder.as_markup()
 
 
-def try_buy_potion_with_crystals(potion_key: str, uid: int, crystals_balance: int, lang: str = "ru") -> tuple[bool, str, int]:
+def try_buy_potion_with_samosvety(potion_key: str, uid: int, samosvety_balance: int, lang: str = "ru") -> tuple[bool, str, int]:
     """
-    Покупка зелья за кристаллы (внутриигровая валюта, БЕЗ Telegram Stars/инвойса).
+    Покупка зелья за самосветы (донатная валюта, БЕЗ повторного Telegram Stars/инвойса —
+    самосветы уже куплены за Stars через donate.py и хранятся в data["samosvety"]).
 
     ВАЖНО про порядок операций (сначала товар, потом списание) — см. коммент
     к cdl.py/mainhelp.py про баг "баланс списался — вклад не открылся": если
-    списывать кристаллы ДО того как зелье реально попало в инвентарь, а запись
+    списывать самосветы ДО того как зелье реально попало в инвентарь, а запись
     в инвентарь после этого не удастся — деньги пропадут без товара. Поэтому
     здесь порядок: 1) добавляем зелье в инвентарь, 2) вызывающая сторона
-    (mainhelp.py) списывает и сохраняет кристаллы в data, 3) если сохранение
+    (mainhelp.py) списывает и сохраняет самосветы в data, 3) если сохранение
     не удалось — вызывающая сторона обязана откатить зелье через
     _consume_potion_from_inventory(uid, potion_key).
 
@@ -2339,10 +2341,10 @@ def try_buy_potion_with_crystals(potion_key: str, uid: int, crystals_balance: in
     if not p:
         return False, ("<b><i>❌ Unknown potion.</i></b>" if lang == "en" else "<b><i>❌ Неизвестное зелье.</i></b>"), 0
 
-    price = p["price_crystals"]
-    if crystals_balance < price:
-        have_line = (f"<b><i>❌ Not enough crystals ({crystals_balance}/{price}).</i></b>" if lang == "en" else
-                     f"<b><i>❌ Недостаточно кристаллов ({crystals_balance}/{price}).</i></b>")
+    price = p["price_samosvety"]
+    if samosvety_balance < price:
+        have_line = (f"<b><i>❌ Not enough Samosvets ({samosvety_balance}/{price}).</i></b>" if lang == "en" else
+                     f"<b><i>❌ Недостаточно самосветов ({samosvety_balance}/{price}).</i></b>")
         return False, have_line, price
 
     name  = p.get("name_en", p["name"]) if lang == "en" else p["name"]
