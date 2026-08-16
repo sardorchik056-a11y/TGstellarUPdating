@@ -55,6 +55,7 @@ _E = {
     "potion_antistun": "5258304747978385987",  # зелье антизаглушения — TODO: заменить на свой премиум-эмодзи
     "potion_antisupp": "5292050714044952143",  # зелье антиподавления — TODO: заменить на свой премиум-эмодзи
     "star":         "5262643974912355126",  # звезда (валюта Telegram Stars) — TODO: заменить
+    "crystal":      "5442939099906325301",  # кристалл (валюта покупки зелий)
 }
 
 # ─────────────────────────────────────────
@@ -444,7 +445,7 @@ POTIONS = [
         "desc_en": "<b><i>Brewed from the boss's own blood — it brings him back to life ahead of time.</i></b>",
         "effect": "<b><i>Мгновенно возрождает босса, минуя время отката после смерти.</i></b>",
         "effect_en": "<b><i>Instantly revives the boss, skipping the respawn cooldown after death.</i></b>",
-        "price_stars": 19,
+        "price_crystals": 8,
     },
     {
         "key": "anti_stun",
@@ -454,7 +455,7 @@ POTIONS = [
         "desc_en": "<b><i>A bitter brew of herbs that grow only where the boss once roared in helpless rage.</i></b>",
         "effect": f"<b><i>Даёт {ANTI_STUN_CHARGES} заряда защиты: следующие {ANTI_STUN_CHARGES} попытки заглушить тебя гасятся зельем без последствий.</i></b>",
         "effect_en": f"<b><i>Grants {ANTI_STUN_CHARGES} protection charges: the next {ANTI_STUN_CHARGES} stun attempts against you are absorbed with no effect.</i></b>",
-        "price_stars": 15,
+        "price_crystals": 6,
     },
     {
         "key": "anti_suppression",
@@ -464,7 +465,7 @@ POTIONS = [
         "desc_en": "<b><i>An icy elixir that snuffs out the suppression aura before it can touch your blade.</i></b>",
         "effect": "<b><i>На 10 часов после применения босс не может подавить твой урон, даже под аурой подавления.</i></b>",
         "effect_en": "<b><i>For 10 hours after use, the boss cannot suppress your damage, even under the suppression aura.</i></b>",
-        "price_stars": 29,
+        "price_crystals": 5,
     },
 ]
 
@@ -638,7 +639,7 @@ BOSS_TIERS = [
     {
         "key": "easy",
         "name": "Простой", "name_en": "Easy",
-        "slots":       5,
+        "slots":       25,
         "emoji_id":    "5242696171104775367",
         "hp_min":      10_000_000,  "hp_max":      50_000_000,
         "reward_min":   5_000_000,  "reward_max":  15_000_000,
@@ -646,7 +647,7 @@ BOSS_TIERS = [
     {
         "key": "medium",
         "name": "Средний", "name_en": "Medium",
-        "slots":       3,
+        "slots":       10,
         "emoji_id":    "5456620555018968261",
         "hp_min":     150_000_000,  "hp_max":     400_000_000,
         "reward_min":  30_000_000,  "reward_max": 150_000_000,
@@ -654,7 +655,7 @@ BOSS_TIERS = [
     {
         "key": "hard",
         "name": "Сложный", "name_en": "Hard",
-        "slots":       1,
+        "slots":       3,
         "emoji_id":    "5458610215798709571",
         "hp_min":   1_000_000_000,  "hp_max":   5_000_000_000,
         "reward_min": 500_000_000,  "reward_max": 5_000_000_000,
@@ -663,7 +664,7 @@ BOSS_TIERS = [
 BOSS_TIERS_BY_KEY = {t["key"]: t for t in BOSS_TIERS}
 
 # Раскладка слотов по уровням: каждому уровню отводится непрерывный
-# диапазон номеров слотов, например easy -> 0..4, medium -> 5..7, hard -> 8.
+# диапазон номеров слотов, например easy -> 0..24, medium -> 25..34, hard -> 35..37.
 TIER_SLOT_RANGES: dict[str, list[int]] = {}
 _slot_cursor = 0
 for _t in BOSS_TIERS:
@@ -678,7 +679,7 @@ SLOT_TO_TIER: dict[int, str] = {
     for slot in slots
 }
 
-# Общее число активных слотов боссов (5 простых + 3 средних + 1 сложный = 9).
+# Общее число активных слотов боссов (25 простых + 10 средних + 3 сложных = 38).
 ACTIVE_BOSS_SLOTS = _slot_cursor
 
 def _tier_for_slot(slot: int) -> dict:
@@ -2251,7 +2252,7 @@ def potions_shop_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     for p in POTIONS:
         name = p.get("name_en", p["name"]) if lang == "en" else p["name"]
         builder.row(InlineKeyboardButton(
-            text=f'{name} — {p["price_stars"]} ⭐',
+            text=f'{name} — {p["price_crystals"]} 💎',
             callback_data=f'potion_info_{p["key"]}',
             icon_custom_emoji_id=p["emoji_id"]
         ))
@@ -2263,7 +2264,7 @@ def potions_shop_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-# ─── Карточка зелья в магазине (описание + эффект + кнопка покупки-инвойса) ───
+# ─── Карточка зелья в магазине (описание + эффект + кнопка покупки за кристаллы) ───
 
 def potion_detail_text(potion_key: str, uid: int | None = None, lang: str = "ru") -> str:
     p = POTIONS_BY_KEY.get(potion_key)
@@ -2271,7 +2272,7 @@ def potion_detail_text(potion_key: str, uid: int | None = None, lang: str = "ru"
         return "<b><i>❌ Potion not found.</i></b>" if lang == "en" else "<b><i>❌ Зелье не найдено.</i></b>"
 
     en = lang == "en"
-    star   = _tg(_E["star"], "⭐")
+    crystal = _tg(_E["crystal"], "💎")
     name   = p.get("name_en", p["name"]) if en else p["name"]
     desc   = p.get("desc_en", p["desc"]) if en else p["desc"]
     effect = p.get("effect_en", p["effect"]) if en else p["effect"]
@@ -2284,7 +2285,7 @@ def potion_detail_text(potion_key: str, uid: int | None = None, lang: str = "ru"
             owned_line = (f'\n{_tg(_E["ok"], "✅")} <b><i>In inventory: {have}</i></b>' if en else
                           f'\n{_tg(_E["ok"], "✅")} <b><i>В инвентаре: {have}</i></b>')
 
-    price_label = f'<b><i>{"Price" if en else "Цена"}: {p["price_stars"]} {star}</i></b>'
+    price_label = f'<b><i>{"Price" if en else "Цена"}: {p["price_crystals"]} {crystal}</i></b>'
 
     return (
         f'<blockquote>'
@@ -2306,7 +2307,7 @@ def potion_detail_keyboard(potion_key: str, lang: str = "ru") -> InlineKeyboardM
     p = POTIONS_BY_KEY.get(potion_key)
     if p:
         builder.row(InlineKeyboardButton(
-            text=f'{"Buy" if lang == "en" else "Купить"} — {p["price_stars"]} ⭐',
+            text=f'{"Buy" if lang == "en" else "Купить"} — {p["price_crystals"]} 💎',
             callback_data=f'buy_potion_{potion_key}',
             icon_custom_emoji_id=p["emoji_id"]
         ))
@@ -2318,34 +2319,43 @@ def potion_detail_keyboard(potion_key: str, lang: str = "ru") -> InlineKeyboardM
     return builder.as_markup()
 
 
-def potion_invoice_params(potion_key: str, lang: str = "ru") -> dict | None:
+def try_buy_potion_with_crystals(potion_key: str, uid: int, crystals_balance: int, lang: str = "ru") -> tuple[bool, str, int]:
     """
-    Параметры для bot.send_invoice() (оплата через Telegram Stars, currency='XTR').
-    Использовать в основном файле бота при нажатии на кнопку "Купить" (callback_data
-    вида "buy_potion_<key>"):
+    Покупка зелья за кристаллы (внутриигровая валюта, БЕЗ Telegram Stars/инвойса).
 
-        params = potion_invoice_params(potion_key, lang)
-        await bot.send_invoice(
-            chat_id=..., title=params["title"], description=params["description"],
-            payload=params["payload"], currency=params["currency"], prices=params["prices"],
-        )
+    ВАЖНО про порядок операций (сначала товар, потом списание) — см. коммент
+    к cdl.py/mainhelp.py про баг "баланс списался — вклад не открылся": если
+    списывать кристаллы ДО того как зелье реально попало в инвентарь, а запись
+    в инвентарь после этого не удастся — деньги пропадут без товара. Поэтому
+    здесь порядок: 1) добавляем зелье в инвентарь, 2) вызывающая сторона
+    (mainhelp.py) списывает и сохраняет кристаллы в data, 3) если сохранение
+    не удалось — вызывающая сторона обязана откатить зелье через
+    _consume_potion_from_inventory(uid, potion_key).
 
-    После успешной оплаты (successful_payment) вызвать confirm_potion_purchase() —
-    зелье добавится в инвентарь игрока ("Мои зелья"), а не применится сразу.
+    Возвращает (ok, message, price). Если ok=False — ничего не списано и
+    зелье не выдано, price всё равно возвращается для текста ошибки.
     """
     p = POTIONS_BY_KEY.get(potion_key)
     if not p:
-        return None
-    title = p.get("name_en", p["name"]) if lang == "en" else p["name"]
-    raw_desc = p.get("effect_en", p["effect"]) if lang == "en" else p["effect"]
-    plain_desc = re.sub(r'<[^>]+>', '', raw_desc)
-    return {
-        "title": title,
-        "description": plain_desc,
-        "payload": f'potion_{potion_key}',
-        "currency": "XTR",
-        "prices": [{"label": title, "amount": p["price_stars"]}],
-    }
+        return False, ("<b><i>❌ Unknown potion.</i></b>" if lang == "en" else "<b><i>❌ Неизвестное зелье.</i></b>"), 0
+
+    price = p["price_crystals"]
+    if crystals_balance < price:
+        have_line = (f"<b><i>❌ Not enough crystals ({crystals_balance}/{price}).</i></b>" if lang == "en" else
+                     f"<b><i>❌ Недостаточно кристаллов ({crystals_balance}/{price}).</i></b>")
+        return False, have_line, price
+
+    name  = p.get("name_en", p["name"]) if lang == "en" else p["name"]
+    emoji = _tg(p["emoji_id"], "🧪")
+    total = add_potion_to_inventory(uid, potion_key, 1)
+
+    if lang == "en":
+        msg = (f'{emoji} <b><i>{name} purchased!</i></b>\n'
+               f'<b><i>In your inventory: {total}. Use it anytime from "My Potions".</i></b>')
+    else:
+        msg = (f'{emoji} <b><i>{name} куплено!</i></b>\n'
+               f'<b><i>В инвентаре: {total}. Используй его в любой момент в разделе «Мои зелья».</i></b>')
+    return True, msg, price
 
 
 def confirm_potion_purchase(potion_key: str, uid: int, lang: str = "ru") -> tuple[bool, str]:
