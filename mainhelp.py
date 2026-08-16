@@ -241,6 +241,7 @@ from cdl import (
     # async-хэндлера блокирует ВЕСЬ event loop бота на время диск-I/O
     # и был причиной многоминутных зависаний для всех пользователей сразу.
     aio_open_deposit as _cdl_open_deposit,
+    aio_rollback_deposit as _cdl_rollback_deposit,
     parse_amount_input as _cdl_parse_amount,
     aio_get_ready_deposits as _cdl_get_ready,
     aio_claim_deposit as _cdl_claim,
@@ -4099,15 +4100,37 @@ async def handle_callback(call: CallbackQuery):
             if not _lim_ok2:
                 await call.answer(f"🚫 Лимит исчерпан ({_lim_used2}/{_lim_max2}). Попробуй позже.", show_alert=True)
                 return
+            # ВАЖНО (фикс бага "баланс списался — вклад не открылся"):
+            # раньше баланс списывался и СОХРАНЯЛСЯ в БД (aio_save_user)
+            # ДО создания самой записи вклада (_cdl_open_deposit). Между
+            # этими двумя await было окно: если создание вклада падало
+            # (ошибка БД, рестарт/краш процесса и т.п.), баланс уже был
+            # списан безвозвратно, а вклада не появлялось — деньги
+            # пропадали. Теперь порядок обратный: сначала создаём вклад,
+            # потом списываем баланс; если сохранение баланса не удалось —
+            # откатываем созданный вклад, чтобы не выдать вклад бесплатно
+            # и не потерять деньги игрока ни в одном из направлений.
+            try:
+                dep_id = await _cdl_open_deposit(user.id, dep_key, amount)
+            except Exception as e:
+                print(f"[cdl] open_deposit failed uid={user.id} dep={dep_key} amount={amount}: {e}")
+                await call.answer("❌ Ошибка открытия вклада, попробуй ещё раз", show_alert=True)
+                return
+
             data["balance"] = bal - amount
             data["deposits_opened"] = data.get("deposits_opened", 0) + 1
             _dep_types = data.setdefault("deposits_types_opened", [])
             if dep_key not in _dep_types:
                 _dep_types.append(dep_key)
             _ach_newly = check_achievements(data)
-            await aio_save_user(user.id, data)
+            try:
+                await aio_save_user(user.id, data)
+            except Exception as e:
+                print(f"[cdl] save_user failed after open_deposit uid={user.id} dep_id={dep_id}: {e}")
+                await _cdl_rollback_deposit(dep_id)
+                await call.answer("❌ Ошибка, попробуй ещё раз", show_alert=True)
+                return
             await _notify_ach(user.id, data, _ach_newly)
-            await _cdl_open_deposit(user.id, dep_key, amount)
             await edit(cdl_opened_text(dep_key, amount), cdl_main_keyboard(user.id))
             await call.answer("✅ Вклад открыт!")
             return
