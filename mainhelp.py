@@ -5423,7 +5423,22 @@ async def handle_callback(call: CallbackQuery):
                 await call.answer("❌ Неизвестный уровень." if lang == "ru" else "❌ Unknown tier.", show_alert=True)
                 return
             _txt, _kb = await asyncio.to_thread(
-                lambda: (boss_select_text(lang, tier_key), boss_select_keyboard(lang, tier_key))
+                lambda: (boss_select_text(lang, tier_key, 0), boss_select_keyboard(lang, tier_key, 0))
+            )
+            await edit(_txt, _kb)
+            await call.answer()
+            return
+
+        # ===== ОХОТА: пагинация списка боссов внутри уровня сложности =====
+        if cd.startswith("boss_page_"):
+            rest = cd.removeprefix("boss_page_")
+            tier_key, _, page_str = rest.rpartition("_")
+            if tier_key not in ("easy", "medium", "hard") or not page_str.isdigit():
+                await call.answer("❌ Неизвестная страница." if lang == "ru" else "❌ Unknown page.", show_alert=True)
+                return
+            page = int(page_str)
+            _txt, _kb = await asyncio.to_thread(
+                lambda: (boss_select_text(lang, tier_key, page), boss_select_keyboard(lang, tier_key, page))
             )
             await edit(_txt, _kb)
             await call.answer()
