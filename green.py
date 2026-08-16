@@ -199,6 +199,131 @@ DISCOVERY_REWARD = {
 }
 
 
+# ──────────────────────────────────────────────────────────────
+#  РЕЛИКВИИ САДА — постоянные артефакты, каждый покупается ОДИН раз за
+#  мистическую пыльцу и действует НАВСЕГДА (эффект не расходуется и не
+#  привязан к конкретной грядке/цветку — усиливает весь сад в целом).
+#  "types" — словарь {тип_эффекта: величина}; тип_эффекта совпадает с
+#  тем, что используется в relic_bonus_sum ниже. У обычных реликвий
+#  один тип, у легендарного "Всевидящего Ока" — сразу четыре.
+# ──────────────────────────────────────────────────────────────
+
+RELICS = {
+    "moonlight_dew": {
+        "name": "Лунная Роса", "emoji": "🌙",
+        "effect": "Ускоряет рост всех грядок", "magnitude": "+8% скорость роста",
+        "cost": 10_000, "types": {"growth": 0.08},
+    },
+    "honey_cocoon": {
+        "name": "Медовый Кокон", "emoji": "🐝",
+        "effect": "Больше пыльцы за сбор урожая", "magnitude": "+10% к урожаю",
+        "cost": 22_000, "types": {"yield": 0.10},
+    },
+    "fairy_wing": {
+        "name": "Крыло Феи", "emoji": "🦋",
+        "effect": "Больше опыта за сбор", "magnitude": "+10% к опыту",
+        "cost": 46_000, "types": {"xp": 0.10},
+    },
+    "oracle_tear": {
+        "name": "Слеза Оракула", "emoji": "💎",
+        "effect": "Дешевле мгновенный рост (удобрение)", "magnitude": "−12% к стоимости ускорения",
+        "cost": 100_000, "types": {"fertilizer_discount": 0.12},
+    },
+    "clover_fate": {
+        "name": "Клевер Судьбы", "emoji": "🍀",
+        "effect": "Выше шанс прорыва при слиянии в котле", "magnitude": "+8% к шансу прорыва",
+        "cost": 215_000, "types": {"surge": 0.08},
+    },
+    "royal_nectar": {
+        "name": "Королевский Нектар", "emoji": "👑",
+        "effect": "Выше цена продажи цветов", "magnitude": "+15% к цене продажи",
+        "cost": 465_000, "types": {"sell": 0.15},
+    },
+    "phoenix_ash": {
+        "name": "Пепел Феникса", "emoji": "🔥",
+        "effect": "Шанс не сгореть в котле при неудачном слиянии", "magnitude": "+12% шанс спасения",
+        "cost": 1_000_000, "types": {"merge_saver": 0.12},
+    },
+    "luck_bone": {
+        "name": "Кость Удачи", "emoji": "🎲",
+        "effect": "Шанс удвоить награду за сбор", "magnitude": "+12% к джекпоту",
+        "cost": 2_150_000, "types": {"jackpot": 0.12},
+    },
+    "void_shard": {
+        "name": "Осколок Пустоты", "emoji": "🌌",
+        "effect": "Дешевле открытие следующей грядки", "magnitude": "−20% к стоимости открытия",
+        "cost": 4_650_000, "types": {"expand_discount": 0.20},
+    },
+    "all_seeing_eye": {
+        "name": "Всевидящее Око", "emoji": "👁",
+        "effect": "Легендарная — усиливает СРАЗУ рост, урожай, опыт и продажу",
+        "magnitude": "+8% ко всем параметрам сразу",
+        "cost": 10_000_000,
+        "types": {"growth": 0.08, "yield": 0.08, "xp": 0.08, "sell": 0.08},
+    },
+}
+
+# Порядок отображения реликвий в меню — ровно тот, в котором их задумал автор.
+RELIC_ORDER = [
+    "moonlight_dew", "honey_cocoon", "fairy_wing", "oracle_tear",
+    "clover_fate", "royal_nectar", "phoenix_ash", "luck_bone",
+    "void_shard", "all_seeing_eye",
+]
+
+
+def _relic_type_bonus(g: dict, type_key: str) -> float:
+    """Внутренний хелпер: суммирует бонус данного типа по УЖЕ купленным
+    реликвиям. Принимает готовый garden-словарь (g), а не data — чтобы
+    можно было использовать там, где data ещё не под рукой (см.
+    _plot_level_mult)."""
+    total = 0.0
+    for key in g.get("relics", []):
+        relic = RELICS.get(key)
+        if not relic:
+            continue
+        total += relic["types"].get(type_key, 0.0)
+    return total
+
+
+def relic_bonus_sum(data: dict, type_key: str) -> float:
+    """Суммарный бонус данного типа ('growth' | 'yield' | 'xp' |
+    'fertilizer_discount' | 'surge' | 'sell' | 'merge_saver' | 'jackpot' |
+    'expand_discount') от всех купленных реликвий игрока."""
+    g = ensure_garden(data)
+    return _relic_type_bonus(g, type_key)
+
+
+def owned_relics(data: dict) -> set:
+    g = ensure_garden(data)
+    return set(g.get("relics", []))
+
+
+def has_relic(data: dict, relic_key: str) -> bool:
+    return relic_key in owned_relics(data)
+
+
+def buy_relic(data: dict, relic_key: str) -> dict:
+    """Покупает реликвию за мистическую пыльцу — один раз навсегда."""
+    g = ensure_garden(data)
+    relic = RELICS.get(relic_key)
+    if not relic:
+        return {"ok": False, "reason": "unknown_relic"}
+
+    owned = g.setdefault("relics", [])
+    if relic_key in owned:
+        return {"ok": False, "reason": "already_owned"}
+
+    cost = relic["cost"]
+    if get_essence(data) < cost:
+        return {"ok": False, "reason": "no_essence", "cost": cost}
+
+    if not spend_essence(data, cost):
+        return {"ok": False, "reason": "no_essence", "cost": cost}
+
+    owned.append(relic_key)
+    return {"ok": True, "relic": relic, "cost": cost}
+
+
 def plot_expand_cost(next_count: int) -> int:
     """Стоимость открытия грядки №next_count, в мистической пыльце."""
     return int(3000 * (1.8 ** (next_count - PLOT_BASE - 1)))
@@ -232,6 +357,19 @@ def plot_upgrade_cost(current_level: int) -> int | None:
     if current_level >= PLOT_UPGRADE_MAX:
         return None
     return int(PLOT_UPGRADE_BASE_COST * (PLOT_UPGRADE_COST_FACTOR ** current_level))
+
+
+def _fertilizer_cost_for(data: dict, flower: dict, remaining_seconds: int) -> int:
+    """Стоимость ускорения с учётом персонального бонуса цветка
+    ('discount') И реликвии 💎 Слеза Оракула ('fertilizer_discount') —
+    единая точка расчёта для instant_grow и отображения в клавиатуре."""
+    cost = fertilizer_cost(remaining_seconds)
+    if flower["bonus"]["type"] == "discount":
+        cost = max(30, int(cost * (1 - flower["bonus"]["value"])))
+    relic_discount = relic_bonus_sum(data, "fertilizer_discount")
+    if relic_discount > 0:
+        cost = max(30, int(cost * (1 - relic_discount)))
+    return cost
 
 
 def fertilizer_cost(remaining_seconds: int) -> int:
@@ -521,6 +659,9 @@ def ensure_garden(data: dict) -> dict:
 
     g.setdefault("essence", STARTING_ESSENCE)  # мистическая пыльца — валюта сада (стартовый дар — STARTING_ESSENCE)
     g.setdefault("inventory", {})       # flower_key -> количество собранных/полученных цветков
+    relics = g.setdefault("relics", [])  # список ключей купленных реликвий (см. RELICS выше)
+    if not isinstance(relics, list):
+        g["relics"] = []
     g.setdefault("merge_cart", {"tier": None, "items": {}})  # текущий "котёл" слияния
     g.setdefault("stats", {
         "harvested": 0,
@@ -579,8 +720,12 @@ def plot_state(plot: dict | None, level_mult: float = 1.0, now: int | None = Non
 
 
 def _plot_level_mult(g: dict, plot_idx: int) -> float:
+    """Множитель скорости роста грядки: уровень апгрейда × бонус реликвий
+    роста (🌙 Лунная Роса / 👁 Всевидящее Око — см. RELICS). Единая точка
+    входа, которой пользуются все места, где нужна текущая скорость роста."""
     level = g["plot_levels"][plot_idx] if 0 <= plot_idx < len(g["plot_levels"]) else 0
-    return PLOT_UPGRADE_MULT.get(level, 1.0)
+    base = PLOT_UPGRADE_MULT.get(level, 1.0)
+    return base * (1 + _relic_type_bonus(g, "growth"))
 
 
 def _plot_freeze_progress(plot: dict, level_mult: float, now: int | None = None) -> None:
@@ -724,6 +869,22 @@ def harvest_plot(data: dict, plot_idx: int) -> dict:
         jackpot = True
         essence *= 2
         xp *= 2
+
+    # Реликвии: 🐝 Медовый Кокон / 👁 Всевидящее Око — бонус к урожаю;
+    # 🦋 Крыло Феи / 👁 Всевидящее Око — бонус к опыту; 🎲 Кость Удачи —
+    # отдельный, независимый шанс джекпота поверх личного бонуса цветка.
+    relic_yield = relic_bonus_sum(data, "yield")
+    if relic_yield > 0:
+        essence = int(essence * (1 + relic_yield))
+    relic_xp = relic_bonus_sum(data, "xp")
+    if relic_xp > 0:
+        xp = int(xp * (1 + relic_xp))
+    if not jackpot:
+        relic_jackpot_chance = relic_bonus_sum(data, "jackpot")
+        if relic_jackpot_chance > 0 and random.random() < relic_jackpot_chance:
+            jackpot = True
+            essence *= 2
+            xp *= 2
 
     add_essence(data, essence)
     _register_flower_gain(g, flower["key"])
@@ -931,9 +1092,7 @@ def instant_grow(data: dict, plot_idx: int) -> dict:
     if stage == "ready":
         return {"ok": False, "reason": "already_ready"}
 
-    cost = fertilizer_cost(left)
-    if flower["bonus"]["type"] == "discount":
-        cost = max(30, int(cost * (1 - flower["bonus"]["value"])))
+    cost = _fertilizer_cost_for(data, flower, left)
 
     if not spend_essence(data, cost):
         return {"ok": False, "reason": "no_essence", "cost": cost}
@@ -973,11 +1132,12 @@ def upgrade_plot(data: dict, plot_idx: int) -> dict:
 
     plot = g["plots"][plot_idx]
     if plot is not None:
-        # Замораживаем прогресс ПО СТАРОМУ множителю, прежде чем менять уровень.
-        _plot_freeze_progress(plot, PLOT_UPGRADE_MULT.get(level, 1.0))
+        # Замораживаем прогресс ПО СТАРОМУ множителю (уровень + реликвии
+        # роста), прежде чем менять уровень.
+        _plot_freeze_progress(plot, _plot_level_mult(g, plot_idx))
 
     g["plot_levels"][plot_idx] = level + 1
-    new_mult = PLOT_UPGRADE_MULT[level + 1]
+    new_mult = _plot_level_mult(g, plot_idx)
     return {"ok": True, "level": level + 1, "cost": cost, "mult": new_mult}
 
 
@@ -1048,22 +1208,34 @@ def _execute_merge(data: dict, g: dict) -> dict:
     items = cart["items"]
     tier = cart["tier"]
 
+    # 🔥 Пепел Феникса — отдельный, независимый от личного бонуса цветка
+    # шанс "спасти" каждый несохранённый экземпляр из котла.
+    relic_saver = _relic_type_bonus(g, "merge_saver")
+
     consumed = []
     saved_back = []
     luck_bonus = 0.0
     for key, cnt in items.items():
         f = FLOWERS_BY_KEY[key]
+        saved = 0
         if f["bonus"]["type"] == "merge_saver":
             saved = sum(1 for _ in range(cnt) if random.random() < f["bonus"]["value"])
-            if saved:
-                saved_back.append((f, saved))
-                g["inventory"][key] = g["inventory"].get(key, 0) + saved
+        if relic_saver > 0:
+            remaining = cnt - saved
+            if remaining > 0:
+                saved += sum(1 for _ in range(remaining) if random.random() < relic_saver)
+        if saved:
+            saved_back.append((f, saved))
+            g["inventory"][key] = g["inventory"].get(key, 0) + saved
         consumed.append((f, cnt))
         if f["bonus"]["type"] == "luck":
             luck_bonus += f["bonus"]["value"] * cnt
 
+    # 🍀 Клевер Судьбы — прибавка к шансу прорыва при слиянии, поверх
+    # личных бонусов цветков и бонуса за разные виды в котле.
+    relic_surge = _relic_type_bonus(g, "surge")
     mixed = len(items) > 1
-    surge_chance = MERGE_SURGE_CHANCE + luck_bonus + (MERGE_MIX_SURGE_BONUS if mixed else 0.0)
+    surge_chance = MERGE_SURGE_CHANCE + luck_bonus + relic_surge + (MERGE_MIX_SURGE_BONUS if mixed else 0.0)
     surge = tier <= TIER_MAX - 2 and random.random() < surge_chance
     result_tier = min(TIER_MAX, tier + (2 if surge else 1))
     result = random.choice(FLOWERS_BY_TIER[result_tier])
@@ -1099,9 +1271,24 @@ def sell_flower(data: dict, flower_key: str, count: int = 1) -> dict:
     price = SELL_PRICE[flower["tier"]] * count
     if flower["bonus"]["type"] == "sell":
         price = int(price * (1 + flower["bonus"]["value"]))
+    # 👑 Королевский Нектар / 👁 Всевидящее Око — прибавка к цене продажи.
+    relic_sell = relic_bonus_sum(data, "sell")
+    if relic_sell > 0:
+        price = int(price * (1 + relic_sell))
     g["inventory"][flower_key] = have - count
     add_essence(data, price)
     return {"ok": True, "essence": price, "count": count, "flower": flower}
+
+
+def expand_cost_for(data: dict, next_count: int) -> int:
+    """Стоимость открытия грядки №next_count с учётом реликвии
+    🌌 Осколок Пустоты — единая точка расчёта для expand_garden и
+    отображения в клавиатуре сада."""
+    cost = plot_expand_cost(next_count)
+    relic_discount = relic_bonus_sum(data, "expand_discount")
+    if relic_discount > 0:
+        cost = max(500, int(cost * (1 - relic_discount)))
+    return cost
 
 
 def expand_garden(data: dict) -> dict:
@@ -1110,7 +1297,7 @@ def expand_garden(data: dict) -> dict:
     if g["plot_count"] >= PLOT_MAX:
         return {"ok": False, "reason": "max_plots"}
 
-    cost = plot_expand_cost(g["plot_count"] + 1)
+    cost = expand_cost_for(data, g["plot_count"] + 1)
     shortfall = _essence_shortfall(data, cost)
     if shortfall is not None:
         return {"ok": False, "reason": shortfall, "cost": cost, "reserve": SEED_COST_TIER1}
@@ -1142,6 +1329,7 @@ def garden_text(data: dict, page: int = 0) -> str:
         f'🪴 <b>Грядок открыто:</b> <b>{g["plot_count"]}/{PLOT_MAX}</b>',
         f'📄 <b>Страница:</b> <b>{page + 1}/{PLOT_PAGES}</b>',
         f'{ESSENCE_ICON} <b>{ESSENCE_NAME}:</b> <b>{format_amount(get_essence(data))}</b>',
+        f'🏺 <b>Реликвий:</b> <b>{len(g.get("relics", []))}/{len(RELIC_ORDER)}</b>',
     ]
     return "\n".join(lines)
 
@@ -1181,7 +1369,7 @@ def garden_keyboard(data: dict, page: int = 0):
                 btn_kwargs["style"] = "primary"   # растёт — синяя
             b.row(InlineKeyboardButton(**btn_kwargs))
         elif idx == g["plot_count"]:
-            cost = plot_expand_cost(idx + 1)
+            cost = expand_cost_for(data, idx + 1)
             b.row(InlineKeyboardButton(
                 text=f"Открыть грядку — {format_amount(cost)} {ESSENCE_ICON}",
                 icon_custom_emoji_id=EXPAND_PLOT_ICON_EMOJI_ID,
@@ -1230,7 +1418,65 @@ def garden_keyboard(data: dict, page: int = 0):
         InlineKeyboardButton(text="🧬 Слияние", callback_data="garden_merge"),
     )
     b.row(InlineKeyboardButton(text="📖 Коллекция", callback_data="garden_collection"))
+    b.row(InlineKeyboardButton(text="🏺 Реликвии", callback_data="garden_relics"))
     b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data="back_to_menu"))
+    return b.as_markup()
+
+
+def relics_menu_text(data: dict) -> str:
+    g = ensure_garden(data)
+    owned = set(g.get("relics", []))
+    lines = [
+        '🏺 <b>РЕЛИКВИИ САДА</b>',
+        '<blockquote><i>Мощные постоянные артефакты — каждый покупается ОДИН раз '
+        'и усиливает весь сад НАВСЕГДА. Копи мистическую пыльцу и собери все 10.</i></blockquote>',
+        '',
+        f'{ESSENCE_ICON} <b>{ESSENCE_NAME}:</b> <b>{format_amount(get_essence(data))}</b>',
+        f'🏺 <b>Собрано реликвий:</b> <b>{len(owned)}/{len(RELIC_ORDER)}</b>',
+        '',
+    ]
+    for i, key in enumerate(RELIC_ORDER, start=1):
+        r = RELICS[key]
+        if key in owned:
+            price_line = '✅ <b>Куплено</b>'
+        else:
+            price_line = f'💰 {format_amount(r["cost"])} {ESSENCE_ICON}'
+        lines.append(
+            f'{i}. {r["emoji"]} <b>{r["name"]}</b>\n'
+            f'<i>{r["effect"]}</i> — <b>{r["magnitude"]}</b>\n'
+            f'{price_line}'
+        )
+    return "\n\n".join(lines)
+
+
+def relics_menu_keyboard(data: dict):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    g = ensure_garden(data)
+    owned = set(g.get("relics", []))
+    balance = get_essence(data)
+
+    b = InlineKeyboardBuilder()
+    for key in RELIC_ORDER:
+        r = RELICS[key]
+        if key in owned:
+            b.row(InlineKeyboardButton(
+                text=f'✅ {r["emoji"]} {r["name"]} — куплено',
+                style="success",
+                callback_data="garden_noop",
+            ))
+        else:
+            affordable = balance >= r["cost"]
+            btn_kwargs = {
+                "text": f'{r["emoji"]} {r["name"]} — {format_amount(r["cost"])} {ESSENCE_ICON}',
+                "callback_data": f"garden_relicbuy:{key}",
+            }
+            if affordable:
+                btn_kwargs["style"] = "primary"
+            b.row(InlineKeyboardButton(**btn_kwargs))
+
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data="garden"))
     return b.as_markup()
 
 
@@ -1238,7 +1484,7 @@ def plot_detail_text(data: dict, plot_idx: int) -> str:
     g = ensure_garden(data)
     plot = g["plots"][plot_idx]
     level = g["plot_levels"][plot_idx]
-    level_mult = PLOT_UPGRADE_MULT.get(level, 1.0)
+    level_mult = _plot_level_mult(g, plot_idx)
     stage, progress, flower, left = plot_state(plot, level_mult)
 
     if stage == "empty":
@@ -1272,7 +1518,7 @@ def plot_detail_keyboard(data: dict, plot_idx: int):
     g = ensure_garden(data)
     plot = g["plots"][plot_idx]
     level = g["plot_levels"][plot_idx]
-    level_mult = PLOT_UPGRADE_MULT.get(level, 1.0)
+    level_mult = _plot_level_mult(g, plot_idx)
     stage, _, flower, left = plot_state(plot, level_mult)
 
     b = InlineKeyboardBuilder()
@@ -1299,9 +1545,7 @@ def plot_detail_keyboard(data: dict, plot_idx: int):
                 callback_data="garden_noop",
             ))
         else:
-            cost = fertilizer_cost(left)
-            if flower["bonus"]["type"] == "discount":
-                cost = max(30, int(cost * (1 - flower["bonus"]["value"])))
+            cost = _fertilizer_cost_for(data, flower, left)
             b.row(InlineKeyboardButton(
                 text=f"⚡ Ускорить в 2 раза за {format_amount(cost)} {ESSENCE_ICON}",
                 callback_data=f"garden_grow:{plot_idx}",
