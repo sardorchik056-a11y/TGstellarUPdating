@@ -353,7 +353,7 @@ _active_battles: dict[int, dict] = {}
 # ── Хранилище message_id боевого экрана (uid -> (chat_id, message_id)) ─
 _battle_msgs: dict[int, tuple] = {}
 
-BOT_TOKEN = '8693034024:AAEjOqhChUGq8IvZHYIOw2-RcfJLSyK7ZBI'
+BOT_TOKEN = '8947252465:AAHqlauZc6nOfLylBxlc6xt0VvOhSqR8Rc8'
 bot = Bot(token=BOT_TOKEN)
 
 
@@ -581,12 +581,12 @@ def _back_btn(callback: str, label: str = "Назад") -> InlineKeyboardButton:
 def main_reply_keyboard(lang: str = "ru") -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.row(
-        KeyboardButton(text="🎮 Меню" if lang == "ru" else "🎮 Menu", style="primary"),
-        KeyboardButton(text="⚔️ Клан" if lang == "ru" else "⚔️ Clan", style="primary"),
-        KeyboardButton(text="🏙 Город" if lang == "ru" else "🏙 City", style="primary"),
+        KeyboardButton(text="🎮 Меню" if lang == "ru" else "🎮 Menu", style="primary", icon_custom_emoji_id="5280605691352991448"),
+        KeyboardButton(text="⚔️ Клан" if lang == "ru" else "⚔️ Clan", style="primary", icon_custom_emoji_id="5278467416114876307"),
+        KeyboardButton(text="🏙 Город" if lang == "ru" else "🏙 City", style="primary", icon_custom_emoji_id="5264757910570817969"),
     )
     builder.row(
-        KeyboardButton(text="🏆 Достижения" if lang == "ru" else "🏆 Achievements", style="primary"),
+        KeyboardButton(text="🏆 Достижения" if lang == "ru" else "🏆 Achievements", style="primary", icon_custom_emoji_id="5150415989841593609"),
     )
     return builder.as_markup(resize_keyboard=True)
 
