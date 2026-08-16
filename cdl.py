@@ -209,6 +209,24 @@ def _open_deposit(uid: int, dep_key: str, amount: int) -> int:
         return cur.lastrowid
 
 
+def _rollback_deposit(dep_id: int) -> bool:
+    """Откатывает только что открытый вклад (используется, если после
+    _open_deposit не удалось списать/сохранить баланс пользователя —
+    чтобы не создавать вклад «из воздуха» без реального списания денег).
+
+    Удаляет запись ТОЛЬКО если она ещё не забрана (claimed=0) — так
+    рефанд не может случайно стереть уже выплаченный вклад, если этот
+    dep_id почему-то переиспользовался бы (в норме не переиспользуется,
+    т.к. id — AUTOINCREMENT PRIMARY KEY)."""
+    with _connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM deposits WHERE id=? AND claimed=0",
+            (dep_id,)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
 def _get_active_deposits(uid: int) -> list[dict]:
     """Все активные (не выплаченные) вклады пользователя."""
     now = int(time.time())
@@ -299,6 +317,12 @@ async def aio_check_deposit_limit(uid: int, dep_key: str) -> tuple[bool, int, in
 
 async def aio_open_deposit(uid: int, dep_key: str, amount: int) -> int:
     return await asyncio.to_thread(_open_deposit, uid, dep_key, amount)
+
+
+async def aio_rollback_deposit(dep_id: int) -> bool:
+    """Откат вклада, если после его создания не удалось списать баланс
+    пользователя (см. коммент к _rollback_deposit)."""
+    return await asyncio.to_thread(_rollback_deposit, dep_id)
 
 
 async def aio_get_active_deposits(uid: int) -> list[dict]:
