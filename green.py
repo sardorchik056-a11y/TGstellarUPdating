@@ -1429,24 +1429,13 @@ def relics_menu_text(data: dict) -> str:
     lines = [
         '🏺 <b>РЕЛИКВИИ САДА</b>',
         '<blockquote><i>Мощные постоянные артефакты — каждый покупается ОДИН раз '
-        'и усиливает весь сад НАВСЕГДА. Копи мистическую пыльцу и собери все 10.</i></blockquote>',
+        'и усиливает весь сад НАВСЕГДА. Нажми на реликвию, чтобы посмотреть её эффект '
+        'и купить.</i></blockquote>',
         '',
         f'{ESSENCE_ICON} <b>{ESSENCE_NAME}:</b> <b>{format_amount(get_essence(data))}</b>',
         f'🏺 <b>Собрано реликвий:</b> <b>{len(owned)}/{len(RELIC_ORDER)}</b>',
-        '',
     ]
-    for i, key in enumerate(RELIC_ORDER, start=1):
-        r = RELICS[key]
-        if key in owned:
-            price_line = '✅ <b>Куплено</b>'
-        else:
-            price_line = f'💰 {format_amount(r["cost"])} {ESSENCE_ICON}'
-        lines.append(
-            f'{i}. {r["emoji"]} <b>{r["name"]}</b>\n'
-            f'<i>{r["effect"]}</i> — <b>{r["magnitude"]}</b>\n'
-            f'{price_line}'
-        )
-    return "\n\n".join(lines)
+    return "\n".join(lines)
 
 
 def relics_menu_keyboard(data: dict):
@@ -1455,28 +1444,59 @@ def relics_menu_keyboard(data: dict):
 
     g = ensure_garden(data)
     owned = set(g.get("relics", []))
-    balance = get_essence(data)
 
     b = InlineKeyboardBuilder()
     for key in RELIC_ORDER:
         r = RELICS[key]
         if key in owned:
             b.row(InlineKeyboardButton(
-                text=f'✅ {r["emoji"]} {r["name"]} — куплено',
+                text=f'✅ {r["emoji"]} {r["name"]}',
                 style="success",
-                callback_data="garden_noop",
+                callback_data=f"garden_relicview:{key}",
             ))
         else:
-            affordable = balance >= r["cost"]
-            btn_kwargs = {
-                "text": f'{r["emoji"]} {r["name"]} — {format_amount(r["cost"])} {ESSENCE_ICON}',
-                "callback_data": f"garden_relicbuy:{key}",
-            }
-            if affordable:
-                btn_kwargs["style"] = "primary"
-            b.row(InlineKeyboardButton(**btn_kwargs))
+            b.row(InlineKeyboardButton(
+                text=f'{r["emoji"]} {r["name"]}',
+                callback_data=f"garden_relicview:{key}",
+            ))
 
     b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data="garden"))
+    return b.as_markup()
+
+
+def relic_detail_text(data: dict, relic_key: str) -> str:
+    r = RELICS[relic_key]
+    owned = has_relic(data, relic_key)
+    status_line = '✅ <b>Уже куплена — эффект действует</b>' if owned else f'💰 <b>Цена:</b> {format_amount(r["cost"])} {ESSENCE_ICON}'
+    return (
+        f'{r["emoji"]} <b>{r["name"]}</b>\n'
+        f'<blockquote><i>{r["effect"]}</i>\n\n'
+        f'📈 <b>Эффект:</b> {r["magnitude"]}\n\n'
+        f'{status_line}</blockquote>'
+    )
+
+
+def relic_detail_keyboard(data: dict, relic_key: str):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    r = RELICS[relic_key]
+    owned = has_relic(data, relic_key)
+    balance = get_essence(data)
+
+    b = InlineKeyboardBuilder()
+    if owned:
+        b.row(InlineKeyboardButton(text="✅ Куплено", style="success", callback_data="garden_noop"))
+    else:
+        btn_kwargs = {
+            "text": f'💰 Купить — {format_amount(r["cost"])} {ESSENCE_ICON}',
+            "callback_data": f"garden_relicbuy:{relic_key}",
+        }
+        if balance >= r["cost"]:
+            btn_kwargs["style"] = "primary"
+        b.row(InlineKeyboardButton(**btn_kwargs))
+
+    b.row(InlineKeyboardButton(text="Назад", icon_custom_emoji_id=BACK_ICON_EMOJI_ID, callback_data="garden_relics"))
     return b.as_markup()
 
 
