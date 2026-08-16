@@ -126,7 +126,7 @@ _orig_main_reply_keyboard = mainhelp.main_reply_keyboard
 def _garden_main_reply_keyboard(lang: str = "ru"):
     kb = _orig_main_reply_keyboard(lang)
     garden_btn = KeyboardButton(
-        text="🌺 Мистический Сад" if lang == "ru" else "🌺 Mystic Garden",
+        text="Мистический Сад" if lang == "ru" else "Mystic Garden",
         style="primary",
         icon_custom_emoji_id="5267211616797090143",
     )
