@@ -81,6 +81,8 @@ from hunt import (
     potion_use_detail_text, potion_use_detail_keyboard,
     potion_detail_text, potion_detail_keyboard,
     potion_invoice_params, confirm_potion_purchase,
+    try_buy_potion_with_crystals,
+    _consume_potion_from_inventory as _potion_rollback,
     is_potion_cmd,
     ACTIVE_BOSS_SLOTS,
     _load_slot as _hunt_load_slot,
@@ -447,9 +449,6 @@ _pending_stars_msg: dict[int, tuple] = {}
 # Хранит message_id экрана кейса артефактов перед оплатой: uid -> (chat_id, message_id)
 
 # Хранит message_id экрана статуса перед оплатой: uid -> (chat_id, message_id, tier)
-
-# Хранит message_id экрана зелий перед оплатой: uid -> (chat_id, message_id)
-_pending_potion_msg: dict[int, tuple] = {}
 
 # Хранит message_id экрана доната перед оплатой: uid -> (chat_id, message_id, pkg_key)
 _pending_donate_msg: dict[int, tuple] = {}
@@ -5456,44 +5455,37 @@ async def handle_callback(call: CallbackQuery):
             await edit(potions_shop_text(lang), potions_shop_keyboard(lang))
             return
 
-        # ===== ОХОТА: купить зелье за звёзды (создаём инвойс) =====
+        # ===== ОХОТА: купить зелье за кристаллы =====
         if cd.startswith("buy_potion_"):
             potion_key = cd.removeprefix("buy_potion_")
             p = POTIONS_BY_KEY.get(potion_key)
             if not p:
                 await call.answer("❌ Неизвестное зелье." if lang == "ru" else "❌ Unknown potion.", show_alert=True)
                 return
-            params = potion_invoice_params(potion_key, lang)
-            try:
-                invoice_url = await bot.create_invoice_link(
-                    title=params["title"],
-                    description=params["description"],
-                    payload=params["payload"],
-                    provider_token="",
-                    currency=params["currency"],
-                    prices=[LabeledPrice(label=pr["label"], amount=pr["amount"]) for pr in params["prices"]],
-                )
-            except Exception as e:
-                print(f"Potion invoice error: {e}")
-                await call.answer("❌ Ошибка при создании инвойса." if lang == "ru" else "❌ Invoice creation error.", show_alert=True)
-                return
-            _pending_potion_msg[call.from_user.id] = (
-                call.message.chat.id,
-                call.message.message_id,
+
+            crystals = data.get("crystals", 0)
+            # Порядок операций (тот же принцип, что и в фиксе бага cdl.py:
+            # сначала выдаём товар, потом списываем деньги, а не наоборот —
+            # чтобы кристаллы не пропадали без выдачи зелья при сбое):
+            ok, msg, price = await asyncio.to_thread(
+                try_buy_potion_with_crystals, potion_key, user.id, crystals, lang
             )
-            pay_kb = InlineKeyboardBuilder()
-            pay_kb.row(InlineKeyboardButton(
-                text=f'Купить за {p["price_stars"]} ⭐' if lang == "ru" else f'Buy for {p["price_stars"]} ⭐',
-                url=invoice_url,
-                icon_custom_emoji_id="5267500801240092311",
-                style="success"
-            ))
-            pay_kb.row(InlineKeyboardButton(
-                text="Назад" if lang == "ru" else "Back",
-                callback_data="hunt_shop_potions"
-            ))
-            await edit(await asyncio.to_thread(potion_detail_text, potion_key, call.from_user.id, lang), pay_kb.as_markup())
-            await call.answer()
+            if not ok:
+                # Недостаточно кристаллов — ничего не списано и не выдано.
+                await call.answer(msg, show_alert=True)
+                return
+
+            data["crystals"] = crystals - price
+            try:
+                await aio_save_user(user.id, data)
+            except Exception as e:
+                print(f"[potions] save_user failed after purchase uid={user.id} potion={potion_key}: {e}")
+                await asyncio.to_thread(_potion_rollback, user.id, potion_key)
+                await call.answer("❌ Ошибка, попробуй ещё раз" if lang == "ru" else "❌ Error, try again", show_alert=True)
+                return
+
+            await edit(potions_shop_text(lang), potions_shop_keyboard(lang))
+            await call.answer("✅ Куплено!" if lang == "ru" else "✅ Purchased!")
             return
 
         # ===== ОХОТА: мои мечи =====
@@ -6584,52 +6576,6 @@ async def handle_pre_checkout(query: PreCheckoutQuery):
 @dp.message(F.successful_payment)
 async def handle_successful_payment(message: Message):
     payload = message.successful_payment.invoice_payload
-
-    # ===== ОПЛАТА: Зелье =====
-    if payload.startswith("potion_"):
-        potion_key = payload.removeprefix("potion_")
-        from database import aio_get_user, aio_save_user
-        from hunt import confirm_potion_purchase as _confirm_potion
-
-        p = POTIONS_BY_KEY.get(potion_key)
-        paid_amount = message.successful_payment.total_amount
-        if not p or paid_amount != p["price_stars"]:
-            await bot.send_message(message.chat.id, "❌ Ошибка: сумма оплаты не совпадает.")
-            return
-
-        # Защита от replay-атаки
-        charge_id = message.successful_payment.telegram_payment_charge_id
-        if await aio_is_charge_processed(charge_id):
-            return
-        await aio_mark_charge_processed(charge_id, message.from_user.id, payload)
-
-        uid = message.from_user.id
-        lock = await _get_user_lock(uid)
-        async with lock:
-            data = await aio_get_user(uid)
-            if not data:
-                data = await aio_get_or_create_user(message.from_user)
-            _lang = data.get("lang", "ru")
-
-            ok, msg = await asyncio.to_thread(confirm_potion_purchase, potion_key, uid, _lang)
-
-            # Обновляем старое сообщение (экран зелий)
-            pending = _pending_potion_msg.pop(uid, None)
-            if pending:
-                old_chat_id, old_msg_id = pending
-                try:
-                    await bot.edit_message_text(
-                        potions_shop_text(_lang),
-                        chat_id=old_chat_id,
-                        message_id=old_msg_id,
-                        reply_markup=potions_shop_keyboard(_lang),
-                        parse_mode="HTML"
-                    )
-                except Exception:
-                    pass
-
-            await bot.send_message(message.chat.id, msg, parse_mode="HTML")
-        return
 
     if payload.startswith("premium_pickaxe:"):
         pick_key = payload.split(":", 1)[1]
