@@ -581,12 +581,12 @@ def _back_btn(callback: str, label: str = "Назад") -> InlineKeyboardButton:
 def main_reply_keyboard(lang: str = "ru") -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.row(
-        KeyboardButton(text="🎮 Меню" if lang == "ru" else "🎮 Menu", style="primary", icon_custom_emoji_id="5280605691352991448"),
-        KeyboardButton(text="⚔️ Клан" if lang == "ru" else "⚔️ Clan", style="primary", icon_custom_emoji_id="5278467416114876307"),
-        KeyboardButton(text="🏙 Город" if lang == "ru" else "🏙 City", style="primary", icon_custom_emoji_id="5264757910570817969"),
+        KeyboardButton(text="Меню" if lang == "ru" else "Menu", style="primary", icon_custom_emoji_id="5280605691352991448"),
+        KeyboardButton(text="Клан" if lang == "ru" else "Clan", style="primary", icon_custom_emoji_id="5278467416114876307"),
+        KeyboardButton(text="Город" if lang == "ru" else "City", style="primary", icon_custom_emoji_id="5264757910570817969"),
     )
     builder.row(
-        KeyboardButton(text="🏆 Достижения" if lang == "ru" else "🏆 Achievements", style="primary", icon_custom_emoji_id="5150415989841593609"),
+        KeyboardButton(text="Достижения" if lang == "ru" else "Achievements", style="primary", icon_custom_emoji_id="5150415989841593609"),
     )
     return builder.as_markup(resize_keyboard=True)
 
@@ -1812,7 +1812,6 @@ async def _send_onboarding_step(message: Message, uid: int) -> bool:
 
 @dp.message(Command("start"))
 @dp.message(Command("menu", "меню"))
-@dp.message(_text_in("меню", "menu"))
 async def send_welcome(message: Message):
     from database import aio_load_raw
     uid          = message.from_user.id
@@ -1886,7 +1885,7 @@ async def send_welcome(message: Message):
     )
 
 
-@dp.message(_text_in("🎮 Меню", "🎮 Menu"), F.chat.type == "private")
+@dp.message(_text_in("Меню", "Menu"), F.chat.type == "private")
 async def reply_btn_menu(message: Message):
     from database import aio_get_or_create_user as _gou
     uid  = message.from_user.id
@@ -1908,7 +1907,7 @@ async def reply_btn_menu(message: Message):
     )
 
 
-@dp.message(_text_in("⚔️ Клан", "⚔️ Clan"), F.chat.type == "private")
+@dp.message(_text_in("Клан", "Clan"), F.chat.type == "private")
 @dp.message(Command("klan", "клан"))
 @dp.message(_text_in("клан", "клан-", "klan", "klan-"))
 async def reply_btn_clan(message: Message):
@@ -1928,7 +1927,7 @@ async def reply_btn_clan(message: Message):
     )
 
 
-@dp.message(_text_in("🏙 Город", "🏙 City"), F.chat.type == "private")
+@dp.message(_text_in("Город", "City"), F.chat.type == "private")
 async def reply_btn_city(message: Message):
     from database import aio_get_or_create_user as _gou
     uid  = message.from_user.id
@@ -1941,7 +1940,7 @@ async def reply_btn_city(message: Message):
     await cmd_city_profile(message)
 
 
-@dp.message(_text_in("🏆 Достижения", "🏆 Achievements"), F.chat.type == "private")
+@dp.message(_text_in("Достижения", "Achievements"), F.chat.type == "private")
 async def reply_btn_achievements(message: Message):
     from database import aio_get_or_create_user as _gou
     uid = message.from_user.id
