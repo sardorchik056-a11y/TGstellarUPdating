@@ -128,6 +128,7 @@ def _garden_main_reply_keyboard(lang: str = "ru"):
     garden_btn = KeyboardButton(
         text="🌺 Мистический Сад" if lang == "ru" else "🌺 Mystic Garden",
         style="primary",
+        icon_custom_emoji_id="5267211616797090143",
     )
     if kb.keyboard:
         kb.keyboard[-1].append(garden_btn)
