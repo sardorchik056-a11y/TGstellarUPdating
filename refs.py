@@ -2,7 +2,10 @@
 #  refs.py  —  Реферальная система TGStellar
 #  • Награда за обычного реферала:  3 000 монет
 #  • Награда за Premium-реферала:   5 000 монет
-#  • Капча после /start: простые примеры (5 попыток → блок 30 мин)
+#  • Реферал регистрируется и вознаграждается только после того, как
+#    приглашённый друг сам подтвердит участие — нажмёт «Начинаем!» в
+#    конце онбординга (язык → гайд → старт, см. mainhelp.py). Капчи
+#    в проекте больше нет.
 #  • Процентная реф-система: 10% / 15% (Premium) от ЛЮБОГО дохода
 #    реферала начисляется рефереру автоматически (см. блок
 #    "ПРОЦЕНТНАЯ РЕФ-СИСТЕМА" ниже — реализовано SQL-триггером,
@@ -11,8 +14,6 @@
 
 import sqlite3
 import time
-import random
-import math
 import threading
 import unicodedata
 from contextlib import contextmanager
@@ -22,8 +23,6 @@ DB_PATH = "tgstellar.db"
 
 REF_REWARD_NORMAL  = 3_000
 REF_REWARD_PREMIUM = 8_000
-CAPTCHA_MAX_TRIES  = 5
-CAPTCHA_BLOCK_SEC  = 30 * 60
 
 # Дополнительная награда донатной валютой (самосветы) за каждого реферала —
 # выдаётся вместе с монетами в reward_inviter(), одним и тем же
@@ -153,24 +152,7 @@ def init_refs_db():
                 premium_refs INTEGER DEFAULT 0,
                 earned_coins INTEGER DEFAULT 0
             );
-            CREATE TABLE IF NOT EXISTS captcha_state (
-                uid           INTEGER PRIMARY KEY,
-                question      TEXT    NOT NULL,
-                answer        INTEGER NOT NULL,
-                tries         INTEGER DEFAULT 0,
-                blocked_until INTEGER DEFAULT 0,
-                passed        INTEGER DEFAULT 0,
-                chat_id       INTEGER,
-                msg_id        INTEGER
-            );
         """)
-        c.commit()
-        # Миграция: добавляем chat_id/msg_id если таблица создана старой версией
-        cols = {row["name"] for row in c.execute("PRAGMA table_info(captcha_state)").fetchall()}
-        if "chat_id" not in cols:
-            c.execute("ALTER TABLE captcha_state ADD COLUMN chat_id INTEGER")
-        if "msg_id" not in cols:
-            c.execute("ALTER TABLE captcha_state ADD COLUMN msg_id INTEGER")
         c.commit()
 
         # ── Миграция: колонки для процентной реф-системы ──
@@ -337,115 +319,6 @@ def _lock_for(uid: int) -> threading.Lock:
             lock = threading.Lock()
             _uid_locks[uid] = lock
         return lock
-
-# ─────────────────────────── капча ───────────────────────────
-
-def _gen_question() -> tuple[str, int]:
-    op = random.choice(["+", "-"])
-    if op == "+":
-        a, b   = random.randint(1, 9), random.randint(1, 9)
-        answer = a + b
-        text   = f"{a} + {b}"
-    else:
-        a = random.randint(1, 9)
-        b = random.randint(1, a)
-        answer = a - b
-        text   = f"{a} − {b}"
-    return text, answer
-
-
-def get_captcha_state(uid: int) -> dict | None:
-    with _conn() as c:
-        row = c.execute("SELECT * FROM captcha_state WHERE uid=?", (uid,)).fetchone()
-    return dict(row) if row else None
-
-
-def create_captcha(uid: int) -> dict:
-    question, answer = _gen_question()
-    now   = int(time.time())
-    state = get_captcha_state(uid)
-    if state and state["blocked_until"] > now:
-        return state
-    with _conn() as c:
-        c.execute("""
-            INSERT INTO captcha_state (uid, question, answer, tries, blocked_until, passed)
-            VALUES (?, ?, ?, 0, 0, 0)
-            ON CONFLICT(uid) DO UPDATE SET
-                question=excluded.question, answer=excluded.answer,
-                tries=0, blocked_until=0, passed=0
-        """, (uid, question, answer))
-        c.commit()
-    return get_captcha_state(uid)
-
-
-def set_captcha_msg(uid: int, chat_id: int, msg_id: int):
-    with _conn() as c:
-        c.execute("UPDATE captcha_state SET chat_id=?, msg_id=? WHERE uid=?", (chat_id, msg_id, uid))
-        c.commit()
-
-
-def get_captcha_msg(uid: int) -> tuple[int, int] | None:
-    state = get_captcha_state(uid)
-    if state and state.get("chat_id") and state.get("msg_id"):
-        return state["chat_id"], state["msg_id"]
-    return None
-
-
-def check_captcha(uid: int, user_answer: int) -> dict:
-    with _lock_for(uid):
-        return _check_captcha_locked(uid, user_answer)
-
-
-def _check_captcha_locked(uid: int, user_answer: int) -> dict:
-    state = get_captcha_state(uid)
-    now   = int(time.time())
-    if not state:
-        return {"status": "no_captcha"}
-    if state["passed"]:
-        return {"status": "ok", "tries_left": 0, "blocked_until": 0, "unblock_in_min": 0}
-    if state["blocked_until"] > now:
-        mins = math.ceil((state["blocked_until"] - now) / 60)
-        return {"status": "blocked", "tries_left": 0,
-                "blocked_until": state["blocked_until"], "unblock_in_min": mins}
-    if user_answer == state["answer"]:
-        with _conn() as c:
-            c.execute("UPDATE captcha_state SET passed=1, tries=0 WHERE uid=?", (uid,))
-            c.commit()
-        return {"status": "ok", "tries_left": 0, "blocked_until": 0, "unblock_in_min": 0}
-    new_tries = state["tries"] + 1
-    if new_tries >= CAPTCHA_MAX_TRIES:
-        blocked_until = now + CAPTCHA_BLOCK_SEC
-        q, a = _gen_question()
-        with _conn() as c:
-            c.execute("""
-                UPDATE captcha_state
-                SET tries=?, blocked_until=?, question=?, answer=?
-                WHERE uid=?
-            """, (new_tries, blocked_until, q, a, uid))
-            c.commit()
-        return {"status": "blocked", "tries_left": 0,
-                "blocked_until": blocked_until, "unblock_in_min": 30}
-    q, a = _gen_question()
-    with _conn() as c:
-        c.execute("UPDATE captcha_state SET tries=?, question=?, answer=? WHERE uid=?", (new_tries, q, a, uid))
-        c.commit()
-    return {"status": "wrong", "tries_left": CAPTCHA_MAX_TRIES - new_tries,
-            "blocked_until": 0, "unblock_in_min": 0, "question": q}
-
-
-def is_captcha_passed(uid: int) -> bool:
-    state = get_captcha_state(uid)
-    return bool(state and state["passed"])
-
-
-def is_captcha_blocked(uid: int) -> tuple[bool, int]:
-    state = get_captcha_state(uid)
-    if not state:
-        return False, 0
-    now = int(time.time())
-    if state["blocked_until"] > now:
-        return True, state["blocked_until"] - now
-    return False, 0
 
 # ────────────────────────── рефералы ─────────────────────────
 
@@ -621,19 +494,6 @@ def refs_main_text(uid: int, bot_username: str, lang: str = "ru") -> str:
         f'<i>{t(lang, "refs_link_hint")}</i> 👇'
         f'</blockquote>'
     )
-
-
-def captcha_start_text(question: str) -> str:
-    return f'<b>{question} = ?</b>'
-
-
-def captcha_wrong_text(question: str, tries_left: int) -> str:
-    return f'<b>{question} = ?</b>'
-
-
-def captcha_blocked_text(unblock_in_min: int, lang: str = "ru") -> str:
-    from lang import t
-    return f'❗️ <b>{t(lang, "captcha_blocked").format(min=unblock_in_min)}</b>'
 
 
 def refs_notif_text(new_user_name: str, reward: int, is_premium: bool, lang: str = "ru", samosvety: int = 0) -> str:
@@ -879,42 +739,13 @@ def reftop_keyboard(period: str, lang: str = "ru") -> InlineKeyboardMarkup:
 # ──────────────────────────────────────────────
 #  Async-обёртки
 # ──────────────────────────────────────────────
-# sqlite3 в этом модуле синхронный (блокирующий). Раньше ВСЕ функции ниже
-# вызывались из mainhelp.py напрямую, без asyncio.to_thread — то есть
-# каждая капча/проверка ответа/регистрация реферала/открытие /refs морозила
-# ВЕСЬ event loop бота на время диск-I/O. Особенно критично для капчи —
-# она висит прямо в самом горячем хендлере (/start), через который
-# проходит вообще каждый пользователь. Использовать эти обёртки из любого
-# async-кода вместо прямого вызова синхронных версий выше.
+# sqlite3 в этом модуле синхронный (блокирующий). Все функции ниже
+# вызываются из mainhelp.py через asyncio.to_thread, а не напрямую —
+# иначе каждый вызов (регистрация реферала, начисление награды, открытие
+# /refs) морозил бы ВЕСЬ event loop бота на время диск-I/O. Использовать
+# эти обёртки из любого async-кода вместо прямого вызова синхронных
+# версий выше.
 import asyncio as _asyncio
-
-
-async def aio_get_captcha_state(uid: int) -> dict | None:
-    return await _asyncio.to_thread(get_captcha_state, uid)
-
-
-async def aio_create_captcha(uid: int) -> dict:
-    return await _asyncio.to_thread(create_captcha, uid)
-
-
-async def aio_set_captcha_msg(uid: int, chat_id: int, msg_id: int) -> None:
-    await _asyncio.to_thread(set_captcha_msg, uid, chat_id, msg_id)
-
-
-async def aio_get_captcha_msg(uid: int) -> tuple[int, int] | None:
-    return await _asyncio.to_thread(get_captcha_msg, uid)
-
-
-async def aio_check_captcha(uid: int, user_answer: int) -> dict:
-    return await _asyncio.to_thread(check_captcha, uid, user_answer)
-
-
-async def aio_is_captcha_passed(uid: int) -> bool:
-    return await _asyncio.to_thread(is_captcha_passed, uid)
-
-
-async def aio_is_captcha_blocked(uid: int) -> tuple[bool, int]:
-    return await _asyncio.to_thread(is_captcha_blocked, uid)
 
 
 async def aio_register_referral(uid: int, inviter_uid: int | None) -> None:
