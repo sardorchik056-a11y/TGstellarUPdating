@@ -1490,6 +1490,22 @@ def _prioritize_message_handlers(*callbacks) -> None:
     dp.message.handlers[:] = moved + remaining
 
 
+# Тот же приём, но для callback_query — нужен для кнопочной админ-панели
+# (/admin, см. admin.py): в mainhelp.py есть общий callback-роутер
+# `@dp.callback_query(~F.data.startswith("city_") & ~F.data.startswith("crystop_"))`,
+# зарегистрированный раньше, который перехватывал бы буквально любой другой
+# callback_data (в т.ч. наши "adm_*"/"delbd_*" кнопки). Переставляем наши
+# хендлеры в начало списка dp.callback_query.handlers — на остальные кнопки
+# бота это не влияет никак, они просто не совпадают по фильтру и aiogram
+# идёт дальше по (уже переставленному) списку.
+def _prioritize_callback_handlers(*callbacks) -> None:
+    wanted    = list(callbacks)
+    moved     = [h for h in dp.callback_query.handlers if h.callback in wanted]
+    remaining = [h for h in dp.callback_query.handlers if h.callback not in wanted]
+    moved.sort(key=lambda h: wanted.index(h.callback))
+    dp.callback_query.handlers[:] = moved + remaining
+
+
 
 @dp.message(Command("stopcase"))
 async def cmd_stopcase(message: Message):
@@ -1729,7 +1745,14 @@ async def _submit_guess(uid: int, name: str, number: int, message: Message):
 # нижней клавиатуре шлёт обычное текстовое сообщение без "/", а его
 # перехватывает раньше catch-all handle_captcha_answer в mainhelp.py
 # (это и была причина, почему кнопка "молчала"/бот как будто игнорил её).
-_prioritize_message_handlers(msg_case_admin_amount, msg_case_guess_number, cmd_garden)
+_prioritize_message_handlers(
+    msg_case_admin_amount, msg_case_guess_number, cmd_garden,
+    *admin.ADMIN_PANEL_MESSAGE_HANDLERS,
+)
+
+# Кнопки админ-панели /admin (см. admin.py) — по той же причине, что и выше,
+# только для callback_query.
+_prioritize_callback_handlers(*admin.ADMIN_PANEL_CALLBACK_HANDLERS)
 
 
 # ──────────────────────────────────────────────────────────────────────────
