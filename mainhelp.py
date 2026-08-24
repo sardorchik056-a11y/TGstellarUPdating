@@ -2486,7 +2486,35 @@ async def cmd_gift(message: Message):
     recipient_level = recipient_data.get("level", 1)
     daily_limit      = _gift_daily_limit(recipient_level)
 
-    result = await _transfer_coins(uid, recipient_data["id"], amount, daily_limit=daily_limit, gift_window=_GIFT_WINDOW)
+    # ВАЖНО (фикс бага "перевод иногда не начисляется / не списывается"):
+    # transfer_coins атомарен ТОЛЬКО на уровне SQL (BEGIN IMMEDIATE), но
+    # эта транзакция не связана с asyncio-локами _get_user_lock(uid),
+    # которые держат ВСЕ остальные хендлеры, меняющие баланс (кейсы,
+    # промокоды, предметы, шахта, дуэли и т.д.) на время своего
+    # read-modify-write всего data_json пользователя.
+    #
+    # Без захвата этих же локов здесь возникала гонка: другой хендлер
+    # мог успеть прочитать устаревший (ещё без перевода) баланс ДО того,
+    # как transfer_coins закоммитил перевод в БД, и потом сохранить свой
+    # снимок ПОСЛЕ — целиком затерев результат перевода. Симптом ровно
+    # такой, как жаловались: перевод у отправителя списался/не списался
+    # и/или у получателя не появился — в зависимости от того, чья запись
+    # в БД произошла последней.
+    #
+    # Захватываем те же локи (в одинаковом порядке по uid, чтобы не
+    # ловить deadlock — см. тот же приём в cmd_transfer_item выше), это
+    # исключает гонку между /gift и любым другим действием отправителя
+    # или получателя.
+    lock_sender    = await _get_user_lock(uid)
+    lock_recipient = await _get_user_lock(recipient_data["id"])
+    first_lock, second_lock = (
+        (lock_sender, lock_recipient)
+        if uid < recipient_data["id"]
+        else (lock_recipient, lock_sender)
+    )
+    async with first_lock:
+        async with second_lock:
+            result = await _transfer_coins(uid, recipient_data["id"], amount, daily_limit=daily_limit, gift_window=_GIFT_WINDOW)
 
     if not result["ok"]:
         if result["reason"] == "insufficient":
