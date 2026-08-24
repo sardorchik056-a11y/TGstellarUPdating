@@ -142,21 +142,11 @@ from status import (
 from refs import (
     init_refs_db,
     aio_register_referral as register_referral,
-    aio_is_captcha_passed as is_captcha_passed,
-    aio_is_captcha_blocked as is_captcha_blocked,
-    aio_get_captcha_state as get_captcha_state,
-    aio_create_captcha as create_captcha,
-    aio_check_captcha as check_captcha,
-    aio_set_captcha_msg as set_captcha_msg,
-    aio_get_captcha_msg as get_captcha_msg,
     aio_reward_inviter as reward_inviter,
-    aio_get_inviter as get_inviter,
     aio_refs_main_text as refs_main_text,
     refs_main_keyboard,
     aio_refs_list_text as refs_list_text,
     refs_list_keyboard,
-    captcha_start_text, captcha_wrong_text,
-    captcha_blocked_text,
     refs_notif_text,
     aio_reftop_text as reftop_text,
     reftop_keyboard,
@@ -1773,34 +1763,54 @@ async def cmd_daily(message: Message):
         await message.reply(text, parse_mode="HTML")
 
 
+_ONBOARD_GUIDE_URL = "https://t.me/"   # TODO: вставить ссылку на гайд
+
+
+def _onboard_guide_text(lang: str = "ru") -> str:
+    """Экран между выбором языка и стартом игры: короткий гайд + кнопка «Начинаем!»."""
+    if lang == "en":
+        return (
+            f'<tg-emoji emoji-id="5325547803936572038">✨</tg-emoji> <b>Welcome to TGStellar!</b>\n\n'
+            f'<blockquote>'
+            f'<i>Before you dive in, take a minute to check out the guide below —\n'
+            f'it covers everything you need to get started smoothly.</i>'
+            f'</blockquote>\n\n'
+            f'<i>All set? Tap the button below to jump straight into the game.</i>'
+        )
+    return (
+        f'<tg-emoji emoji-id="5325547803936572038">✨</tg-emoji> <b>Добро пожаловать в TGStellar!</b>\n\n'
+        f'<blockquote>'
+        f'<i>Прежде чем начать — загляни в короткий гайд ниже.\n'
+        f'Там всё самое важное для первых шагов в игре.</i>'
+        f'</blockquote>\n\n'
+        f'<i>Готов? Жми кнопку ниже, чтобы сразу перейти в игру.</i>'
+    )
+
+
+def _onboard_guide_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    """Клавиатура экрана гайда: ссылка на гайд + кнопка запуска онбординга."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="📖 Гайд" if lang != "en" else "📖 Guide",
+        url=_ONBOARD_GUIDE_URL,
+        icon_custom_emoji_id="5271604874419647061",
+    ))
+    builder.row(InlineKeyboardButton(
+        text="🚀 Начинаем!" if lang != "en" else "🚀 Let's start!",
+        callback_data="onboard_finish",
+        style="success",
+    ))
+    return builder.as_markup()
+
+
 async def _send_onboarding_step(message: Message, uid: int) -> bool:
     """
-    Показывает очередной шаг онбординга нового пользователя:
-    1) капча (если не пройдена / если есть блок)
-    2) выбор языка (когда капча уже пройдена)
+    Показывает первый шаг онбординга нового пользователя — выбор языка.
+    Капчи больше нет: онбординг полностью кнопочный —
+    выбор языка → гайд + «Начинаем!» → меню (см. cd == "start_lang_*"
+    и cd == "onboard_finish" в handle_callback).
     Возвращает True всегда — обработку сообщения нужно прекратить.
     """
-    # 1) Проверяем, не заблокирован ли пользователь капчей
-    blocked, secs_left = await is_captcha_blocked(uid)
-    if blocked:
-        mins = (secs_left + 59) // 60
-        await message.answer(
-            captcha_blocked_text(mins),
-            parse_mode="HTML",
-        )
-        return True
-
-    # 2) Капча ещё не пройдена → показываем (или повторяем) вопрос
-    if not await is_captcha_passed(uid):
-        state = await create_captcha(uid)
-        sent = await message.answer(
-            captcha_start_text(state["question"]),
-            parse_mode="HTML",
-        )
-        await set_captcha_msg(uid, sent.chat.id, sent.message_id)
-        return True
-
-    # 3) Капча пройдена, но язык ещё не выбран → выбор языка
     await message.answer(
         lang_choose_text("ru"),
         parse_mode="HTML",
@@ -1832,16 +1842,23 @@ async def send_welcome(message: Message):
     u = await aio_get_or_create_user(message.from_user)
     await aio_track_user(uid)
 
-    # Регистрируем в реф. таблице — только для совсем новых пользователей,
-    # чтобы повторные /start не теряли и не путали данные о пригласителе
-    if is_brand_new:
-        await register_referral(uid, inviter_uid)
+    # ВАЖНО: реферала больше НЕ регистрируем сразу здесь. Раньше register_referral
+    # вызывался мгновенно на /start — так в базу попадали и те, кто просто
+    # перешёл по ссылке и тут же закрыл бота, ни разу не подтвердив, что
+    # реально начинает игру. Теперь инвайтера временно сохраняем в самом
+    # профиле пользователя (pending_inviter) и регистрируем по-настоящему
+    # (register_referral + начисление награды пригласившему) только когда
+    # приглашённый друг нажмёт «Начинаем!» в самом конце онбординга —
+    # см. cd == "onboard_finish" в handle_callback.
+    if is_brand_new and inviter_uid is not None:
+        u["pending_inviter"] = inviter_uid
+        await aio_save_user(uid, u)
 
     lang = get_lang(u)
 
     # ── Активация чека через deep-link: /start check_XXXXXXXX ──
-    # Чек активируется СРАЗУ при запуске, ДО капчи/онбординга —
-    # не важно, прошёл пользователь капчу или нет.
+    # Чек активируется СРАЗУ при запуске, ДО онбординга —
+    # не важно, прошёл пользователь онбординг или нет.
     if len(args) > 1 and args[1].startswith("check_"):
         check_code = args[1][6:]
         lock = await _get_user_lock(uid)
@@ -1857,13 +1874,13 @@ async def send_welcome(message: Message):
             else:
                 await message.answer(check_error_text(reason, lang), parse_mode="HTML")
 
-        # После активации чека — если онбординг (капча → язык) ещё не пройден,
-        # продолжаем его как обычно.
+        # После активации чека — если онбординг (язык → гайд → старт) ещё
+        # не пройден, продолжаем его как обычно.
         if not u.get("onboarded", True):
             await _send_onboarding_step(message, uid)
         return
 
-    # ── Новый пользователь → онбординг: капча → язык → меню ──
+    # ── Новый пользователь → онбординг: язык → гайд → меню ──
     if not u.get("onboarded", True):
         if message.chat.type == "private":
             await _send_onboarding_step(message, uid)
@@ -3559,8 +3576,10 @@ async def cmd_stop_boost(message: Message):
 
 
 @dp.message(F.text & ~F.text.startswith("/"))
-async def handle_captcha_answer(message: Message):
-    """Перехватчик текстовых сообщений для прохождения капчи при онбординге."""
+async def handle_free_text(message: Message):
+    """Перехватчик свободного текста: алиасы города/промокода/арсенала.
+    Раньше здесь же обрабатывались цифровые ответы на капчу при онбординге —
+    капчи больше нет, онбординг полностью кнопочный."""
     uid = message.from_user.id
     u   = await aio_get_or_create_user(message.from_user)
     lang = get_lang(u)
@@ -3700,127 +3719,10 @@ async def handle_captcha_answer(message: Message):
                         )
             return
 
-    # Этот хендлер нужен только пока пользователь проходит онбординг
-    if u.get("onboarded", True):
+    # Онбординг теперь полностью кнопочный (выбор языка → гайд → «Начинаем!»),
+    # свободный текст на этом этапе ни на что не влияет — просто игнорируем.
+    if not u.get("onboarded", True):
         return
-
-    # Если заблокирован — просто игнорируем (сообщение от пользователя удаляем)
-    blocked, secs_left = await is_captcha_blocked(uid)
-    if blocked:
-        try:
-            await message.delete()
-        except Exception:
-            pass
-        return
-
-    # Капча уже пройдена, осталось только выбрать язык
-    if await is_captcha_passed(uid):
-        try:
-            await message.delete()
-        except Exception:
-            pass
-        await message.answer(
-            lang_choose_text("ru"),
-            parse_mode="HTML",
-            reply_markup=lang_choose_keyboard_start(),
-        )
-        return
-
-    # Пробуем распарсить число
-    try:
-        user_ans = int(message.text.strip())
-    except ValueError:
-        try:
-            await message.delete()
-        except Exception:
-            pass
-        return
-
-    result = await check_captcha(uid, user_ans)
-
-    # Удаляем сообщение пользователя с ответом
-    try:
-        await message.delete()
-    except Exception:
-        pass
-
-    pending = await get_captcha_msg(uid)
-
-    if result["status"] == "ok":
-        # Капча пройдена — начисляем награду пригласителю
-        is_premium                  = bool(getattr(message.from_user, "is_premium", False))
-        rewarded, amount, samosvety = await reward_inviter(uid, is_premium)
-
-        # Уведомление пригласителю
-        if rewarded:
-            inv_uid = await get_inviter(uid)
-            if inv_uid:
-                from database import aio_get_user as _get_inv
-                _inv_data = await _get_inv(inv_uid)
-                _inv_lang = get_lang(_inv_data) if _inv_data else "ru"
-                name = _esc(message.from_user.first_name or message.from_user.username or "Новый игрок")
-                try:
-                    await bot.send_message(
-                        inv_uid,
-                        refs_notif_text(name, amount, is_premium, _inv_lang, samosvety),
-                        parse_mode="HTML",
-                    )
-                except Exception:
-                    pass
-
-        # Капча пройдена → обновляем старое сообщение на выбор языка
-        if pending:
-            try:
-                await bot.edit_message_text(
-                    lang_choose_text("ru"),
-                    chat_id=pending[0],
-                    message_id=pending[1],
-                    parse_mode="HTML",
-                    reply_markup=lang_choose_keyboard_start(),
-                )
-                return
-            except Exception:
-                pass
-        await message.answer(
-            lang_choose_text("ru"),
-            parse_mode="HTML",
-            reply_markup=lang_choose_keyboard_start(),
-        )
-
-    elif result["status"] == "wrong":
-        if pending:
-            try:
-                await bot.edit_message_text(
-                    captcha_wrong_text(result["question"], result["tries_left"]),
-                    chat_id=pending[0],
-                    message_id=pending[1],
-                    parse_mode="HTML",
-                )
-                return
-            except Exception:
-                pass
-        sent = await message.answer(
-            captcha_wrong_text(result["question"], result["tries_left"]),
-            parse_mode="HTML",
-        )
-        await set_captcha_msg(uid, sent.chat.id, sent.message_id)
-
-    elif result["status"] == "blocked":
-        if pending:
-            try:
-                await bot.edit_message_text(
-                    captcha_blocked_text(result["unblock_in_min"]),
-                    chat_id=pending[0],
-                    message_id=pending[1],
-                    parse_mode="HTML",
-                )
-                return
-            except Exception:
-                pass
-        await message.answer(
-            captcha_blocked_text(result["unblock_in_min"]),
-            parse_mode="HTML",
-        )
 
 
 # ── Рассылка: медиа (фото/видео) от админа ───────────────────────────
@@ -6014,13 +5916,61 @@ async def handle_callback(call: CallbackQuery):
             return
 
         # ===== ВЫБОР ЯЗЫКА ПРИ СТАРТЕ =====
+        # Онбординг: язык → гайд + «Начинаем!» → меню. Здесь фиксируем только
+        # язык и переключаем то же сообщение (edit) на экран гайда — сам
+        # онбординг (onboarded=True) и меню включаются лишь на кнопке
+        # «Начинаем!» (см. cd == "onboard_finish" ниже), не здесь.
         if cd in ("start_lang_ru", "start_lang_en"):
             new_lang = "ru" if cd == "start_lang_ru" else "en"
             data["lang"] = new_lang
+            await aio_save_user(data["id"], data)
+            await call.message.edit_text(
+                _onboard_guide_text(new_lang),
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=_onboard_guide_keyboard(new_lang),
+            )
+            await call.answer()
+            return
+
+        # ===== ОНБОРДИНГ: КНОПКА «НАЧИНАЕМ!» =====
+        # Финальный шаг: только теперь пользователь считается онбордженным,
+        # только теперь реферала (если он пришёл по пригласительной ссылке)
+        # реально регистрируем и начисляем награду пригласившему, и только
+        # теперь показываем меню. До этого клика ни один из этих трёх
+        # эффектов не происходит — переход по ссылке и выбор языка сами
+        # по себе ничего не засчитывают.
+        if cd == "onboard_finish":
+            new_lang = get_lang(data)
             data["onboarded"] = True
+            inviter_uid = data.pop("pending_inviter", None)
             _ach_newly = check_achievements(data)
             await aio_save_user(data["id"], data)
             await _notify_ach(data["id"], data, _ach_newly)
+
+            if inviter_uid:
+                await register_referral(data["id"], inviter_uid)
+                is_premium = bool(getattr(call.from_user, "is_premium", False))
+                rewarded, amount, samosvety = await reward_inviter(data["id"], is_premium)
+                if rewarded:
+                    from database import aio_get_user as _get_inv
+                    inv_data = await _get_inv(inviter_uid)
+                    inv_lang = get_lang(inv_data) if inv_data else "ru"
+                    name = _esc(call.from_user.first_name or call.from_user.username or "Новый игрок")
+                    try:
+                        await bot.send_message(
+                            inviter_uid,
+                            refs_notif_text(name, amount, is_premium, inv_lang, samosvety),
+                            parse_mode="HTML",
+                        )
+                    except Exception:
+                        pass
+
+            # Reply-клавиатуру (кнопки Menu/Clan) можно приложить только к
+            # НОВОМУ сообщению — Telegram не позволяет добавить её через
+            # edit_text к уже существующему. Поэтому шлём отдельное лёгкое
+            # сообщение только под неё, а само меню — через edit того же
+            # экрана, на котором пользователь жал «Начинаем!».
             await call.message.answer(
                 "🎮",
                 reply_markup=main_reply_keyboard(new_lang),
