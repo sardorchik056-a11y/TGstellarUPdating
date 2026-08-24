@@ -1975,7 +1975,7 @@ async def reply_btn_sections_back(message: Message):
         return
 
     await message.reply(
-        "🎮",
+        "Главное меню" if lang == "ru" else "Main menu",
         reply_markup=main_reply_keyboard(lang),
     )
 
@@ -6074,28 +6074,16 @@ async def handle_callback(call: CallbackQuery):
                     except Exception:
                         pass
 
-            # Вместо того чтобы сразу показывать меню на экране гайда —
-            # сначала подменяем этот экран коротким напутствием, и только
-            # ПОСЛЕ этого отдельными сообщениями вызываем само меню
-            # (reply-клавиатуру + инлайн-меню), как и раньше.
-            await call.message.edit_text(
+            # Инлайн-меню на старте не нужно, а «заглушка» 🎮 тоже не нужна —
+            # реплай-клавиатуру вешаем сразу на само напутственное сообщение.
+            try:
+                await call.message.edit_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+            await call.message.answer(
                 "Ну что, начинаем! Желаю удачи!" if new_lang != "en" else "Alright, let's go! Good luck!",
                 parse_mode="HTML",
-            )
-
-            # Reply-клавиатуру (кнопки Menu/Clan) можно приложить только к
-            # НОВОМУ сообщению — Telegram не позволяет добавить её через
-            # edit_text к уже существующему. Поэтому шлём отдельное лёгкое
-            # сообщение только под неё, а само меню — отдельным сообщением.
-            await call.message.answer(
-                "🎮",
                 reply_markup=main_reply_keyboard(new_lang),
-            )
-            await call.message.answer(
-                t(new_lang, "welcome"),
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-                reply_markup=main_menu_keyboard(new_lang),
             )
             await call.answer()
             return
