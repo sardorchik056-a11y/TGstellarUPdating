@@ -6076,15 +6076,16 @@ async def handle_callback(call: CallbackQuery):
                     except Exception:
                         pass
 
-            # Инлайн-меню на старте не нужно, а «заглушка» 🎮 тоже не нужна —
-            # реплай-клавиатуру вешаем сразу на само напутственное сообщение.
+            # Сообщение с кнопкой «Начинаем!» удаляем, а не просто
+            # снимаем клавиатуру — и уже после этого отправляем приветствие.
             try:
-                await call.message.edit_reply_markup(reply_markup=None)
+                await call.message.delete()
             except Exception:
                 pass
             await call.message.answer(
-                "Ну что, начинаем! Желаю удачи!" if new_lang != "en" else "Alright, let's go! Good luck!",
+                t(new_lang, "welcome"),
                 parse_mode="HTML",
+                disable_web_page_preview=True,
                 reply_markup=main_reply_keyboard(new_lang),
             )
             await call.answer()
