@@ -580,6 +580,39 @@ def main_reply_keyboard(lang: str = "ru") -> ReplyKeyboardMarkup:
     return builder.as_markup(resize_keyboard=True)
 
 
+def sections_reply_keyboard(lang: str = "ru") -> ReplyKeyboardMarkup:
+    """Реплай-клавиатура разделов меню (открывается по кнопке «Меню» из
+    main_reply_keyboard). Кнопки те же разделы, что раньше были в инлайн
+    main_menu_keyboard, но теперь это reply-кнопки, а не инлайн."""
+    builder = ReplyKeyboardBuilder()
+    builder.row(
+        KeyboardButton(text="Профиль" if lang == "ru" else "Profile", style="primary", icon_custom_emoji_id=EMOJI_PROFILE),
+        KeyboardButton(text="Статистика" if lang == "ru" else "Stats", style="primary", icon_custom_emoji_id=EMOJI_STATS),
+        KeyboardButton(text="Кейсы" if lang == "ru" else "Cases", style="primary", icon_custom_emoji_id="5442939099906325301"),
+    )
+    builder.row(
+        KeyboardButton(text="Шахта" if lang == "ru" else "Mine", style="primary", icon_custom_emoji_id=EMOJI_MINE),
+        KeyboardButton(text="Охота" if lang == "ru" else "Hunt", style="primary", icon_custom_emoji_id=EMOJI_HUNT),
+        KeyboardButton(text="Статус" if lang == "ru" else "Status", style="primary", icon_custom_emoji_id=EMOJI_STATUS),
+    )
+    builder.row(
+        KeyboardButton(text="Питомцы" if lang == "ru" else "Pets", style="primary", icon_custom_emoji_id=EMOJI_PETS),
+        KeyboardButton(text="Дуэли" if lang == "ru" else "Duels", style="primary", icon_custom_emoji_id="5454014806950429357"),
+    )
+    builder.row(
+        KeyboardButton(text="Вклады" if lang == "ru" else "Deposits", style="primary", icon_custom_emoji_id=EMOJI_DEPOSITS),
+        KeyboardButton(text="Лидеры" if lang == "ru" else "Leaders", style="primary", icon_custom_emoji_id=EMOJI_LEADERS),
+    )
+    builder.row(
+        KeyboardButton(text="Настройки" if lang == "ru" else "Settings", style="primary", icon_custom_emoji_id=EMOJI_SETTINGS),
+        KeyboardButton(text="BIO Bonus", style="primary", icon_custom_emoji_id="5199552030615558774"),
+    )
+    builder.row(
+        KeyboardButton(text="Назад" if lang == "ru" else "Back", style="primary", icon_custom_emoji_id=EMOJI_BACK),
+    )
+    return builder.as_markup(resize_keyboard=True)
+
+
 def main_menu_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -1915,12 +1948,87 @@ async def reply_btn_menu(message: Message):
         await _send_onboarding_step(message, uid)
         return
 
+    # Кнопка «Меню» в реплай-клавиатуре теперь открывает ДРУГУЮ реплай-
+    # клавиатуру — с кнопками разделов (см. sections_reply_keyboard).
+    # Сами разделы (профиль/статистика/кейсы/...) больше не инлайн-кнопки
+    # на этом шаге, а reply-кнопки — см. обработчики reply_btn_section_*.
     await message.reply(
         t(lang, "welcome"),
         parse_mode="HTML",
         disable_web_page_preview=True,
-        reply_markup=main_menu_keyboard(lang),
+        reply_markup=sections_reply_keyboard(lang),
     )
+
+
+@dp.message(_text_in("Назад", "Back"), F.chat.type == "private")
+async def reply_btn_sections_back(message: Message):
+    """Кнопка «Назад» в клавиатуре разделов — возврат к основной
+    реплай-клавиатуре (Меню/Клан/Город/Достижения)."""
+    from database import aio_get_or_create_user as _gou
+    uid  = message.from_user.id
+    u    = await _gou(message.from_user)
+    lang = get_lang(u)
+    await aio_track_user(uid)
+
+    if not u.get("onboarded", True):
+        await _send_onboarding_step(message, uid)
+        return
+
+    await message.reply(
+        "🎮",
+        reply_markup=main_reply_keyboard(lang),
+    )
+
+
+async def _open_section_reply(message: Message, text: str, keyboard) -> None:
+    """Общий помощник для reply-кнопок разделов: онбординг-гейт + track +
+    очистка pending-инпутов, затем отправка текста раздела с его инлайн-
+    клавиатурой (навигация ВНУТРИ раздела остаётся инлайн — реплай-кнопками
+    стали только сами разделы верхнего уровня)."""
+    from database import aio_get_or_create_user as _gou
+    uid  = message.from_user.id
+    u    = await _gou(message.from_user)
+    await aio_track_user(uid)
+    await _clear_all_pending_inputs(uid, u)
+
+    if not u.get("onboarded", True):
+        await _send_onboarding_step(message, uid)
+        return None
+
+    await message.reply(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=keyboard)
+    return u
+
+
+# ПРИМЕЧАНИЕ: отдельные reply-обработчики для Профиль/Статистика/Кейсы/
+# Шахта/Охота/Статус/Питомцы/Лидеры/Настройки/Вклады не нужны — у них уже
+# есть текстовые команды ниже по файлу (cmd_mine, cmd_profile, cmd_hunt,
+# cmd_pets, cmd_cases, cmd_stats, cmd_leaders, cmd_status, cmd_settings,
+# cmd_deposits и т.п.), а _text_in сравнивает текст без учёта регистра —
+# значит кнопки «Шахта»/«Mine» и т.д. из sections_reply_keyboard уже
+# срабатывают на эти же обработчики без дублирования кода.
+# Дуэли и BIO Bonus такого текстового шортката раньше не имели — им нужны
+# отдельные обработчики ниже.
+
+
+@dp.message(_text_in("Дуэли", "Duels"), F.chat.type == "private")
+async def reply_btn_section_duels(message: Message):
+    from database import aio_get_or_create_user as _gou
+    u = await _gou(message.from_user)
+    lang = get_lang(u)
+    await _open_section_reply(message, duel_main_text(u, lang), duel_main_keyboard(lang))
+
+
+@dp.message(_text_in("BIO Bonus"), F.chat.type == "private")
+async def reply_btn_section_bio_bonus(message: Message):
+    from database import aio_get_or_create_user as _gou
+    from bio_bonus import refresh_bio_bonus
+    uid  = message.from_user.id
+    u    = await _gou(message.from_user)
+    lang = get_lang(u)
+    ok = await refresh_bio_bonus(bot, uid, u)
+    if ok:
+        await aio_save_user(uid, u)
+    await _open_section_reply(message, _bio_bonus_status_text(u, lang), back_button(lang))
 
 
 @dp.message(_text_in("Клан", "Clan"), F.chat.type == "private")
@@ -5966,16 +6074,24 @@ async def handle_callback(call: CallbackQuery):
                     except Exception:
                         pass
 
+            # Вместо того чтобы сразу показывать меню на экране гайда —
+            # сначала подменяем этот экран коротким напутствием, и только
+            # ПОСЛЕ этого отдельными сообщениями вызываем само меню
+            # (reply-клавиатуру + инлайн-меню), как и раньше.
+            await call.message.edit_text(
+                "Ну что, начинаем! Желаю удачи!" if new_lang != "en" else "Alright, let's go! Good luck!",
+                parse_mode="HTML",
+            )
+
             # Reply-клавиатуру (кнопки Menu/Clan) можно приложить только к
             # НОВОМУ сообщению — Telegram не позволяет добавить её через
             # edit_text к уже существующему. Поэтому шлём отдельное лёгкое
-            # сообщение только под неё, а само меню — через edit того же
-            # экрана, на котором пользователь жал «Начинаем!».
+            # сообщение только под неё, а само меню — отдельным сообщением.
             await call.message.answer(
                 "🎮",
                 reply_markup=main_reply_keyboard(new_lang),
             )
-            await call.message.edit_text(
+            await call.message.answer(
                 t(new_lang, "welcome"),
                 parse_mode="HTML",
                 disable_web_page_preview=True,
