@@ -1,6 +1,6 @@
 # ============================================================
 #  achieves.py  —  Система достижений
-#  129 достижений: деньги, уровень, шахта, охота на боссов,
+#  127 достижений: деньги, уровень, шахта, охота на боссов,
 #  арсенал (мечи), дуэли, кейсы/артефакты (15, живые данные из shop.py),
 #  питомцы, клан (15, живые данные из klan.py), рефералы, донат,
 #  вклады, разное.
@@ -106,13 +106,13 @@
 #  читают её через _pet_owns_rarity(d, rarity), лениво сверяясь с
 #  pets.PETS_BY_KEY — синхронизировать ничего не нужно.
 #
-#  🎯 РАЗНОЕ — раздел подключён к реальным данным (5 достижений, больше не
+#  🎯 РАЗНОЕ — раздел подключён к реальным данным (3 достижения, больше не
 #  заглушка). promo_activations теперь инкрементируется в mainhelp.py во
 #  всех 3 местах вызова activate_promo(...) при успехе. daily_streak теперь
 #  считается в cmd_daily: растёт, если бонус забран не позже чем через 48ч
-#  после предыдущего, иначе сбрасывается на 1. misc_leaderboard_top10
-#  читает живой топ-10 по балансу через _is_top10_balance(d) (лениво зовёт
-#  database.get_all_users()) — ничего в data хранить не нужно.
+#  после предыдущего, иначе сбрасывается на 1. Достижения «Добро пожаловать»
+#  (misc_onboarded) и «Топ игрок» (misc_leaderboard_top10) убраны — больше
+#  не нужны.
 #
 #  🏦 ВКЛАДЫ — раздел подключён к реальным данным cdl.py (5 достижений,
 #  больше не заглушка). Инкрементируются прямо в mainhelp.py:
@@ -1637,14 +1637,7 @@ ACHIEVEMENTS = [
          reward_coins=150_000, reward_xp=250,
          name_en="Financial magnate", desc_en="Earn a total of 10,000,000 coins in deposit profit"),
 
-    # ───────────── 🎯 РАЗНОЕ (5) ─────────────
-    _ach("misc_onboarded", "🚪", "Добро пожаловать",
-         "Пройди обучение и начни игру",
-         "misc",
-         lambda d: bool(d.get("onboarded")),
-         reward_coins=500, reward_xp=5,
-         name_en='Welcome', desc_en='Complete onboarding and start playing'),
-
+    # ───────────── 🎯 РАЗНОЕ (3) ─────────────
     _ach("misc_promo", "🎟", "Охотник за скидками",
          "Активируй промокод",
          "misc",
@@ -1669,15 +1662,9 @@ ACHIEVEMENTS = [
          reward_coins=15_000, reward_xp=60,
          name_en='Loyal Player', desc_en='Claim the daily bonus 7 days in a row'),
 
-    _ach("misc_leaderboard_top10", "🏅", "Топ игрок",
-         "Войди в топ-10 игроков по балансу",
-         "misc",
-         lambda d: _is_top10_balance(d),
-         reward_coins=2_000, reward_xp=300,
-         name_en='Top Player', desc_en='Reach the top 10 players by balance'),
 ]
 
-assert len(ACHIEVEMENTS) == 129, f"Ожидалось 129 достижений, а получилось {len(ACHIEVEMENTS)}"
+assert len(ACHIEVEMENTS) == 127, f"Ожидалось 127 достижений, а получилось {len(ACHIEVEMENTS)}"
 
 ACHIEVEMENTS_BY_ID = {a["id"]: a for a in ACHIEVEMENTS}
 
