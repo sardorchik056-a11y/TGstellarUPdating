@@ -1919,19 +1919,21 @@ async def send_welcome(message: Message):
             await _send_onboarding_step(message, uid)
         return
 
-    # ── Уже онбордженный пользователь → главное меню ──
-    # Reply-клавиатуру (кнопки Menu/Clan) показываем только в личке
+    # ── Уже онбордженный пользователь → просто реплай-клавиатура,
+    # без инлайн-меню и без «заглушки» 🎮 (см. предыдущие правки) ──
     if message.chat.type == "private":
-        await message.answer(
-            "🎮",
+        await message.reply(
+            t(lang, "welcome"),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
             reply_markup=main_reply_keyboard(lang),
         )
-    await message.reply(
-        t(lang, "welcome"),
-        parse_mode="HTML",
-        disable_web_page_preview=True,
-        reply_markup=main_menu_keyboard(lang),
-    )
+    else:
+        await message.reply(
+            t(lang, "welcome"),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
 
 
 @dp.message(_text_in("Меню", "Menu"), F.chat.type == "private")
