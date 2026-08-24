@@ -6821,13 +6821,37 @@ async def _cdl_payout_loop():
 
                 # Атомарное начисление баланса — в отдельном потоке, чтобы
                 # не морозить event loop для всех остальных пользователей.
-                try:
-                    result = await asyncio.to_thread(
-                        _cdl_payout_apply_sync, uid, total_payout, total_profit, len(paid_deps)
-                    )
-                except Exception as _db_e:
-                    print(f"[cdl_payout_loop] ошибка начисления uid={uid}: {_db_e}")
-                    continue
+                #
+                # ВАЖНО (фикс бага "вклад иногда не начисляется / баланс
+                # иногда не списывается"): раньше здесь НЕ бралcя персональный
+                # _get_user_lock(uid), в отличие от ВСЕХ остальных мест кода,
+                # которые пишут users.data_json (открытие/клейм вклада из
+                # handle_callback, переводы, шахта, питомцы и т.д.).
+                # _cdl_payout_apply_sync делает read-modify-write ВСЕЙ строки
+                # пользователя (SELECT data_json → правим dict → UPDATE
+                # data_json). Если ровно в эту минуту пользователь совершал
+                # любое другое действие с балансом под своим локом, возникала
+                # гонка (lost update): чья запись в users физически
+                # произойдёт последней — та и "победит", полностью затерев
+                # изменение другой стороны. Из-за этого:
+                #  - вклад помечался claimed=1 в таблице deposits, но
+                #    начисленный payout мог быть стёрт параллельной записью
+                #    из handle_callback → баланс "не менялся";
+                #  - и наоборот, списание баланса при открытии вклада могло
+                #    быть стёрто параллельной записью из этого цикла →
+                #    "баланс не списывается".
+                # Захват того же лока, что использует handle_callback,
+                # сериализует все изменения баланса конкретного uid и
+                # полностью убирает эту гонку.
+                lock = await _get_user_lock(uid)
+                async with lock:
+                    try:
+                        result = await asyncio.to_thread(
+                            _cdl_payout_apply_sync, uid, total_payout, total_profit, len(paid_deps)
+                        )
+                    except Exception as _db_e:
+                        print(f"[cdl_payout_loop] ошибка начисления uid={uid}: {_db_e}")
+                        continue
                 if result is None:
                     continue
                 udata, _ach_newly = result
