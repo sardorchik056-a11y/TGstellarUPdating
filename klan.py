@@ -213,6 +213,44 @@ MIN_CLAN_NAME    = 3
 MAX_CLAN_NAME    = 24
 CREATE_COST      = 10_000
 
+# ── Роли в клане: creator / officer / member ────────────────
+# officer — доверенный помощник создателя: модерирует заявки/кик,
+# одобряет выводы из казны (с потолком по сумме, см. ниже), качает
+# уровень клана. НЕ может: назначать/снимать офицеров, передавать
+# права, привязывать/отвязывать чат, расформировывать клан.
+# Количество слотов под офицеров растёт вместе с рангом клана —
+# чем крупнее клан, тем больше рук нужно для модерации.
+OFFICER_SLOTS_BY_RANK = {
+    1: 1,   # Новичок
+    2: 2,   # Отряд
+    3: 3,   # Легион
+    4: 4,   # Орден
+    5: 6,   # Империя
+}
+# Потолок на одну заявку, которую может одобрить officer — доля от
+# ТЕКУЩЕЙ казны клана на момент одобрения. Защита от нечестного
+# офицера, одобряющего себе/сообщнику крупный вывод разом.
+# Создатель одобряет без этого потолка.
+OFFICER_APPROVE_MAX_PCT = 0.10
+
+
+def get_officer_slots(clan: dict) -> int:
+    """Сколько офицерских слотов доступно клану при его текущем ранге."""
+    rank = (clan or {}).get("rank") or 1
+    rank = max(1, min(rank, MAX_CLAN_RANK))
+    return OFFICER_SLOTS_BY_RANK.get(rank, 1)
+
+
+def get_officer_count(clan_id: int) -> int:
+    with _conn() as c:
+        return c.execute(
+            "SELECT COUNT(*) FROM clan_members WHERE clan_id=? AND role='officer'", (clan_id,)
+        ).fetchone()[0]
+
+
+def is_officer_or_above(member: dict | None) -> bool:
+    return bool(member) and member.get("role") in ("creator", "officer")
+
 # ── Лимиты на вывод из казны по стажу в клане ───────────────
 # Защита от схемы "вступил в клан ради вывода общей казны":
 # чем меньше времени игрок состоит в клане, тем меньше он может
@@ -240,6 +278,48 @@ def get_membership_withdraw_limit(joined_ts: int) -> int | None:
     if elapsed < 7 * _DAY:
         return WITHDRAW_LIMIT_7D
     return None
+
+
+# ── Ветеран клана ────────────────────────────────────────────
+# Статус не назначается вручную — вычисляется "на лету" из стажа
+# и личного вклада в казну (без отдельной колонки в БД, чтобы не
+# было рассинхронизации при изменении порогов задним числом).
+# Даёт только личные бонусы игроку, никаких прав управления кланом.
+VETERAN_MIN_DAYS        = 30        # минимальный непрерывный стаж в клане
+VETERAN_MIN_CONTRIBUTED = 500_000   # минимальный личный вклад в казну
+VETERAN_MINE_BONUS      = 0.10      # +10% к итоговому множителю добычи
+VETERAN_WITHDRAW_UNLIMITED = True   # ветераны выводят из казны без лимита по стажу
+
+
+def is_veteran(member: dict | None) -> bool:
+    """
+    True, если игрок состоит в клане >= VETERAN_MIN_DAYS дней непрерывно
+    (joined_ts обновляется заново при повторном вступлении после выхода)
+    И его личный вклад в казну (contributed) >= VETERAN_MIN_CONTRIBUTED.
+    """
+    if not member:
+        return False
+    joined_ts = member.get("joined_ts") or 0
+    if joined_ts <= 0:
+        return False
+    if (int(time.time()) - joined_ts) < VETERAN_MIN_DAYS * _DAY:
+        return False
+    if (member.get("contributed") or 0) < VETERAN_MIN_CONTRIBUTED:
+        return False
+    return True
+
+
+def get_withdraw_limit_for_member(member: dict) -> int | None:
+    """
+    Лимит на вывод из казны с учётом статуса ветерана: ветераны
+    полностью отыграли доверие клана и выводят без ограничения по
+    стажу (см. VETERAN_WITHDRAW_UNLIMITED). Остальные — как обычно,
+    по get_membership_withdraw_limit.
+    """
+    if VETERAN_WITHDRAW_UNLIMITED and is_veteran(member):
+        return None
+    return get_membership_withdraw_limit(member.get("joined_ts") or 0)
+
 
 # ── Ежедневные задания клана ────────────────────────────────
 DAILY_QUEST_DMG_TARGET  = 1_000_000   # сколько урона боссу нужно нанести (суммарно кланом)
@@ -309,11 +389,21 @@ def get_clan_bonus_info(clan: dict, member: dict) -> dict:
     now       = int(time.time())
     elapsed   = now - last_ts
     active    = last_ts > 0 and elapsed < PERSONAL_QUEST_ACTIVITY_WINDOW
+    veteran   = is_veteran(member)
+
+    mult = base_mult if active else 1.0
+    if veteran:
+        # Бонус ветерана — надбавка за лояльность, не завязана на
+        # активность по личным заданиям (в отличие от базового бонуса).
+        mult += VETERAN_MINE_BONUS
+
     return {
         "level":            level,
         "base_multiplier":  base_mult,
-        "multiplier":       base_mult if active else 1.0,
+        "multiplier":       mult,
         "active":           active,
+        "veteran":          veteran,
+        "veteran_bonus":    VETERAN_MINE_BONUS if veteran else 0.0,
         "last_ts":          last_ts,
         "seconds_left":     max(0, PERSONAL_QUEST_ACTIVITY_WINDOW - elapsed) if active else 0,
     }
@@ -553,6 +643,14 @@ def init_klan_db():
         member_cols = {row[1] for row in c.execute("PRAGMA table_info(clan_members)").fetchall()}
         if "last_personal_quest_ts" not in member_cols:
             c.execute("ALTER TABLE clan_members ADD COLUMN last_personal_quest_ts INTEGER DEFAULT 0")
+        # Миграция: кто одобрил заявку на вывод (для истории/аудита —
+        # важно, т.к. теперь заявки может одобрять и officer, не только
+        # creator; полезно при разборе спорных ситуаций).
+        wd_cols = {row[1] for row in c.execute("PRAGMA table_info(clan_treasury_requests)").fetchall()}
+        if "approved_by" not in wd_cols:
+            c.execute("ALTER TABLE clan_treasury_requests ADD COLUMN approved_by INTEGER DEFAULT NULL")
+        if "approved_role" not in wd_cols:
+            c.execute("ALTER TABLE clan_treasury_requests ADD COLUMN approved_role TEXT DEFAULT NULL")
         # Миграция: добавляем новые колонки к существующей таблице, если их нет
         existing_cols = {row[1] for row in c.execute("PRAGMA table_info(clan_daily_quests)").fetchall()}
         for col, ddl in [
@@ -685,7 +783,7 @@ def get_clan_members(clan_id: int) -> list[dict]:
             FROM clan_members m
             LEFT JOIN users u ON u.uid = m.uid
             WHERE m.clan_id=?
-            ORDER BY CASE m.role WHEN 'creator' THEN 0 ELSE 1 END, m.contributed DESC
+            ORDER BY CASE m.role WHEN 'creator' THEN 0 WHEN 'officer' THEN 1 ELSE 2 END, m.contributed DESC
         """, (clan_id,)).fetchall()
     return [dict(r) for r in rows]
 
@@ -820,19 +918,109 @@ def leave_clan(uid: int) -> dict:
     return {"ok": True}
 
 
-def kick_member(creator_uid: int, target_uid: int) -> dict:
+def kick_member(actor_uid: int, target_uid: int) -> dict:
+    """
+    Исключить участника. Доступно creator и officer.
+    officer не может кикнуть creator и других officer — только member.
+    """
+    m = get_member(actor_uid)
+    if not m or not is_officer_or_above(m):
+        return {"ok": False, "error": "not_authorized"}
+    t = get_member(target_uid)
+    if not t or t["clan_id"] != m["clan_id"]:
+        return {"ok": False, "error": "not_in_your_clan"}
+    if t["role"] == "creator":
+        return {"ok": False, "error": "cannot_kick_creator"}
+    if m["role"] == "officer" and t["role"] == "officer":
+        return {"ok": False, "error": "officer_cannot_kick_officer"}
+    with _conn() as c:
+        c.execute("DELETE FROM clan_members WHERE uid=?", (target_uid,))
+        c.commit()
+    return {"ok": True}
+
+
+def promote_member(creator_uid: int, target_uid: int) -> dict:
+    """Назначить участника офицером. Только creator, с учётом лимита
+    слотов по рангу клана (см. OFFICER_SLOTS_BY_RANK)."""
     m = get_member(creator_uid)
     if not m or m["role"] != "creator":
         return {"ok": False, "error": "not_creator"}
     t = get_member(target_uid)
     if not t or t["clan_id"] != m["clan_id"]:
         return {"ok": False, "error": "not_in_your_clan"}
-    if t["role"] == "creator":
-        return {"ok": False, "error": "cannot_kick_creator"}
+    if t["role"] != "member":
+        return {"ok": False, "error": "already_officer_or_creator"}
+    clan = get_clan(m["clan_id"])
+    slots = get_officer_slots(clan)
+    if get_officer_count(m["clan_id"]) >= slots:
+        return {"ok": False, "error": "no_officer_slots", "slots": slots}
     with _conn() as c:
-        c.execute("DELETE FROM clan_members WHERE uid=?", (target_uid,))
+        c.execute("UPDATE clan_members SET role='officer' WHERE uid=?", (target_uid,))
         c.commit()
-    return {"ok": True}
+    return {"ok": True, "uid": target_uid}
+
+
+def demote_member(creator_uid: int, target_uid: int) -> dict:
+    """Снять офицера обратно в member. Только creator."""
+    m = get_member(creator_uid)
+    if not m or m["role"] != "creator":
+        return {"ok": False, "error": "not_creator"}
+    t = get_member(target_uid)
+    if not t or t["clan_id"] != m["clan_id"]:
+        return {"ok": False, "error": "not_in_your_clan"}
+    if t["role"] != "officer":
+        return {"ok": False, "error": "not_officer"}
+    with _conn() as c:
+        c.execute("UPDATE clan_members SET role='member' WHERE uid=?", (target_uid,))
+        c.commit()
+    return {"ok": True, "uid": target_uid}
+
+
+def get_officers(clan_id: int) -> list[dict]:
+    """Список офицеров клана (для экрана «Управление офицерами»)."""
+    with _conn() as c:
+        rows = c.execute("""
+            SELECT m.uid, m.role, m.joined_ts, m.contributed,
+                   json_extract(u.data_json, '$.first_name') AS first_name,
+                   json_extract(u.data_json, '$.username')   AS username
+            FROM clan_members m
+            LEFT JOIN users u ON u.uid = m.uid
+            WHERE m.clan_id=? AND m.role='officer'
+            ORDER BY m.joined_ts ASC
+        """, (clan_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def transfer_ownership(creator_uid: int, target_uid: int, keep_as_officer: bool = True) -> dict:
+    """
+    Передать права creator другому участнику клана. Прежний creator
+    становится officer (если keep_as_officer=True и есть свободный
+    слот, иначе — member) или сразу member. Атомарно в одной транзакции.
+    """
+    m = get_member(creator_uid)
+    if not m or m["role"] != "creator":
+        return {"ok": False, "error": "not_creator"}
+    t = get_member(target_uid)
+    if not t or t["clan_id"] != m["clan_id"]:
+        return {"ok": False, "error": "not_in_your_clan"}
+    if target_uid == creator_uid:
+        return {"ok": False, "error": "same_uid"}
+    clan_id = m["clan_id"]
+    with _clan_lock(clan_id):
+        with _immediate_tx() as c:
+            clan = c.execute("SELECT rank FROM clans WHERE id=?", (clan_id,)).fetchone()
+            slots = OFFICER_SLOTS_BY_RANK.get(max(1, min((clan["rank"] or 1), MAX_CLAN_RANK)), 1) if clan else 1
+            # target_uid исключаем из подсчёта: если он был officer,
+            # он освобождает свой слот, становясь creator.
+            officer_count = c.execute(
+                "SELECT COUNT(*) FROM clan_members WHERE clan_id=? AND role='officer' AND uid<>?",
+                (clan_id, target_uid)
+            ).fetchone()[0]
+            new_old_role = "officer" if (keep_as_officer and officer_count < slots) else "member"
+            c.execute("UPDATE clan_members SET role=? WHERE uid=?", (new_old_role, creator_uid))
+            c.execute("UPDATE clan_members SET role='creator' WHERE uid=?", (target_uid,))
+            c.execute("UPDATE clans SET creator_uid=? WHERE id=?", (target_uid, clan_id))
+    return {"ok": True, "new_creator": target_uid, "old_creator_new_role": new_old_role}
 
 # ─────────────────────── ЗАЯВКИ ──────────────────────────────
 
@@ -882,10 +1070,10 @@ def get_applications(clan_id: int, page: int = 0) -> tuple[list[dict], int]:
     return [dict(r) for r in rows], total
 
 
-def accept_application(creator_uid: int, app_id: int) -> dict:
-    m = get_member(creator_uid)
-    if not m or m["role"] != "creator":
-        return {"ok": False, "error": "not_creator"}
+def accept_application(actor_uid: int, app_id: int) -> dict:
+    m = get_member(actor_uid)
+    if not m or not is_officer_or_above(m):
+        return {"ok": False, "error": "not_authorized"}
     with _conn() as c:
         app = c.execute("SELECT * FROM clan_applications WHERE id=?", (app_id,)).fetchone()
         if not app:
@@ -909,10 +1097,10 @@ def accept_application(creator_uid: int, app_id: int) -> dict:
     return {"ok": True, "uid": app["uid"]}
 
 
-def reject_application(creator_uid: int, app_id: int) -> dict:
-    m = get_member(creator_uid)
-    if not m or m["role"] != "creator":
-        return {"ok": False, "error": "not_creator"}
+def reject_application(actor_uid: int, app_id: int) -> dict:
+    m = get_member(actor_uid)
+    if not m or not is_officer_or_above(m):
+        return {"ok": False, "error": "not_authorized"}
     with _conn() as c:
         app = c.execute("SELECT * FROM clan_applications WHERE id=?", (app_id,)).fetchone()
         if not app or app["clan_id"] != m["clan_id"]:
@@ -922,10 +1110,10 @@ def reject_application(creator_uid: int, app_id: int) -> dict:
     return {"ok": True, "uid": app["uid"]}
 
 
-def accept_all_applications(creator_uid: int) -> dict:
-    m = get_member(creator_uid)
-    if not m or m["role"] != "creator":
-        return {"ok": False, "error": "not_creator"}
+def accept_all_applications(actor_uid: int) -> dict:
+    m = get_member(actor_uid)
+    if not m or not is_officer_or_above(m):
+        return {"ok": False, "error": "not_authorized"}
     clan_id = m["clan_id"]
     with _conn() as c:
         all_apps = c.execute(
@@ -958,10 +1146,10 @@ def accept_all_applications(creator_uid: int) -> dict:
     return {"ok": True, "accepted": accepted, "skipped": skipped}
 
 
-def reject_all_applications(creator_uid: int) -> dict:
-    m = get_member(creator_uid)
-    if not m or m["role"] != "creator":
-        return {"ok": False, "error": "not_creator"}
+def reject_all_applications(actor_uid: int) -> dict:
+    m = get_member(actor_uid)
+    if not m or not is_officer_or_above(m):
+        return {"ok": False, "error": "not_authorized"}
     clan_id = m["clan_id"]
     with _conn() as c:
         count = c.execute(
@@ -1054,7 +1242,7 @@ def request_withdrawal(uid: int, amount: int, reason: str) -> dict:
             # накопительно: сколько этот игрок уже вывел/запросил за
             # всё время, пока действует его текущее ограничение по
             # стажу — так лимит нельзя обойти серией мелких заявок.
-            limit = get_membership_withdraw_limit(m["joined_ts"])
+            limit = get_withdraw_limit_for_member(m)
             if limit is not None:
                 already = c.execute("""
                     SELECT COALESCE(SUM(amount), 0) FROM clan_treasury_requests
@@ -1105,10 +1293,16 @@ def get_withdrawal_requests(clan_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def approve_withdrawal(creator_uid: int, req_id: int) -> dict:
-    m = get_member(creator_uid)
-    if not m or m["role"] != "creator":
-        return {"ok": False, "error": "not_creator"}
+def approve_withdrawal(actor_uid: int, req_id: int) -> dict:
+    """
+    Одобрить заявку на вывод из казны. Доступно creator и officer.
+    officer ограничен потолком OFFICER_APPROVE_MAX_PCT от текущей
+    казны на один запрос (защита от нечестного офицера) — creator
+    одобряет без этого потолка.
+    """
+    m = get_member(actor_uid)
+    if not m or not is_officer_or_above(m):
+        return {"ok": False, "error": "not_authorized"}
     clan_id = m["clan_id"]
     with _clan_lock(clan_id):
         with _immediate_tx() as c:
@@ -1121,13 +1315,23 @@ def approve_withdrawal(creator_uid: int, req_id: int) -> dict:
             if req["clan_id"] != clan_id:
                 return {"ok": False, "error": "wrong_clan"}
 
+            if m["role"] == "officer":
+                clan_row = c.execute("SELECT treasury FROM clans WHERE id=?", (clan_id,)).fetchone()
+                treasury = clan_row["treasury"] if clan_row else 0
+                officer_cap = int(treasury * OFFICER_APPROVE_MAX_PCT)
+                if req["amount"] > officer_cap:
+                    return {
+                        "ok": False, "error": "officer_cap_exceeded",
+                        "cap": officer_cap, "amount": req["amount"],
+                    }
+
             # Атомарно: переводим заявку pending -> approved только
             # если она всё ещё pending (rowcount=0 => кто-то её уже
             # обработал между SELECT и этим UPDATE).
             cur = c.execute("""
-                UPDATE clan_treasury_requests SET status='approved'
+                UPDATE clan_treasury_requests SET status='approved', approved_by=?, approved_role=?
                 WHERE id=? AND status='pending'
-            """, (req_id,))
+            """, (actor_uid, m["role"], req_id))
             if cur.rowcount == 0:
                 return {"ok": False, "error": "req_not_found"}
 
@@ -1149,10 +1353,10 @@ def approve_withdrawal(creator_uid: int, req_id: int) -> dict:
     return {"ok": True, "uid": req["uid"], "amount": req["amount"]}
 
 
-def reject_withdrawal(creator_uid: int, req_id: int) -> dict:
-    m = get_member(creator_uid)
-    if not m or m["role"] != "creator":
-        return {"ok": False, "error": "not_creator"}
+def reject_withdrawal(actor_uid: int, req_id: int) -> dict:
+    m = get_member(actor_uid)
+    if not m or not is_officer_or_above(m):
+        return {"ok": False, "error": "not_authorized"}
     with _clan_lock(m["clan_id"]):
         with _immediate_tx() as c:
             req = c.execute(
@@ -1486,7 +1690,7 @@ def add_clan_antimatter(uid: int, tier_key: str) -> dict:
 def level_up_clan(uid: int) -> dict:
     """
     Повышает уровень клана, списывая антиматерию из её баланса у клана.
-    Доступно только создателю клана. Стоимость по уровням:
+    Доступно creator и officer. Стоимость по уровням:
       2 уровень — 15 антиматерий
       3 уровень — 125 антиматерий
       4 уровень — 350 антиматерий
@@ -1495,8 +1699,8 @@ def level_up_clan(uid: int) -> dict:
     исключить дюп при параллельных нажатиях.
     """
     m = get_member(uid)
-    if not m or m["role"] != "creator":
-        return {"ok": False, "error": "not_creator"}
+    if not m or not is_officer_or_above(m):
+        return {"ok": False, "error": "not_authorized"}
     clan_id = m["clan_id"]
     with _clan_lock(clan_id):
         with _immediate_tx() as c:
@@ -1886,13 +2090,20 @@ def my_klan_text(clan: dict, member: dict, member_count: int, lang: str = "ru") 
     level_block = _clan_level_block(clan, lang)
     bonus_block = _clan_bonus_block(clan, member, lang)
 
+    veteran_en = ' · 🏅 <i>Veteran</i>' if is_veteran(member) else ''
+    veteran_ru = ' · 🏅 <i>Ветеран</i>' if is_veteran(member) else ''
+
     if lang == "en":
-        role_label = f'{e_crown} <b>Creator</b>' if member['role'] == 'creator' else '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji> <b>Member</b>'
+        role_label = (
+            f'{e_crown} <b>Creator</b>' if member['role'] == 'creator' else
+            '🚔 <b>Officer</b>' if member['role'] == 'officer' else
+            '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji> <b>Member</b>'
+        )
         return (
             f'{e_sword} <b>{name}</b> <code>#{clan["id"]}</code>\n'
             f'━━━━━━━━━━━━━━━━━━━━\n\n'
             f'<blockquote>'
-            f'<tg-emoji emoji-id="5848400681416793625">⭐</tg-emoji> <b>Your role:</b> {role_label}\n'
+            f'<tg-emoji emoji-id="5848400681416793625">⭐</tg-emoji> <b>Your role:</b> {role_label}{veteran_en}\n'
             f'{e_people} <b>Members:</b> {member_count}/{MAX_CLAN_MEMBERS}\n'
             f'{e_chest} <b>Treasury:</b> {_fmt(clan["treasury"])} {COIN}\n'
             f'{e_plus} <b>Your contribution:</b> {_fmt(member["contributed"])} {COIN}'
@@ -1902,12 +2113,16 @@ def my_klan_text(clan: dict, member: dict, member_count: int, lang: str = "ru") 
             f'<blockquote>{level_block}</blockquote>\n'
             f'<blockquote>{bonus_block}</blockquote>'
         )
-    role_label = f'{e_crown} <b>Создатель</b>' if member['role'] == 'creator' else '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji> <b>Участник</b>'
+    role_label = (
+        f'{e_crown} <b>Создатель</b>' if member['role'] == 'creator' else
+        '🚔 <b>Офицер</b>' if member['role'] == 'officer' else
+        '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji> <b>Участник</b>'
+    )
     return (
         f'{e_sword} <b>{name}</b> <code>#{clan["id"]}</code>\n'
         f'━━━━━━━━━━━━━━━━━━━━\n\n'
         f'<blockquote>'
-        f'<tg-emoji emoji-id="5848400681416793625">⭐</tg-emoji> <b>Твоя роль:</b> {role_label}\n'
+        f'<tg-emoji emoji-id="5848400681416793625">⭐</tg-emoji> <b>Твоя роль:</b> {role_label}{veteran_ru}\n'
         f'{e_people} <b>Участников:</b> {member_count}/{MAX_CLAN_MEMBERS}\n'
         f'{e_chest} <b>Казна:</b> {_fmt(clan["treasury"])} {COIN}\n'
         f'{e_plus} <b>Твой вклад:</b> {_fmt(member["contributed"])} {COIN}'
@@ -1926,8 +2141,13 @@ def klan_members_text(clan: dict, members: list[dict], lang: str = "ru") -> str:
     e_crown  = _e(_E_CROWN,  "👑")
     lines = []
     for m in members:
-        icon = e_crown if m["role"] == "creator" else '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji>'
-        lines.append(f'{icon} <b>{_member_name(m)}</b> — {COIN} <b>{_fmt(m["contributed"])}</b>')
+        icon    = (
+            e_crown if m["role"] == "creator" else
+            '🚔' if m["role"] == "officer" else
+            '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji>'
+        )
+        veteran = " 🏅" if is_veteran(m) else ""
+        lines.append(f'{icon} <b>{_member_name(m)}</b>{veteran} — {COIN} <b>{_fmt(m["contributed"])}</b>')
     body = "\n".join(lines) if lines else "<i>—</i>"
     name = _esc(clan["name"])
     if lang == "en":
@@ -1972,26 +2192,46 @@ def _clan_bonus_block(clan: dict, member: dict, lang: str = "ru") -> str:
     info      = get_clan_bonus_info(clan, member)
     mult_str  = f'{info["base_multiplier"]:g}'
     e_boost   = _e(_E_CLAN_BONUS, "🚀")
+
+    veteran_line_en = (
+        f'\n🏅 <b>Veteran bonus: +{int(VETERAN_MINE_BONUS * 100)}%</b> '
+        f'<i>(always on, regardless of quest activity)</i>'
+        if info["veteran"] else
+        f'\n🏅 <i>Become a Veteran ({VETERAN_MIN_DAYS}+ days in clan, '
+        f'{_fmt(VETERAN_MIN_CONTRIBUTED)} {COIN} contributed) for a permanent +{int(VETERAN_MINE_BONUS * 100)}% mining bonus</i>'
+    )
+    veteran_line_ru = (
+        f'\n🏅 <b>Бонус ветерана: +{int(VETERAN_MINE_BONUS * 100)}%</b> '
+        f'<i>(действует всегда, не зависит от заданий)</i>'
+        if info["veteran"] else
+        f'\n🏅 <i>Стань ветераном ({VETERAN_MIN_DAYS}+ дней в клане, '
+        f'вклад от {_fmt(VETERAN_MIN_CONTRIBUTED)} {COIN}) — постоянный бонус +{int(VETERAN_MINE_BONUS * 100)}% к добыче</i>'
+    )
+
     if lang == "en":
         title = f'{e_boost} <b>Clan bonus: ×{mult_str} mining</b>'
         if info["active"]:
             return (
                 f'{title} — <b>ACTIVE ✅</b>\n'
                 f'<i>Stays active while you complete at least one clan personal quest every 24h</i>'
+                f'{veteran_line_en}'
             )
         return (
             f'{title} — <b>NOT ACTIVE ❌</b>\n'
             f'<i>To activate: complete at least 1 clan personal quest (see «Daily quests») in the last 24 hours</i>'
+            f'{veteran_line_en}'
         )
     title = f'{e_boost} <b>Клановый бонус: ×{mult_str} к добыче</b>'
     if info["active"]:
         return (
             f'{title} — <b>АКТИВЕН ✅</b>\n'
             f'<i>Бонус держится, пока ты выполняешь хотя бы одно личное клановое задание раз в 24 часа</i>'
+            f'{veteran_line_ru}'
         )
     return (
         f'{title} — <b>НЕ АКТИВЕН ❌</b>\n'
         f'<i>Условие активации: выполни хотя бы 1 личное клановое задание (раздел «Ежедневные задания») за последние 24 часа</i>'
+        f'{veteran_line_ru}'
     )
 
 
@@ -2453,9 +2693,10 @@ async def klan_card_keyboard(clan_id: int, uid: int, lang: str = "ru") -> Inline
 
 
 async def my_klan_keyboard(uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
-    member     = await aio_get_member(uid)
-    b          = InlineKeyboardBuilder()
-    is_creator = member and member["role"] == "creator"
+    member       = await aio_get_member(uid)
+    b            = InlineKeyboardBuilder()
+    is_creator   = member and member["role"] == "creator"
+    is_officer_p = is_officer_or_above(member)   # creator или officer
 
     # Получаем данные клана для проверки наличия чата
     clan = await aio_get_clan(member["clan_id"]) if member else None
@@ -2469,7 +2710,7 @@ async def my_klan_keyboard(uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
             _btn("Treasury", "klan_treasury", _E_CHEST),
         )
         b.row(_btn("Daily quests", "klan_quests", _E_HUNT))
-        if is_creator:
+        if is_officer_p:
             b.row(_btn("Level up clan", "klan_level_up", _E_ANTIMATTER))
         # Кнопка чата (если привязан — для всех, прямая URL-ссылка)
         if has_chat:
@@ -2483,12 +2724,14 @@ async def my_klan_keyboard(uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
                 ))
             else:
                 b.row(_btn("Clan Chat (private)", "klan_chat_private", _E_CHAT))
-        if is_creator:
+        if is_officer_p:
             b.row(_btn("Applications", "klan_apps", _E_APPS))
             b.row(
                 _btn("Withdrawals",    "klan_withdraw_list", _E_CHEST),
                 _btn("Kick",          "klan_kick",          _E_CROSS),
             )
+        if is_creator:
+            b.row(_btn("Officers", "klan_officers", _E_CROWN))
             if has_chat:
                 b.row(_btn("Unlink Chat", "klan_chat_unlink", _E_CROSS))
             else:
@@ -2502,7 +2745,7 @@ async def my_klan_keyboard(uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
             _btn("Казна",     "klan_treasury", _E_CHEST),
         )
         b.row(_btn("Ежедневные задания", "klan_quests", _E_HUNT))
-        if is_creator:
+        if is_officer_p:
             b.row(_btn("Прокачать уровень", "klan_level_up", _E_ANTIMATTER))
         # Кнопка чата (если привязан — для всех, прямая URL-ссылка)
         if has_chat:
@@ -2516,12 +2759,14 @@ async def my_klan_keyboard(uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
                 ))
             else:
                 b.row(_btn("Чат клана (закрытый)", "klan_chat_private", _E_CHAT))
-        if is_creator:
+        if is_officer_p:
             b.row(_btn("Заявки", "klan_apps", _E_APPS))
             b.row(
                 _btn("Запросы на вывод", "klan_withdraw_list", _E_CHEST),
                 _btn("Исключить",        "klan_kick",          _E_CROSS),
             )
+        if is_creator:
+            b.row(_btn("Офицеры", "klan_officers", _E_CROWN))
             if has_chat:
                 b.row(_btn("Открепить чат", "klan_chat_unlink", _E_CROSS))
             else:
@@ -2530,6 +2775,27 @@ async def my_klan_keyboard(uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
         else:
             b.row(_btn("Покинуть клан", "klan_leave", _E_LEAVE))
     b.row(_back_btn("klan_main", lang))
+    return b.as_markup()
+
+
+def klan_officers_keyboard(members: list[dict], lang: str = "ru") -> InlineKeyboardMarkup:
+    """
+    Экран «Офицеры»: у member — кнопка «Назначить», у officer —
+    «Снять». creator в списке не показывается — передача его прав
+    сделана отдельным флоу (klan_transfer).
+    """
+    b = InlineKeyboardBuilder()
+    for m in members:
+        if m["role"] == "creator":
+            continue
+        name = _member_name(m)
+        if m["role"] == "officer":
+            label = f'🚔 {name} — Снять' if lang != "en" else f'🚔 {name} — Demote'
+            b.row(_btn(label, f'klan_demote_{m["uid"]}', _E_CROSS))
+        else:
+            label = f'{name} — Назначить офицером' if lang != "en" else f'{name} — Promote'
+            b.row(_btn(label, f'klan_promote_{m["uid"]}', _E_PLUS))
+    b.row(_back_btn("klan_my", lang))
     return b.as_markup()
 
 
