@@ -514,20 +514,28 @@ async def _distribute_boss_rewards(killer_uid: int, damage_rewards: dict):
             continue
         if uid == killer_uid:
             continue  # убийца уже получил всё в attack_boss
-        u = await aio_get_user(uid)
-        if not u:
-            continue
-        # Бонус за @TGStellarr_bot в bio — у каждого участника свой флаг,
-        # поэтому множитель считаем персонально по его же данным `u`.
-        try:
-            from bio_bonus import get_bio_bonus_multiplier as _bio_part_mult
-            coins = int(coins * _bio_part_mult(u))
-        except Exception:
-            pass
-        u["balance"] = u.get("balance", 0) + coins
-        u["ref_income"] = u.get("ref_income", 0) + coins
-        _apply_xp(u, xp)
-        await aio_save_user(uid, u)
+        # ВАЖНО: лочим uid участника на всё время read-modify-write,
+        # иначе параллельная операция с его балансом (покупка, дуэль и т.д.)
+        # может затереть это изменение или быть затёрта им — гонка на
+        # балансе (см. аудит, баг 1). killer_uid уже залочен вызывающим
+        # кодом и отфильтрован выше, поэтому здесь всегда другой uid —
+        # локи разных участников берутся по очереди, не вложенно, дедлок
+        # не возникает.
+        async with await _get_user_lock(uid):
+            u = await aio_get_user(uid)
+            if not u:
+                continue
+            # Бонус за @TGStellarr_bot в bio — у каждого участника свой флаг,
+            # поэтому множитель считаем персонально по его же данным `u`.
+            try:
+                from bio_bonus import get_bio_bonus_multiplier as _bio_part_mult
+                coins = int(coins * _bio_part_mult(u))
+            except Exception:
+                pass
+            u["balance"] = u.get("balance", 0) + coins
+            u["ref_income"] = u.get("ref_income", 0) + coins
+            _apply_xp(u, xp)
+            await aio_save_user(uid, u)
         # Уведомление участнику
         try:
             from miner import COIN as _COIN_ICON
@@ -5739,9 +5747,24 @@ async def handle_callback(call: CallbackQuery):
                     reward      = TITLE_REWARDS.get(loser_title, 0)
                     battle["reward"] = reward
                     battle["loser_title"] = loser_title
+                    # ВАЖНО: баланс победителя НЕ трогаем через
+                    # _dw["balance"]=...+save_user — оба игрока могут
+                    # завершить бой почти одновременно (атака/сдача), а
+                    # внешний лок держится только на user.id (том, кто
+                    # нажал кнопку), поэтому у второго игрока сохранение
+                    # через устаревший снимок _dw могло гонкой стереть или
+                    # потерять параллельное изменение баланса (см. аудит,
+                    # баг 2). Вкладывать сюда ещё и _get_user_lock(foe_uid)
+                    # нельзя — при одновременном нажатии обоими игроками
+                    # это дало бы классический дедлок. Поэтому баланс
+                    # начисляется отдельно через aio_change_balance —
+                    # атомарную SQL-транзакцию, которая не требует
+                    # asyncio-лока и не может быть затёрта чужим save_user.
                     _dw["duel_wins"]    = _dw.get("duel_wins", 0) + 1
-                    _dw["balance"]      = _dw.get("balance", 0) + reward
                     await _su_hp(winner_uid, _dw)
+                    if reward:
+                        from database import aio_change_balance as _cb_hp
+                        await _cb_hp(winner_uid, reward)
                     _dl["duel_losses"]  = _dl.get("duel_losses", 0) + 1
                     await _su_hp(loser_uid, _dl)
                 _active_battles.pop(user.id, None)
@@ -5792,9 +5815,16 @@ async def handle_callback(call: CallbackQuery):
                 reward2      = TITLE_REWARDS.get(loser_title2, 0)
                 battle["reward"] = reward2
                 battle["loser_title"] = loser_title2
+                # Та же причина, что и в duel_skill выше: не пишем баланс
+                # соперника (foe_uid) через устаревший снимок _dw2 +
+                # save_user — вложенный лок на foe_uid здесь тоже рискует
+                # дедлоком при одновременных действиях обоих игроков.
+                # Начисляем награду атомарно через aio_change_balance.
                 _dw2["duel_wins"]   = _dw2.get("duel_wins", 0) + 1
-                _dw2["balance"]     = _dw2.get("balance", 0) + reward2
                 await _su_sr(foe_uid, _dw2)
+                if reward2:
+                    from database import aio_change_balance as _cb_sr
+                    await _cb_sr(foe_uid, reward2)
                 _dl2["duel_losses"] = _dl2.get("duel_losses", 0) + 1
                 await _su_sr(loser_uid2, _dl2)
                 foe_msg = _battle_msgs.get(foe_uid)
@@ -6479,7 +6509,7 @@ async def _poison_loop():
     Суммарный урон = damage, распределённый равномерно по 30 тикам (30 мин).
     Если босс умирает от яда — владелец получает награду.
     """
-    from database import get_all_users, save_user as _sv
+    from database import get_all_users, save_user as _sv, get_user as _gu_fresh
     from hunt import get_boss_state, _save_boss_state, BOSS_KILL_REWARD, _now_ts as _h_now
     from shop import get_active_poison_info
 
@@ -6516,9 +6546,6 @@ async def _poison_loop():
                 hp_after  = max(0, hp_before - tick_damage)
                 state["boss_hp"] = hp_after
 
-                poison["last_tick"] = now
-                _d["active_poison"] = poison
-
                 killed = hp_after == 0
                 if killed:
                     from datetime import datetime, timezone as _tz
@@ -6528,12 +6555,32 @@ async def _poison_loop():
                     state["boss_alive"]         = False
                     state["boss_died_at"]        = died_at
                     state["boss_kill_duration"]  = kill_duration
-                    _d["balance"] = _d.get("balance", 0) + BOSS_KILL_REWARD
-                    _d["ref_income"] = _d.get("ref_income", 0) + BOSS_KILL_REWARD
-                    _d["active_poison"] = None
 
                 await asyncio.to_thread(_save_boss_state, state)
-                await asyncio.to_thread(_sv, _d["id"], _d)
+
+                # ВАЖНО: _d — это снимок из полного скана get_all_users(),
+                # снятого асинхронно в отдельном потоке ещё в начале тика,
+                # поэтому за время обработки (await'ы выше) он мог устареть.
+                # Раньше сюда писался баланс+active_poison прямо поверх
+                # этого устаревшего снимка через save_user без лока — если
+                # в этот момент игрок параллельно тратил/получал монеты
+                # (магазин, дуэль и т.д.), одно из изменений терялось (см.
+                # аудит, баг 3). Лочим uid и перечитываем свежие данные
+                # прямо перед записью — тот же паттерн, что и в соседних
+                # фоновых циклах этого файла (see _boosters_expiry_loop).
+                uid = _d["id"]
+                async with await _get_user_lock(uid):
+                    fresh = await asyncio.to_thread(_gu_fresh, uid)
+                    if not fresh:
+                        continue
+                    poison["last_tick"] = now
+                    fresh["active_poison"] = poison
+                    if killed:
+                        fresh["balance"] = fresh.get("balance", 0) + BOSS_KILL_REWARD
+                        fresh["ref_income"] = fresh.get("ref_income", 0) + BOSS_KILL_REWARD
+                        fresh["active_poison"] = None
+                    await asyncio.to_thread(_sv, uid, fresh)
+                _d = fresh
 
                 if killed:
                     from hunt import BOSSES_BY_KEY
