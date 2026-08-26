@@ -55,8 +55,8 @@ MAX_LEVEL = 500
 # ---------- РУДЫ ----------
 ORES = [
     # ── Common ───────────────────────────────────────────────────────────
-    {"name": "🪨 Камень",  "name_en": "🪨 Stone",    "key": "stone",    "chance": 75.000, "weight": 500, "price":         50},
-    {"name": '<tg-emoji emoji-id="5773638078321135255">🖤</tg-emoji> Уголь',    "name_en": '<tg-emoji emoji-id="5773638078321135255">🖤</tg-emoji> Coal',      "key": "coal",     "chance": 30.000, "weight": 200, "price":         75},
+    {"name": "🪨 Камень",  "name_en": "🪨 Stone",    "key": "stone",    "chance": 75.000, "weight": 500, "price":         75},
+    {"name": '<tg-emoji emoji-id="5773638078321135255">🖤</tg-emoji> Уголь',    "name_en": '<tg-emoji emoji-id="5773638078321135255">🖤</tg-emoji> Coal',      "key": "coal",     "chance": 30.000, "weight": 200, "price":         95},
     {"name": '<tg-emoji emoji-id="5431869843903102028">🪨</tg-emoji> Кремень', "name_en": '<tg-emoji emoji-id="5431869843903102028">🪨</tg-emoji> Flint',    "key": "flint",    "chance": 22.000, "weight": 160, "price":        115},
     {"name": '<tg-emoji emoji-id="5339390195768774311">🟤</tg-emoji> Медь',     "name_en": '<tg-emoji emoji-id="5339390195768774311">🟤</tg-emoji> Copper',    "key": "copper",   "chance": 20.000, "weight": 120, "price":        145},
     # ── Rare ─────────────────────────────────────────────────────────────
@@ -134,20 +134,20 @@ PAYBACK_GROWTH   = 1.0531
 
 PICKAXES = {
     "wood_1": {"name": "Wood-1lvl", "dig_min": 1, "dig_max": 2, "cost": 0, "currency": "coins", "required_level": 1, "tier": "wood"},
-    "wood_2": {"name": "Wood-2lvl", "dig_min": 2, "dig_max": 4, "cost": 15000, "currency": "coins", "required_level": 1, "tier": "wood"},
+    "wood_2": {"name": "Wood-2lvl", "dig_min": 2, "dig_max": 4, "cost": 10000, "currency": "coins", "required_level": 1, "tier": "wood"},
     "wood_3": {"name": "Wood-3lvl", "dig_min": 3, "dig_max": 5, "cost": 21000, "currency": "coins", "required_level": 1, "tier": "wood"},
     "wood_4": {"name": "Wood-4lvl", "dig_min": 5, "dig_max": 7, "cost": 33300, "currency": "coins", "required_level": 1, "tier": "wood"},
     "wood_5": {"name": "Wood-5lvl", "dig_min": 6, "dig_max": 9, "cost": 43800, "currency": "coins", "required_level": 1, "tier": "wood"},
     "rock_1": {"name": "Rock-1lvl", "dig_min": 8, "dig_max": 11, "cost": 58400, "currency": "coins", "required_level": 1, "tier": "rock"},
-    "rock_2": {"name": "Rock-2lvl", "dig_min": 9, "dig_max": 13, "cost": 71300, "currency": "coins", "required_level": 1, "tier": "rock"},
-    "rock_3": {"name": "Rock-3lvl", "dig_min": 11, "dig_max": 15, "cost": 88700, "currency": "coins", "required_level": 1, "tier": "rock"},
-    "rock_4": {"name": "Rock-4lvl", "dig_min": 13, "dig_max": 18, "cost": 111000, "currency": "coins", "required_level": 1, "tier": "rock"},
+    "rock_2": {"name": "Rock-2lvl", "dig_min": 9, "dig_max": 13, "cost": 81300, "currency": "coins", "required_level": 1, "tier": "rock"},
+    "rock_3": {"name": "Rock-3lvl", "dig_min": 11, "dig_max": 15, "cost": 98700, "currency": "coins", "required_level": 1, "tier": "rock"},
+    "rock_4": {"name": "Rock-4lvl", "dig_min": 13, "dig_max": 18, "cost": 121000, "currency": "coins", "required_level": 1, "tier": "rock"},
     "rock_5": {"name": "Rock-5lvl", "dig_min": 16, "dig_max": 22, "cost": 144000, "currency": "coins", "required_level": 1, "tier": "rock"},
-    "stone_1": {"name": "Stone-1lvl", "dig_min": 17, "dig_max": 24, "cost": 164000, "currency": "coins", "required_level": 1, "tier": "stone"},
+    "stone_1": {"name": "Stone-1lvl", "dig_min": 17, "dig_max": 24, "cost": 174000, "currency": "coins", "required_level": 1, "tier": "stone"},
     "stone_2": {"name": "Stone-2lvl", "dig_min": 18, "dig_max": 26, "cost": 185000, "currency": "coins", "required_level": 1, "tier": "stone"},
-    "stone_3": {"name": "Stone-3lvl", "dig_min": 21, "dig_max": 27, "cost": 212000, "currency": "coins", "required_level": 1, "tier": "stone"},
-    "stone_4": {"name": "Stone-4lvl", "dig_min": 23, "dig_max": 28, "cost": 237000, "currency": "coins", "required_level": 1, "tier": "stone"},
-    "stone_5": {"name": "Stone-5lvl", "dig_min": 25, "dig_max": 31, "cost": 275000, "currency": "coins", "required_level": 1, "tier": "stone"},
+    "stone_3": {"name": "Stone-3lvl", "dig_min": 21, "dig_max": 27, "cost": 232000, "currency": "coins", "required_level": 1, "tier": "stone"},
+    "stone_4": {"name": "Stone-4lvl", "dig_min": 23, "dig_max": 28, "cost": 257000, "currency": "coins", "required_level": 1, "tier": "stone"},
+    "stone_5": {"name": "Stone-5lvl", "dig_min": 25, "dig_max": 31, "cost": 285000, "currency": "coins", "required_level": 1, "tier": "stone"},
     "coal_1": {"name": "Coal-1lvl", "dig_min": 26, "dig_max": 34, "cost": 1760000, "currency": "coins", "required_level": 1, "tier": "coal"},
     "coal_2": {"name": "Coal-2lvl", "dig_min": 28, "dig_max": 35, "cost": 1950000, "currency": "coins", "required_level": 1, "tier": "coal"},
     "coal_3": {"name": "Coal-3lvl", "dig_min": 31, "dig_max": 37, "cost": 2220000, "currency": "coins", "required_level": 1, "tier": "coal"},
