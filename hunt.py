@@ -57,6 +57,8 @@ _E = {
     "star":         "5262643974912355126",  # звезда (валюта Telegram Stars) — TODO: заменить
     "crystal":      "5442939099906325301",  # кристалл (валюта города, больше не используется для зелий)
     "samosvet":     "5465501598199342448",  # самосвет (донатная валюта, покупка зелий)
+    "elite":        "5312476855056825233",  # метка элитного босса — TODO: заменить на свой премиум-эмодзи
+    "vulnerable":   "5298743210987654321",  # окно уязвимости босса — TODO: заменить на свой премиум-эмодзи
 }
 
 # ─────────────────────────────────────────
@@ -731,6 +733,71 @@ def _reward_for_hp(max_hp: int) -> int:
     return int(reward)
 
 BOSS_KILL_REWARD = BOSS_TIERS_BY_KEY["easy"]["reward_min"]   # дефолт для отображения в UI
+
+# ─────────────────────────────────────────
+#  ЭЛИТНЫЕ БОССЫ (мутации)
+#  С небольшим шансом при спавне босс "мутирует" в элитного: HP и награда
+#  заметно выше обычного, чтобы стоило звать на помощь весь чат.
+#  Реролл — при каждом спавне слота (после смерти обычного/элитного
+#  предыдущего босса или при возрождении зельем).
+# ─────────────────────────────────────────
+ELITE_SPAWN_CHANCE  = 0.12   # 12% шанс на элитную мутацию при каждом спавне
+ELITE_HP_MULT_MIN   = 2.5    # во сколько раз минимум растёт HP у элиты
+ELITE_HP_MULT_MAX   = 4.0    # во сколько раз максимум растёт HP у элиты
+ELITE_REWARD_MULT   = 2.2    # во сколько раз растёт награда (сверху обычной шкалы уровня)
+ELITE_XP_MULT       = 1.5    # во сколько раз растёт XP за участие/убийство
+
+# Короткие флейвор-строки, которые подставляются к обычному лору босса,
+# когда он заспавнился элитным — объясняют игроку, почему этот конкретный
+# экземпляр отличается от остальных, не переписывая лор каждого из 50 боссов.
+ELITE_FLAVOR_LINES_RU = [
+    "Эта тварь вырвалась за пределы своей природы — сила утроилась, а голод стал ещё сильнее.",
+    "Обычно они не такие. Что-то пробудило в нём древнее и куда более голодное.",
+    "Шахтёры называют таких «перерождёнными». Раз в сотню боссов подземелье решает пошутить недобро.",
+    "Он не должен был стать таким сильным. Но стал. И теперь идёт напролом — без остановок.",
+    "От него исходит жар, которого не должно быть у существ его вида. Берегись.",
+]
+ELITE_FLAVOR_LINES_EN = [
+    "This one broke past its own nature — its power tripled, its hunger grew sharper still.",
+    "They are not usually like this. Something ancient and far hungrier has woken inside it.",
+    "Miners call these ones \"reborn.\" Once in a hundred bosses, the depths play a cruel joke.",
+    "It was never meant to become this strong. It did anyway. And now it comes without stopping.",
+    "A heat radiates off it that creatures of its kind should never carry. Be careful.",
+]
+
+
+def _reward_for_state(state: dict) -> int:
+    """
+    Полная награда пула за конкретного босса из слота, с учётом элитной
+    мутации. Обычные боссы считаются как раньше (по своему max_hp).
+    Элитные — по "базовому" HP (до умножения на элитный множитель), чтобы
+    награда честно масштабировалась внутри диапазона уровня, а не улетала
+    за reward_max просто из-за того, что HP взлетело в разы, — и затем
+    дополнительно умножается на ELITE_REWARD_MULT сверху.
+    """
+    base_hp = state.get("reward_base_hp", state.get("boss_max_hp", BOSS_MAX_HP))
+    reward  = _reward_for_hp(base_hp)
+    if state.get("is_elite"):
+        reward = int(reward * ELITE_REWARD_MULT)
+    return reward
+
+
+def _elite_flavor_line(state: dict, lang: str = "ru") -> str:
+    lines = ELITE_FLAVOR_LINES_EN if lang == "en" else ELITE_FLAVOR_LINES_RU
+    idx   = state.get("elite_flavor_idx", 0) % len(lines)
+    return lines[idx]
+
+# ─────────────────────────────────────────
+#  ОКНО УЯЗВИМОСТИ
+#  Раз за бой, когда HP босса падает до случайного (неизвестного заранее)
+#  порога, на непродолжительное время весь урон по боссу удваивается —
+#  создаёт момент "все бьют разом", похожий по духу на заглушку/подавление,
+#  но работает в пользу игроков, а не против них.
+# ─────────────────────────────────────────
+VULNERABLE_HP_THRESHOLD_MIN = 0.25   # окно может открыться при HP от 25%
+VULNERABLE_HP_THRESHOLD_MAX = 0.60   # ...до 60% — порог случайный, не угадать заранее
+VULNERABLE_DURATION_SEC     = 45     # столько длится окно
+VULNERABLE_DMG_MULT         = 2.0    # множитель урона всем, кто бьёт в окне
 
 # ─────────────────────────────────────────
 #  МЕХАНИКИ БОССА: ЗАГЛУШКА И ПОДАВЛЕНИЕ
@@ -1525,7 +1592,12 @@ def _build_spawn_state(slot: int, active_keys: list[str] = None) -> dict:
     """Строит новое состояние случайного босса для конкретного слота
     (без сохранения в БД). Уровень сложности жёстко закреплён за слотом."""
     tier    = _tier_for_slot(slot)
-    next_hp = random.randint(tier["hp_min"], tier["hp_max"])
+    base_hp = random.randint(tier["hp_min"], tier["hp_max"])
+
+    # ── Элитная мутация (см. секцию ЭЛИТНЫЕ БОССЫ выше) ──
+    is_elite   = random.random() < ELITE_SPAWN_CHANCE
+    elite_mult = round(random.uniform(ELITE_HP_MULT_MIN, ELITE_HP_MULT_MAX), 2) if is_elite else 1.0
+    next_hp    = int(base_hp * elite_mult) if is_elite else base_hp
 
     boss = _pick_random_boss(exclude_keys=active_keys or [])
     return {
@@ -1543,6 +1615,16 @@ def _build_spawn_state(slot: int, active_keys: list[str] = None) -> dict:
         "stunned":                {},     # uid_str -> ts до которого игрок оглушён
         "stun_used":              False,  # заглушка на 50% HP уже сработала (одноразово)
         "suppression_active":     False,  # включена ли аура подавления (HP < 50%)
+        # ── элитная мутация ──
+        "is_elite":          is_elite,
+        "elite_mult":        elite_mult,
+        "reward_base_hp":    base_hp,     # HP "как если бы не элита" — основа для расчёта награды
+        "elite_flavor_idx":  random.randrange(len(ELITE_FLAVOR_LINES_RU)) if is_elite else 0,
+        # ── окно уязвимости ──
+        "vulnerable_threshold_frac": round(random.uniform(VULNERABLE_HP_THRESHOLD_MIN, VULNERABLE_HP_THRESHOLD_MAX), 3),
+        "vulnerable_used":           False,
+        "vulnerable_active":         False,
+        "vulnerable_until":          0,
     }
 
 
@@ -1661,6 +1743,8 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
         "suppression_triggered": False,
         "stun_triggered": False, "stunned_players": {},
         "stun_blocked_players": {},
+        "vulnerable_bonus": False,
+        "vulnerable_triggered": False, "vulnerable_until": 0,
         "new_achievements": [],
     }
 
@@ -1800,6 +1884,12 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
             if stunned_map[u] <= now:
                 del stunned_map[u]
 
+        # ── Окно уязвимости: пока активно — весь урон удваивается ──
+        vulnerable_bonus = False
+        if not is_infinite and state.get("vulnerable_active") and state.get("vulnerable_until", 0) > now:
+            hit_dmg = int(hit_dmg * VULNERABLE_DMG_MULT)
+            vulnerable_bonus = True
+
         hp_before = state["boss_hp"]
         hp_after  = max(0, hp_before - hit_dmg)
         state["boss_hp"] = hp_after
@@ -1817,6 +1907,8 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
             "stun_triggered": False, "stunned_players": {},
             "stun_blocked_players": {},
             "stunned_until": 0,
+            "vulnerable_bonus": vulnerable_bonus,
+            "vulnerable_triggered": False, "vulnerable_until": 0,
         }
 
         # ── Заглушка: срабатывает один раз при падении HP до порога STUN_HP_THRESHOLD ──
@@ -1846,6 +1938,17 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
             state["suppression_active"] = True
             out["suppression_triggered"] = True
 
+        # ── Окно уязвимости: срабатывает один раз за бой при падении HP
+        # до случайного порога, заданного при спавне (vulnerable_threshold_frac) ──
+        if hp_after > 0 and not state.get("vulnerable_used"):
+            threshold_hp = max_hp * state.get("vulnerable_threshold_frac", 0.45)
+            if hp_after <= threshold_hp:
+                state["vulnerable_used"]   = True
+                state["vulnerable_active"] = True
+                state["vulnerable_until"]  = now + VULNERABLE_DURATION_SEC
+                out["vulnerable_triggered"] = True
+                out["vulnerable_until"]     = state["vulnerable_until"]
+
         if hp_after == 0:
             died_at = _now_ts()
             spawned_at = state.get("boss_spawned", died_at)
@@ -1857,9 +1960,11 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
             out["boss_killed"]          = True
 
             # ── Пропорциональное распределение награды ──
-            total_pool = _reward_for_hp(state.get("boss_max_hp", BOSS_MAX_HP))
+            # (для элитных боссов _reward_for_state учитывает ELITE_REWARD_MULT)
+            total_pool = _reward_for_state(state)
             total_dmg  = sum(damage_log.values()) or 1
             killer_uid = uid_str
+            xp_mult    = ELITE_XP_MULT if state.get("is_elite") else 1.0
 
             damage_rewards = {}  # uid_str -> (coins, xp)
             for u_str, u_dmg in damage_log.items():
@@ -1873,6 +1978,7 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
                         BOSS_XP_PARTICIPANT_MIN,
                         int(BOSS_XP_PARTICIPANT_MAX * share)
                     )
+                xp = int(xp * xp_mult)
                 damage_rewards[u_str] = (coins, xp)
 
             out["damage_rewards"] = damage_rewards
@@ -2786,17 +2892,24 @@ def my_swords_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
 def boss_tier_menu_text(lang: str = "ru") -> str:
     slots = get_all_slots()
     counts_alive = {t["key"]: 0 for t in BOSS_TIERS}
+    has_elite    = {t["key"]: False for t in BOSS_TIERS}
     for slot_idx, st in slots:
         tier_key = SLOT_TO_TIER.get(slot_idx)
         if tier_key and st.get("boss_alive"):
             counts_alive[tier_key] += 1
+            if st.get("is_elite"):
+                has_elite[tier_key] = True
 
     lines = []
     for t in BOSS_TIERS:
         alive = counts_alive[t["key"]]
         total = t["slots"]
         tname = t.get("name_en", t["name"]) if lang == "en" else t["name"]
-        lines.append(f'{_tg(t["emoji_id"], "💀")} <b><i>{tname}</i></b> — {alive}/{total} 🔥')
+        elite_note = (
+            (f' {_tg(_E["elite"], "🔥")} <b>ELITE!</b>' if lang == "en" else f' {_tg(_E["elite"], "🔥")} <b>ЕСТЬ ЭЛИТА!</b>')
+            if has_elite[t["key"]] else ""
+        )
+        lines.append(f'{_tg(t["emoji_id"], "💀")} <b><i>{tname}</i></b> — {alive}/{total} 🔥{elite_note}')
 
     body = "\n".join(lines)
     if lang == "en":
@@ -2850,7 +2963,8 @@ def boss_select_text(lang: str = "ru", tier_key: str = "easy", page: int = 0) ->
         boss     = BOSSES_BY_KEY.get(boss_key)
         if st.get("boss_alive") and boss:
             bname = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
-            lines.append(f'{_tg(tier["emoji_id"], "🔥")} <b><i>#{i} {bname}</i></b>')
+            elite_tag = f' {_tg(_E["elite"], "🔥")} <b>[{"ELITE" if lang == "en" else "ЭЛИТА"}]</b>' if st.get("is_elite") else ""
+            lines.append(f'{_tg(tier["emoji_id"], "🔥")} <b><i>#{i} {bname}</i></b>{elite_tag}')
         else:
             died_at = st.get("boss_died_at", 0) or 0
             rem     = max(0, BOSS_RESPAWN_SEC - (now - died_at))
@@ -2886,10 +3000,14 @@ def boss_select_keyboard(lang: str = "ru", tier_key: str = "easy", page: int = 0
         alive    = st.get("boss_alive", False)
         if alive and boss:
             bname = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
+            is_elite = st.get("is_elite", False)
+            btn_text = f" 🔥 #{i} {bname} [ELITE]" if (is_elite and lang == "en") else (
+                f" 🔥 #{i} {bname} [ЭЛИТА]" if is_elite else f" #{i} {bname}"
+            )
             builder.row(InlineKeyboardButton(
-                text=f" #{i} {bname}",
+                text=btn_text,
                 callback_data=f"hunt_boss_{slot_idx}",
-                icon_custom_emoji_id=tier["emoji_id"]
+                icon_custom_emoji_id=_E["elite"] if is_elite else tier["emoji_id"]
             ))
         else:
             died_at = st.get("boss_died_at", 0) or 0
@@ -3039,50 +3157,81 @@ def boss_attack_text(data: dict, lang: str = "ru", slot: int = 0) -> str:
 
     now_ts = _now_ts()
     stunned_until = (state.get("stunned", {}) or {}).get(str(data.get("id", 0)), 0)
+
+    status_blocks = []
     if stunned_until > now_ts:
         left = _fmt_stun_duration(stunned_until - now_ts)
         if lang == "en":
-            status_line = (
+            status_blocks.append(
                 f'\n\n<blockquote>'
                 f'{_tg(_E["lock"], "🔇")} <b><i>You are silenced!</i></b>\n'
                 f'<b><i>The boss stunned you — you cannot attack for {left}.</i></b>'
                 f'</blockquote>'
             )
         else:
-            status_line = (
+            status_blocks.append(
                 f'\n\n<blockquote>'
                 f'{_tg(_E["lock"], "🔇")} <b><i>Ты оглушён!</i></b>\n'
                 f'<b><i>Босс заглушил тебя — атака недоступна ещё {left}.</i></b>'
                 f'</blockquote>'
             )
-    elif state.get("suppression_active"):
-        if lang == "en":
-            status_line = (
-                f'\n\n<blockquote>'
-                f'{_tg(_E["alert"], "🌀")} <b><i>Suppression aura active!</i></b>\n'
-                f'<b><i>Hitting the boss again within {SUPPRESSION_ATTACK_WINDOW_SEC}s of your last strike weakens your damage by 20–50%.</i></b>'
-                f'</blockquote>'
-            )
-        else:
-            status_line = (
-                f'\n\n<blockquote>'
-                f'{_tg(_E["alert"], "🌀")} <b><i>Аура подавления активна!</i></b>\n'
-                f'<b><i>Удар раньше чем через {SUPPRESSION_ATTACK_WINDOW_SEC}с после предыдущего снижает твой урон на 20–50%.</i></b>'
-                f'</blockquote>'
-            )
     else:
-        status_line = ""
+        # Окно уязвимости и аура подавления не исключают друг друга —
+        # показываем оба статуса, если оба активны одновременно.
+        if state.get("vulnerable_active") and state.get("vulnerable_until", 0) > now_ts:
+            v_left = max(0, state["vulnerable_until"] - now_ts)
+            if lang == "en":
+                status_blocks.append(
+                    f'\n\n<blockquote>'
+                    f'{_tg(_E["vulnerable"], "💥")} <b><i>VULNERABILITY WINDOW IS OPEN!</i></b>\n'
+                    f'<b><i>All damage to the boss is doubled for {v_left}s more — strike now!</i></b>'
+                    f'</blockquote>'
+                )
+            else:
+                status_blocks.append(
+                    f'\n\n<blockquote>'
+                    f'{_tg(_E["vulnerable"], "💥")} <b><i>ОКНО УЯЗВИМОСТИ ОТКРЫТО!</i></b>\n'
+                    f'<b><i>Весь урон по боссу удвоен ещё {v_left}с — бей сейчас!</i></b>'
+                    f'</blockquote>'
+                )
+        if state.get("suppression_active"):
+            if lang == "en":
+                status_blocks.append(
+                    f'\n\n<blockquote>'
+                    f'{_tg(_E["alert"], "🌀")} <b><i>Suppression aura active!</i></b>\n'
+                    f'<b><i>Hitting the boss again within {SUPPRESSION_ATTACK_WINDOW_SEC}s of your last strike weakens your damage by 20–50%.</i></b>'
+                    f'</blockquote>'
+                )
+            else:
+                status_blocks.append(
+                    f'\n\n<blockquote>'
+                    f'{_tg(_E["alert"], "🌀")} <b><i>Аура подавления активна!</i></b>\n'
+                    f'<b><i>Удар раньше чем через {SUPPRESSION_ATTACK_WINDOW_SEC}с после предыдущего снижает твой урон на 20–50%.</i></b>'
+                    f'</blockquote>'
+                )
+    status_line = "".join(status_blocks)
 
+    is_elite   = state.get("is_elite", False)
     boss_name  = boss.get("name_en", boss["name"]) if lang == "en" else boss["name"]
     boss_lore  = boss.get("lore_en", boss["lore"]) if lang == "en" else boss["lore"]
     sword_name = sword.get("name_en", sword["name"]) if lang == "en" else sword["name"]
     tier       = _tier_for_slot(slot)
 
+    elite_badge = f' {_tg(_E["elite"], "🔥")} <b>{"[ELITE]" if lang == "en" else "[ЭЛИТА]"}</b>' if is_elite else ""
+    elite_line  = f'\n<b><i>{_elite_flavor_line(state, lang)}</i></b>' if is_elite else ""
+    reward_val  = _reward_for_state(state)
+    elite_reward_note = (
+        (f'\n{_tg(_E["elite"], "🔥")} <b><i>Elite reward: ×{ELITE_REWARD_MULT} coins, ×{ELITE_XP_MULT} XP</i></b>'
+         if lang == "en" else
+         f'\n{_tg(_E["elite"], "🔥")} <b><i>Награда элиты: ×{ELITE_REWARD_MULT} монет, ×{ELITE_XP_MULT} опыта</i></b>')
+        if is_elite else ""
+    )
+
     if lang == "en":
         return (
             f'<blockquote>'
-            f'{_tg(tier["emoji_id"], "💀")} <b><i>{boss_name}</i></b>\n'
-            f'<b><i>{boss_lore}</i></b>'
+            f'{_tg(tier["emoji_id"], "💀")} <b><i>{boss_name}</i></b>{elite_badge}\n'
+            f'<b><i>{boss_lore}</i></b>{elite_line}'
             f'</blockquote>\n\n'
             f'<blockquote>'
             f'{_tg(_E["hp"], "❤️")} <b><i>HP:</i></b> {_fmt_digits(hp)} / {_fmt_digits(max_hp)} <b><i>({pct:.1f}%)</i></b>'
@@ -3093,15 +3242,16 @@ def boss_attack_text(data: dict, lang: str = "ru", slot: int = 0) -> str:
             f'{_tg(_E["crit"], "⭐")} <b><i>Crit: 5% × {sword["crit_mult"]:.0f} of max damage</i></b>'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["trophy"], "🏆")} <b><i>Kill reward: {_fmt(_reward_for_hp(max_hp))} {_tg(_E["coin"], "💰")}</i></b>'
+            f'{_tg(_E["trophy"], "🏆")} <b><i>Kill reward: {_fmt(reward_val)} {_tg(_E["coin"], "💰")}</i></b>{elite_reward_note}'
             f'</blockquote>'
             f'{enh_line}'
             f'{art_dmg_line}'
+            f'{status_line}'
         )
     return (
         f'<blockquote>'
-        f'{_tg(tier["emoji_id"], "💀")} <b><i>{boss_name}</i></b>\n'
-        f'<b><i>{boss_lore}</i></b>'
+        f'{_tg(tier["emoji_id"], "💀")} <b><i>{boss_name}</i></b>{elite_badge}\n'
+        f'<b><i>{boss_lore}</i></b>{elite_line}'
         f'</blockquote>\n\n'
         f'<blockquote>'
         f'{_tg(_E["hp"], "❤️")} <b><i>HP:</i></b> {_fmt_digits(hp)} / {_fmt_digits(max_hp)} <b><i>({pct:.1f}%)</i></b>'
@@ -3112,10 +3262,11 @@ def boss_attack_text(data: dict, lang: str = "ru", slot: int = 0) -> str:
         f'{_tg(_E["crit"], "⭐")} <b><i>Крит: 5% × {sword["crit_mult"]:.0f} от макс. урона</i></b>'
         f'</blockquote>\n\n'
         f'<blockquote>'
-        f'{_tg(_E["trophy"], "🏆")} <b><i>Награда за убийство: {_fmt(_reward_for_hp(max_hp))} {_tg(_E["coin"], "💰")}</i></b>'
+        f'{_tg(_E["trophy"], "🏆")} <b><i>Награда за убийство: {_fmt(reward_val)} {_tg(_E["coin"], "💰")}</i></b>{elite_reward_note}'
         f'</blockquote>'
         f'{enh_line}'
         f'{art_dmg_line}'
+        f'{status_line}'
     )
 
 
@@ -3227,6 +3378,28 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
     else:
         suppression_note = ""
 
+    if result.get("vulnerable_bonus"):
+        if lang == "en":
+            vulnerable_note = (
+                f'\n{_tg(_E["vulnerable"], "💥")} <b><i>Vulnerability window doubled this strike!</i></b>'
+            )
+        else:
+            vulnerable_note = (
+                f'\n{_tg(_E["vulnerable"], "💥")} <b><i>Окно уязвимости удвоило этот удар!</i></b>'
+            )
+    elif result.get("vulnerable_triggered"):
+        v_left = max(0, result.get("vulnerable_until", 0) - _now_ts())
+        if lang == "en":
+            vulnerable_note = (
+                f'\n{_tg(_E["vulnerable"], "💥")} <b><i>VULNERABILITY WINDOW OPENED! All damage ×2 for the next {v_left}s — rally everyone!</i></b>'
+            )
+        else:
+            vulnerable_note = (
+                f'\n{_tg(_E["vulnerable"], "💥")} <b><i>ОТКРЫЛОСЬ ОКНО УЯЗВИМОСТИ! Урон ×2 ближайшие {v_left}с — зови всех бить!</i></b>'
+            )
+    else:
+        vulnerable_note = ""
+
     if result.get("stun_triggered") and str(data.get("id", 0)) in result.get("stunned_players", {}):
         _left_now = _fmt_stun_duration(max(0, result["stunned_players"][str(data.get("id", 0))] - _now_ts()))
         if lang == "en":
@@ -3252,16 +3425,24 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
 
     if killed:
         reward = result["reward"]
-        boss_name = boss.get("name_en", boss["name"]) if (lang == "en" and boss) else (boss["name"] if boss else ("Boss" if lang == "en" else "Босс"))
+        boss_name  = boss.get("name_en", boss["name"]) if (lang == "en" and boss) else (boss["name"] if boss else ("Boss" if lang == "en" else "Босс"))
+        is_elite   = state.get("is_elite", False)
+        elite_badge = f' {_tg(_E["elite"], "🔥")} <b>{"[ELITE]" if lang == "en" else "[ЭЛИТА]"}</b>' if is_elite else ""
+        elite_note  = (
+            (f'\n{_tg(_E["elite"], "🔥")} <b><i>Elite trophy — reward boosted!</i></b>'
+             if lang == "en" else
+             f'\n{_tg(_E["elite"], "🔥")} <b><i>Элитный трофей — награда повышена!</i></b>')
+            if is_elite else ""
+        )
         if lang == "en":
             return (
                 f'<blockquote>'
                 f'{_tg(_E["skull"], "💀")} <b><i>BOSS DESTROYED!</i></b>\n\n'
-                f'<b><i>{boss_name} has been defeated!</i></b>'
+                f'<b><i>{boss_name} has been defeated!</i></b>{elite_badge}'
                 f'</blockquote>\n\n'
                 f'<blockquote>'
-                f'{_tg(_E["dmg"], "💥")} <b><i>Final strike: {_fmt(dmg)}</i></b>{crit_line}\n'
-                f'{_tg(_E["reward_coin"], "💰")} <b><i>Reward: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</i></b>'
+                f'{_tg(_E["dmg"], "💥")} <b><i>Final strike: {_fmt(dmg)}</i></b>{crit_line}{vulnerable_note}\n'
+                f'{_tg(_E["reward_coin"], "💰")} <b><i>Reward: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</i></b>{elite_note}'
                 f'</blockquote>\n\n'
                 f'<blockquote>'
                 f'{_tg(_E["timer"], "⏱")} <b><i>Next boss appears in 2 hours.</i></b>'
@@ -3270,11 +3451,11 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
         return (
             f'<blockquote>'
             f'{_tg(_E["skull"], "💀")} <b><i>БОСС УНИЧТОЖЕН!</i></b>\n\n'
-            f'<b><i>{boss_name} повержен!</i></b>'
+            f'<b><i>{boss_name} повержен!</i></b>{elite_badge}'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["dmg"], "💥")} <b><i>Последний удар: {_fmt(dmg)}</i></b>{crit_line}\n'
-            f'{_tg(_E["reward_coin"], "💰")} <b><i>Награда: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</i></b>'
+            f'{_tg(_E["dmg"], "💥")} <b><i>Последний удар: {_fmt(dmg)}</i></b>{crit_line}{vulnerable_note}\n'
+            f'{_tg(_E["reward_coin"], "💰")} <b><i>Награда: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</i></b>{elite_note}'
             f'</blockquote>\n\n'
             f'<blockquote>'
             f'{_tg(_E["timer"], "⏱")} <b><i>Следующий босс появится через 2 часа.</i></b>'
@@ -3282,35 +3463,38 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
         )
 
     boss_name = boss.get("name_en", boss["name"]) if (lang == "en" and boss) else (boss["name"] if boss else ("Boss" if lang == "en" else "Босс"))
+    is_elite    = state.get("is_elite", False)
+    elite_badge = f' {_tg(_E["elite"], "🔥")} <b>{"[ELITE]" if lang == "en" else "[ЭЛИТА]"}</b>' if is_elite else ""
+    reward_val  = _reward_for_state(state)
 
     if lang == "en":
         return (
             f'<blockquote>'
-            f'{_tg(tier["emoji_id"], "💀")} <b><i>{boss_name}</i></b>'
+            f'{_tg(tier["emoji_id"], "💀")} <b><i>{boss_name}</i></b>{elite_badge}'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["dmg"], "💥")} <b><i>Your strike: {_fmt(dmg)}</i></b> {_tg(_E["dmg"], "💥")}{crit_line}{suppression_note}'
+            f'{_tg(_E["dmg"], "💥")} <b><i>Your strike: {_fmt(dmg)}</i></b> {_tg(_E["dmg"], "💥")}{crit_line}{suppression_note}{vulnerable_note}'
             f'</blockquote>\n\n'
             f'<blockquote>'
             f'{_tg(_E["hp"], "❤️")} <b><i>HP:</i></b> {_fmt_digits(hp_after)} / {_fmt_digits(max_hp)} <b><i>({pct:.1f}%)</i></b>'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["trophy"], "🏆")} <b><i>Kill reward: {_fmt(_reward_for_hp(max_hp))} {_tg(_E["coin"], "💰")}</i></b>'
+            f'{_tg(_E["trophy"], "🏆")} <b><i>Kill reward: {_fmt(reward_val)} {_tg(_E["coin"], "💰")}</i></b>'
             f'</blockquote>'
             f'{stun_note}'
         )
     return (
         f'<blockquote>'
-        f'{_tg(tier["emoji_id"], "💀")} <b><i>{boss_name}</i></b>'
+        f'{_tg(tier["emoji_id"], "💀")} <b><i>{boss_name}</i></b>{elite_badge}'
         f'</blockquote>\n\n'
         f'<blockquote>'
-        f'{_tg(_E["dmg"], "💥")} <b><i>Твой удар: {_fmt(dmg)}</i></b> {_tg(_E["dmg"], "💥")}{crit_line}{suppression_note}'
+        f'{_tg(_E["dmg"], "💥")} <b><i>Твой удар: {_fmt(dmg)}</i></b> {_tg(_E["dmg"], "💥")}{crit_line}{suppression_note}{vulnerable_note}'
         f'</blockquote>\n\n'
         f'<blockquote>'
         f'{_tg(_E["hp"], "❤️")} <b><i>HP:</i></b> {_fmt_digits(hp_after)} / {_fmt_digits(max_hp)} <b><i>({pct:.1f}%)</i></b>'
         f'</blockquote>\n\n'
         f'<blockquote>'
-        f'{_tg(_E["trophy"], "🏆")} <b><i>Награда за убийство: {_fmt(_reward_for_hp(max_hp))} {_tg(_E["coin"], "💰")}</i></b>'
+        f'{_tg(_E["trophy"], "🏆")} <b><i>Награда за убийство: {_fmt(reward_val)} {_tg(_E["coin"], "💰")}</i></b>'
         f'</blockquote>'
         f'{stun_note}'
     )
