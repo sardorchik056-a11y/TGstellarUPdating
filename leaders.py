@@ -286,19 +286,25 @@ def _period_bounds(period: str) -> tuple[int, int]:
 
 def _leaders_kills(period: str) -> list[dict]:
     ts_from, ts_to = _period_bounds(period)
-    where = "WHERE killed=1"
+    where = "WHERE bs.killed=1"
     params: list = []
     if ts_from:
-        where += " AND ts>=?"; params.append(ts_from)
+        where += " AND bs.ts>=?"; params.append(ts_from)
     if ts_to:
-        where += " AND ts<?";  params.append(ts_to)
+        where += " AND bs.ts<?";  params.append(ts_to)
 
+    # LEFT JOIN с users — чтобы подтянуть custom_name (кастомное имя
+    # профиля, см. cmd "Изменить имя" в mainhelp.py). boss_stats хранит
+    # только "снимок" first_name/username на момент удара и не знает
+    # про custom_name, а он не перетирается визитами в Telegram (в
+    # отличие от first_name), поэтому его тянем напрямую из users.
     sql = f"""
-        SELECT uid, first_name, username,
-               SUM(killed) AS value
-        FROM boss_stats
+        SELECT bs.uid, bs.first_name, bs.username, u.custom_name,
+               SUM(bs.killed) AS value
+        FROM boss_stats bs
+        LEFT JOIN users u ON u.uid = bs.uid
         {where}
-        GROUP BY uid
+        GROUP BY bs.uid
         ORDER BY value DESC
         LIMIT {TOP_SIZE}
     """
@@ -312,16 +318,17 @@ def _leaders_damage(period: str) -> list[dict]:
     where = "WHERE 1=1"
     params: list = []
     if ts_from:
-        where += " AND ts>=?"; params.append(ts_from)
+        where += " AND bs.ts>=?"; params.append(ts_from)
     if ts_to:
-        where += " AND ts<?";  params.append(ts_to)
+        where += " AND bs.ts<?";  params.append(ts_to)
 
     sql = f"""
-        SELECT uid, first_name, username,
-               SUM(damage) AS value
-        FROM boss_stats
+        SELECT bs.uid, bs.first_name, bs.username, u.custom_name,
+               SUM(bs.damage) AS value
+        FROM boss_stats bs
+        LEFT JOIN users u ON u.uid = bs.uid
         {where}
-        GROUP BY uid
+        GROUP BY bs.uid
         ORDER BY value DESC
         LIMIT {TOP_SIZE}
     """
@@ -342,7 +349,7 @@ def _leaders_balance(period: str) -> list[dict]:
     ORDER BY + LIMIT по индексу idx_users_balance — без единого json.loads.
     """
     sql = f"""
-        SELECT uid, first_name, username, balance AS value
+        SELECT uid, first_name, username, custom_name, balance AS value
         FROM users
         ORDER BY balance DESC
         LIMIT {TOP_SIZE}
@@ -351,10 +358,11 @@ def _leaders_balance(period: str) -> list[dict]:
         rows = conn.execute(sql).fetchall()
     return [
         {
-            "uid":        r["uid"],
-            "first_name": r["first_name"] or r["username"] or "Аноним",
-            "username":   r["username"] or "",
-            "value":      r["value"],
+            "uid":         r["uid"],
+            "first_name":  r["first_name"] or r["username"] or "Аноним",
+            "username":    r["username"] or "",
+            "custom_name": r["custom_name"] or "",
+            "value":       r["value"],
         }
         for r in rows
     ]
@@ -364,7 +372,7 @@ def _leaders_level(period: str) -> list[dict]:
     """См. _leaders_balance — тот же переход с полного скана на индекс
     (idx_users_level_xp) вместо загрузки и сортировки всех игроков в Python."""
     sql = f"""
-        SELECT uid, first_name, username, level AS value, xp
+        SELECT uid, first_name, username, custom_name, level AS value, xp
         FROM users
         ORDER BY level DESC, xp DESC
         LIMIT {TOP_SIZE}
@@ -373,11 +381,12 @@ def _leaders_level(period: str) -> list[dict]:
         rows = conn.execute(sql).fetchall()
     return [
         {
-            "uid":        r["uid"],
-            "first_name": r["first_name"] or r["username"] or "Аноним",
-            "username":   r["username"] or "",
-            "value":      r["value"],
-            "xp":         r["xp"],
+            "uid":         r["uid"],
+            "first_name":  r["first_name"] or r["username"] or "Аноним",
+            "username":    r["username"] or "",
+            "custom_name": r["custom_name"] or "",
+            "value":       r["value"],
+            "xp":          r["xp"],
         }
         for r in rows
     ]
@@ -423,6 +432,14 @@ def _strip_invisible(text: str) -> str:
 
 
 def _display_name(row: dict) -> str:
+    # Кастомное имя (см. cmd "Изменить имя" в mainhelp.py) в приоритете —
+    # оно уже готовый санитайзенный HTML-фрагмент (может включать
+    # <tg-emoji>, <b>, <i> и т.п.), в отличие от first_name он не
+    # перетирается визитами в Telegram, поэтому именно его хочет видеть
+    # игрок и в лидерборде.
+    custom = _strip_invisible((row.get("custom_name") or "")).strip()
+    if custom:
+        return custom
     fname = _strip_invisible((row.get("first_name") or "")).strip()
     uname = _strip_invisible((row.get("username")   or "")).strip()
     if fname:
