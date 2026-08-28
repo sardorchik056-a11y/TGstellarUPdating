@@ -720,6 +720,14 @@ def profile_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def _profile_back_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    """Клавиатура с одной кнопкой «Назад» на профиль — для экранов ввода
+    (промокод / новое имя), которые сами ничего не открывают дальше."""
+    builder = InlineKeyboardBuilder()
+    builder.row(_back_btn("profile", "Назад" if lang == "ru" else "Back"))
+    return builder.as_markup()
+
+
 def change_name_input_text(lang: str = "ru") -> str:
     e_pencil = '<tg-emoji emoji-id="5197269100878907942">✍️</tg-emoji>'
     if lang == "en":
@@ -4366,6 +4374,10 @@ async def handle_callback(call: CallbackQuery):
 
         # ===== ПРОФИЛЬ =====
         if cd == "profile":
+            # Если сюда вернулись с экрана ввода промокода/имени — бот
+            # больше не должен ждать текстовый ввод от юзера.
+            _promo_pending.pop(user.id, None)
+            _name_pending.pop(user.id, None)
             await edit(profile_text(data), profile_keyboard(lang))
             return
 
@@ -4389,7 +4401,7 @@ async def handle_callback(call: CallbackQuery):
         if cd == "change_name_input":
             uid = call.from_user.id
             _name_pending[uid] = True
-            await edit(change_name_input_text(lang), back_button(lang))
+            await edit(change_name_input_text(lang), _profile_back_keyboard(lang))
             await call.answer()
             return
 
@@ -4397,7 +4409,7 @@ async def handle_callback(call: CallbackQuery):
         if cd == "promo_input":
             uid = call.from_user.id
             _promo_pending[uid] = True
-            await edit(promo_input_text(lang), back_button(lang))
+            await edit(promo_input_text(lang), _profile_back_keyboard(lang))
             await call.answer()
             return
 
