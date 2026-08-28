@@ -8,6 +8,7 @@
 import sqlite3
 import json
 import asyncio
+import html as _html
 from contextlib import contextmanager
 from datetime import date
 from miner import init_mine_data, MAX_LEVEL, xp_for_level, COIN
@@ -159,15 +160,22 @@ def init_db():
         # достаётся прямо в SQLite через ORDER BY ... LIMIT по индексу,
         # без единого json.loads по всей таблице.
         for col, coltype in (
-            ("first_name", "TEXT"),
-            ("balance",    "INTEGER NOT NULL DEFAULT 0"),
-            ("level",      "INTEGER NOT NULL DEFAULT 1"),
-            ("xp",         "INTEGER NOT NULL DEFAULT 0"),
+            ("first_name",  "TEXT"),
+            ("balance",     "INTEGER NOT NULL DEFAULT 0"),
+            ("level",       "INTEGER NOT NULL DEFAULT 1"),
+            ("xp",          "INTEGER NOT NULL DEFAULT 0"),
+            # custom_name — кастомное имя профиля (см. cmd "Изменить имя"),
+            # в отличие от first_name НЕ перетирается данными из Telegram
+            # при каждом визите (см. get_or_create_user). Хранит уже готовый
+            # HTML-фрагмент (может включать <tg-emoji>, <b>, <i> и т.п.),
+            # поэтому колонка дублируется в БД так же, как first_name —
+            # специально для быстрого лидерборда (leaders.py).
+            ("custom_name", "TEXT"),
         ):
             if col not in cols:
                 conn.execute(f"ALTER TABLE users ADD COLUMN {col} {coltype}")
 
-        if any(c not in cols for c in ("first_name", "balance", "level", "xp")):
+        if any(c not in cols for c in ("first_name", "balance", "level", "xp", "custom_name")):
             rows = conn.execute("SELECT uid, data_json FROM users").fetchall()
             for row in rows:
                 try:
@@ -175,9 +183,10 @@ def init_db():
                 except Exception:
                     d = {}
                 conn.execute(
-                    "UPDATE users SET first_name=?, balance=?, level=?, xp=? WHERE uid=?",
+                    "UPDATE users SET first_name=?, balance=?, level=?, xp=?, custom_name=? WHERE uid=?",
                     (d.get("first_name", ""), d.get("balance", 0),
-                     d.get("level", 1), d.get("xp", 0), row["uid"])
+                     d.get("level", 1), d.get("xp", 0),
+                     d.get("custom_name"), row["uid"])
                 )
 
         conn.execute("CREATE INDEX IF NOT EXISTS idx_users_balance ON users(balance DESC)")
@@ -223,18 +232,20 @@ def save_user(uid: int, data: dict):
     отдельные колонки — это даёт leaders.py быстрый SQL ORDER BY LIMIT
     вместо загрузки и сортировки всех пользователей в Python.
     """
-    username   = data.get("username")
-    first_name = data.get("first_name", "")
-    balance    = data.get("balance", 0)
-    level      = data.get("level", 1)
-    xp         = data.get("xp", 0)
+    username    = data.get("username")
+    first_name  = data.get("first_name", "")
+    balance     = data.get("balance", 0)
+    level       = data.get("level", 1)
+    xp          = data.get("xp", 0)
+    custom_name = data.get("custom_name")
     with _conn_ctx() as conn:
         conn.execute(
-            "INSERT INTO users (uid, data_json, username, first_name, balance, level, xp) "
-            "VALUES (?,?,?,?,?,?,?) "
+            "INSERT INTO users (uid, data_json, username, first_name, balance, level, xp, custom_name) "
+            "VALUES (?,?,?,?,?,?,?,?) "
             "ON CONFLICT(uid) DO UPDATE SET data_json=excluded.data_json, username=excluded.username, "
-            "first_name=excluded.first_name, balance=excluded.balance, level=excluded.level, xp=excluded.xp",
-            (uid, json.dumps(data, ensure_ascii=False), username, first_name, balance, level, xp)
+            "first_name=excluded.first_name, balance=excluded.balance, level=excluded.level, xp=excluded.xp, "
+            "custom_name=excluded.custom_name",
+            (uid, json.dumps(data, ensure_ascii=False), username, first_name, balance, level, xp, custom_name)
         )
         conn.commit()
 
@@ -626,7 +637,16 @@ def profile_text(d: dict) -> str:
     from lang import t, get_lang
     lang   = get_lang(d)
     uid    = d["id"]
-    name   = d["first_name"] or d["username"]
+    # Кастомное имя (см. cmd "Изменить имя" в mainhelp.py) хранится уже
+    # готовым HTML-фрагментом (может включать <tg-emoji>, <b>, <i> и т.п.)
+    # и НЕ экранируется — он уже прошёл санитайзинг при сохранении.
+    # Иначе используем обычные first_name/username от Telegram — их
+    # обязательно экранируем, это сырой пользовательский текст.
+    custom_name = d.get("custom_name")
+    if custom_name:
+        name = custom_name
+    else:
+        name = _html.escape(str(d["first_name"] or d["username"]))
     anon   = t(lang, "profile_anon")
     uname  = f"@{d['username']}" if d["username"] != anon and d["username"] != "Аноним" else "—"
     days   = days_on_project(d["joined"])
