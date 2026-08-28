@@ -1757,6 +1757,7 @@ ADMIN_PANEL_CALLBACK_HANDLERS = [
     cb_pr_delete,
     cb_pr_list,
     cb_clearstats_yes,
+    cb_clearboosters_yes,
     # Эти два были определены раньше в этом файле (см. /deletebd выше) —
     # без приоритизации их тоже перехватывал бы общий callback-роутер
     # mainhelp.py, потому что их callback_data не начинается на
