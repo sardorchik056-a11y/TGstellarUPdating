@@ -721,16 +721,17 @@ def profile_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
 
 
 def change_name_input_text(lang: str = "ru") -> str:
+    e_pencil = '<tg-emoji emoji-id="5197269100878907942">✍️</tg-emoji>'
     if lang == "en":
         return (
-            f'✏️ <b>Send a new profile name (up to {_NAME_MAX_LEN} chars, one line).</b>\n\n'
-            f'Custom emoji, bold/italic/spoiler formatting — all kept.\n\n'
-            f'To cancel — just open the menu.'
+            f'{e_pencil} <b>Send a new profile name (up to {_NAME_MAX_LEN} chars, one line).</b>\n\n'
+            f'<i>Custom emoji, bold/italic/spoiler formatting — all kept.</i>\n\n'
+            f'<i>To cancel — just open the menu.</i>'
         )
     return (
-        f'✏️ <b>Отправь новое имя профиля (до {_NAME_MAX_LEN} символов, одной строкой).</b>\n\n'
-        f'Можно использовать кастомные эмодзи, жирный/курсив/спойлер — сохранятся.\n\n'
-        f'Отменить — просто открой меню.'
+        f'{e_pencil} <b>Отправь новое имя профиля (до {_NAME_MAX_LEN} символов, одной строкой).</b>\n\n'
+        f'<i>Можно использовать кастомные эмодзи, жирный/курсив/спойлер — сохранятся.</i>\n\n'
+        f'<i>Отменить — просто открой меню.</i>'
     )
 
 
@@ -4388,22 +4389,16 @@ async def handle_callback(call: CallbackQuery):
         if cd == "change_name_input":
             uid = call.from_user.id
             _name_pending[uid] = True
+            await edit(change_name_input_text(lang), back_button(lang))
             await call.answer()
-            await call.message.answer(
-                change_name_input_text(lang),
-                parse_mode="HTML",
-            )
             return
 
         # ===== ПРОМОКОД — кнопка в профиле =====
         if cd == "promo_input":
             uid = call.from_user.id
             _promo_pending[uid] = True
+            await edit(promo_input_text(lang), back_button(lang))
             await call.answer()
-            await call.message.answer(
-                promo_input_text(lang),
-                parse_mode="HTML",
-            )
             return
 
         # ===== МАГАЗИН =====
