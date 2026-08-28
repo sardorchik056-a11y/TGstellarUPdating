@@ -879,7 +879,8 @@ def mine_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
         _prem_btn(EMOJI_BTN_WORKSHOP, t(lang, "mine_btn_workshop"), "mine_workshop_0"),
         _prem_btn(EMOJI_BTN_DURATION, t(lang, "mine_btn_duration"), "mine_duration_shop"),
     )
-    builder.row(_back_btn("back_to_menu", t(lang, "btn_back")))
+    # Кнопка «Назад» на инлайн-главное меню убрана — меню теперь открывается
+    # реплай-кнопками, инлайн-главное меню больше не используется.
     return builder.as_markup()
 
 
