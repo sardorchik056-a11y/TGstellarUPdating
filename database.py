@@ -501,6 +501,58 @@ def get_all_users() -> list[dict]:
     return [json.loads(r["data_json"]) for r in rows]
 
 
+# ---------- Массовая очистка ускорителей/зелий/усилителей ----------
+
+# Инвентари: boosters_inventory (кирко-ускорители), xp_inventory (XP-ускорители),
+# enh_inventory (усилители урона + зелья/яды — они хранятся вперемешку,
+# см. shop.py, тип элемента "poison" или "enh_boost").
+_BOOSTER_INVENTORY_FIELDS = ("boosters_inventory", "xp_inventory", "enh_inventory")
+# Активные (уже применённые) эффекты соответствующих типов.
+_BOOSTER_ACTIVE_FIELDS = ("active_booster", "active_xp_booster", "active_enh_booster", "active_poison")
+
+
+def clear_all_boosters() -> int:
+    """
+    Убирает у ВСЕХ игроков ускорители, зелья (яды) и усилители:
+    очищает инвентари (boosters_inventory / xp_inventory / enh_inventory)
+    и снимает активные эффекты (active_booster / active_xp_booster /
+    active_enh_booster / active_poison).
+
+    Артефакты, баланс, уровень, статус VIP/Premium и всё остальное —
+    НЕ трогает.
+
+    Возвращает количество игроков, у которых реально было что чистить.
+    """
+    affected = 0
+    with _conn_ctx() as conn:
+        rows = conn.execute("SELECT uid, data_json FROM users").fetchall()
+        for row in rows:
+            try:
+                data = json.loads(row["data_json"])
+            except Exception:
+                continue
+
+            changed = False
+            for key in _BOOSTER_INVENTORY_FIELDS:
+                if data.get(key):
+                    data[key] = []
+                    changed = True
+            for key in _BOOSTER_ACTIVE_FIELDS:
+                if data.get(key) is not None:
+                    data[key] = None
+                    changed = True
+
+            if changed:
+                affected += 1
+                conn.execute(
+                    "UPDATE users SET data_json=? WHERE uid=?",
+                    (json.dumps(data, ensure_ascii=False), row["uid"])
+                )
+        conn.commit()
+
+    return affected
+
+
 # ---------- Async-обёртки ----------
 # sqlite3 в этом модуле синхронный (блокирующий). Вызов любой из функций
 # выше напрямую из async-хэндлера или фонового цикла останавливает ВЕСЬ
@@ -541,6 +593,10 @@ async def aio_get_user_by_id_or_username(target_raw: str) -> dict | None:
 
 async def aio_get_all_users() -> list[dict]:
     return await asyncio.to_thread(get_all_users)
+
+
+async def aio_clear_all_boosters() -> int:
+    return await asyncio.to_thread(clear_all_boosters)
 
 
 async def aio_transfer_coins(sender_uid: int, recipient_uid: int, amount: int,
