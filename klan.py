@@ -1783,6 +1783,14 @@ async def aio_kick_member(*args, **kwargs) -> dict:
     return await asyncio.to_thread(kick_member, *args, **kwargs)
 
 
+async def aio_promote_member(*args, **kwargs) -> dict:
+    return await asyncio.to_thread(promote_member, *args, **kwargs)
+
+
+async def aio_demote_member(*args, **kwargs) -> dict:
+    return await asyncio.to_thread(demote_member, *args, **kwargs)
+
+
 async def aio_apply_to_clan(*args, **kwargs) -> dict:
     return await asyncio.to_thread(apply_to_clan, *args, **kwargs)
 
@@ -2776,6 +2784,44 @@ async def my_klan_keyboard(uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
             b.row(_btn("Покинуть клан", "klan_leave", _E_LEAVE))
     b.row(_back_btn("klan_main", lang))
     return b.as_markup()
+
+
+def klan_officers_text(clan: dict, members: list[dict], lang: str = "ru") -> str:
+    """
+    Текст экрана «Офицеры»: список участников (без creator — он не
+    назначается/снимается этим флоу) и текущее заполнение офицерских
+    слотов (растут вместе с рангом клана, см. OFFICER_SLOTS_BY_RANK).
+    Управление (Назначить/Снять) — в klan_officers_keyboard.
+    """
+    e_crown = _e(_E_CROWN, "👑")
+    slots   = get_officer_slots(clan)
+    count   = sum(1 for m in members if m["role"] == "officer")
+    name    = _esc(clan["name"])
+
+    lines = []
+    for m in members:
+        if m["role"] == "creator":
+            continue
+        icon = (
+            '🚔' if m["role"] == "officer" else
+            '<tg-emoji emoji-id="5452085950022707790">⭐</tg-emoji>'
+        )
+        lines.append(f'{icon} <b>{_member_name(m)}</b>')
+    body = "\n".join(lines) if lines else "<i>—</i>"
+
+    if lang == "en":
+        return (
+            f'{e_crown} <b>{name} — Officers</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'<blockquote><b>Slots used:</b> {count}/{slots}</blockquote>\n'
+            f'<blockquote>{body}</blockquote>'
+        )
+    return (
+        f'{e_crown} <b>{name} — Офицеры</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote><b>Занято слотов:</b> {count}/{slots}</blockquote>\n'
+        f'<blockquote>{body}</blockquote>'
+    )
 
 
 def klan_officers_keyboard(members: list[dict], lang: str = "ru") -> InlineKeyboardMarkup:
