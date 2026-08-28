@@ -2203,11 +2203,8 @@ def hunt_main_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
         callback_data="hunt_potions_menu",
         icon_custom_emoji_id=_E["potion"]
     ))
-    builder.row(InlineKeyboardButton(
-        text="Back" if lang == "en" else "Назад",
-        callback_data="back_to_menu",
-        icon_custom_emoji_id=_E["back"]
-    ))
+    # Кнопка «Назад» на инлайн-главное меню убрана — меню теперь открывается
+    # реплай-кнопками, инлайн-главное меню больше не используется.
     return builder.as_markup()
 
 
