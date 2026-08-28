@@ -15,7 +15,7 @@ from database import (
     init_db, get_or_create_user, save_user,
     profile_text, format_amount,
     aio_is_charge_processed, aio_mark_charge_processed,
-    aio_get_or_create_user, aio_save_user,
+    aio_get_or_create_user, aio_save_user, aio_get_user,
 )
 from miner import (
     ORES, PICKAXES, PICKAXES_ORDER,
@@ -3232,12 +3232,23 @@ async def potion_use_revival_confirm_callback(call: CallbackQuery):
     data = await aio_get_or_create_user(call.from_user)
     lang = get_lang(data)
 
-    ok, msg = await asyncio.to_thread(use_potion, "revival", uid, slot, lang)
+    # ВАЖНО (фикс бага "откат покупки/эффекта"): use_potion принимает uid,
+    # а не data, — значит сама читает и сохраняет пользователя в БД.
+    # Раньше здесь ПОСЛЕ use_potion сохранялся старый `data`, загруженный
+    # ДО её вызова, — это затирало то, что use_potion только что записала
+    # (классический lost update). Теперь: берём персональный лок на время
+    # всей операции и ПОСЛЕ use_potion перечитываем свежие данные, прежде
+    # чем что-либо сохранять поверх них.
+    async with await _get_user_lock(uid):
+        ok, msg = await asyncio.to_thread(use_potion, "revival", uid, slot, lang)
+
+        if ok:
+            data = await aio_get_user(uid) or data
+            _ach_newly = check_achievements(data)
+            await aio_save_user(uid, data)
+            await _notify_ach(uid, data, _ach_newly)
 
     if ok:
-        _ach_newly = check_achievements(data)
-        await aio_save_user(uid, data)
-        await _notify_ach(uid, data, _ach_newly)
         text, keyboard = await asyncio.to_thread(
             lambda: (hunt_main_text(data, lang), hunt_main_keyboard(data, lang))
         )
@@ -3262,12 +3273,19 @@ async def potion_use_callback(call: CallbackQuery):
     data = await aio_get_or_create_user(call.from_user)
     lang = get_lang(data)
 
-    ok, msg = await asyncio.to_thread(use_potion, potion_key, uid, None, lang)
+    # См. комментарий в potion_use_revival_confirm_callback выше — тот же
+    # фикс: лок на время операции + перечитывание свежих данных ПОСЛЕ
+    # use_potion, чтобы не затереть её запись устаревшим снимком.
+    async with await _get_user_lock(uid):
+        ok, msg = await asyncio.to_thread(use_potion, potion_key, uid, None, lang)
+
+        if ok:
+            data = await aio_get_user(uid) or data
+            _ach_newly = check_achievements(data)
+            await aio_save_user(uid, data)
+            await _notify_ach(uid, data, _ach_newly)
 
     if ok:
-        _ach_newly = check_achievements(data)
-        await aio_save_user(uid, data)
-        await _notify_ach(uid, data, _ach_newly)
         text, keyboard = await asyncio.to_thread(
             lambda: (my_potions_text(uid, lang), my_potions_keyboard(uid, lang))
         )
