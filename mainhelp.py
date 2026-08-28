@@ -379,6 +379,24 @@ def _esc(s) -> str:
     return _html.escape(str(s)) if s else ""
 
 
+# ── Санитайзер HTML для кастомного имени профиля ──────────────────────
+#  Позволяет пользователю использовать в имени жирный/курсив/подчёркнутый/
+#  зачёркнутый текст, спойлер, моноширинный текст и КАСТОМНЫЕ ЭМОДЗИ
+#  (aiogram сериализует entity custom_emoji в <tg-emoji emoji-id="...">
+#  через message.html_text — то есть бот "копирует" эмодзи 1-в-1).
+#  При этом убираем теги, которые могут поломать вёрстку профиля/лидеров
+#  или использоваться для фишинга (ссылки, упоминания, цитаты, преформат):
+#  тег убирается, но текст внутри него остаётся.
+_NAME_UNWRAP_TAGS = ("a", "pre", "blockquote", "code")
+
+
+def _sanitize_name_html(html_text: str) -> str:
+    for tag in _NAME_UNWRAP_TAGS:
+        html_text = _re.sub(rf'<{tag}\b[^>]*>', '', html_text, flags=_re.IGNORECASE)
+        html_text = _re.sub(rf'</{tag}>', '', html_text, flags=_re.IGNORECASE)
+    return html_text.strip()
+
+
 def _fmt_d(n: int) -> str:
     return f"{n:,}".replace(",", " ")
 
@@ -456,6 +474,13 @@ _cdl_input_msg: dict[int, tuple] = {}
 
 # Ожидание ввода цели для вызова на дуэль: uid -> True
 _challenge_input_pending: dict[int, bool] = {}
+
+# Ожидание ввода нового имени профиля: uid -> True
+_name_pending: dict[int, bool] = {}
+
+# Максимальная длина нового имени (в "видимых" символах текста сообщения,
+# без учёта HTML-тегов форматирования/кастомных эмодзи).
+_NAME_MAX_LEN = 32
 
 EMOJI_DEPOSITS = "5427168083074628963"
 
@@ -679,10 +704,68 @@ def profile_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
             icon_custom_emoji_id="5262643974912355126"
         ),
     )
+    builder.row(
+        InlineKeyboardButton(
+            text=" Изменить имя" if lang == "ru" else " Change name",
+            callback_data="change_name_input",
+            # NOTE: id взят от кнопки "Промокод" как заглушка — подставь
+            # свой ID кастомного emoji (например значок карандаша/пера),
+            # если хочешь визуально отличить кнопку.
+            icon_custom_emoji_id="5359664288241829619"
+        ),
+    )
     # Кнопка «Назад» на инлайн-главное меню убрана — меню теперь открывается
     # реплай-кнопками (см. sections_reply_keyboard / main_reply_keyboard),
     # инлайн main_menu_keyboard больше не используется как точка навигации.
     return builder.as_markup()
+
+
+def change_name_input_text(lang: str = "ru") -> str:
+    if lang == "en":
+        return (
+            f'✏️ <b>Send me a new profile name.</b>\n\n'
+            f'• Up to {_NAME_MAX_LEN} characters, one line.\n'
+            f'• Bold, italic, underline, strikethrough and spoiler are kept.\n'
+            f'• You can use <b>custom emoji</b> — send them right in the text '
+            f'and the bot will display them in your profile and in the '
+            f'leaderboard exactly as you sent them (Telegram Premium is '
+            f'needed to attach custom emoji to a message).\n\n'
+            f'Open the menu to cancel and keep your current name.'
+        )
+    return (
+        f'✏️ <b>Отправь новое имя профиля.</b>\n\n'
+        f'• До {_NAME_MAX_LEN} символов, одной строкой.\n'
+        f'• Жирный, курсив, подчёркнутый, зачёркнутый текст и спойлер — сохранятся.\n'
+        f'• Можно использовать <b>кастомные эмодзи</b> — просто вставь их в текст, '
+        f'и бот скопирует их в твой профиль и в лидерборд ровно так, как ты их отправил '
+        f'(для отправки кастомных эмодзи в сообщении нужен Telegram Premium).\n\n'
+        f'Напоминаем заранее — кастомные эмодзи поддерживаются!\n\n'
+        f'Чтобы отменить и оставить текущее имя — просто открой меню.'
+    )
+
+
+def change_name_success_text(name_html: str, lang: str = "ru") -> str:
+    if lang == "en":
+        return f'✅ <b>Name updated:</b> {name_html}'
+    return f'✅ <b>Имя обновлено:</b> {name_html}'
+
+
+def change_name_empty_text(lang: str = "ru") -> str:
+    if lang == "en":
+        return '❌ <b>Empty name.</b> Send some text.'
+    return '❌ <b>Пустое имя.</b> Отправь текст.'
+
+
+def change_name_too_long_text(max_len: int, lang: str = "ru") -> str:
+    if lang == "en":
+        return f'❌ <b>Too long.</b> Max {max_len} characters, one line.'
+    return f'❌ <b>Слишком длинное имя.</b> Максимум {max_len} символов, одной строкой.'
+
+
+def change_name_multiline_text(lang: str = "ru") -> str:
+    if lang == "en":
+        return '❌ <b>Name must be a single line.</b> Try again without line breaks.'
+    return '❌ <b>Имя должно быть в одну строку.</b> Отправь ещё раз без переносов строк.'
 
 
 def back_button(lang: str = "ru") -> InlineKeyboardMarkup | None:
@@ -796,6 +879,8 @@ async def _has_pending_text_input(message: Message) -> bool:
         return True
     if _promo_pending.get(uid):
         return True
+    if _name_pending.get(uid):
+        return True
     if _challenge_input_pending.get(uid):
         return True
     if uid in _cdl_input_pending:
@@ -817,6 +902,33 @@ async def handle_pending_text_input(message: Message):
     if uid in ADMIN_IDS and is_in_rass(uid):
         if await rass_fsm_message(message, ADMIN_IDS):
             return
+
+    # ── Ожидание ввода нового имени профиля ──
+    if _name_pending.pop(uid, False):
+        raw_text = (message.text or "").strip()
+        if not raw_text:
+            await message.reply(change_name_empty_text(lang), parse_mode="HTML")
+            return
+        if "\n" in raw_text or "\r" in raw_text:
+            await message.reply(change_name_multiline_text(lang), parse_mode="HTML")
+            return
+        if len(raw_text) > _NAME_MAX_LEN:
+            await message.reply(change_name_too_long_text(_NAME_MAX_LEN, lang), parse_mode="HTML")
+            return
+
+        # message.html_text (aiogram) сериализует entities сообщения в HTML —
+        # это и есть "копирование" форматирования и кастомных эмодзи 1-в-1
+        # (custom_emoji -> <tg-emoji emoji-id="...">, bold -> <b>, и т.д.).
+        name_html = _sanitize_name_html(message.html_text or _esc(raw_text))
+
+        lock = await _get_user_lock(uid)
+        async with lock:
+            u = await aio_get_or_create_user(message.from_user)
+            u["custom_name"] = name_html
+            await aio_save_user(uid, u)
+
+        await message.reply(change_name_success_text(name_html, lang), parse_mode="HTML")
+        return
 
     # ── Ожидание ввода промокода ──
     if _promo_pending.pop(uid, False):
@@ -955,6 +1067,7 @@ async def _clear_all_pending_inputs(uid: int, u: dict) -> None:
     мог быть перепутан с ответом на предыдущий запрос ввода, и чтобы после
     такого клика pending-флаги не оставались висеть."""
     _promo_pending.pop(uid, None)
+    _name_pending.pop(uid, None)
     _challenge_input_pending.pop(uid, None)
     _cdl_input_pending.pop(uid, None)
     _cdl_input_msg.pop(uid, None)
@@ -4213,6 +4326,17 @@ async def handle_callback(call: CallbackQuery):
 
             await edit(_bio_bonus_status_text(data, lang), back_button(lang))
             await call.answer()
+            return
+
+        # ===== ИЗМЕНИТЬ ИМЯ — кнопка в профиле =====
+        if cd == "change_name_input":
+            uid = call.from_user.id
+            _name_pending[uid] = True
+            await call.answer()
+            await call.message.answer(
+                change_name_input_text(lang),
+                parse_mode="HTML",
+            )
             return
 
         # ===== ПРОМОКОД — кнопка в профиле =====
