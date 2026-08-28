@@ -443,11 +443,8 @@ def cdl_main_keyboard(uid: int) -> InlineKeyboardMarkup:
             icon_custom_emoji_id="5397916757333654639"
         ),
     )
-    builder.row(InlineKeyboardButton(
-        text="Назад",
-        callback_data="back_to_menu",
-        icon_custom_emoji_id=_BACK_EMOJI
-    ))
+    # Кнопка «Назад» на инлайн-главное меню убрана — меню теперь открывается
+    # реплай-кнопками, инлайн-главное меню больше не используется.
     return builder.as_markup()
 
 
