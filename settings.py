@@ -50,10 +50,8 @@ def settings_keyboard(data: dict) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=t(lang, "btn_language"), callback_data="settings_lang",
                               icon_custom_emoji_id=_E_LANGUAGE),
     )
-    builder.row(
-        InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="back_to_menu",
-                             icon_custom_emoji_id=EMOJI_BACK)
-    )
+    # Кнопка «Назад» на инлайн-главное меню убрана — меню теперь открывается
+    # реплай-кнопками, инлайн-главное меню больше не используется.
     return builder.as_markup()
 
 
