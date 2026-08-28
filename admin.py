@@ -37,6 +37,7 @@ from database import (
     aio_get_user,
     aio_get_user_by_id_or_username,
     aio_save_user,
+    aio_clear_all_boosters,
 )
 from checks import (
     aio_create_check as create_check,
@@ -866,9 +867,10 @@ def _admin_main_keyboard():
     kb.button(text="🎟 Чеки",               callback_data="adm_menu:checks")
     kb.button(text="🏷 Промокоды",          callback_data="adm_menu:promos")
     kb.button(text="🧹 Очистка статистики", callback_data="adm_menu:clearstats")
+    kb.button(text="⚡ Очистить ускорители", callback_data="adm_menu:clearboosters")
     kb.button(text="📢 Рассылка",           callback_data="adm_menu:broadcast")
     kb.button(text="❌ Закрыть",            callback_data="adm_close")
-    kb.adjust(2, 2, 2, 1, 2, 1, 1)
+    kb.adjust(2, 2, 2, 1, 2, 1, 1, 1)
     return kb.as_markup()
 
 
@@ -1169,6 +1171,20 @@ async def cb_admin_menu(call: CallbackQuery, state: FSMContext):
             "🧹 <b>Очистка статистики</b>\n\n"
             "Удалит из статистики (/stats) пользователей, которые нажали /start, "
             "но не завершили онбординг. Продолжить?",
+            parse_mode="HTML", reply_markup=kb.as_markup(),
+        )
+
+    elif section == "clearboosters":
+        kb = InlineKeyboardBuilder()
+        kb.button(text="✅ Да, очистить", callback_data="adm_clearboosters_yes")
+        kb.button(text="⬅️ В меню", callback_data="adm_back")
+        kb.adjust(1)
+        await call.message.edit_text(
+            "⚡ <b>Очистить ускорители у всех игроков</b>\n\n"
+            "Удалит у ВСЕХ игроков ускорители кирки, XP-ускорители, "
+            "усилители урона и зелья/яды (инвентарь и активные эффекты).\n"
+            "Артефакты, баланс, уровень и статус — не затронет.\n\n"
+            "Продолжить?",
             parse_mode="HTML", reply_markup=kb.as_markup(),
         )
 
@@ -1668,6 +1684,23 @@ async def cb_clearstats_yes(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text(
         f'🧹 <b>Очистка завершена.</b>\n\n'
         f'<blockquote>Удалено незавершённых регистраций: <b>{removed}</b></blockquote>',
+        parse_mode="HTML", reply_markup=_back_kb(),
+    )
+    await call.answer()
+
+
+# ── Очистка ускорителей/зелий/усилителей у всех игроков ─────────────────
+
+@dp.callback_query(F.data == "adm_clearboosters_yes")
+async def cb_clearboosters_yes(call: CallbackQuery, state: FSMContext):
+    if not _is_admin(call.from_user.id):
+        await call.answer()
+        return
+    await state.clear()
+    affected = await aio_clear_all_boosters()
+    await call.message.edit_text(
+        f'⚡ <b>Ускорители очищены.</b>\n\n'
+        f'<blockquote>Затронуто игроков: <b>{affected}</b></blockquote>',
         parse_mode="HTML", reply_markup=_back_kb(),
     )
     await call.answer()
