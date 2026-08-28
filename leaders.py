@@ -581,12 +581,8 @@ def leaders_keyboard(category: str, period: str, lang: str = "ru") -> InlineKeyb
     builder.row(*period_buttons[:3])
     builder.row(*period_buttons[3:])
 
-    # ── Назад ──
-    builder.row(InlineKeyboardButton(
-        text="Back" if lang == "en" else "Назад",
-        callback_data="back_to_menu",
-        icon_custom_emoji_id=_E["back"],
-    ))
+    # Кнопка «Назад» на инлайн-главное меню убрана — меню теперь открывается
+    # реплай-кнопками, инлайн-главное меню больше не используется.
 
     return builder.as_markup()
 
