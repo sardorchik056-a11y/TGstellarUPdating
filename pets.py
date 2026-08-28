@@ -552,7 +552,8 @@ def pets_main_keyboard(data, page=0, lang: str = "ru") -> InlineKeyboardMarkup:
     if nav_btns:
         builder.row(*nav_btns)
 
-    builder.row(_back_btn("back_to_menu", t(lang, "btn_back")))
+    # Кнопка «Назад» на инлайн-главное меню убрана — меню теперь открывается
+    # реплай-кнопками, инлайн-главное меню больше не используется.
     return builder.as_markup()
 
 def pet_detail_text(data, pet_key, lang: str = "ru"):
