@@ -483,7 +483,7 @@ _name_pending: dict[int, bool] = {}
 
 # Максимальная длина нового имени (в "видимых" символах текста сообщения,
 # без учёта HTML-тегов форматирования/кастомных эмодзи).
-_NAME_MAX_LEN = 32
+_NAME_MAX_LEN = 18
 
 EMOJI_DEPOSITS = "5427168083074628963"
 
@@ -711,10 +711,7 @@ def profile_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text=" Изменить имя" if lang == "ru" else " Change name",
             callback_data="change_name_input",
-            # NOTE: id взят от кнопки "Промокод" как заглушка — подставь
-            # свой ID кастомного emoji (например значок карандаша/пера),
-            # если хочешь визуально отличить кнопку.
-            icon_custom_emoji_id="5359664288241829619"
+            icon_custom_emoji_id="5197269100878907942"  # ✍️
         ),
     )
     # Кнопка «Назад» на инлайн-главное меню убрана — меню теперь открывается
@@ -726,24 +723,14 @@ def profile_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
 def change_name_input_text(lang: str = "ru") -> str:
     if lang == "en":
         return (
-            f'✏️ <b>Send me a new profile name.</b>\n\n'
-            f'• Up to {_NAME_MAX_LEN} characters, one line.\n'
-            f'• Bold, italic, underline, strikethrough and spoiler are kept.\n'
-            f'• You can use <b>custom emoji</b> — send them right in the text '
-            f'and the bot will display them in your profile and in the '
-            f'leaderboard exactly as you sent them (Telegram Premium is '
-            f'needed to attach custom emoji to a message).\n\n'
-            f'Open the menu to cancel and keep your current name.'
+            f'✏️ <b>Send a new profile name (up to {_NAME_MAX_LEN} chars, one line).</b>\n\n'
+            f'Custom emoji, bold/italic/spoiler formatting — all kept.\n\n'
+            f'To cancel — just open the menu.'
         )
     return (
-        f'✏️ <b>Отправь новое имя профиля.</b>\n\n'
-        f'• До {_NAME_MAX_LEN} символов, одной строкой.\n'
-        f'• Жирный, курсив, подчёркнутый, зачёркнутый текст и спойлер — сохранятся.\n'
-        f'• Можно использовать <b>кастомные эмодзи</b> — просто вставь их в текст, '
-        f'и бот скопирует их в твой профиль и в лидерборд ровно так, как ты их отправил '
-        f'(для отправки кастомных эмодзи в сообщении нужен Telegram Premium).\n\n'
-        f'Напоминаем заранее — кастомные эмодзи поддерживаются!\n\n'
-        f'Чтобы отменить и оставить текущее имя — просто открой меню.'
+        f'✏️ <b>Отправь новое имя профиля (до {_NAME_MAX_LEN} символов, одной строкой).</b>\n\n'
+        f'Можно использовать кастомные эмодзи, жирный/курсив/спойлер — сохранятся.\n\n'
+        f'Отменить — просто открой меню.'
     )
 
 
