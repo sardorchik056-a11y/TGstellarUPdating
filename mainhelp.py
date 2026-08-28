@@ -679,14 +679,18 @@ def profile_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
             icon_custom_emoji_id="5262643974912355126"
         ),
     )
-    builder.row(_back_btn("back_to_menu", t(lang, "btn_back")))
+    # Кнопка «Назад» на инлайн-главное меню убрана — меню теперь открывается
+    # реплай-кнопками (см. sections_reply_keyboard / main_reply_keyboard),
+    # инлайн main_menu_keyboard больше не используется как точка навигации.
     return builder.as_markup()
 
 
-def back_button(lang: str = "ru") -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(_back_btn("back_to_menu", t(lang, "btn_back")))
-    return builder.as_markup()
+def back_button(lang: str = "ru") -> InlineKeyboardMarkup | None:
+    """Раньше — единственная инлайн-кнопка «Назад» на инлайн-главное меню.
+    Меню теперь реплай-клавиатурой (см. sections_reply_keyboard), поэтому
+    кнопка убрана; функция оставлена (возвращает None = без инлайн-
+    клавиатуры), чтобы не трогать все места вызова."""
+    return None
 
 
 def stars_confirm_keyboard(pick_key: str, page: int, invoice_url: str = None) -> InlineKeyboardMarkup:
@@ -738,7 +742,7 @@ def shop_main_keyboard() -> InlineKeyboardMarkup:
         text="Кейсы", callback_data="shop_cases",
         icon_custom_emoji_id="5442939099906325301"
     ))
-    builder.row(_back_btn("back_to_menu", "Назад"))
+    # Кнопка «Назад» на инлайн-главное меню убрана (см. profile_keyboard).
     return builder.as_markup()
 
 
