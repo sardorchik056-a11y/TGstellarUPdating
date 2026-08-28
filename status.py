@@ -350,7 +350,8 @@ def status_main_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(_btn("vip",     _L(lang, "VIP — подробнее", "VIP — details"),         "status_vip_info"))
     builder.row(_btn("premium", _L(lang, "Premium — подробнее", "Premium — details"), "status_premium_info"))
-    builder.row(_back_btn("back_to_menu", _L(lang, "Назад", "Back")))
+    # Кнопка «Назад» на инлайн-главное меню убрана — меню теперь открывается
+    # реплай-кнопками, инлайн-главное меню больше не используется.
     return builder.as_markup()
 
 
