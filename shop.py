@@ -1664,7 +1664,8 @@ def cases_shop_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         callback_data="artifact_shop_list",
         icon_custom_emoji_id="5229011542011299168"
     ))
-    builder.row(_back_btn("back_to_menu", _L(lang, "Назад в меню", "Back to menu")))
+    # Кнопка «Назад» на инлайн-главное меню убрана — меню теперь открывается
+    # реплай-кнопками, инлайн-главное меню больше не используется.
     return builder.as_markup()
 
 
