@@ -161,10 +161,22 @@ def _safe_int(s: str, default: int = -1) -> int:
 
 
 async def _garden_open(uid: int, u: dict, page: int = 0):
-    """Общая точка входа: гарантирует структуру сада и возвращает (text, keyboard)."""
-    ensure_garden(u)
-    await aio_save_user(uid, u)
-    return garden_text(u, page), garden_keyboard(u, page)
+    """Общая точка входа: гарантирует структуру сада и возвращает (text, keyboard).
+
+    ВАЖНО (фикс риска отката покупок): раньше здесь сохранялся `u`, который
+    вызывающий код успел загрузить ДО вызова этой функции — без лока. Если
+    в этот же момент у игрока параллельно шла другая операция с БД (покупка
+    кирки/длительности и т.п. под своим локом внутри handle_callback), то
+    её результат мог быть только что записан в БД, а этот save_user() тут
+    же переписал бы всё устаревшим снимком `u` поверх него (lost update).
+    Теперь берём персональный лок и работаем со СВЕЖЕ перечитанными
+    данными — сохраняем именно их, а не то, что было загружено раньше.
+    """
+    async with await _get_user_lock(uid):
+        fresh = await aio_get_user(uid) or u
+        ensure_garden(fresh)
+        await aio_save_user(uid, fresh)
+    return garden_text(fresh, page), garden_keyboard(fresh, page)
 
 
 # ── Владелец сообщения сада. Кнопки сада живут в обычных сообщениях, которые
