@@ -187,14 +187,8 @@ async def aio_stats_text(lang: str = "ru") -> str:
 
 
 def stats_keyboard(lang: str = "ru"):
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    from aiogram.types import InlineKeyboardButton
-    from miner import EMOJI_BACK
-    from lang import t
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text=t(lang, "btn_back"),
-        callback_data="back_to_menu",
-        icon_custom_emoji_id=EMOJI_BACK
-    ))
-    return builder.as_markup()
+    """Раньше — единственная инлайн-кнопка «Назад» на инлайн-главное меню.
+    Меню теперь реплай-клавиатурой, поэтому кнопка убрана; функция
+    оставлена (возвращает None = без инлайн-клавиатуры), чтобы не менять
+    все места вызова."""
+    return None
