@@ -167,6 +167,8 @@ from klan import (
     aio_disband_clan as disband_clan,
     aio_leave_clan as leave_clan,
     aio_kick_member as kick_member,
+    aio_promote_member as promote_member,
+    aio_demote_member as demote_member,
     aio_apply_to_clan as apply_to_clan,
     aio_get_applications as get_applications,
     aio_accept_application as accept_application,
@@ -186,6 +188,7 @@ from klan import (
     klan_card_text, klan_card_keyboard,
     my_klan_text, my_klan_keyboard,
     klan_members_text,
+    klan_officers_text, klan_officers_keyboard,
     klan_treasury_text, klan_treasury_keyboard,
     klan_applications_text, klan_applications_keyboard,
     klan_withdrawal_requests_text, klan_withdrawal_keyboard,
@@ -3690,6 +3693,72 @@ async def handle_callback(call: CallbackQuery):
             members = await get_clan_members(m["clan_id"])
             await edit(klan_members_text(clan, members, lang), klan_back_keyboard("klan_my", lang))
             await call.answer()
+            return
+
+        # ===== ОФИЦЕРЫ: экран управления (только creator) =====
+        if cd == "klan_officers":
+            m = await get_member(user.id)
+            if not m or m["role"] != "creator":
+                await call.answer("❌ Только создатель клана!" if lang == "ru" else "❌ Creator only!", show_alert=True)
+                return
+            clan    = await get_clan(m["clan_id"])
+            members = await get_clan_members(m["clan_id"])
+            await edit(klan_officers_text(clan, members, lang), klan_officers_keyboard(members, lang))
+            await call.answer()
+            return
+
+        # ===== ОФИЦЕРЫ: назначить =====
+        if cd.startswith("klan_promote_"):
+            target_uid = int(cd.removeprefix("klan_promote_"))
+            res = await promote_member(user.id, target_uid)
+            if res.get("ok"):
+                alert = "✅ Назначен офицером." if lang == "ru" else "✅ Promoted to officer."
+            else:
+                err = res.get("error")
+                if err == "not_creator":
+                    alert = "❌ Только создатель клана!" if lang == "ru" else "❌ Creator only!"
+                elif err == "not_in_your_clan":
+                    alert = "❌ Этот игрок не в твоём клане." if lang == "ru" else "❌ That player is not in your clan."
+                elif err == "already_officer_or_creator":
+                    alert = "❌ Уже офицер или создатель." if lang == "ru" else "❌ Already an officer or the creator."
+                elif err == "no_officer_slots":
+                    alert = (
+                        f'❌ Нет свободных офицерских слотов ({res.get("slots", 0)}). Прокачай уровень клана.'
+                        if lang == "ru" else
+                        f'❌ No free officer slots ({res.get("slots", 0)}). Level up the clan.'
+                    )
+                else:
+                    alert = "❌ Не удалось назначить офицера." if lang == "ru" else "❌ Could not promote."
+            m = await get_member(user.id)
+            if m:
+                clan    = await get_clan(m["clan_id"])
+                members = await get_clan_members(m["clan_id"])
+                await edit(klan_officers_text(clan, members, lang), klan_officers_keyboard(members, lang))
+            await call.answer(alert, show_alert=not res.get("ok"))
+            return
+
+        # ===== ОФИЦЕРЫ: снять =====
+        if cd.startswith("klan_demote_"):
+            target_uid = int(cd.removeprefix("klan_demote_"))
+            res = await demote_member(user.id, target_uid)
+            if res.get("ok"):
+                alert = "✅ Снят с офицера." if lang == "ru" else "✅ Demoted to member."
+            else:
+                err = res.get("error")
+                if err == "not_creator":
+                    alert = "❌ Только создатель клана!" if lang == "ru" else "❌ Creator only!"
+                elif err == "not_in_your_clan":
+                    alert = "❌ Этот игрок не в твоём клане." if lang == "ru" else "❌ That player is not in your clan."
+                elif err == "not_officer":
+                    alert = "❌ Этот игрок не офицер." if lang == "ru" else "❌ That player is not an officer."
+                else:
+                    alert = "❌ Не удалось снять офицера." if lang == "ru" else "❌ Could not demote."
+            m = await get_member(user.id)
+            if m:
+                clan    = await get_clan(m["clan_id"])
+                members = await get_clan_members(m["clan_id"])
+                await edit(klan_officers_text(clan, members, lang), klan_officers_keyboard(members, lang))
+            await call.answer(alert, show_alert=not res.get("ok"))
             return
 
         if cd == "klan_treasury":
