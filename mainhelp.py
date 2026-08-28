@@ -733,13 +733,11 @@ def change_name_input_text(lang: str = "ru") -> str:
     if lang == "en":
         return (
             f'{e_pencil} <b>Send a new profile name (up to {_NAME_MAX_LEN} chars, one line).</b>\n\n'
-            f'<i>Custom emoji, bold/italic/spoiler formatting — all kept.</i>\n\n'
-            f'<i>To cancel — just open the menu.</i>'
+            f'<i>Custom emoji, bold/italic/spoiler formatting — all kept.</i>'
         )
     return (
         f'{e_pencil} <b>Отправь новое имя профиля (до {_NAME_MAX_LEN} символов, одной строкой).</b>\n\n'
-        f'<i>Можно использовать кастомные эмодзи, жирный/курсив/спойлер — сохранятся.</i>\n\n'
-        f'<i>Отменить — просто открой меню.</i>'
+        f'<i>Можно использовать кастомные эмодзи, жирный/курсив/спойлер — сохранятся.</i>'
     )
 
 
