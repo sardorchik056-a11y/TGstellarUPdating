@@ -63,7 +63,6 @@ _E = {
                             # сообщения с ошибкой DOCUMENT_INVALID. Пока None — покажется
                             # обычный emoji 💥 (fallback), без кастомной иконки.
                             # TODO: вставить сюда свой РЕАЛЬНЫЙ id премиум-эмодзи.
-    "antimatter":   "5355302302276144071",  # антиматерия (личная валюта, см. shop.CASE_TIERS)
 }
 
 # ─────────────────────────────────────────
@@ -728,27 +727,6 @@ def _tier_for_hp(max_hp: int) -> dict:
 BOSS_XP_KILLER           = 25_000
 BOSS_XP_PARTICIPANT_MAX  =  5_000
 BOSS_XP_PARTICIPANT_MIN  =    100
-
-# ─────────────────────────────────────────
-#  АНТИМАТЕРИЯ ЗА БОССА (личная валюта игрока — см. shop.CASE_TIERS)
-#  Два независимых источника за один бой:
-#    А) За участие: разовый ролл (50%, 1-2 шт) КАЖДОМУ игроку, чей
-#       суммарный урон по этому конкретному боссу достиг порога —
-#       независимо от того, кто в итоге добьёт босса.
-#    Б) За добивание: тот, кто наносит смертельный удар, получает
-#       фиксированное количество по сложности босса (+1 если элита).
-# ─────────────────────────────────────────
-ANTIMATTER_PARTICIPATION_DMG_THRESHOLD = 500_000
-ANTIMATTER_PARTICIPATION_CHANCE        = 0.5   # 50%
-ANTIMATTER_PARTICIPATION_MIN           = 1
-ANTIMATTER_PARTICIPATION_MAX           = 2
-
-ANTIMATTER_KILL_REWARD = {
-    "easy":   2,
-    "medium": 3,
-    "hard":   5,
-}
-ANTIMATTER_ELITE_BONUS = 1  # +1 сверху, если убитый босс был элитной мутацией
 
 def _reward_for_hp(max_hp: int) -> int:
     """
@@ -1941,20 +1919,7 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
             "stunned_until": 0,
             "vulnerable_bonus": vulnerable_bonus,
             "vulnerable_triggered": False, "vulnerable_until": 0,
-            "antimatter_participation": 0,
-            "antimatter_kill": 0,
         }
-
-        # ── Антиматерия за участие: разовый ролл, когда суммарный урон
-        # этого игрока по ЭТОМУ боссу впервые достиг порога ──
-        antimatter_rolled = state.setdefault("antimatter_rolled", {})
-        if not is_infinite and damage_log[uid_str] >= ANTIMATTER_PARTICIPATION_DMG_THRESHOLD \
-                and uid_str not in antimatter_rolled:
-            antimatter_rolled[uid_str] = True
-            if random.random() < ANTIMATTER_PARTICIPATION_CHANCE:
-                out["antimatter_participation"] = random.randint(
-                    ANTIMATTER_PARTICIPATION_MIN, ANTIMATTER_PARTICIPATION_MAX
-                )
 
         # ── Заглушка: срабатывает один раз при падении HP до порога STUN_HP_THRESHOLD ──
         if hp_after > 0 and not state.get("stun_used"):
@@ -2030,13 +1995,6 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
             out["reward"]         = damage_rewards.get(uid_str, (0, 0))[0]
             out["xp"]             = damage_rewards.get(uid_str, (0, 0))[1]
 
-            # ── Антиматерия за добивание: по сложности босса, +1 за элиту ──
-            _difficulty_key = _tier_for_hp(max_hp).get("key", "easy")
-            _killer_antimatter = ANTIMATTER_KILL_REWARD.get(_difficulty_key, 2)
-            if state.get("is_elite"):
-                _killer_antimatter += ANTIMATTER_ELITE_BONUS
-            out["antimatter_kill"] = _killer_antimatter
-
         return state, out
 
     mutated = _atomic_slot_update(slot, _mutator)
@@ -2091,14 +2049,6 @@ def attack_boss(data: dict, slot: int = 0) -> dict:
         data["balance"] = data.get("balance", 0) + result["reward"]
         data["ref_income"] = data.get("ref_income", 0) + result["reward"]
         data["xp"]      = data.get("xp", 0) + result["xp"]
-
-    # ── Антиматерия: начисляем прямо в data (это всегда сам атакующий —
-    # и участник, чей урон пересёк порог, и добивающий, это один и тот же
-    # игрок, вызвавший attack_boss). Персистентно сохраняется вызывающим
-    # кодом вместе с остальными изменениями data. ──
-    _am_gain = result.get("antimatter_participation", 0) + result.get("antimatter_kill", 0)
-    if _am_gain:
-        data["antimatter"] = data.get("antimatter", 0) + _am_gain
 
     # ── Статистика для достижений ──
     if result.get("hit"):
@@ -2263,8 +2213,11 @@ def hunt_main_keyboard(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
         callback_data="hunt_potions_menu",
         icon_custom_emoji_id=_E["potion"]
     ))
-    # Кнопка «Назад» на инлайн-главное меню убрана — меню теперь открывается
-    # реплай-кнопками, инлайн-главное меню больше не используется.
+    builder.row(InlineKeyboardButton(
+        text="Back" if lang == "en" else "Назад",
+        callback_data="back_to_menu",
+        icon_custom_emoji_id=_E["back"]
+    ))
     return builder.as_markup()
 
 
@@ -3491,15 +3444,6 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
              f'\n{_tg(_E["elite"], "🔥")} <b><i>Элитный трофей — награда повышена!</i></b>')
             if is_elite else ""
         )
-        _am_total = result.get("antimatter_kill", 0) + result.get("antimatter_participation", 0)
-        if _am_total:
-            antimatter_line = (
-                f'\n{_tg(_E["antimatter"], "🟣")} <b><i>Antimatter: +{_am_total} {_tg(_E["antimatter"], "🟣")}</i></b>'
-                if lang == "en" else
-                f'\n{_tg(_E["antimatter"], "🟣")} <b><i>Антиматерия: +{_am_total} {_tg(_E["antimatter"], "🟣")}</i></b>'
-            )
-        else:
-            antimatter_line = ""
         if lang == "en":
             return (
                 f'<blockquote>'
@@ -3508,7 +3452,7 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
                 f'</blockquote>\n\n'
                 f'<blockquote>'
                 f'{_tg(_E["dmg"], "💥")} <b><i>Final strike: {_fmt(dmg)}</i></b>{crit_line}{vulnerable_note}\n'
-                f'{_tg(_E["reward_coin"], "💰")} <b><i>Reward: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</i></b>{elite_note}{antimatter_line}'
+                f'{_tg(_E["reward_coin"], "💰")} <b><i>Reward: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</i></b>{elite_note}'
                 f'</blockquote>\n\n'
                 f'<blockquote>'
                 f'{_tg(_E["timer"], "⏱")} <b><i>Next boss appears in 2 hours.</i></b>'
@@ -3521,7 +3465,7 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
             f'</blockquote>\n\n'
             f'<blockquote>'
             f'{_tg(_E["dmg"], "💥")} <b><i>Последний удар: {_fmt(dmg)}</i></b>{crit_line}{vulnerable_note}\n'
-            f'{_tg(_E["reward_coin"], "💰")} <b><i>Награда: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</i></b>{elite_note}{antimatter_line}'
+            f'{_tg(_E["reward_coin"], "💰")} <b><i>Награда: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</i></b>{elite_note}'
             f'</blockquote>\n\n'
             f'<blockquote>'
             f'{_tg(_E["timer"], "⏱")} <b><i>Следующий босс появится через 2 часа.</i></b>'
@@ -3532,16 +3476,6 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
     is_elite    = state.get("is_elite", False)
     elite_badge = f' {_tg(_E["elite"], "🔥")} <b>{"[ELITE]" if lang == "en" else "[ЭЛИТА]"}</b>' if is_elite else ""
     reward_val  = _reward_for_state(state)
-
-    _am_participation = result.get("antimatter_participation", 0)
-    if _am_participation:
-        antimatter_note = (
-            f'\n{_tg(_E["antimatter"], "🟣")} <b><i>Participation reward: +{_am_participation} antimatter {_tg(_E["antimatter"], "🟣")}</i></b>'
-            if lang == "en" else
-            f'\n{_tg(_E["antimatter"], "🟣")} <b><i>Награда за участие: +{_am_participation} антиматерии {_tg(_E["antimatter"], "🟣")}</i></b>'
-        )
-    else:
-        antimatter_note = ""
 
     if lang == "en":
         return (
@@ -3555,7 +3489,7 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
             f'{_tg(_E["hp"], "❤️")} <b><i>HP:</i></b> {_fmt_digits(hp_after)} / {_fmt_digits(max_hp)} <b><i>({pct:.1f}%)</i></b>'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["trophy"], "🏆")} <b><i>Kill reward: {_fmt(reward_val)} {_tg(_E["coin"], "💰")}</i></b>{antimatter_note}'
+            f'{_tg(_E["trophy"], "🏆")} <b><i>Kill reward: {_fmt(reward_val)} {_tg(_E["coin"], "💰")}</i></b>'
             f'</blockquote>'
             f'{stun_note}'
         )
@@ -3570,7 +3504,7 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
         f'{_tg(_E["hp"], "❤️")} <b><i>HP:</i></b> {_fmt_digits(hp_after)} / {_fmt_digits(max_hp)} <b><i>({pct:.1f}%)</i></b>'
         f'</blockquote>\n\n'
         f'<blockquote>'
-        f'{_tg(_E["trophy"], "🏆")} <b><i>Награда за убийство: {_fmt(reward_val)} {_tg(_E["coin"], "💰")}</i></b>{antimatter_note}'
+        f'{_tg(_E["trophy"], "🏆")} <b><i>Награда за убийство: {_fmt(reward_val)} {_tg(_E["coin"], "💰")}</i></b>'
         f'</blockquote>'
         f'{stun_note}'
     )
