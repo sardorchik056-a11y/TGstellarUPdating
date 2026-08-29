@@ -3686,10 +3686,39 @@ async def handle_callback(call: CallbackQuery):
                 except Exception as e:
                     if "message is not modified" in str(e):
                         return
+                    if "DOCUMENT_INVALID" in str(e):
+                        # Битый/несуществующий custom-emoji ID где-то в text.
+                        # Логируем ПОЛНЫЙ traceback (а не просто print(e)),
+                        # чтобы было видно, из какого места пришёл этот text,
+                        # и сразу пробуем восстановиться, вырезав все
+                        # <tg-emoji ...>...</tg-emoji> обёртки, оставив только
+                        # их fallback-содержимое (обычный юникод-эмодзи) —
+                        # тогда сообщение всё равно дойдёт до игрока.
+                        logging.exception("DOCUMENT_INVALID при edit_text, пробую без tg-emoji")
+                        stripped = _re.sub(r'<tg-emoji[^>]*>(.*?)</tg-emoji>', r'\1', text)
+                        if stripped != text:
+                            try:
+                                await call.message.edit_text(
+                                    stripped,
+                                    parse_mode=md,
+                                    reply_markup=kb,
+                                    disable_web_page_preview=True
+                                )
+                                return
+                            except Exception:
+                                logging.exception("Не получилось даже без tg-emoji")
+                        try:
+                            await call.answer(
+                                "⚠️ Ошибка отображения (битый emoji). Уже залогировано, чиню.",
+                                show_alert=True
+                            )
+                        except Exception:
+                            pass
+                        return
                     if attempt == 0:
                         await asyncio.sleep(0.4)
                         continue
-                    print(e)
+                    logging.exception("edit_text не удался после повторной попытки")
 
         cd = call.data
 
