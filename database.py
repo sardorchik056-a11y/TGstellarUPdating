@@ -455,6 +455,73 @@ def change_balance(uid: int, delta: int, min_balance: int = 0) -> int | None:
         conn.close()
 
 
+def change_antimatter(uid: int, delta: int, min_balance: int = 0) -> int | None:
+    """
+    Атомарно меняет data['antimatter'] на delta (та же схема блокировки,
+    что и change_balance выше — BEGIN IMMEDIATE держит write-лок на всё
+    время read-modify-write, чтобы параллельные удары по боссу/покупки
+    кейсов не перетирали друг друга).
+
+    Антиматерия — личная (не клановая) валюта игрока для новых кейсов
+    магазина (см. shop.CASE_TIERS). Хранится только в data_json
+    (data["antimatter"]), отдельной колонки в таблице users нет —
+    как и у Самосветов (data["samosvety"]), лидерборда по ней не требуется.
+
+    Возвращает новый баланс, либо None если:
+      - юзер не найден
+      - итоговый баланс < min_balance (изменение НЕ применяется, откат)
+    """
+    conn = _get_conn()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT data_json FROM users WHERE uid=?", (uid,)).fetchone()
+        if row is None:
+            conn.rollback()
+            return None
+
+        data = json.loads(row["data_json"])
+        new_balance = data.get("antimatter", 0) + delta
+
+        if new_balance < min_balance:
+            conn.rollback()
+            return None
+
+        data["antimatter"] = new_balance
+        conn.execute(
+            "UPDATE users SET data_json=? WHERE uid=?",
+            (json.dumps(data, ensure_ascii=False), uid)
+        )
+        conn.commit()
+        return new_balance
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def get_antimatter(uid_or_data) -> int:
+    """
+    Текущий баланс антиматерии. Принимает либо готовый data-словарь
+    (быстрый путь, без похода в БД — если данные уже загружены),
+    либо uid (тогда данные читаются из БД напрямую).
+    """
+    if isinstance(uid_or_data, dict):
+        return uid_or_data.get("antimatter", 0)
+    d = _load_raw(int(uid_or_data))
+    return d.get("antimatter", 0) if d else 0
+
+
+async def aio_change_antimatter(uid: int, delta: int, min_balance: int = 0) -> int | None:
+    return await asyncio.to_thread(change_antimatter, uid, delta, min_balance)
+
+
+async def aio_get_antimatter(uid_or_data) -> int:
+    if isinstance(uid_or_data, dict):
+        return uid_or_data.get("antimatter", 0)
+    return await asyncio.to_thread(get_antimatter, uid_or_data)
+
+
 def get_user(uid: int) -> dict | None:
     return _load_raw(uid)
 
