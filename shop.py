@@ -1414,6 +1414,8 @@ def case_inventory_text(data: dict, lang: str = "ru") -> str:
             f"<blockquote>📦 <b><i>UNOPENED CASES</i></b></blockquote>\n"
             f"\n<blockquote>{body}</blockquote>\n"
             f"\n<blockquote><i>Open: <code>отк эк 5</code> or <code>открыть эк 5</code> (with or without leading /)\n"
+            f"Give to another player: <code>передать эк 3</code> (reply to their message) "
+            f"or <code>передать эк 3 @username</code> — synonym: <code>подарить</code>\n"
             f"Codes: ок-common, рк-rare, ск-super rare, хк-chromo, эк-epic, мк-mythic, лк-legendary\n"
             f"Show this list again: <code>к</code></i></blockquote>"
         )
@@ -1422,6 +1424,8 @@ def case_inventory_text(data: dict, lang: str = "ru") -> str:
         f"<blockquote>📦 <b><i>НЕОТКРЫТЫЕ КЕЙСЫ</i></b></blockquote>\n"
         f"\n<blockquote>{body}</blockquote>\n"
         f"\n<blockquote><i>Открыть: <code>отк эк 5</code> или <code>открыть эк 5</code> (со слешем или без)\n"
+        f"Передать другому игроку: <code>передать эк 3</code> (в ответ на его сообщение) "
+        f"или <code>передать эк 3 @username</code> — синоним: <code>подарить</code>\n"
         f"Коды тиров: ок-обычный, рк-редкий, ск-сверхредкий, хк-хромо, эк-эпический, мк-мифический, лк-легендарный\n"
         f"Посмотреть этот список снова: <code>к</code></i></blockquote>"
     )
