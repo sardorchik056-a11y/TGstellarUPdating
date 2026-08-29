@@ -97,7 +97,10 @@ _DUR = {
     "2h":    2  * 60 * 60,
     "4h":    4  * 60 * 60,
     "6h":    6  * 60 * 60,
+    "8h":    8  * 60 * 60,
     "10h":   10 * 60 * 60,
+    "12h":   12 * 60 * 60,
+    "18h":   18 * 60 * 60,
     "24h":   24 * 60 * 60,
     "48h":   48 * 60 * 60,
 }
@@ -110,7 +113,10 @@ _DUR_LABELS = {
     "2h":    "2 часа",
     "4h":    "4 часа",
     "6h":    "6 часов",
+    "8h":    "8 часов",
     "10h":   "10 часов",
+    "12h":   "12 часов",
+    "18h":   "18 часов",
     "24h":   "24 часа",
     "48h":   "48 часов",
 }
@@ -123,7 +129,10 @@ _DUR_LABELS_EN = {
     "2h":    "2 hours",
     "4h":    "4 hours",
     "6h":    "6 hours",
+    "8h":    "8 hours",
     "10h":   "10 hours",
+    "12h":   "12 hours",
+    "18h":   "18 hours",
     "24h":   "24 hours",
     "48h":   "48 hours",
 }
@@ -273,6 +282,125 @@ ARTIFACT_SHOP_POOL = [
 # может ссылаться на старое имя _ARTIFACT_POOL.
 _ARTIFACT_POOL = ARTIFACT_SHOP_POOL
 ARTIFACT_POOL_BY_KEY = {a["key"]: a for a in ARTIFACT_SHOP_POOL}
+
+# Артефакты, сгруппированные по тиру — используется дропом из кейсов
+# ниже (CASE_TIERS). t180 и tall туда НЕ включаются: они никогда не
+# падают из кейсов, только прямая покупка за Самосветы.
+ARTIFACTS_BY_TIER: dict[str, list[dict]] = {}
+for _a in ARTIFACT_SHOP_POOL:
+    ARTIFACTS_BY_TIER.setdefault(_a["tier"], []).append(_a)
+del _a
+
+
+# ============================================================
+#  НОВАЯ СИСТЕМА КЕЙСОВ ЗА АНТИМАТЕРИЮ (7 тиров)
+#  Полностью заменяет старые кейсы за монеты (common/xp/enhancer).
+#  Антиматерия — личная валюта игрока, получаемая с боссов (см.
+#  hunt.ANTIMATTER_KILL_REWARD / hunt.ANTIMATTER_PARTICIPATION_*).
+#
+#  Лут каждого тира — независимые роллы:
+#   1) Усилитель урона (enh_boost) — множитель и макс. длительность
+#      растут с тиром, конкретный вариант выбирается как раньше у
+#      enh_booster (веса 55/25/10 для нижней границы множителя тира,
+#      30/12/4 для верхней).
+#   2) Зелье (яд) — та же пятёрка ядов, что и раньше (_POISON_POOL),
+#      с общим шансом получить один из них = tier["potion_chance"]%.
+#   3) Артефакт (только тиры chromo/epic/mythic/legendary) — с шансом
+#      tier["artifact_chance"]% падает один случайный артефакт из
+#      перечисленных в tier["artifact_tiers"] (те же самые предметы,
+#      что продаются за Самосветы, просто иногда выпадают бесплатно).
+#      t180 и tall никогда не выпадают из кейсов.
+# ============================================================
+
+CASE_TIERS = [
+    {"key": "common",    "name": "Обычный",     "name_en": "Common",     "cost_am": 3,
+     "mult_range": (1.4, 1.4), "max_dur_key": "2h",
+     "potion_chance": 2.0,  "artifact_chance": 0.0, "artifact_tiers": []},
+    {"key": "rare",      "name": "Редкий",      "name_en": "Rare",       "cost_am": 8,
+     "mult_range": (1.4, 1.6), "max_dur_key": "4h",
+     "potion_chance": 3.0,  "artifact_chance": 0.0, "artifact_tiers": []},
+    {"key": "superrare", "name": "Сверхредкий", "name_en": "Super Rare", "cost_am": 20,
+     "mult_range": (1.6, 1.8), "max_dur_key": "6h",
+     "potion_chance": 5.0,  "artifact_chance": 0.0, "artifact_tiers": []},
+    {"key": "chromo",    "name": "Хромо",       "name_en": "Chromo",     "cost_am": 45,
+     "mult_range": (1.8, 2.0), "max_dur_key": "8h",
+     "potion_chance": 7.0,  "artifact_chance": 2.5, "artifact_tiers": ["t125"]},
+    {"key": "epic",      "name": "Эпический",   "name_en": "Epic",       "cost_am": 90,
+     "mult_range": (2.0, 2.2), "max_dur_key": "12h",
+     "potion_chance": 9.0,  "artifact_chance": 3.0, "artifact_tiers": ["t125", "t140"]},
+    {"key": "mythic",    "name": "Мифический",  "name_en": "Mythic",     "cost_am": 180,
+     "mult_range": (2.2, 2.5), "max_dur_key": "18h",
+     "potion_chance": 12.0, "artifact_chance": 5.0, "artifact_tiers": ["t125", "t140", "t165"]},
+    {"key": "legendary", "name": "Легендарный", "name_en": "Legendary",  "cost_am": 350,
+     "mult_range": (2.5, 3.0), "max_dur_key": "24h",
+     "potion_chance": 15.0, "artifact_chance": 8.0, "artifact_tiers": ["t125", "t140", "t165"]},
+]
+CASE_TIERS_BY_KEY = {c["key"]: c for c in CASE_TIERS}
+CASE_TIER_ORDER   = [c["key"] for c in CASE_TIERS]
+
+
+def _register_tier_durations(tier: dict) -> list[str]:
+    """
+    Регистрирует 3 длительности буста тира (короткая ~1/8, средняя ~1/2,
+    максимальная — из tier["max_dur_key"]) как кастомные dur_key прямо в
+    _DUR/_DUR_LABELS/_DUR_LABELS_EN, чтобы переиспользовать существующие
+    хелперы форматирования (_dur_label, _enh_item_name и т.д.) без правок.
+    Возвращает список из 3 dur_key в порядке короткая->средняя->макс.
+    """
+    max_sec = _DUR[tier["max_dur_key"]]
+    fractions = [("s", 0.125), ("m", 0.5), ("l", 1.0)]
+    keys = []
+    for suffix, frac in fractions:
+        sec = max(600, int(max_sec * frac))
+        dur_key = f"{tier['key']}_{suffix}"
+        _DUR[dur_key] = sec
+        hours = sec / 3600
+        if hours >= 1:
+            label_ru = f"{hours:.1f}".rstrip("0").rstrip(".") + " ч"
+            label_en = f"{hours:.1f}".rstrip("0").rstrip(".") + "h"
+        else:
+            label_ru = f"{sec // 60} мин"
+            label_en = f"{sec // 60}min"
+        _DUR_LABELS[dur_key]    = label_ru
+        _DUR_LABELS_EN[dur_key] = label_en
+        keys.append(dur_key)
+    return keys
+
+
+def _build_tier_boost_pool(tier: dict) -> list[dict]:
+    """Строит пул усилителей урона (enh_boost) для тира кейса — по
+    образцу старого _ENH_BOOSTER_POOL, но с диапазоном множителя и
+    длительностью, заданными самим тиром."""
+    lo, hi = tier["mult_range"]
+    dur_keys = _register_tier_durations(tier)
+    rows = [(lo, (55, 25, 10))]
+    if hi != lo:
+        rows.append((hi, (30, 12, 4)))
+    pool = []
+    for mult, weights in rows:
+        for dur_key, w in zip(dur_keys, weights):
+            pool.append({
+                "key":        f"enh_boost_{tier['key']}_{mult}x_{dur_key}",
+                "type":       "enh_boost",
+                "multiplier": mult,
+                "dur_key":    dur_key,
+                "chance":     w,
+            })
+    return pool
+
+
+for _t in CASE_TIERS:
+    _t["boost_pool"] = _build_tier_boost_pool(_t)
+del _t
+
+# Быстрый доступ "ключ буста -> тир", нужен для отображения в инвентаре
+# (усилители из разных тиров попадают в тот же data["enh_inventory"], что
+# и раньше — формат записи не меняется, меняется только откуда он взялся).
+TIER_BOOST_BY_KEY: dict[str, dict] = {}
+for _t in CASE_TIERS:
+    for _b in _t["boost_pool"]:
+        TIER_BOOST_BY_KEY[_b["key"]] = _b
+del _t, _b
 MAX_ARTIFACTS = len(ARTIFACT_SHOP_POOL)
 
 # Обычные и редкие артефакты можно купить и за монеты (без Stars).
@@ -396,6 +524,17 @@ def buy_artifact(data: dict, artifact_key: str, lang: str = "ru") -> tuple:
 def get_samosvety(data: dict) -> int:
     """Текущий баланс Самосветов пользователя (донатная валюта, см. donate.py)."""
     return data.get("samosvety", 0)
+
+
+def get_antimatter(data: dict) -> int:
+    """
+    Текущий баланс антиматерии пользователя — личная валюта для кейсов
+    (см. CASE_TIERS). Начисляется с боссов (hunt.py: attack_boss), здесь
+    только читается/списывается по тому же паттерну, что и balance/
+    samosvety — сама data уже загружена и залочена вызывающим кодом,
+    сохранение делает он же после вызова open_case/open_case_multi.
+    """
+    return data.get("antimatter", 0)
 
 
 def _artifact_insufficient_samosvety_text(cost: int, balance: int, lang: str = "ru") -> str:
@@ -572,11 +711,14 @@ def get_xp_sell_price(item: dict) -> int:
     return _XP_SELL_PRICES.get(item["key"], 500)
 
 
-CASES = {
-    "common":   {"key": "common",   "name": "Ускорителей", "cost": 10_000, "pool": _BOOSTER_POOL, "type": "booster"},
-    "xp":       {"key": "xp",       "name": "XP",          "cost": 25_000, "pool": _XP_POOL,      "type": "xp"},
-    "enhancer": {"key": "enhancer", "name": "Усилителей",  "cost": 50_000, "pool": _ENH_POOL,     "type": "enhancer"},
-}
+# Кейсы за антиматерию (7 тиров) — единственная система кейсов в игре,
+# полностью заменяет старые common/xp/enhancer за монеты. "cost" здесь —
+# цена в АНТИМАТЕРИИ (не в монетах), несмотря на общее с прошлым имя поля,
+# т.к. открывающий код (open_case/open_case_multi) теперь везде читает и
+# списывает antimatter, а не balance. См. CASE_TIERS выше для полного
+# описания лута каждого тира.
+CASES = {c["key"]: {"key": c["key"], "name": c["name"], "name_en": c["name_en"], "cost": c["cost_am"], "tier": c}
+         for c in CASE_TIERS}
 
 # ============================================================
 #  УТИЛИТЫ
@@ -912,126 +1054,129 @@ def _remove_qty_by_key(inv: list, key: str, qty: int = 1) -> list:
 #  ЛОГИКА
 # ============================================================
 
+def _roll_tier_potion(tier: dict) -> dict | None:
+    """
+    Один независимый ролл «зелья» для тира кейса: с вероятностью
+    tier["potion_chance"]% возвращает либо усилитель урона (из
+    tier["boost_pool"]), либо один из 5 ядов (_POISON_POOL) — какой
+    именно, решается внутренним весом (та же пропорция буст/яд, что
+    была в старом _ENH_POOL: бустеры суммарно намного чаще ядов).
+    Возвращает None, если ролл не сработал.
+    """
+    if random.random() * 100 >= tier["potion_chance"]:
+        return None
+    combined = tier["boost_pool"] + _POISON_POOL
+    weights  = [x["chance"] for x in combined]
+    return random.choices(combined, weights=weights, k=1)[0]
+
+
+def _roll_tier_artifact(data: dict, tier: dict) -> dict | None:
+    """
+    Один независимый ролл артефакта для тира кейса (только tier с
+    непустым artifact_tiers): с вероятностью tier["artifact_chance"]%
+    выбирает случайный тир из artifact_tiers, затем случайный артефакт
+    внутри него. Если артефакт уже есть у игрока — ролл сгорает
+    (пропускается), чтобы не тратить шанс впустую при повторных дропах.
+    """
+    if not tier.get("artifact_tiers"):
+        return None
+    if random.random() * 100 >= tier["artifact_chance"]:
+        return None
+    art_tier_key = random.choice(tier["artifact_tiers"])
+    candidates = [a for a in ARTIFACTS_BY_TIER.get(art_tier_key, []) if not is_artifact_owned(data, a["key"])]
+    if not candidates:
+        return None
+    return random.choice(candidates)
+
+
 def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool = True, via_command: bool = False) -> tuple:
+    """
+    Открывает один кейс тира case_key за антиматерию. В отличие от старой
+    системы (гарантированный дроп чего-то одного из общего пула), теперь
+    это до ДВУХ независимых роллов за одно открытие:
+      1) зелье (усилитель урона ИЛИ яд) — шанс tier["potion_chance"]%
+      2) артефакт (только тиры chromo+) — шанс tier["artifact_chance"]%
+    Если ни один ролл не сработал — кейс всё равно тратится, игрок просто
+    ничего не получает (это ожидаемый исход при таких процентах).
+    """
     case = CASES.get(case_key)
     if not case:
         return False, _L(lang, "❌ Неизвестный кейс.", "❌ Unknown case."), None
+    tier = case["tier"]
     if _check_cooldown:
         ok_cd, err_cd = _check_case_cooldown(data, lang, via_command=via_command)
         if not ok_cd:
             return False, err_cd, None
     cost = case["cost"]
-    if data.get("balance", 0) < cost:
-        return False, f"❌ {_L(lang, 'Недостаточно монет!', 'Not enough coins!')}\n{_L(lang, 'Нужно', 'Need')}: {_fmt_num(cost)} {_pe('coin', '💰')}", None
-    if case["type"] == "booster":
-        inv = data.setdefault("boosters_inventory", [])
-    elif case["type"] == "enhancer":
-        inv = data.setdefault("enh_inventory", [])
-    else:
-        inv = data.setdefault("xp_inventory", [])
-    pool    = case["pool"]
-    weights = [b["chance"] for b in pool]
-    dropped = random.choices(pool, weights=weights, k=1)[0]
-    data["balance"] -= cost
-    ts  = int(_now_ts())
-    rnd = random.randint(1000, 9999)
-    instance_id = f"{dropped['key']}_{ts}_{rnd}"
-    if case["type"] == "booster":
-        instance = _add_or_stack(inv, dropped["key"], lambda: {
-            "key":          dropped["key"],
-            "multiplier":   dropped["multiplier"],
-            "dur_key":      dropped["dur_key"],
-            "duration_sec": _DUR[dropped["dur_key"]],
-            "chance":       dropped["chance"],
-        })
-        name     = f"{_pe('boost', '⚡')} {_booster_name(dropped, lang)}"
-        inv_line = f"{_L(lang, 'В инвентаре', 'In inventory')}: {sum(x.get('count', 1) for x in inv)}"
-    elif case["type"] == "enhancer":
-        def _build_enh():
-            inst = {
-                "key":    dropped["key"],
-                "type":   dropped["type"],
-                "chance": dropped["chance"],
-            }
-            if dropped["type"] == "poison":
-                inst["name"]         = dropped["name"]
-                inst["damage"]       = dropped["damage"]
-                inst["dur_key"]      = dropped["dur_key"]
-                inst["duration_sec"] = _DUR[dropped["dur_key"]]
-            else:
-                inst["multiplier"]   = dropped["multiplier"]
-                inst["dur_key"]      = dropped["dur_key"]
-                inst["duration_sec"] = _DUR[dropped["dur_key"]]
-            return inst
-        instance = _add_or_stack(inv, dropped["key"], _build_enh)
-        name     = _enh_item_name(instance, lang)
-        inv_line = f"{_L(lang, 'В инвентаре усилителей', 'Enhancer inventory')}: {sum(x.get('count', 1) for x in inv)}"
-    else:
-        if dropped["type"] == "xp_instant":
-            instance = {
-                "instance_id": instance_id,
-                "key":         dropped["key"],
-                "type":        dropped["type"],
-                "chance":      dropped["chance"],
-                "xp":          dropped["xp"],
-            }
-            name = _xp_item_name(dropped, lang)
-            # xp_instant применяется сразу — не кладём в инвентарь
-            from miner import xp_for_level, MAX_LEVEL
-            gained = dropped["xp"]
-            level   = data.get("level", 1)
-            xp      = data.get("xp", 0) + gained
-            xp_max  = data.get("xp_max", xp_for_level(level))
-            lvl_ups = 0
-            while xp >= xp_max and level < MAX_LEVEL:
-                xp    -= xp_max
-                level += 1
-                lvl_ups += 1
-                xp_max  = xp_for_level(level)
-            if level >= MAX_LEVEL:
-                xp = min(xp, xp_max)
-            data["level"]  = level
-            data["xp"]     = xp
-            data["xp_max"] = xp_max
-            if lvl_ups:
-                if lang == "en":
-                    lvl_msg = f"\n🎉 <b><i>Level up to {level}!</i></b>" if lvl_ups <= 3 else f"\n🎉 <b><i>Level up to {level} (+{lvl_ups} lvl)!</i></b>"
-                else:
-                    lvl_msg = f"\n🎉 <b><i>Уровень повышен до {level}!</i></b>" * min(lvl_ups, 3) if lvl_ups <= 3 else f"\n🎉 <b><i>Уровень повышен до {level} (+{lvl_ups} ур.)!</i></b>"
-            else:
-                lvl_msg = ""
-            data["cases_total_opened"] = data.get("cases_total_opened", 0) + 1
-            data["cases_total_spent"]  = data.get("cases_total_spent",  0) + cost
-            msg = (
-                f"<blockquote>{_pe('case', '📦')} <b><i>{_L(lang, 'Кейс открыт!', 'Case opened!')}</i></b>\n"
-                f"{_pe('arrow', '➡️')} <b><i>{_L(lang, 'Выпало', 'Dropped')}:</i></b> {name}</blockquote>\n"
-                f"\n<blockquote>{_pe('xp_instant', '✨')} <b><i>+{_fmt_num(gained)} XP {_L(lang, 'начислено сразу!', 'applied instantly!')}</i></b>{lvl_msg}</blockquote>\n"
-                f"\n<blockquote>{_pe('spent', '💸')} <b><i>{_L(lang, 'Потрачено', 'Spent')}: {_fmt_num(cost)}</i></b> {_pe('coin', '💰')}\n"
-                f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс', 'Balance')}: {_fmt_num(data['balance'])}</i></b> {_pe('coin', '💰')}</blockquote>"
-            )
-            _mark_case_opened(data)
-            return True, msg, instance
-        else:
-            def _build_xp():
+    if get_antimatter(data) < cost:
+        return False, (
+            f"❌ {_L(lang, 'Недостаточно антиматерии!', 'Not enough antimatter!')}\n"
+            f"{_L(lang, 'Нужно', 'Need')}: {_fmt_num(cost)} 🟣"
+        ), None
+
+    data["antimatter"] = get_antimatter(data) - cost
+
+    dropped_boost    = _roll_tier_potion(tier)
+    dropped_artifact = _roll_tier_artifact(data, tier)
+
+    drop_lines  = []
+    instance    = None  # {"boost": {...}|None, "artifact": {...}|None} — для open_case_multi
+
+    if dropped_boost is not None:
+        if dropped_boost["type"] == "poison":
+            inv = data.setdefault("enh_inventory", [])
+            def _build_poison(d=dropped_boost):
                 return {
-                    "key":          dropped["key"],
-                    "type":         dropped["type"],
-                    "chance":       dropped["chance"],
-                    "multiplier":   dropped["multiplier"],
-                    "dur_key":      dropped["dur_key"],
-                    "duration_sec": _DUR[dropped["dur_key"]],
+                    "key":          d["key"],
+                    "type":         d["type"],
+                    "chance":       d["chance"],
+                    "name":         d["name"],
+                    "damage":       d["damage"],
+                    "dur_key":      d["dur_key"],
+                    "duration_sec": _DUR[d["dur_key"]],
                 }
-            instance = _add_or_stack(inv, dropped["key"], _build_xp)
-            name = _xp_item_name(dropped, lang)
-        inv_line = f"{_L(lang, 'В XP-инвентаре', 'XP inventory')}: {sum(x.get('count', 1) for x in inv)}"
+            inst = _add_or_stack(inv, dropped_boost["key"], _build_poison)
+            drop_lines.append(_enh_item_name(inst, lang))
+        else:
+            inv = data.setdefault("enh_inventory", [])
+            def _build_boost(d=dropped_boost):
+                return {
+                    "key":          d["key"],
+                    "type":         "enh_boost",
+                    "chance":       d["chance"],
+                    "multiplier":   d["multiplier"],
+                    "dur_key":      d["dur_key"],
+                    "duration_sec": _DUR[d["dur_key"]],
+                }
+            inst = _add_or_stack(inv, dropped_boost["key"], _build_boost)
+            drop_lines.append(_enh_item_name(inst, lang))
+        instance = {"boost": {"key": dropped_boost["key"]}, "artifact": None}
+
+    if dropped_artifact is not None:
+        _ok_art, _art_msg = buy_artifact(data, dropped_artifact["key"], lang)
+        if _ok_art:
+            art_name = dropped_artifact.get("name_en", dropped_artifact["name"]) if lang == "en" else dropped_artifact["name"]
+            drop_lines.append(
+                f'<tg-emoji emoji-id="5229011542011299168">💎</tg-emoji> <b><i>{art_name}</i></b> '
+                f'({_L(lang, "артефакт", "artifact")})'
+            )
+            if instance is None:
+                instance = {"boost": None, "artifact": None}
+            instance["artifact"] = {"key": dropped_artifact["key"]}
+
     data["cases_total_opened"] = data.get("cases_total_opened", 0) + 1
     data["cases_total_spent"]  = data.get("cases_total_spent",  0) + cost
+
+    if drop_lines:
+        drop_text = "\n".join(f"{_pe('arrow', '➡️')} {l}" for l in drop_lines)
+    else:
+        drop_text = f"{_pe('arrow', '➡️')} <b><i>{_L(lang, 'Пусто — в этот раз не повезло', 'Empty — no luck this time')}</i></b>"
+
     msg = (
         f"<blockquote>{_pe('case', '📦')} <b><i>{_L(lang, 'Кейс открыт!', 'Case opened!')}</i></b>\n"
-        f"{_pe('arrow', '➡️')} <b><i>{_L(lang, 'Выпало', 'Dropped')}:</i></b> {name}</blockquote>\n"
-        f"\n<blockquote>{_pe('spent', '💸')} <b><i>{_L(lang, 'Потрачено', 'Spent')}: {_fmt_num(cost)}</i></b> {_pe('coin', '💰')}\n"
-        f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс', 'Balance')}: {_fmt_num(data['balance'])}</i></b> {_pe('coin', '💰')}\n"
-        f"{_pe('inv', '🎒')} <b><i>{inv_line}</i></b></blockquote>"
+        f"{drop_text}</blockquote>\n"
+        f"\n<blockquote>{_pe('spent', '💸')} <b><i>{_L(lang, 'Потрачено', 'Spent')}: {_fmt_num(cost)}</i></b> 🟣\n"
+        f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс антиматерии', 'Antimatter balance')}: {_fmt_num(data['antimatter'])}</i></b> 🟣</blockquote>"
     )
     _mark_case_opened(data)
     return True, msg, instance
@@ -1041,7 +1186,7 @@ def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool
 #  МАППИНГ НОМЕР КЕЙСА → КЛЮЧ
 # ============================================================
 
-CASE_NUM_TO_KEY = {1: "common", 2: "xp", 3: "enhancer"}
+CASE_NUM_TO_KEY = {i + 1: key for i, key in enumerate(CASE_TIER_ORDER)}
 CASE_KEY_TO_NUM = {v: k for k, v in CASE_NUM_TO_KEY.items()}
 
 
@@ -1069,10 +1214,11 @@ def open_case_multi(data: dict, case_num: int, qty: int, lang: str = "ru", via_c
 
     case_key = CASE_NUM_TO_KEY.get(case_num)
     if not case_key:
+        available = ", ".join(f"#{n}" for n in sorted(CASE_NUM_TO_KEY))
         if lang == "en":
-            err = f"Case #{case_num} not found. Available: #1 (boosters), #2 (XP), #3 (enhancers)."
+            err = f"Case #{case_num} not found. Available: {available}."
         else:
-            err = f"Кейс #{case_num} не найден. Доступны: #1 (ускорители), #2 (XP), #3 (усилители)."
+            err = f"Кейс #{case_num} не найден. Доступны: {available}."
         return False, f"❌ {err}"
 
     if qty < 1:
@@ -1089,74 +1235,82 @@ def open_case_multi(data: dict, case_num: int, qty: int, lang: str = "ru", via_c
     case       = CASES[case_key]
     total_cost = case["cost"] * qty
 
-    if data.get("balance", 0) < total_cost:
-        can_open = data.get("balance", 0) // case["cost"]
+    if get_antimatter(data) < total_cost:
+        can_open = get_antimatter(data) // case["cost"]
         if lang == "en":
             err = (
-                f"Not enough coins for {qty} cases!\n"
-                f"Need: {_fmt_num(total_cost)} | Balance: {_fmt_num(data.get('balance', 0))}\n"
+                f"Not enough antimatter for {qty} cases!\n"
+                f"Need: {_fmt_num(total_cost)} | Balance: {_fmt_num(get_antimatter(data))}\n"
                 f"Can open: {can_open}"
             )
         else:
             err = (
-                f"Недостаточно монет для {qty} кейсов!\n"
-                f"Нужно: {_fmt_num(total_cost)} | Баланс: {_fmt_num(data.get('balance', 0))}\n"
+                f"Недостаточно антиматерии для {qty} кейсов!\n"
+                f"Нужно: {_fmt_num(total_cost)} | Баланс: {_fmt_num(get_antimatter(data))}\n"
                 f"Можно открыть: {can_open}"
             )
         return False, f"❌ {err}"
 
-    # Открываем qty кейсов подряд
-    results: dict = {}  # item_key -> count
+    # Открываем qty кейсов подряд, считаем отдельно бустеры/яды и артефакты
+    results: dict  = {}  # item_key (буст/яд) -> count
+    artifacts_won: list = []  # список названий выпавших артефактов
+    empties       = 0
     opened_count  = 0
     for _ in range(qty):
         ok, _msg, instance = open_case(data, case_key, lang=lang, _check_cooldown=False)
         if not ok:
-            break  # прерываем если закончились монеты в процессе
+            break  # прерываем если закончилась антиматерия в процессе
+        opened_count += 1
         if instance:
-            k = instance.get("key", "?")
-            results[k] = results.get(k, 0) + 1
-            opened_count += 1
+            if instance.get("artifact"):
+                art = ARTIFACT_POOL_BY_KEY.get(instance["artifact"]["key"])
+                if art:
+                    artifacts_won.append(art.get("name_en", art["name"]) if lang == "en" else art["name"])
+            if instance.get("boost"):
+                k = instance["boost"]["key"]
+                results[k] = results.get(k, 0) + 1
+            if not instance.get("boost") and not instance.get("artifact"):
+                empties += 1
+        else:
+            empties += 1
 
     if opened_count == 0:
         err = "Не удалось открыть ни одного кейса." if lang == "ru" else "Failed to open any cases."
         return False, f"❌ {err}"
 
     spent = case["cost"] * opened_count
+    cname = case["name_en"] if lang == "en" else case["name"]
 
-    _CASE_NAMES_SHORT    = {"common": "Ускорителей", "xp": "XP", "enhancer": "Усилителей"}
-    _CASE_NAMES_SHORT_EN = {"common": "Booster",     "xp": "XP", "enhancer": "Enhancer"}
-    cname = _CASE_NAMES_SHORT_EN.get(case_key, case_key) if lang == "en" else _CASE_NAMES_SHORT.get(case_key, case_key)
-
-    # Формируем список дропа
+    # Формируем список дропа (бустеры и яды из этого тира + артефакты)
     result_lines = []
     for item_key, count in sorted(results.items(), key=lambda x: -x[1]):
-        if case_key == "common":
-            b = BOOSTERS_BY_KEY.get(item_key)
-            name = _booster_name(b, lang) if b else item_key
-        elif case_key == "xp":
-            x = XP_POOL_BY_KEY.get(item_key)
-            name = _xp_item_name_plain(x, lang) if x else item_key
-        else:
-            e = ENH_POOL_BY_KEY.get(item_key)
-            name = _enh_item_name_plain(e, lang) if e else item_key
+        item = TIER_BOOST_BY_KEY.get(item_key) or POISON_BY_KEY.get(item_key)
+        name = _enh_item_name_plain(item, lang) if item else item_key
         qty_str = f" ×{count}" if count > 1 else ""
         result_lines.append(f"<b><i>{name}</i></b>{qty_str}")
+    for art_name in artifacts_won:
+        result_lines.append(f"<b><i>{art_name}</i></b> ({_L(lang, 'артефакт', 'artifact')})")
+    if not result_lines:
+        result_lines.append(f"<i>{_L(lang, 'Пусто', 'Empty')}</i> ×{empties}")
+    elif empties:
+        result_lines.append(f"<i>{_L(lang, 'Пусто', 'Empty')}</i> ×{empties}")
 
     loot_text = "\n".join(f"  • {l}" for l in result_lines)
+    case_label = "case" if lang == "en" else "кейс"
 
     if lang == "en":
         msg = (
-            f"<blockquote>{_pe('case', '📦')} <b><i>Opened {opened_count}× {cname} case{'s' if opened_count != 1 else ''}!</i></b></blockquote>\n"
+            f"<blockquote>{_pe('case', '📦')} <b><i>Opened {opened_count}× {cname} {case_label}{'s' if opened_count != 1 else ''}!</i></b></blockquote>\n"
             f"\n<blockquote><b><i>Loot:</i></b>\n{loot_text}</blockquote>\n"
-            f"\n<blockquote>{_pe('spent', '💸')} <b><i>Spent: {_fmt_num(spent)}</i></b> {_pe('coin', '💰')}\n"
-            f"{_pe('balance', '💰')} <b><i>Balance: {_fmt_num(data['balance'])}</i></b> {_pe('coin', '💰')}</blockquote>"
+            f"\n<blockquote>{_pe('spent', '💸')} <b><i>Spent: {_fmt_num(spent)}</i></b> 🟣\n"
+            f"{_pe('balance', '💰')} <b><i>Antimatter balance: {_fmt_num(data.get('antimatter', 0))}</i></b> 🟣</blockquote>"
         )
     else:
         msg = (
-            f"<blockquote>{_pe('case', '📦')} <b><i>Открыто {opened_count}× кейс {cname}!</i></b></blockquote>\n"
+            f"<blockquote>{_pe('case', '📦')} <b><i>Открыто {opened_count}× {case_label} {cname}!</i></b></blockquote>\n"
             f"\n<blockquote><b><i>Лут:</i></b>\n{loot_text}</blockquote>\n"
-            f"\n<blockquote>{_pe('spent', '💸')} <b><i>Потрачено: {_fmt_num(spent)}</i></b> {_pe('coin', '💰')}\n"
-            f"{_pe('balance', '💰')} <b><i>Баланс: {_fmt_num(data['balance'])}</i></b> {_pe('coin', '💰')}</blockquote>"
+            f"\n<blockquote>{_pe('spent', '💸')} <b><i>Потрачено: {_fmt_num(spent)}</i></b> 🟣\n"
+            f"{_pe('balance', '💰')} <b><i>Баланс антиматерии: {_fmt_num(data.get('antimatter', 0))}</i></b> 🟣</blockquote>"
         )
     return True, msg
 
@@ -1623,42 +1777,33 @@ def enh_confirm_replace_keyboard(instance_id: str, replace_type: str, lang: str 
 def cases_shop_text(data: dict = None, lang: str = "ru") -> str:
     total_opened = (data or {}).get("cases_total_opened", 0)
     total_spent  = (data or {}).get("cases_total_spent",  0)
+    antimatter   = get_antimatter(data or {})
     if lang == "en":
         return (
             f"<blockquote>{_pe('shop', '🛒')} <b><i>CASE SHOP</i></b>\n"
             f"<b><i>Open cases and get bonuses!</i></b></blockquote>\n"
+            f'\n<blockquote>🟣 <b><i>Antimatter balance: {_fmt_num(antimatter)}</i></b></blockquote>\n'
             f'\n<blockquote><tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> <b><i>Your stats</i></b>\n'
             f"<b><i>Cases opened: {_fmt_num(total_opened)}</i></b>\n"
-            f"{_pe('spent', '💸')} <b><i>Spent: {_fmt_num(total_spent)}</i></b> {_pe('coin', '💰')}</blockquote>\n"
+            f"{_pe('spent', '💸')} <b><i>Spent: {_fmt_num(total_spent)}</i></b> 🟣</blockquote>\n"
             f'\n<blockquote><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji> <b><i>Good luck! May something great drop</i></b><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji></blockquote>'
         )
     return (
         f"<blockquote>{_pe('shop', '🛒')} <b><i>МАГАЗИН КЕЙСОВ</i></b>\n"
         f"<b><i>Открывай кейсы и получай бонусы!</i></b></blockquote>\n"
+        f'\n<blockquote>🟣 <b><i>Баланс антиматерии: {_fmt_num(antimatter)}</i></b></blockquote>\n'
         f'\n<blockquote><tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> <b><i>Твоя статистика</i></b>\n'
         f"<b><i>Открыто кейсов: {_fmt_num(total_opened)}</i></b>\n"
-        f"{_pe('spent', '💸')} <b><i>Потрачено: {_fmt_num(total_spent)}</i></b> {_pe('coin', '💰')}</blockquote>\n"
+        f"{_pe('spent', '💸')} <b><i>Потрачено: {_fmt_num(total_spent)}</i></b> 🟣</blockquote>\n"
         f'\n<blockquote><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji> <b><i>Удачи тебе! Пусть выпадет что-то крутое</i></b><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji></blockquote>'
     )
 
 
 def cases_shop_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    _CASE_NAMES = {
-        "common":   ("Ускорителей", "Booster"),
-        "xp":       ("XP",          "XP"),
-        "enhancer": ("Усилителей",  "Enhancer"),
-    }
     for c in CASES.values():
-        if c["type"] == "booster":
-            e_key = "case"
-        elif c["type"] == "xp":
-            e_key = "xp_case"
-        else:
-            e_key = "enh_case"
-        names = _CASE_NAMES.get(c["key"], (c["name"], c["name"]))
-        cname = names[1] if lang == "en" else names[0]
-        builder.row(_btn(_E[e_key], f'{cname} {"case" if lang == "en" else "кейс"}', f'case_info_{c["key"]}'))
+        cname = c["name_en"] if lang == "en" else c["name"]
+        builder.row(_btn(_E["enh_case"], f'{cname} {"case" if lang == "en" else "кейс"} — {c["cost"]}🟣', f'case_info_{c["key"]}'))
     builder.row(InlineKeyboardButton(
         text=_L(lang, "Магазин Артефактов", "Artifact Shop"),
         callback_data="artifact_shop_list",
@@ -1670,78 +1815,46 @@ def cases_shop_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
 
 
 def case_detail_text(data: dict, case_key: str, lang: str = "ru") -> str:
-    case    = CASES[case_key]
-    balance = data.get("balance", 0)
-    can_buy = balance >= case["cost"]
-    bal_str = f"{_fmt_num(balance)} {_pe('coin', '💰')}"
-    if case["type"] == "booster":
-        if lang == "en":
-            loot_lines = (
-                f"{_pe('boost', '⚡')} <b><i>Booster 1.4× — 30min to 24h</i></b>\n"
-                f"{_pe('boost', '⚡')} <b><i>Booster 1.8× — 30min to 24h</i></b>\n"
-                f"{_pe('boost', '⚡')} <b><i>Booster 2× — 30min to 24h</i></b>"
-            )
-        else:
-            loot_lines = (
-                f"{_pe('boost', '⚡')} <b><i>Ускоритель 1.4× — 30мин до 24ч</i></b>\n"
-                f"{_pe('boost', '⚡')} <b><i>Ускоритель 1.8× — 30мин до 24ч</i></b>\n"
-                f"{_pe('boost', '⚡')} <b><i>Ускоритель 2× — 30мин до 24ч</i></b>"
-            )
-    elif case["type"] == "enhancer":
-        if lang == "en":
-            loot_lines = (
-                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Damage booster 1.4× — 30min to 24h</i></b>\n'
-                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Damage booster 1.8× — 30min to 24h</i></b>\n'
-                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Damage booster 2× — 30min to 24h</i></b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Viper Venom — 100 000 dmg (5%)</i></b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Cobra Venom — 150 000 dmg (3%)</i></b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Black Mamba Venom — 225 000 dmg (2%)</i></b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Basilisk Venom — 350 000 dmg (1%)</i></b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Leviathan Venom — 500 000 dmg (0.5%)</i></b>'
-            )
-        else:
-            loot_lines = (
-                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Усилитель урона 1.4× — 30мин до 24ч</i></b>\n'
-                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Усилитель урона 1.8× — 30мин до 24ч</i></b>\n'
-                f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Усилитель урона 2× — 30мин до 24ч</i></b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Яд Гадюки — 100 000 урона (5%)</i></b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Яд Кобры — 150 000 урона (3%)</i></b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Яд Чёрной Мамбы — 225 000 урона (2%)</i></b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Яд Василиска — 350 000 урона (1%)</i></b>\n'
-                f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Яд Левиафана — 500 000 урона (0.5%)</i></b>'
+    case       = CASES[case_key]
+    tier       = case["tier"]
+    antimatter = get_antimatter(data)
+    can_buy    = antimatter >= case["cost"]
+    bal_str    = f"{_fmt_num(antimatter)} 🟣"
+
+    lo, hi = tier["mult_range"]
+    mult_label = _multiplier_label(lo) if lo == hi else f"{_multiplier_label(lo)}–{_multiplier_label(hi)}"
+    max_dur_label = _dur_label(tier["max_dur_key"], lang)
+
+    if lang == "en":
+        loot_lines = [
+            f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Damage booster {mult_label} — up to {max_dur_label} ({tier["potion_chance"]}% chance)</i></b>',
+            f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Poison (one of 5) — same {tier["potion_chance"]}% chance slot as the booster</i></b>',
+        ]
+        if tier["artifact_tiers"]:
+            tiers_str = "/".join(tier["artifact_tiers"])
+            loot_lines.append(
+                f'<tg-emoji emoji-id="5229011542011299168">💎</tg-emoji> <b><i>Artifact ({tiers_str}) — {tier["artifact_chance"]}% chance</i></b>'
             )
     else:
-        if lang == "en":
-            loot_lines = (
-                f"{_pe('xp_instant', '✨')} <b><i>Instant XP: 100 / 225 / 750 / 2 000 / 5 000</i></b>\n"
-                f"{_pe('xp_boost', '🔮')} <b><i>XP booster ×1.4 — 30min to 24h</i></b>\n"
-                f"{_pe('xp_boost', '🔮')} <b><i>XP booster ×1.8 — 30min to 24h</i></b>\n"
-                f"{_pe('xp_boost', '🔮')} <b><i>XP booster ×2 — 30min to 24h</i></b>"
+        loot_lines = [
+            f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Усилитель урона {mult_label} — до {max_dur_label} (шанс {tier["potion_chance"]}%)</i></b>',
+            f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Яд (один из 5) — тот же слот шанса {tier["potion_chance"]}%, что и усилитель</i></b>',
+        ]
+        if tier["artifact_tiers"]:
+            tiers_str = "/".join(tier["artifact_tiers"])
+            loot_lines.append(
+                f'<tg-emoji emoji-id="5229011542011299168">💎</tg-emoji> <b><i>Артефакт ({tiers_str}) — шанс {tier["artifact_chance"]}%</i></b>'
             )
-        else:
-            loot_lines = (
-                f"{_pe('xp_instant', '✨')} <b><i>Моментальный опыт: 100 / 225 / 750 / 2 000 / 5 000 XP</i></b>\n"
-                f"{_pe('xp_boost', '🔮')} <b><i>XP-ускоритель ×1.4 — от 30 мин до 24 ч</i></b>\n"
-                f"{_pe('xp_boost', '🔮')} <b><i>XP-ускоритель ×1.8 — от 30 мин до 24 ч</i></b>\n"
-                f"{_pe('xp_boost', '🔮')} <b><i>XP-ускоритель ×2 — от 30 мин до 24 ч</i></b>"
-            )
-    if case["type"] == "booster":
-        e_key = "case"
-    elif case["type"] == "enhancer":
-        e_key = "enh_case"
-    else:
-        e_key = "xp_case"
-    _CASE_NAMES_EN = {"common": "Booster", "xp": "XP", "enhancer": "Enhancer"}
-    cname = _CASE_NAMES_EN.get(case["key"], case["name"]) if lang == "en" else case["name"]
+    loot_text = "\n".join(loot_lines)
+
+    cname      = case["name_en"] if lang == "en" else case["name"]
     case_label = "case" if lang == "en" else "кейс"
     status = (
-        f"{_pe('ok', '✅')} <b><i>{_L(lang, 'Хватает монет', 'Enough coins')}</i></b>"
+        f"{_pe('ok', '✅')} <b><i>{_L(lang, 'Хватает антиматерии', 'Enough antimatter')}</i></b>"
         if can_buy else
-        f"{_pe('cancel', '❌')} <b><i>{_L(lang, 'Недостаточно монет', 'Not enough coins')}</i></b>"
+        f"{_pe('cancel', '❌')} <b><i>{_L(lang, 'Недостаточно антиматерии', 'Not enough antimatter')}</i></b>"
     )
-    # Номера кейсов для команды открытия
-    _CASE_NUM = {"common": 1, "xp": 2, "enhancer": 3}
-    case_num = _CASE_NUM.get(case_key, 1)
+    case_num = CASE_KEY_TO_NUM.get(case_key, 1)
     if lang == "en":
         cmd_hint = (
             f"\n\n<blockquote><i>"
@@ -1755,10 +1868,10 @@ def case_detail_text(data: dict, case_key: str, lang: str = "ru") -> str:
             f"</i></blockquote>"
         )
     return (
-        f"<blockquote>{_pe(e_key, '📦')} <b><i>{cname} {case_label}</i></b>\n"
-        f"{_pe('coin', '💰')} <b><i>{_L(lang, 'Цена', 'Price')}:</i></b> <b><i>{_fmt_num(case['cost'])}</i></b>\n"
-        f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс', 'Balance')}:</i></b> <b><i>{bal_str}</i></b></blockquote>\n"
-        f"\n<blockquote><b><i>{_L(lang, 'Возможный лут', 'Possible loot')}:</i></b>\n{loot_lines}</blockquote>\n"
+        f"<blockquote>{_pe('enh_case', '📦')} <b><i>{cname} {case_label}</i></b>\n"
+        f"🟣 <b><i>{_L(lang, 'Цена', 'Price')}:</i></b> <b><i>{_fmt_num(case['cost'])}</i></b>\n"
+        f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс антиматерии', 'Antimatter balance')}:</i></b> <b><i>{bal_str}</i></b></blockquote>\n"
+        f"\n<blockquote><b><i>{_L(lang, 'Возможный лут', 'Possible loot')}:</i></b>\n{loot_text}</blockquote>\n"
         f"\n<blockquote>{status}</blockquote>"
         f"{cmd_hint}"
     )
@@ -1769,7 +1882,7 @@ def case_detail_keyboard(case_key: str, can_buy: bool, lang: str = "ru") -> Inli
     if can_buy:
         builder.row(_btn(_E["shop"], _L(lang, "Купить и открыть", "Buy and open"), f"case_open_{case_key}"))
     else:
-        builder.row(_btn(_E["cancel"], _L(lang, "Недостаточно монет", "Not enough coins"), "noop"))
+        builder.row(_btn(_E["cancel"], _L(lang, "Недостаточно антиматерии", "Not enough antimatter"), "noop"))
     builder.row(_back_btn("shop_cases", _L(lang, "Назад", "Back")))
     return builder.as_markup()
 
