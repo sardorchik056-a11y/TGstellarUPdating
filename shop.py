@@ -316,25 +316,32 @@ del _a
 CASE_TIERS = [
     {"key": "common",    "name": "Обычный",     "name_en": "Common",     "cost_am": 3,
      "mult_range": (1.4, 1.4), "max_dur_key": "2h",
-     "potion_chance": 2.0,  "artifact_chance": 0.0, "artifact_tiers": []},
+     "potion_chance": 2.0,  "artifact_chance": 0.0, "artifact_tiers": [],
+     "pickaxe_chance": 2.0, "xp_chance": 2.0},
     {"key": "rare",      "name": "Редкий",      "name_en": "Rare",       "cost_am": 8,
      "mult_range": (1.4, 1.6), "max_dur_key": "4h",
-     "potion_chance": 3.0,  "artifact_chance": 0.0, "artifact_tiers": []},
+     "potion_chance": 3.0,  "artifact_chance": 0.0, "artifact_tiers": [],
+     "pickaxe_chance": 3.0, "xp_chance": 3.0},
     {"key": "superrare", "name": "Сверхредкий", "name_en": "Super Rare", "cost_am": 20,
      "mult_range": (1.6, 1.8), "max_dur_key": "6h",
-     "potion_chance": 5.0,  "artifact_chance": 0.0, "artifact_tiers": []},
+     "potion_chance": 5.0,  "artifact_chance": 0.0, "artifact_tiers": [],
+     "pickaxe_chance": 5.0, "xp_chance": 5.0},
     {"key": "chromo",    "name": "Хромо",       "name_en": "Chromo",     "cost_am": 45,
      "mult_range": (1.8, 2.0), "max_dur_key": "8h",
-     "potion_chance": 7.0,  "artifact_chance": 2.5, "artifact_tiers": ["t125"]},
+     "potion_chance": 7.0,  "artifact_chance": 2.5, "artifact_tiers": ["t125"],
+     "pickaxe_chance": 7.0, "xp_chance": 7.0},
     {"key": "epic",      "name": "Эпический",   "name_en": "Epic",       "cost_am": 90,
      "mult_range": (2.0, 2.2), "max_dur_key": "12h",
-     "potion_chance": 9.0,  "artifact_chance": 3.0, "artifact_tiers": ["t125", "t140"]},
+     "potion_chance": 9.0,  "artifact_chance": 3.0, "artifact_tiers": ["t125", "t140"],
+     "pickaxe_chance": 9.0, "xp_chance": 9.0},
     {"key": "mythic",    "name": "Мифический",  "name_en": "Mythic",     "cost_am": 180,
      "mult_range": (2.2, 2.5), "max_dur_key": "18h",
-     "potion_chance": 12.0, "artifact_chance": 5.0, "artifact_tiers": ["t125", "t140", "t165"]},
+     "potion_chance": 12.0, "artifact_chance": 5.0, "artifact_tiers": ["t125", "t140", "t165"],
+     "pickaxe_chance": 12.0, "xp_chance": 12.0},
     {"key": "legendary", "name": "Легендарный", "name_en": "Legendary",  "cost_am": 350,
      "mult_range": (2.5, 3.0), "max_dur_key": "24h",
-     "potion_chance": 15.0, "artifact_chance": 8.0, "artifact_tiers": ["t125", "t140", "t165"]},
+     "potion_chance": 15.0, "artifact_chance": 8.0, "artifact_tiers": ["t125", "t140", "t165"],
+     "pickaxe_chance": 15.0, "xp_chance": 15.0},
 ]
 CASE_TIERS_BY_KEY = {c["key"]: c for c in CASE_TIERS}
 CASE_TIER_ORDER   = [c["key"] for c in CASE_TIERS]
@@ -381,12 +388,15 @@ def _register_tier_durations(tier: dict) -> list[str]:
     return keys
 
 
-def _build_tier_boost_pool(tier: dict) -> list[dict]:
-    """Строит пул усилителей урона (enh_boost) для тира кейса — по
-    образцу старого _ENH_BOOSTER_POOL, но с диапазоном множителя и
-    длительностью, заданными самим тиром."""
+def _build_tier_item_pool(tier: dict, dur_keys: list[str], key_prefix: str, item_type: str) -> list[dict]:
+    """Строит пул предметов (усилитель урона / ускоритель кирки /
+    XP-ускоритель) для тира кейса — по образцу старого
+    _ENH_BOOSTER_POOL / _BOOSTER_POOL / _XP_POOL, но с диапазоном
+    множителя и длительностью, заданными самим тиром. key_prefix и
+    item_type различают, к какому виду предмета относится пул
+    ("enh_boost" -> усилитель урона, "boost" -> ускоритель кирки,
+    "xp_boost" -> XP-ускоритель)."""
     lo, hi = tier["mult_range"]
-    dur_keys = _register_tier_durations(tier)
     rows = [(lo, (55, 25, 10))]
     if hi != lo:
         rows.append((hi, (30, 12, 4)))
@@ -394,8 +404,8 @@ def _build_tier_boost_pool(tier: dict) -> list[dict]:
     for mult, weights in rows:
         for dur_key, w in zip(dur_keys, weights):
             pool.append({
-                "key":        f"enh_boost_{tier['key']}_{mult}x_{dur_key}",
-                "type":       "enh_boost",
+                "key":        f"{key_prefix}_{tier['key']}_{mult}x_{dur_key}",
+                "type":       item_type,
                 "multiplier": mult,
                 "dur_key":    dur_key,
                 "chance":     w,
@@ -404,8 +414,11 @@ def _build_tier_boost_pool(tier: dict) -> list[dict]:
 
 
 for _t in CASE_TIERS:
-    _t["boost_pool"] = _build_tier_boost_pool(_t)
-del _t
+    _dur_keys = _register_tier_durations(_t)
+    _t["boost_pool"]   = _build_tier_item_pool(_t, _dur_keys, "enh_boost", "enh_boost")
+    _t["pickaxe_pool"] = _build_tier_item_pool(_t, _dur_keys, "boost", "boost")
+    _t["xp_pool"]      = _build_tier_item_pool(_t, _dur_keys, "xpboost", "xp_boost")
+del _t, _dur_keys
 
 # Быстрый доступ "ключ буста -> тир", нужен для отображения в инвентаре
 # (усилители из разных тиров попадают в тот же data["enh_inventory"], что
@@ -415,7 +428,43 @@ for _t in CASE_TIERS:
     for _b in _t["boost_pool"]:
         TIER_BOOST_BY_KEY[_b["key"]] = _b
 del _t, _b
+
+# Ускорители кирки (тип "boost"), выпадающие из кейсов — попадают в
+# data["boosters_inventory"], та же логика активации/продажи, что и у
+# ускорителей кирки в целом (см. activate_booster / sell_booster).
+TIER_PICKAXE_BY_KEY: dict[str, dict] = {}
+for _t in CASE_TIERS:
+    for _b in _t["pickaxe_pool"]:
+        TIER_PICKAXE_BY_KEY[_b["key"]] = _b
+del _t, _b
+
+# XP-ускорители (тип "xp_boost"), выпадающие из кейсов — попадают в
+# data["xp_inventory"] (см. use_xp_item / sell_xp_item).
+TIER_XP_BY_KEY: dict[str, dict] = {}
+for _t in CASE_TIERS:
+    for _b in _t["xp_pool"]:
+        TIER_XP_BY_KEY[_b["key"]] = _b
+del _t, _b
 MAX_ARTIFACTS = len(ARTIFACT_SHOP_POOL)
+
+
+def _tier_loot_name_plain(item_key: str, lang: str = "ru") -> str:
+    """
+    Название дропа из кейса (без HTML-тегов) по его ключу — ищет по
+    всем возможным пулам (усилитель урона / яд / ускоритель кирки /
+    XP-ускоритель) и форматирует соответствующим хелпером. Используется
+    в сводках open_case_multi / open_cases_from_inventory.
+    """
+    item = TIER_BOOST_BY_KEY.get(item_key) or POISON_BY_KEY.get(item_key)
+    if item:
+        return _enh_item_name_plain(item, lang)
+    item = TIER_PICKAXE_BY_KEY.get(item_key)
+    if item:
+        return _booster_name(item, lang)
+    item = TIER_XP_BY_KEY.get(item_key)
+    if item:
+        return _xp_item_name_plain(item, lang)
+    return item_key
 
 # Обычные и редкие артефакты можно купить и за монеты (без Stars).
 # Эпические/мифические/легендарные — только за Stars.
@@ -1084,6 +1133,32 @@ def _roll_tier_potion(tier: dict) -> dict | None:
     return random.choices(combined, weights=weights, k=1)[0]
 
 
+def _roll_tier_pickaxe(tier: dict) -> dict | None:
+    """
+    Независимый ролл ускорителя кирки («Все показатели кирки ×N») для
+    тира кейса: с вероятностью tier["pickaxe_chance"]% выпадает один
+    предмет из tier["pickaxe_pool"]. Не влияет на роллы зелья/артефакта.
+    """
+    if random.random() * 100 >= tier.get("pickaxe_chance", 0):
+        return None
+    pool    = tier["pickaxe_pool"]
+    weights = [x["chance"] for x in pool]
+    return random.choices(pool, weights=weights, k=1)[0]
+
+
+def _roll_tier_xp(tier: dict) -> dict | None:
+    """
+    Независимый ролл XP-ускорителя для тира кейса: с вероятностью
+    tier["xp_chance"]% выпадает один предмет из tier["xp_pool"]. Не
+    влияет на роллы зелья/артефакта/ускорителя кирки.
+    """
+    if random.random() * 100 >= tier.get("xp_chance", 0):
+        return None
+    pool    = tier["xp_pool"]
+    weights = [x["chance"] for x in pool]
+    return random.choices(pool, weights=weights, k=1)[0]
+
+
 def _roll_tier_artifact(data: dict, tier: dict) -> dict | None:
     """
     Один независимый ролл артефакта для тира кейса (только tier с
@@ -1142,20 +1217,23 @@ def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool
 
     dropped_boost    = _roll_tier_potion(tier)
     dropped_artifact = _roll_tier_artifact(data, tier)
+    dropped_pickaxe  = _roll_tier_pickaxe(tier)
+    dropped_xp       = _roll_tier_xp(tier)
 
-    # Гарантия непустого лута: если оба независимых ролла (зелье и
-    # артефакт) не сработали — кейс всё равно должен дать усилитель
-    # урона (ускоритель), а не пустой результат. Шансы potion_chance
-    # и artifact_chance при этом не меняются: этот fallback срабатывает
-    # только когда оба ролла уже "прогорели" сами по себе, и выбирает
-    # исключительно из tier["boost_pool"] (бустеры), яды сюда не входят.
-    if dropped_boost is None and dropped_artifact is None:
+    # Гарантия непустого лута: если ни один из независимых роллов (зелье,
+    # артефакт, ускоритель кирки, XP-ускоритель) не сработал — кейс всё
+    # равно должен дать усилитель урона (ускоритель), а не пустой
+    # результат. Остальные шансы при этом не меняются: этот fallback
+    # срабатывает только когда все роллы уже "прогорели" сами по себе, и
+    # выбирает исключительно из tier["boost_pool"] (бустеры), яды сюда не входят.
+    if dropped_boost is None and dropped_artifact is None and dropped_pickaxe is None and dropped_xp is None:
         pool = tier["boost_pool"]
         weights = [x["chance"] for x in pool]
         dropped_boost = random.choices(pool, weights=weights, k=1)[0]
 
     drop_lines  = []
-    instance    = None  # {"boost": {...}|None, "artifact": {...}|None} — для open_case_multi
+    # {"boost": {...}|None, "artifact": {...}|None, "pickaxe": {...}|None, "xp": {...}|None} — для open_case_multi
+    instance    = {"boost": None, "artifact": None, "pickaxe": None, "xp": None}
 
     if dropped_boost is not None:
         if dropped_boost["type"] == "poison":
@@ -1185,7 +1263,37 @@ def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool
                 }
             inst = _add_or_stack(inv, dropped_boost["key"], _build_boost)
             drop_lines.append(_enh_item_name(inst, lang))
-        instance = {"boost": {"key": dropped_boost["key"]}, "artifact": None}
+        instance["boost"] = {"key": dropped_boost["key"]}
+
+    if dropped_pickaxe is not None:
+        inv = data.setdefault("boosters_inventory", [])
+        def _build_pickaxe(d=dropped_pickaxe):
+            return {
+                "key":          d["key"],
+                "type":         "boost",
+                "chance":       d["chance"],
+                "multiplier":   d["multiplier"],
+                "dur_key":      d["dur_key"],
+                "duration_sec": _DUR[d["dur_key"]],
+            }
+        inst = _add_or_stack(inv, dropped_pickaxe["key"], _build_pickaxe)
+        drop_lines.append(f"{_pe('boost', '⚡')} {_booster_name(inst, lang)}")
+        instance["pickaxe"] = {"key": dropped_pickaxe["key"]}
+
+    if dropped_xp is not None:
+        inv = data.setdefault("xp_inventory", [])
+        def _build_xp(d=dropped_xp):
+            return {
+                "key":          d["key"],
+                "type":         "xp_boost",
+                "chance":       d["chance"],
+                "multiplier":   d["multiplier"],
+                "dur_key":      d["dur_key"],
+                "duration_sec": _DUR[d["dur_key"]],
+            }
+        inst = _add_or_stack(inv, dropped_xp["key"], _build_xp)
+        drop_lines.append(_xp_item_name(inst, lang))
+        instance["xp"] = {"key": dropped_xp["key"]}
 
     if dropped_artifact is not None:
         _ok_art, _art_msg = buy_artifact(data, dropped_artifact["key"], lang)
@@ -1195,8 +1303,6 @@ def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool
                 f'<tg-emoji emoji-id="5229011542011299168">💎</tg-emoji> <b><i>{art_name}</i></b> '
                 f'({_L(lang, "артефакт", "artifact")})'
             )
-            if instance is None:
-                instance = {"boost": None, "artifact": None}
             instance["artifact"] = {"key": dropped_artifact["key"]}
 
     data["cases_total_opened"] = data.get("cases_total_opened", 0) + 1
@@ -1469,7 +1575,13 @@ def open_cases_from_inventory(data: dict, case_key: str, qty: int, lang: str = "
             if instance.get("boost"):
                 k = instance["boost"]["key"]
                 results[k] = results.get(k, 0) + 1
-            if not instance.get("boost") and not instance.get("artifact"):
+            if instance.get("pickaxe"):
+                k = instance["pickaxe"]["key"]
+                results[k] = results.get(k, 0) + 1
+            if instance.get("xp"):
+                k = instance["xp"]["key"]
+                results[k] = results.get(k, 0) + 1
+            if not any(instance.get(k) for k in ("boost", "artifact", "pickaxe", "xp")):
                 empties += 1
         else:
             empties += 1
@@ -1483,8 +1595,7 @@ def open_cases_from_inventory(data: dict, case_key: str, qty: int, lang: str = "
 
     result_lines = []
     for item_key, count in sorted(results.items(), key=lambda x: -x[1]):
-        item = TIER_BOOST_BY_KEY.get(item_key) or POISON_BY_KEY.get(item_key)
-        name = _enh_item_name_plain(item, lang) if item else item_key
+        name = _tier_loot_name_plain(item_key, lang)
         qty_str = f" ×{count}" if count > 1 else ""
         result_lines.append(f"<b><i>{name}</i></b>{qty_str}")
     for art_name in artifacts_won:
@@ -1591,7 +1702,13 @@ def open_case_multi(data: dict, case_num: int, qty: int, lang: str = "ru", via_c
             if instance.get("boost"):
                 k = instance["boost"]["key"]
                 results[k] = results.get(k, 0) + 1
-            if not instance.get("boost") and not instance.get("artifact"):
+            if instance.get("pickaxe"):
+                k = instance["pickaxe"]["key"]
+                results[k] = results.get(k, 0) + 1
+            if instance.get("xp"):
+                k = instance["xp"]["key"]
+                results[k] = results.get(k, 0) + 1
+            if not any(instance.get(k) for k in ("boost", "artifact", "pickaxe", "xp")):
                 empties += 1
         else:
             empties += 1
@@ -1603,11 +1720,10 @@ def open_case_multi(data: dict, case_num: int, qty: int, lang: str = "ru", via_c
     spent = case["cost"] * opened_count
     cname = case["name_en"] if lang == "en" else case["name"]
 
-    # Формируем список дропа (бустеры и яды из этого тира + артефакты)
+    # Формируем список дропа (бустеры/ускорители/яды из этого тира + артефакты)
     result_lines = []
     for item_key, count in sorted(results.items(), key=lambda x: -x[1]):
-        item = TIER_BOOST_BY_KEY.get(item_key) or POISON_BY_KEY.get(item_key)
-        name = _enh_item_name_plain(item, lang) if item else item_key
+        name = _tier_loot_name_plain(item_key, lang)
         qty_str = f" ×{count}" if count > 1 else ""
         result_lines.append(f"<b><i>{name}</i></b>{qty_str}")
     for art_name in artifacts_won:
