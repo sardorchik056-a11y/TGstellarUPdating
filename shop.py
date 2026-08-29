@@ -83,7 +83,13 @@ _E = {
 
 
 def _pe(key: str, fallback: str) -> str:
-    return f'<tg-emoji emoji-id="{_E[key]}">{fallback}</tg-emoji>'
+    # Та же защита, что в hunt.py: если ID пустой/битый (None) или ключа
+    # вообще нет в _E — отдаём обычный юникод-эмодзи без обёртки <tg-emoji>,
+    # вместо того чтобы ронять всё сообщение с DOCUMENT_INVALID.
+    eid = _E.get(key)
+    if not eid:
+        return fallback
+    return f'<tg-emoji emoji-id="{eid}">{fallback}</tg-emoji>'
 
 
 # ============================================================
