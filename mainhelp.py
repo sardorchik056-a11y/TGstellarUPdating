@@ -272,7 +272,10 @@ from shop import (
     get_all_active_boosters_text,
     sell_item_by_slot_id,
     transfer_item_by_slot_id,
-    open_case_multi, CASE_NUM_TO_KEY,
+    open_case_multi, CASE_NUM_TO_KEY, CASE_KEY_TO_NUM,
+    # Покупка кейсов (без автооткрытия) + инвентарь неоткрытых кейсов
+    buy_cases, open_cases_from_inventory, case_inventory_text,
+    CASE_ABBR_TO_KEY, CASES, transfer_cases,
 )
 from donate import (
     DONATE_PACKAGES, DONATE_BY_KEY,
@@ -3042,8 +3045,13 @@ async def cmd_use_item(message: Message):
 
 
 
-# ── открыть/купить/open #N qty — открыть кейсы пачкой ───────────────────────
-# Форматы (слеш опционален):
+# ── открыть/купить/open #N qty — купить кейсы пачкой ────────────────────────
+# ВАЖНО: кейс больше НЕ открывается сразу при покупке — он кладётся
+# неоткрытым в отдельный инвентарь кейсов (data["case_inventory"]).
+# Чтобы открыть купленные кейсы, используется отдельная команда
+# "отк <код> <кол-во>" / "открыть <код> <кол-во>" (см. cmd_open_case_inventory
+# ниже), где <код> — сокращение тира (ок/рк/ск/хк/эк/мк/лк).
+# Форматы покупки (слеш опционален):
 #   открыть #1 5        купить #2 10        open #3 1
 #   /открыть #1 5       /купить #2 10       /open #3 1
 
@@ -3068,16 +3076,232 @@ async def cmd_open_case_multi(message: Message):
         return
     case_num = int(m.group(1))
     qty      = int(m.group(2)) if m.group(2) else 1
+    case_key = CASE_NUM_TO_KEY.get(case_num)
 
     lock = await _get_user_lock(uid)
     async with lock:
         u = await aio_get_or_create_user(message.from_user)
-        ok, msg = open_case_multi(u, case_num, qty, lang, chat_type=message.chat.type)
+        ok, msg = buy_cases(u, case_key, qty, lang, chat_type=message.chat.type)
         if ok:
             _ach_newly = check_achievements(u)
             await aio_save_user(uid, u)
             await _notify_ach(uid, u, _ach_newly)
         await message.reply(msg, parse_mode="HTML")
+
+
+# ── отк/открыть/open <код> <кол-во> — открыть кейсы ИЗ ИНВЕНТАРЯ ────────────
+# Кейсы, купленные командой выше (или кнопкой в магазине), не открываются
+# сразу — они ждут в отдельном инвентаре кейсов. Эта команда открывает их
+# и разыгрывает лут. <код> — сокращение тира, первые буквы русского
+# названия + "к": ок-обычный, рк-редкий, ск-сверхредкий, хк-хромо,
+# эк-эпический, мк-мифический, лк-легендарный.
+# Посмотреть, сколько неоткрытых кейсов в наличии — команда "к" (см. ниже).
+# Форматы (слеш опционален):
+#   отк эк 5        открыть ок 10        open мк 1
+#   /отк эк 5       /открыть ок 10       /open мк 1
+
+_OPEN_CASE_INV_RE = _re_inv.compile(
+    r'^/?(?:отк|открыть|open)\s+(ок|рк|ск|хк|эк|мк|лк)(?:\s+(\d+))?\s*$',
+    _re_inv.IGNORECASE,
+)
+
+@dp.message(F.text.regexp(
+    r'^/?(?:отк|открыть|open)\s+(?:ок|рк|ск|хк|эк|мк|лк)(?:\s+\d+)?\s*$',
+    flags=_re_inv.IGNORECASE,
+))
+async def cmd_open_case_inventory(message: Message):
+    u    = await aio_get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    uid  = message.from_user.id
+    await aio_track_user(uid)
+    if await _check_onboarded(message, u): return
+
+    m = _OPEN_CASE_INV_RE.match((message.text or '').strip())
+    if not m:
+        return
+    abbr     = m.group(1).lower()
+    case_key = CASE_ABBR_TO_KEY.get(abbr)
+    qty      = int(m.group(2)) if m.group(2) else 1
+    if not case_key:
+        return
+
+    lock = await _get_user_lock(uid)
+    async with lock:
+        u = await aio_get_or_create_user(message.from_user)
+        ok, msg = open_cases_from_inventory(u, case_key, qty, lang, chat_type=message.chat.type)
+        if ok:
+            _ach_newly = check_achievements(u)
+            await aio_save_user(uid, u)
+            await _notify_ach(uid, u, _ach_newly)
+        await message.reply(msg, parse_mode="HTML")
+
+
+# ── к / К / c / C / кейсы / cases — посмотреть инвентарь НЕОТКРЫТЫХ кейсов ──
+# Отдельный инвентарь, куда попадают купленные, но ещё не открытые кейсы
+# (см. cmd_open_case_multi и cmd_open_case_inventory выше).
+
+@dp.message(F.text.regexp(r'^/?(к|c|кейсы|cases)\s*$', flags=_re_inv.IGNORECASE))
+async def cmd_case_inventory(message: Message):
+    u    = await aio_get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    uid  = message.from_user.id
+    await aio_track_user(uid)
+    if await _check_onboarded(message, u): return
+    await message.reply(case_inventory_text(u, lang), parse_mode="HTML")
+
+
+# ── передать/подарить <код> [кол-во] [@user|id] — передать НЕОТКРЫТЫЕ кейсы ──
+# <код> — сокращение тира: ок/рк/ск/хк/эк/мк/лк (см. CASE_ABBR_TO_KEY).
+# Получателя можно указать реплаем на сообщение игрока, @username или ID.
+# Форматы (слеш опционален):
+#   передать эк              — 1 шт., получатель из reply
+#   передать эк 3            — 3 шт., получатель из reply
+#   передать эк @username    — 1 шт., явный получатель (юзернейм)
+#   передать эк 3 @username  — 3 шт., явный получатель (юзернейм)
+#   передать эк 123456789    — 1 шт., явный получатель (ID)
+#   передать эк 3 123456789  — 3 шт., явный получатель (ID)
+#   подарить — синоним "передать"
+#   /передать эк 3 @username — работает и со слешем
+
+_CASE_TRANSFER_RE = _re_inv.compile(
+    r'^/?(?:передать|подарить)\s+(ок|рк|ск|хк|эк|мк|лк)(?:\s+(\S+))?(?:\s+(\S+))?\s*$',
+    _re_inv.IGNORECASE,
+)
+
+@dp.message(F.text.regexp(
+    r'^/?(?:передать|подарить)\s+(?:ок|рк|ск|хк|эк|мк|лк)(?:\s+\S+)?(?:\s+\S+)?\s*$',
+    flags=_re_inv.IGNORECASE,
+))
+async def cmd_transfer_case(message: Message):
+    """Передача НЕОТКРЫТЫХ кейсов из инвентаря кейсов другому игроку."""
+    from database import aio_save_user as _save, aio_get_user
+
+    uid  = message.from_user.id
+    u    = await aio_get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    await aio_track_user(uid)
+    if await _check_onboarded(message, u):
+        return
+
+    text = (message.text or "").strip()
+    m = _CASE_TRANSFER_RE.match(text)
+    if not m:
+        hint = (
+            "❌ <b>Неверный формат.</b>\n\n"
+            "<blockquote>"
+            "Ответь на сообщение игрока и напиши:\n"
+            "<code>передать эк</code> — 1 шт.\n"
+            "<code>передать эк 3</code> — 3 шт.\n\n"
+            "Или укажи получателя явно:\n"
+            "<code>передать эк @username</code>\n"
+            "<code>передать эк 3 @username</code>\n"
+            "<code>передать эк 123456789</code>\n\n"
+            "Коды: ок-обычный, рк-редкий, ск-сверхредкий, хк-хромо, "
+            "эк-эпический, мк-мифический, лк-легендарный.\n"
+            "Синонимы: передать / подарить"
+            "</blockquote>"
+        )
+        await message.reply(hint, parse_mode="HTML")
+        return
+
+    abbr     = m.group(1).lower()
+    case_key = CASE_ABBR_TO_KEY.get(abbr)
+    if not case_key:
+        return
+
+    tok1 = m.group(2)
+    tok2 = m.group(3)
+
+    qty        = 1
+    target_raw = None
+
+    if tok1 and tok2:
+        # передать <код> <кол-во> <получатель>
+        if not tok1.isdigit():
+            await message.reply("❌ Количество должно быть числом.", parse_mode="HTML")
+            return
+        qty        = int(tok1)
+        target_raw = tok2
+    elif tok1:
+        # передать <код> <кол-во ИЛИ получатель> — разруливаем по значению:
+        # число ≤ 100 считаем количеством, иначе (или юзернейм) — получателем.
+        if tok1.isdigit() and int(tok1) <= 100:
+            qty = int(tok1)
+        else:
+            target_raw = tok1
+
+    if qty < 1:
+        await message.reply("❌ Количество должно быть ≥ 1.", parse_mode="HTML")
+        return
+    if qty > 100:
+        await message.reply("❌ Максимум 100 кейсов за раз.", parse_mode="HTML")
+        return
+
+    # ── Определяем получателя ──────────────────────────────────────────
+    recipient_data = None
+
+    if target_raw:
+        from database import aio_get_user_by_id_or_username as _find_transfer
+        recipient_data = await _find_transfer(target_raw.lstrip("@"))
+    else:
+        if not message.reply_to_message:
+            hint = (
+                "❌ <b>Укажи получателя.</b>\n\n"
+                "<blockquote>"
+                "Ответь на сообщение игрока и напиши:\n"
+                "<code>передать эк</code>\n\n"
+                "Или укажи явно:\n"
+                "<code>передать эк @username</code>\n"
+                "<code>передать эк 3 @username</code>\n"
+                "<code>передать эк 123456789</code>"
+                "</blockquote>"
+            )
+            await message.reply(hint, parse_mode="HTML")
+            return
+        target_uid     = message.reply_to_message.from_user.id
+        recipient_data = await aio_get_user(target_uid)
+
+    if not recipient_data:
+        await message.reply(
+            "❌ Игрок не найден в базе. Он должен хотя бы раз написать боту.",
+            parse_mode="HTML",
+        )
+        return
+
+    if recipient_data["id"] == uid:
+        await message.reply("❌ Нельзя передавать кейсы самому себе.", parse_mode="HTML")
+        return
+
+    # ── Атомарный перенос ─────────────────────────────────────────────
+    lock_sender    = await _get_user_lock(uid)
+    lock_recipient = await _get_user_lock(recipient_data["id"])
+
+    first_lock, second_lock = (
+        (lock_sender, lock_recipient)
+        if uid < recipient_data["id"]
+        else (lock_recipient, lock_sender)
+    )
+
+    ok = False
+    async with first_lock:
+        async with second_lock:
+            sender_data    = await aio_get_or_create_user(message.from_user)
+            recipient_data = await aio_get_user(recipient_data["id"])
+
+            ok, sender_msg, recip_msg = transfer_cases(
+                sender_data, recipient_data, case_key, qty, lang
+            )
+            if ok:
+                await _save(uid, sender_data)
+                await _save(recipient_data["id"], recipient_data)
+
+    await message.reply(sender_msg, parse_mode="HTML")
+
+    if ok and recip_msg:
+        try:
+            await bot.send_message(recipient_data["id"], recip_msg, parse_mode="HTML")
+        except Exception:
+            pass
 
 
 # стоп буст / stop boost / стоп xp / stop xp / стоп урон / stop dmg / стоп яд / stop poison
@@ -4452,10 +4676,10 @@ async def handle_callback(call: CallbackQuery):
             await edit(case_detail_text(data, case_key, lang), case_detail_keyboard(case_key, can_buy, lang))
             return
 
-        # ===== КЕЙСЫ: купить и открыть =====
+        # ===== КЕЙСЫ: купить (кейс кладётся неоткрытым в инвентарь кейсов) =====
         if cd.startswith("case_open_"):
             case_key = cd.removeprefix("case_open_")
-            ok, msg, instance = open_case(data, case_key, lang)
+            ok, msg = buy_cases(data, case_key, 1, lang, via_command=False, chat_type=call.message.chat.type)
             if ok:
                 _ach_newly = check_achievements(data)
                 await aio_save_user(data["id"], data)
