@@ -59,6 +59,7 @@ _E = {
     "samosvet":     "5465501598199342448",  # самосвет (донатная валюта, покупка зелий)
     "elite":        "5312476855056825233",  # метка элитного босса — TODO: заменить на свой премиум-эмодзи
     "vulnerable":   "5298743210987654321",  # окно уязвимости босса — TODO: заменить на свой премиум-эмодзи
+    "antimatter":   "5355302302276144071",  # антиматерия (личная валюта, см. shop.CASE_TIERS)
 }
 
 # ─────────────────────────────────────────
@@ -3480,6 +3481,15 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
              f'\n{_tg(_E["elite"], "🔥")} <b><i>Элитный трофей — награда повышена!</i></b>')
             if is_elite else ""
         )
+        _am_total = result.get("antimatter_kill", 0) + result.get("antimatter_participation", 0)
+        if _am_total:
+            antimatter_line = (
+                f'\n{_tg(_E["antimatter"], "🟣")} <b><i>Antimatter: +{_am_total} {_tg(_E["antimatter"], "🟣")}</i></b>'
+                if lang == "en" else
+                f'\n{_tg(_E["antimatter"], "🟣")} <b><i>Антиматерия: +{_am_total} {_tg(_E["antimatter"], "🟣")}</i></b>'
+            )
+        else:
+            antimatter_line = ""
         if lang == "en":
             return (
                 f'<blockquote>'
@@ -3488,7 +3498,7 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
                 f'</blockquote>\n\n'
                 f'<blockquote>'
                 f'{_tg(_E["dmg"], "💥")} <b><i>Final strike: {_fmt(dmg)}</i></b>{crit_line}{vulnerable_note}\n'
-                f'{_tg(_E["reward_coin"], "💰")} <b><i>Reward: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</i></b>{elite_note}'
+                f'{_tg(_E["reward_coin"], "💰")} <b><i>Reward: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</i></b>{elite_note}{antimatter_line}'
                 f'</blockquote>\n\n'
                 f'<blockquote>'
                 f'{_tg(_E["timer"], "⏱")} <b><i>Next boss appears in 2 hours.</i></b>'
@@ -3501,7 +3511,7 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
             f'</blockquote>\n\n'
             f'<blockquote>'
             f'{_tg(_E["dmg"], "💥")} <b><i>Последний удар: {_fmt(dmg)}</i></b>{crit_line}{vulnerable_note}\n'
-            f'{_tg(_E["reward_coin"], "💰")} <b><i>Награда: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</i></b>{elite_note}'
+            f'{_tg(_E["reward_coin"], "💰")} <b><i>Награда: +{_fmt(reward)} {_tg(_E["reward_coin"], "💰")}</i></b>{elite_note}{antimatter_line}'
             f'</blockquote>\n\n'
             f'<blockquote>'
             f'{_tg(_E["timer"], "⏱")} <b><i>Следующий босс появится через 2 часа.</i></b>'
@@ -3512,6 +3522,16 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
     is_elite    = state.get("is_elite", False)
     elite_badge = f' {_tg(_E["elite"], "🔥")} <b>{"[ELITE]" if lang == "en" else "[ЭЛИТА]"}</b>' if is_elite else ""
     reward_val  = _reward_for_state(state)
+
+    _am_participation = result.get("antimatter_participation", 0)
+    if _am_participation:
+        antimatter_note = (
+            f'\n{_tg(_E["antimatter"], "🟣")} <b><i>Participation reward: +{_am_participation} antimatter {_tg(_E["antimatter"], "🟣")}</i></b>'
+            if lang == "en" else
+            f'\n{_tg(_E["antimatter"], "🟣")} <b><i>Награда за участие: +{_am_participation} антиматерии {_tg(_E["antimatter"], "🟣")}</i></b>'
+        )
+    else:
+        antimatter_note = ""
 
     if lang == "en":
         return (
@@ -3525,7 +3545,7 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
             f'{_tg(_E["hp"], "❤️")} <b><i>HP:</i></b> {_fmt_digits(hp_after)} / {_fmt_digits(max_hp)} <b><i>({pct:.1f}%)</i></b>'
             f'</blockquote>\n\n'
             f'<blockquote>'
-            f'{_tg(_E["trophy"], "🏆")} <b><i>Kill reward: {_fmt(reward_val)} {_tg(_E["coin"], "💰")}</i></b>'
+            f'{_tg(_E["trophy"], "🏆")} <b><i>Kill reward: {_fmt(reward_val)} {_tg(_E["coin"], "💰")}</i></b>{antimatter_note}'
             f'</blockquote>'
             f'{stun_note}'
         )
@@ -3540,7 +3560,7 @@ def boss_strike_result_text(data: dict, result: dict, lang: str = "ru", slot: in
         f'{_tg(_E["hp"], "❤️")} <b><i>HP:</i></b> {_fmt_digits(hp_after)} / {_fmt_digits(max_hp)} <b><i>({pct:.1f}%)</i></b>'
         f'</blockquote>\n\n'
         f'<blockquote>'
-        f'{_tg(_E["trophy"], "🏆")} <b><i>Награда за убийство: {_fmt(reward_val)} {_tg(_E["coin"], "💰")}</i></b>'
+        f'{_tg(_E["trophy"], "🏆")} <b><i>Награда за убийство: {_fmt(reward_val)} {_tg(_E["coin"], "💰")}</i></b>{antimatter_note}'
         f'</blockquote>'
         f'{stun_note}'
     )
