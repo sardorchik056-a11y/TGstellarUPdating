@@ -2287,6 +2287,8 @@ def case_detail_text(data: dict, case_key: str, lang: str = "ru") -> str:
         loot_lines = [
             f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Damage booster {mult_label} — up to {max_dur_label} ({tier["potion_chance"]}% chance)</i></b>',
             f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Poison (one of 5) — same {tier["potion_chance"]}% chance slot as the booster</i></b>',
+            f'<tg-emoji emoji-id="5438571934210082705">⛏️</tg-emoji> <b><i>Pickaxe booster {mult_label} — up to {max_dur_label} ({tier.get("pickaxe_chance", 0)}% chance)</i></b>',
+            f'<tg-emoji emoji-id="5224607267797606837">📈</tg-emoji> <b><i>XP booster {mult_label} — up to {max_dur_label} ({tier.get("xp_chance", 0)}% chance)</i></b>',
         ]
         if tier["artifact_tiers"]:
             tiers_str = "/".join(tier["artifact_tiers"])
@@ -2297,6 +2299,8 @@ def case_detail_text(data: dict, case_key: str, lang: str = "ru") -> str:
         loot_lines = [
             f'<tg-emoji emoji-id="5256047523620995497">⚡</tg-emoji> <b><i>Усилитель урона {mult_label} — до {max_dur_label} (шанс {tier["potion_chance"]}%)</i></b>',
             f'<tg-emoji emoji-id="5456584142286250164">☠️</tg-emoji> <b><i>Яд (один из 5) — тот же слот шанса {tier["potion_chance"]}%, что и усилитель</i></b>',
+            f'<tg-emoji emoji-id="5438571934210082705">⛏️</tg-emoji> <b><i>Ускоритель кирки {mult_label} — до {max_dur_label} (шанс {tier.get("pickaxe_chance", 0)}%)</i></b>',
+            f'<tg-emoji emoji-id="5224607267797606837">📈</tg-emoji> <b><i>Ускоритель опыта {mult_label} — до {max_dur_label} (шанс {tier.get("xp_chance", 0)}%)</i></b>',
         ]
         if tier["artifact_tiers"]:
             tiers_str = "/".join(tier["artifact_tiers"])
