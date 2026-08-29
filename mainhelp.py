@@ -816,6 +816,26 @@ def stars_confirm_text(p: dict) -> str:
 SHOP_TEXT = '<blockquote><tg-emoji emoji-id="5406683434124859552">🛒</tg-emoji> <b>МАГАЗИН</b>\n\n<b>Выбери категорию:</b></blockquote>'
 
 
+def shop_main_text(data: dict, lang: str = "ru") -> str:
+    """Главное меню магазина — с балансом монет и антиматерии рядом."""
+    from shop import get_antimatter
+    coins      = data.get("balance", 0)
+    antimatter = get_antimatter(data)
+    if lang == "en":
+        return (
+            '<blockquote><tg-emoji emoji-id="5406683434124859552">🛒</tg-emoji> <b>SHOP</b>\n\n'
+            f'<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji> <b>Coins: {format_amount(coins)}</b>\n'
+            f'🟣 <b>Antimatter: {format_amount(antimatter)}</b>\n\n'
+            '<b>Choose a category:</b></blockquote>'
+        )
+    return (
+        '<blockquote><tg-emoji emoji-id="5406683434124859552">🛒</tg-emoji> <b>МАГАЗИН</b>\n\n'
+        f'<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji> <b>Монеты: {format_amount(coins)}</b>\n'
+        f'🟣 <b>Антиматерия: {format_amount(antimatter)}</b>\n\n'
+        '<b>Выбери категорию:</b></blockquote>'
+    )
+
+
 def shop_main_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
@@ -3028,12 +3048,12 @@ async def cmd_use_item(message: Message):
 #   /открыть #1 5       /купить #2 10       /open #3 1
 
 _OPEN_CASE_RE = _re_inv.compile(
-    r'^/?(?:открыть|купить|open)\s+#([123])(?:\s+(\d+))?\s*$',
+    r'^/?(?:открыть|купить|open)\s+#([1-7])(?:\s+(\d+))?\s*$',
     _re_inv.IGNORECASE,
 )
 
 @dp.message(F.text.regexp(
-    r'^/?(?:открыть|купить|open)\s+#[123](?:\s+\d+)?\s*$',
+    r'^/?(?:открыть|купить|open)\s+#[1-7](?:\s+\d+)?\s*$',
     flags=_re_inv.IGNORECASE,
 ))
 async def cmd_open_case_multi(message: Message):
@@ -4413,7 +4433,7 @@ async def handle_callback(call: CallbackQuery):
 
         # ===== МАГАЗИН =====
         if cd == "shop":
-            await edit(SHOP_TEXT, shop_main_keyboard())
+            await edit(shop_main_text(data, lang), shop_main_keyboard())
             return
 
         if cd == "shop_cases":
@@ -4423,12 +4443,12 @@ async def handle_callback(call: CallbackQuery):
         # ===== КЕЙСЫ: карточка кейса (инфо + кнопка купить) =====
         if cd.startswith("case_info_"):
             case_key = cd.removeprefix("case_info_")
-            from shop import case_detail_text, case_detail_keyboard, CASES
+            from shop import case_detail_text, case_detail_keyboard, CASES, get_antimatter
             case     = CASES.get(case_key)
             if not case:
                 await call.answer("❌ Кейс не найден.", show_alert=True)
                 return
-            can_buy = data.get("balance", 0) >= case["cost"]
+            can_buy = get_antimatter(data) >= case["cost"]
             await edit(case_detail_text(data, case_key, lang), case_detail_keyboard(case_key, can_buy, lang))
             return
 
