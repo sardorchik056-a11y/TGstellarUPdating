@@ -1110,8 +1110,10 @@ def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool
     это до ДВУХ независимых роллов за одно открытие:
       1) зелье (усилитель урона ИЛИ яд) — шанс tier["potion_chance"]%
       2) артефакт (только тиры chromo+) — шанс tier["artifact_chance"]%
-    Если ни один ролл не сработал — кейс всё равно тратится, игрок просто
-    ничего не получает (это ожидаемый исход при таких процентах).
+    Если ни один из двух роллов не сработал, кейс не остаётся пустым:
+    гарантированно выдаётся один усилитель урона (ускоритель) из
+    tier["boost_pool"] — это не меняет вероятности potion_chance/
+    artifact_chance, а лишь подстраховывает случай "оба ролла мимо".
     """
     case = CASES.get(case_key)
     if not case:
@@ -1132,6 +1134,17 @@ def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool
 
     dropped_boost    = _roll_tier_potion(tier)
     dropped_artifact = _roll_tier_artifact(data, tier)
+
+    # Гарантия непустого лута: если оба независимых ролла (зелье и
+    # артефакт) не сработали — кейс всё равно должен дать усилитель
+    # урона (ускоритель), а не пустой результат. Шансы potion_chance
+    # и artifact_chance при этом не меняются: этот fallback срабатывает
+    # только когда оба ролла уже "прогорели" сами по себе, и выбирает
+    # исключительно из tier["boost_pool"] (бустеры), яды сюда не входят.
+    if dropped_boost is None and dropped_artifact is None:
+        pool = tier["boost_pool"]
+        weights = [x["chance"] for x in pool]
+        dropped_boost = random.choices(pool, weights=weights, k=1)[0]
 
     drop_lines  = []
     instance    = None  # {"boost": {...}|None, "artifact": {...}|None} — для open_case_multi
