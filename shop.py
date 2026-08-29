@@ -78,6 +78,7 @@ _E = {
     "balance":    "5278467510604160626",
     "arrow":      "5427168083074628963",
     "art_locked": "5296369303661067030",
+    "antimatter": "5355302302276144071",
 }
 
 
@@ -337,6 +338,19 @@ CASE_TIERS = [
 ]
 CASE_TIERS_BY_KEY = {c["key"]: c for c in CASE_TIERS}
 CASE_TIER_ORDER   = [c["key"] for c in CASE_TIERS]
+
+# Обычные (не кастомные) emoji-иконки тиров — используются В ТЕКСТЕ кнопки
+# рядом с названием кейса (у кнопки только один слот под кастомный emoji —
+# он занят под антиматерию, см. cases_shop_keyboard).
+_TIER_PLAIN_EMOJI = {
+    "common":    "📦",
+    "rare":      "🎁",
+    "superrare": "💠",
+    "chromo":    "🌈",
+    "epic":      "⚔️",
+    "mythic":    "👑",
+    "legendary": "🏆",
+}
 
 
 def _register_tier_durations(tier: dict) -> list[str]:
@@ -1802,8 +1816,11 @@ def cases_shop_text(data: dict = None, lang: str = "ru") -> str:
 def cases_shop_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for c in CASES.values():
-        cname = c["name_en"] if lang == "en" else c["name"]
-        builder.row(_btn(_E["enh_case"], f'{cname} {"case" if lang == "en" else "кейс"} — {c["cost"]}🟣', f'case_info_{c["key"]}'))
+        cname       = c["name_en"] if lang == "en" else c["name"]
+        case_label  = "case" if lang == "en" else "кейс"
+        tier_emoji  = _TIER_PLAIN_EMOJI.get(c["key"], "📦")
+        label = f'{_fmt_num(c["cost"])} | {cname} {case_label} {tier_emoji}'
+        builder.row(_btn(_E["antimatter"], label, f'case_info_{c["key"]}'))
     builder.row(InlineKeyboardButton(
         text=_L(lang, "Магазин Артефактов", "Artifact Shop"),
         callback_data="artifact_shop_list",
