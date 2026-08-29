@@ -1125,7 +1125,7 @@ def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool
     if get_antimatter(data) < cost:
         return False, (
             f"❌ {_L(lang, 'Недостаточно антиматерии!', 'Not enough antimatter!')}\n"
-            f"{_L(lang, 'Нужно', 'Need')}: {_fmt_num(cost)} 🟣"
+            f"{_L(lang, 'Нужно', 'Need')}: {_fmt_num(cost)} {_pe('antimatter', '🟣')}"
         ), None
 
     data["antimatter"] = get_antimatter(data) - cost
@@ -1187,10 +1187,10 @@ def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool
         drop_text = f"{_pe('arrow', '➡️')} <b><i>{_L(lang, 'Пусто — в этот раз не повезло', 'Empty — no luck this time')}</i></b>"
 
     msg = (
-        f"<blockquote>{_pe('case', '📦')} <b><i>{_L(lang, 'Кейс открыт!', 'Case opened!')}</i></b>\n"
+        f"<blockquote>{_TIER_PLAIN_EMOJI.get(tier['key'], '📦')} <b><i>{_L(lang, 'Кейс открыт!', 'Case opened!')}</i></b>\n"
         f"{drop_text}</blockquote>\n"
-        f"\n<blockquote>{_pe('spent', '💸')} <b><i>{_L(lang, 'Потрачено', 'Spent')}: {_fmt_num(cost)}</i></b> 🟣\n"
-        f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс антиматерии', 'Antimatter balance')}: {_fmt_num(data['antimatter'])}</i></b> 🟣</blockquote>"
+        f"\n<blockquote>{_pe('spent', '💸')} <b><i>{_L(lang, 'Потрачено', 'Spent')}: {_fmt_num(cost)}</i></b> {_pe('antimatter', '🟣')}\n"
+        f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс антиматерии', 'Antimatter balance')}: {_fmt_num(data['antimatter'])}</i></b> {_pe('antimatter', '🟣')}</blockquote>"
     )
     _mark_case_opened(data)
     return True, msg, instance
@@ -1311,20 +1311,21 @@ def open_case_multi(data: dict, case_num: int, qty: int, lang: str = "ru", via_c
 
     loot_text = "\n".join(f"  • {l}" for l in result_lines)
     case_label = "case" if lang == "en" else "кейс"
+    tier_emoji = _TIER_PLAIN_EMOJI.get(case_key, "📦")
 
     if lang == "en":
         msg = (
-            f"<blockquote>{_pe('case', '📦')} <b><i>Opened {opened_count}× {cname} {case_label}{'s' if opened_count != 1 else ''}!</i></b></blockquote>\n"
+            f"<blockquote>{tier_emoji} <b><i>Opened {opened_count}× {cname} {case_label}{'s' if opened_count != 1 else ''}!</i></b></blockquote>\n"
             f"\n<blockquote><b><i>Loot:</i></b>\n{loot_text}</blockquote>\n"
-            f"\n<blockquote>{_pe('spent', '💸')} <b><i>Spent: {_fmt_num(spent)}</i></b> 🟣\n"
-            f"{_pe('balance', '💰')} <b><i>Antimatter balance: {_fmt_num(data.get('antimatter', 0))}</i></b> 🟣</blockquote>"
+            f"\n<blockquote>{_pe('spent', '💸')} <b><i>Spent: {_fmt_num(spent)}</i></b> {_pe('antimatter', '🟣')}\n"
+            f"{_pe('balance', '💰')} <b><i>Antimatter balance: {_fmt_num(data.get('antimatter', 0))}</i></b> {_pe('antimatter', '🟣')}</blockquote>"
         )
     else:
         msg = (
-            f"<blockquote>{_pe('case', '📦')} <b><i>Открыто {opened_count}× {case_label} {cname}!</i></b></blockquote>\n"
+            f"<blockquote>{tier_emoji} <b><i>Открыто {opened_count}× {case_label} {cname}!</i></b></blockquote>\n"
             f"\n<blockquote><b><i>Лут:</i></b>\n{loot_text}</blockquote>\n"
-            f"\n<blockquote>{_pe('spent', '💸')} <b><i>Потрачено: {_fmt_num(spent)}</i></b> 🟣\n"
-            f"{_pe('balance', '💰')} <b><i>Баланс антиматерии: {_fmt_num(data.get('antimatter', 0))}</i></b> 🟣</blockquote>"
+            f"\n<blockquote>{_pe('spent', '💸')} <b><i>Потрачено: {_fmt_num(spent)}</i></b> {_pe('antimatter', '🟣')}\n"
+            f"{_pe('balance', '💰')} <b><i>Баланс антиматерии: {_fmt_num(data.get('antimatter', 0))}</i></b> {_pe('antimatter', '🟣')}</blockquote>"
         )
     return True, msg
 
@@ -1796,19 +1797,19 @@ def cases_shop_text(data: dict = None, lang: str = "ru") -> str:
         return (
             f"<blockquote>{_pe('shop', '🛒')} <b><i>CASE SHOP</i></b>\n"
             f"<b><i>Open cases and get bonuses!</i></b></blockquote>\n"
-            f'\n<blockquote>🟣 <b><i>Antimatter balance: {_fmt_num(antimatter)}</i></b></blockquote>\n'
+            f'\n<blockquote>{_pe("antimatter", "🟣")} <b><i>Antimatter balance: {_fmt_num(antimatter)}</i></b></blockquote>\n'
             f'\n<blockquote><tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> <b><i>Your stats</i></b>\n'
             f"<b><i>Cases opened: {_fmt_num(total_opened)}</i></b>\n"
-            f"{_pe('spent', '💸')} <b><i>Spent: {_fmt_num(total_spent)}</i></b> 🟣</blockquote>\n"
+            f"{_pe('spent', '💸')} <b><i>Spent: {_fmt_num(total_spent)}</i></b> {_pe('antimatter', '🟣')}</blockquote>\n"
             f'\n<blockquote><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji> <b><i>Good luck! May something great drop</i></b><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji></blockquote>'
         )
     return (
         f"<blockquote>{_pe('shop', '🛒')} <b><i>МАГАЗИН КЕЙСОВ</i></b>\n"
         f"<b><i>Открывай кейсы и получай бонусы!</i></b></blockquote>\n"
-        f'\n<blockquote>🟣 <b><i>Баланс антиматерии: {_fmt_num(antimatter)}</i></b></blockquote>\n'
+        f'\n<blockquote>{_pe("antimatter", "🟣")} <b><i>Баланс антиматерии: {_fmt_num(antimatter)}</i></b></blockquote>\n'
         f'\n<blockquote><tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> <b><i>Твоя статистика</i></b>\n'
         f"<b><i>Открыто кейсов: {_fmt_num(total_opened)}</i></b>\n"
-        f"{_pe('spent', '💸')} <b><i>Потрачено: {_fmt_num(total_spent)}</i></b> 🟣</blockquote>\n"
+        f"{_pe('spent', '💸')} <b><i>Потрачено: {_fmt_num(total_spent)}</i></b> {_pe('antimatter', '🟣')}</blockquote>\n"
         f'\n<blockquote><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji> <b><i>Удачи тебе! Пусть выпадет что-то крутое</i></b><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji></blockquote>'
     )
 
@@ -1836,7 +1837,7 @@ def case_detail_text(data: dict, case_key: str, lang: str = "ru") -> str:
     tier       = case["tier"]
     antimatter = get_antimatter(data)
     can_buy    = antimatter >= case["cost"]
-    bal_str    = f"{_fmt_num(antimatter)} 🟣"
+    bal_str    = f"{_fmt_num(antimatter)} {_pe('antimatter', '🟣')}"
 
     lo, hi = tier["mult_range"]
     mult_label = _multiplier_label(lo) if lo == hi else f"{_multiplier_label(lo)}–{_multiplier_label(hi)}"
@@ -1885,8 +1886,8 @@ def case_detail_text(data: dict, case_key: str, lang: str = "ru") -> str:
             f"</i></blockquote>"
         )
     return (
-        f"<blockquote>{_pe('enh_case', '📦')} <b><i>{cname} {case_label}</i></b>\n"
-        f"🟣 <b><i>{_L(lang, 'Цена', 'Price')}:</i></b> <b><i>{_fmt_num(case['cost'])}</i></b>\n"
+        f"<blockquote>{_TIER_PLAIN_EMOJI.get(case_key, '📦')} <b><i>{cname} {case_label}</i></b>\n"
+        f"{_pe('antimatter', '🟣')} <b><i>{_L(lang, 'Цена', 'Price')}:</i></b> <b><i>{_fmt_num(case['cost'])}</i></b>\n"
         f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс антиматерии', 'Antimatter balance')}:</i></b> <b><i>{bal_str}</i></b></blockquote>\n"
         f"\n<blockquote><b><i>{_L(lang, 'Возможный лут', 'Possible loot')}:</i></b>\n{loot_text}</blockquote>\n"
         f"\n<blockquote>{status}</blockquote>"
