@@ -825,13 +825,13 @@ def shop_main_text(data: dict, lang: str = "ru") -> str:
         return (
             '<blockquote><tg-emoji emoji-id="5406683434124859552">🛒</tg-emoji> <b>SHOP</b>\n\n'
             f'<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji> <b>Coins: {format_amount(coins)}</b>\n'
-            f'🟣 <b>Antimatter: {format_amount(antimatter)}</b>\n\n'
+            f'<tg-emoji emoji-id="5355302302276144071">🟣</tg-emoji> <b>Antimatter: {format_amount(antimatter)}</b>\n\n'
             '<b>Choose a category:</b></blockquote>'
         )
     return (
         '<blockquote><tg-emoji emoji-id="5406683434124859552">🛒</tg-emoji> <b>МАГАЗИН</b>\n\n'
         f'<tg-emoji emoji-id="5199552030615558774">🪙</tg-emoji> <b>Монеты: {format_amount(coins)}</b>\n'
-        f'🟣 <b>Антиматерия: {format_amount(antimatter)}</b>\n\n'
+        f'<tg-emoji emoji-id="5355302302276144071">🟣</tg-emoji> <b>Антиматерия: {format_amount(antimatter)}</b>\n\n'
         '<b>Выбери категорию:</b></blockquote>'
     )
 
