@@ -1103,17 +1103,25 @@ def _roll_tier_artifact(data: dict, tier: dict) -> dict | None:
     return random.choice(candidates)
 
 
-def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool = True, via_command: bool = False) -> tuple:
+def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool = True, via_command: bool = False, charge: bool = True) -> tuple:
     """
-    Открывает один кейс тира case_key за антиматерию. В отличие от старой
-    системы (гарантированный дроп чего-то одного из общего пула), теперь
-    это до ДВУХ независимых роллов за одно открытие:
+    Открывает один кейс тира case_key. В отличие от старой системы
+    (гарантированный дроп чего-то одного из общего пула), теперь это до
+    ДВУХ независимых роллов за одно открытие:
       1) зелье (усилитель урона ИЛИ яд) — шанс tier["potion_chance"]%
       2) артефакт (только тиры chromo+) — шанс tier["artifact_chance"]%
     Если ни один из двух роллов не сработал, кейс не остаётся пустым:
     гарантированно выдаётся один усилитель урона (ускоритель) из
     tier["boost_pool"] — это не меняет вероятности potion_chance/
     artifact_chance, а лишь подстраховывает случай "оба ролла мимо".
+
+    charge: True  — списать антиматерию за кейс (старое поведение —
+                    "купить и сразу открыть").
+            False — НЕ списывать антиматерию: используется, когда кейс
+                    открывается из отдельного инвентаря НЕОТКРЫТЫХ
+                    кейсов (см. buy_cases / open_cases_from_inventory) —
+                    антиматерия за него уже была списана в момент
+                    покупки, здесь просто разыгрывается лут.
     """
     case = CASES.get(case_key)
     if not case:
@@ -1124,13 +1132,13 @@ def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool
         if not ok_cd:
             return False, err_cd, None
     cost = case["cost"]
-    if get_antimatter(data) < cost:
-        return False, (
-            f"❌ {_L(lang, 'Недостаточно антиматерии!', 'Not enough antimatter!')}\n"
-            f"{_L(lang, 'Нужно', 'Need')}: {_fmt_num(cost)} {_pe('antimatter', '🟣')}"
-        ), None
-
-    data["antimatter"] = get_antimatter(data) - cost
+    if charge:
+        if get_antimatter(data) < cost:
+            return False, (
+                f"❌ {_L(lang, 'Недостаточно антиматерии!', 'Not enough antimatter!')}\n"
+                f"{_L(lang, 'Нужно', 'Need')}: {_fmt_num(cost)} {_pe('antimatter', '🟣')}"
+            ), None
+        data["antimatter"] = get_antimatter(data) - cost
 
     dropped_boost    = _roll_tier_potion(tier)
     dropped_artifact = _roll_tier_artifact(data, tier)
@@ -1192,19 +1200,31 @@ def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool
             instance["artifact"] = {"key": dropped_artifact["key"]}
 
     data["cases_total_opened"] = data.get("cases_total_opened", 0) + 1
-    data["cases_total_spent"]  = data.get("cases_total_spent",  0) + cost
+    if charge:
+        data["cases_total_spent"] = data.get("cases_total_spent", 0) + cost
 
     if drop_lines:
         drop_text = "\n".join(f"{_pe('arrow', '➡️')} {l}" for l in drop_lines)
     else:
         drop_text = f"{_pe('arrow', '➡️')} <b><i>{_L(lang, 'Пусто — в этот раз не повезло', 'Empty — no luck this time')}</i></b>"
 
-    msg = (
-        f"<blockquote>{_TIER_PLAIN_EMOJI.get(tier['key'], '📦')} <b><i>{_L(lang, 'Кейс открыт!', 'Case opened!')}</i></b>\n"
-        f"{drop_text}</blockquote>\n"
-        f"\n<blockquote>{_pe('spent', '💸')} <b><i>{_L(lang, 'Потрачено', 'Spent')}: {_fmt_num(cost)}</i></b> {_pe('antimatter', '🟣')}\n"
-        f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс антиматерии', 'Antimatter balance')}: {_fmt_num(data['antimatter'])}</i></b> {_pe('antimatter', '🟣')}</blockquote>"
-    )
+    if charge:
+        # Старое поведение — кейс списывается и открывается одним действием,
+        # показываем сколько потрачено антиматерии и итоговый баланс.
+        msg = (
+            f"<blockquote>{_TIER_PLAIN_EMOJI.get(tier['key'], '📦')} <b><i>{_L(lang, 'Кейс открыт!', 'Case opened!')}</i></b>\n"
+            f"{drop_text}</blockquote>\n"
+            f"\n<blockquote>{_pe('spent', '💸')} <b><i>{_L(lang, 'Потрачено', 'Spent')}: {_fmt_num(cost)}</i></b> {_pe('antimatter', '🟣')}\n"
+            f"{_pe('balance', '💰')} <b><i>{_L(lang, 'Баланс антиматерии', 'Antimatter balance')}: {_fmt_num(data['antimatter'])}</i></b> {_pe('antimatter', '🟣')}</blockquote>"
+        )
+    else:
+        # Кейс открывается из инвентаря НЕОТКРЫТЫХ кейсов — антиматерия за
+        # него уже была списана при покупке, поэтому строку "потрачено" не
+        # показываем (её печатает уже итоговое сообщение open_cases_from_inventory).
+        msg = (
+            f"<blockquote>{_TIER_PLAIN_EMOJI.get(tier['key'], '📦')} <b><i>{_L(lang, 'Кейс открыт!', 'Case opened!')}</i></b>\n"
+            f"{drop_text}</blockquote>"
+        )
     _mark_case_opened(data)
     return True, msg, instance
 
@@ -1215,6 +1235,283 @@ def open_case(data: dict, case_key: str, lang: str = "ru", _check_cooldown: bool
 
 CASE_NUM_TO_KEY = {i + 1: key for i, key in enumerate(CASE_TIER_ORDER)}
 CASE_KEY_TO_NUM = {v: k for k, v in CASE_NUM_TO_KEY.items()}
+
+
+# ============================================================
+#  СОКРАЩЕНИЯ ТИРОВ КЕЙСОВ (первые буквы русского названия тира + "к")
+#  Используются в текстовых командах открытия кейсов из инвентаря:
+#  "отк эк 5" / "открыть ок 3" и т.д. (см. open_cases_from_inventory).
+# ============================================================
+CASE_ABBR_TO_KEY = {
+    "ок": "common",     # Обычный
+    "рк": "rare",       # Редкий
+    "ск": "superrare",  # Сверхредкий
+    "хк": "chromo",     # Хромо
+    "эк": "epic",       # Эпический
+    "мк": "mythic",     # Мифический
+    "лк": "legendary",  # Легендарный
+}
+CASE_KEY_TO_ABBR = {v: k for k, v in CASE_ABBR_TO_KEY.items()}
+
+
+# ============================================================
+#  ИНВЕНТАРЬ НЕОТКРЫТЫХ КЕЙСОВ
+#  При покупке кейс больше не открывается сразу — он попадает сюда
+#  (data["case_inventory"]: {case_key: qty}) и ждёт, пока его откроют
+#  отдельной командой (см. open_cases_from_inventory ниже). Посмотреть
+#  этот инвентарь можно командой "к" / "К" / "c" / "C" (см. mainhelp.py).
+# ============================================================
+
+def get_case_inventory_qty(data: dict, case_key: str) -> int:
+    return data.get("case_inventory", {}).get(case_key, 0)
+
+
+def _add_cases_to_inventory(data: dict, case_key: str, qty: int) -> None:
+    inv = data.setdefault("case_inventory", {})
+    inv[case_key] = inv.get(case_key, 0) + qty
+
+
+def _remove_cases_from_inventory(data: dict, case_key: str, qty: int) -> bool:
+    inv = data.setdefault("case_inventory", {})
+    have = inv.get(case_key, 0)
+    if have < qty:
+        return False
+    left = have - qty
+    if left > 0:
+        inv[case_key] = left
+    else:
+        inv.pop(case_key, None)
+    return True
+
+
+def case_inventory_text(data: dict, lang: str = "ru") -> str:
+    """
+    Текст со списком НЕОТКРЫТЫХ кейсов игрока (после покупки, до открытия).
+    Показывается по команде "к" / "К" / "c" / "C" / "кейсы" / "cases".
+    """
+    inv = data.get("case_inventory", {})
+    lines = []
+    for case_key in CASE_TIER_ORDER:
+        qty = inv.get(case_key, 0)
+        if qty <= 0:
+            continue
+        case       = CASES[case_key]
+        cname      = case["name_en"] if lang == "en" else case["name"]
+        case_label = "case" if lang == "en" else "кейс"
+        abbr       = CASE_KEY_TO_ABBR.get(case_key, "")
+        emoji      = _TIER_PLAIN_EMOJI.get(case_key, "📦")
+        lines.append(f"{emoji} <b><i>{cname} {case_label}</i></b> — ×{_fmt_num(qty)}  <code>{abbr}</code>")
+
+    if lang == "en":
+        body = "\n".join(lines) if lines else f"<i>Empty — buy cases in the shop first.</i>"
+        return (
+            f"<blockquote>📦 <b><i>UNOPENED CASES</i></b></blockquote>\n"
+            f"\n<blockquote>{body}</blockquote>\n"
+            f"\n<blockquote><i>Open: <code>отк эк 5</code> or <code>открыть эк 5</code> (with or without leading /)\n"
+            f"Codes: ок-common, рк-rare, ск-super rare, хк-chromo, эк-epic, мк-mythic, лк-legendary\n"
+            f"Show this list again: <code>к</code></i></blockquote>"
+        )
+    body = "\n".join(lines) if lines else f"<i>Пусто — сначала купи кейсы в магазине.</i>"
+    return (
+        f"<blockquote>📦 <b><i>НЕОТКРЫТЫЕ КЕЙСЫ</i></b></blockquote>\n"
+        f"\n<blockquote>{body}</blockquote>\n"
+        f"\n<blockquote><i>Открыть: <code>отк эк 5</code> или <code>открыть эк 5</code> (со слешем или без)\n"
+        f"Коды тиров: ок-обычный, рк-редкий, ск-сверхредкий, хк-хромо, эк-эпический, мк-мифический, лк-легендарный\n"
+        f"Посмотреть этот список снова: <code>к</code></i></blockquote>"
+    )
+
+
+def buy_cases(data: dict, case_key: str, qty: int, lang: str = "ru", via_command: bool = True, chat_type: str = "private") -> tuple:
+    """
+    Покупает qty кейсов тира case_key за антиматерию. Кейс больше НЕ
+    открывается сразу — он кладётся неоткрытым в отдельный инвентарь
+    кейсов (data["case_inventory"]). Чтобы открыть купленные кейсы,
+    используется отдельная команда (см. open_cases_from_inventory):
+    "отк <код> <кол-во>" / "открыть <код> <кол-во>", со слешем или без.
+    """
+    if via_command and chat_type != "private":
+        err = (
+            "Эта команда доступна только в личных сообщениях с ботом. "
+            "В чате покупайте кейсы через меню (кнопки)."
+            if lang == "ru"
+            else "This command only works in private messages with the bot. "
+                 "In group chats, buy cases via the menu buttons."
+        )
+        return False, f"❌ {err}"
+
+    case = CASES.get(case_key)
+    if not case:
+        err = "Неизвестный кейс." if lang == "ru" else "Unknown case."
+        return False, f"❌ {err}"
+
+    if qty < 1:
+        err = "Количество должно быть ≥ 1." if lang == "ru" else "Quantity must be ≥ 1."
+        return False, f"❌ {err}"
+    if qty > 100:
+        err = "Максимум 100 кейсов за раз." if lang == "ru" else "Maximum 100 cases at once."
+        return False, f"❌ {err}"
+
+    total_cost = case["cost"] * qty
+    balance    = get_antimatter(data)
+    if balance < total_cost:
+        can_buy = balance // case["cost"]
+        if lang == "en":
+            err = (
+                f"Not enough antimatter for {qty} cases!\n"
+                f"Need: {_fmt_num(total_cost)} | Balance: {_fmt_num(balance)}\n"
+                f"Can buy: {can_buy}"
+            )
+        else:
+            err = (
+                f"Недостаточно антиматерии для {qty} кейсов!\n"
+                f"Нужно: {_fmt_num(total_cost)} | Баланс: {_fmt_num(balance)}\n"
+                f"Можно купить: {can_buy}"
+            )
+        return False, f"❌ {err}"
+
+    data["antimatter"] = balance - total_cost
+    _add_cases_to_inventory(data, case_key, qty)
+
+    cname      = case["name_en"] if lang == "en" else case["name"]
+    case_label = "case" if lang == "en" else "кейс"
+    abbr       = CASE_KEY_TO_ABBR.get(case_key, "")
+    in_stock   = get_case_inventory_qty(data, case_key)
+
+    if lang == "en":
+        msg = (
+            f"<blockquote>{_pe('shop', '🛒')} <b><i>Bought {qty}× {cname} {case_label}{'s' if qty != 1 else ''}!</i></b>\n"
+            f"{_pe('spent', '💸')} <b><i>Spent: {_fmt_num(total_cost)}</i></b> {_pe('antimatter', '🟣')}\n"
+            f"{_pe('balance', '💰')} <b><i>Antimatter balance: {_fmt_num(data['antimatter'])}</i></b> {_pe('antimatter', '🟣')}</blockquote>\n"
+            f"\n<blockquote><i>Cases are no longer opened automatically — they wait unopened "
+            f"in your case inventory (in stock now: {in_stock}× {cname}).\n"
+            f"Open them with: <code>отк {abbr} {qty}</code> or <code>открыть {abbr} {qty}</code> (with or without /)\n"
+            f"View your unopened cases: <code>к</code></i></blockquote>"
+        )
+    else:
+        msg = (
+            f"<blockquote>{_pe('shop', '🛒')} <b><i>Куплено {qty}× {cname} {case_label}!</i></b>\n"
+            f"{_pe('spent', '💸')} <b><i>Потрачено: {_fmt_num(total_cost)}</i></b> {_pe('antimatter', '🟣')}\n"
+            f"{_pe('balance', '💰')} <b><i>Баланс антиматерии: {_fmt_num(data['antimatter'])}</i></b> {_pe('antimatter', '🟣')}</blockquote>\n"
+            f"\n<blockquote><i>Кейс больше не открывается сразу — он лежит неоткрытым в отдельном "
+            f"инвентаре кейсов (сейчас в наличии: {in_stock}× {cname}).\n"
+            f"Открыть его можно командой: <code>отк {abbr} {qty}</code> или <code>открыть {abbr} {qty}</code> (со слешем или без)\n"
+            f"Посмотреть неоткрытые кейсы: <code>к</code></i></blockquote>"
+        )
+    return True, msg
+
+
+def open_cases_from_inventory(data: dict, case_key: str, qty: int, lang: str = "ru", via_command: bool = True, chat_type: str = "private") -> tuple:
+    """
+    Открывает qty кейсов тира case_key из отдельного инвентаря
+    НЕОТКРЫТЫХ кейсов (см. buy_cases). Антиматерия НЕ списывается —
+    она уже была списана в момент покупки, здесь только разыгрывается
+    лут и кейсы списываются из case_inventory.
+    Команды: "отк <код> <кол-во>" / "открыть <код> <кол-во>" (со слешем
+    или без), где <код> — сокращение тира: ок/рк/ск/хк/эк/мк/лк.
+    """
+    if via_command and chat_type != "private":
+        err = (
+            "Эта команда доступна только в личных сообщениях с ботом. "
+            "В чате открывайте кейсы через меню (кнопки)."
+            if lang == "ru"
+            else "This command only works in private messages with the bot. "
+                 "In group chats, open cases via the menu buttons."
+        )
+        return False, f"❌ {err}"
+
+    case = CASES.get(case_key)
+    if not case:
+        err = "Неизвестный кейс." if lang == "ru" else "Unknown case."
+        return False, f"❌ {err}"
+
+    if qty < 1:
+        err = "Количество должно быть ≥ 1." if lang == "ru" else "Quantity must be ≥ 1."
+        return False, f"❌ {err}"
+    if qty > 100:
+        err = "Максимум 100 кейсов за раз." if lang == "ru" else "Maximum 100 cases at once."
+        return False, f"❌ {err}"
+
+    cname      = case["name_en"] if lang == "en" else case["name"]
+    case_label = "case" if lang == "en" else "кейс"
+    have       = get_case_inventory_qty(data, case_key)
+    if have < qty:
+        abbr = CASE_KEY_TO_ABBR.get(case_key, "")
+        if lang == "en":
+            err = (
+                f"Not enough unopened cases!\n"
+                f"In stock: {have}× {cname} | Requested: {qty}\n"
+                f"Buy more in the shop, e.g.: открыть {abbr} {qty}"
+            )
+        else:
+            err = (
+                f"Недостаточно неоткрытых кейсов!\n"
+                f"В наличии: {have}× {cname} | Запрошено: {qty}\n"
+                f"Сначала купи их в магазине."
+            )
+        return False, f"❌ {err}"
+
+    ok_cd, err_cd = _check_case_cooldown(data, lang, via_command=via_command)
+    if not ok_cd:
+        return False, err_cd
+
+    results: dict  = {}
+    artifacts_won: list = []
+    empties      = 0
+    opened_count = 0
+    for _ in range(qty):
+        ok, _msg, instance = open_case(data, case_key, lang=lang, _check_cooldown=False, charge=False)
+        if not ok:
+            break
+        opened_count += 1
+        if instance:
+            if instance.get("artifact"):
+                art = ARTIFACT_POOL_BY_KEY.get(instance["artifact"]["key"])
+                if art:
+                    artifacts_won.append(art.get("name_en", art["name"]) if lang == "en" else art["name"])
+            if instance.get("boost"):
+                k = instance["boost"]["key"]
+                results[k] = results.get(k, 0) + 1
+            if not instance.get("boost") and not instance.get("artifact"):
+                empties += 1
+        else:
+            empties += 1
+
+    if opened_count == 0:
+        err = "Не удалось открыть ни одного кейса." if lang == "ru" else "Failed to open any cases."
+        return False, f"❌ {err}"
+
+    _remove_cases_from_inventory(data, case_key, opened_count)
+    left_in_stock = get_case_inventory_qty(data, case_key)
+
+    result_lines = []
+    for item_key, count in sorted(results.items(), key=lambda x: -x[1]):
+        item = TIER_BOOST_BY_KEY.get(item_key) or POISON_BY_KEY.get(item_key)
+        name = _enh_item_name_plain(item, lang) if item else item_key
+        qty_str = f" ×{count}" if count > 1 else ""
+        result_lines.append(f"<b><i>{name}</i></b>{qty_str}")
+    for art_name in artifacts_won:
+        result_lines.append(f"<b><i>{art_name}</i></b> ({_L(lang, 'артефакт', 'artifact')})")
+    if not result_lines:
+        result_lines.append(f"<i>{_L(lang, 'Пусто', 'Empty')}</i> ×{empties}")
+    elif empties:
+        result_lines.append(f"<i>{_L(lang, 'Пусто', 'Empty')}</i> ×{empties}")
+
+    loot_text  = "\n".join(f"  • {l}" for l in result_lines)
+    tier_emoji = _TIER_PLAIN_EMOJI.get(case_key, "📦")
+
+    if lang == "en":
+        msg = (
+            f"<blockquote>{tier_emoji} <b><i>Opened {opened_count}× {cname} {case_label}{'s' if opened_count != 1 else ''}!</i></b></blockquote>\n"
+            f"\n<blockquote><b><i>Loot:</i></b>\n{loot_text}</blockquote>\n"
+            f"\n<blockquote>{_pe('balance', '💰')} <b><i>Unopened {cname} {case_label}s left: {_fmt_num(left_in_stock)}</i></b></blockquote>"
+        )
+    else:
+        msg = (
+            f"<blockquote>{tier_emoji} <b><i>Открыто {opened_count}× {case_label} {cname}!</i></b></blockquote>\n"
+            f"\n<blockquote><b><i>Лут:</i></b>\n{loot_text}</blockquote>\n"
+            f"\n<blockquote>{_pe('balance', '💰')} <b><i>Осталось неоткрытых {cname}: {_fmt_num(left_in_stock)}</i></b></blockquote>"
+        )
+    return True, msg
 
 
 def open_case_multi(data: dict, case_num: int, qty: int, lang: str = "ru", via_command: bool = True, chat_type: str = "private") -> tuple:
@@ -1814,6 +2111,9 @@ def cases_shop_text(data: dict = None, lang: str = "ru") -> str:
             f'\n<blockquote><tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> <b><i>Your stats</i></b>\n'
             f"<b><i>Cases opened: {_fmt_num(total_opened)}</i></b>\n"
             f"{_pe('spent', '💸')} <b><i>Spent: {_fmt_num(total_spent)}</i></b> {_pe('antimatter', '🟣')}</blockquote>\n"
+            f'\n<blockquote><i>Cases are not opened right away anymore — buy them here, then open them '
+            f'from your case inventory with <code>отк эк 5</code> / <code>открыть эк 5</code>. '
+            f'View unopened cases: <code>к</code></i></blockquote>\n'
             f'\n<blockquote><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji> <b><i>Good luck! May something great drop</i></b><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji></blockquote>'
         )
     return (
@@ -1823,6 +2123,9 @@ def cases_shop_text(data: dict = None, lang: str = "ru") -> str:
         f'\n<blockquote><tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> <b><i>Твоя статистика</i></b>\n'
         f"<b><i>Открыто кейсов: {_fmt_num(total_opened)}</i></b>\n"
         f"{_pe('spent', '💸')} <b><i>Потрачено: {_fmt_num(total_spent)}</i></b> {_pe('antimatter', '🟣')}</blockquote>\n"
+        f'\n<blockquote><i>Кейс больше не открывается сразу — купи его здесь, а затем открой из '
+        f'своего инвентаря кейсов командой <code>отк эк 5</code> / <code>открыть эк 5</code>. '
+        f'Посмотреть неоткрытые кейсы: <code>к</code></i></blockquote>\n'
         f'\n<blockquote><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji> <b><i>Удачи тебе! Пусть выпадет что-то крутое</i></b><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji></blockquote>'
     )
 
@@ -1886,17 +2189,22 @@ def case_detail_text(data: dict, case_key: str, lang: str = "ru") -> str:
         f"{_pe('cancel', '❌')} <b><i>{_L(lang, 'Недостаточно антиматерии', 'Not enough antimatter')}</i></b>"
     )
     case_num = CASE_KEY_TO_NUM.get(case_key, 1)
+    abbr     = CASE_KEY_TO_ABBR.get(case_key, "")
     if lang == "en":
         cmd_hint = (
             f"\n\n<blockquote><i>"
-            f"Quick open: <code>open #{case_num} 5</code> or <code>/open #{case_num} 5</code>"
-            f"</i></blockquote>"
+            f"Quick buy: <code>купить #{case_num} 5</code> or <code>/open #{case_num} 5</code>\n"
+            f"Cases are NOT opened right away — they wait in your case inventory.\n"
+            f"Open them: <code>отк {abbr} 5</code> or <code>открыть {abbr} 5</code>\n"
+            f"View unopened cases: <code>к</code></i></blockquote>"
         )
     else:
         cmd_hint = (
             f"\n\n<blockquote><i>"
-            f"Быстрое открытие: <code>открыть #{case_num} 5</code> или <code>/купить #{case_num} 5</code>"
-            f"</i></blockquote>"
+            f"Быстрая покупка: <code>купить #{case_num} 5</code> или <code>/открыть #{case_num} 5</code>\n"
+            f"Кейс НЕ открывается сразу — он ждёт в отдельном инвентаре кейсов.\n"
+            f"Открыть его: <code>отк {abbr} 5</code> или <code>открыть {abbr} 5</code>\n"
+            f"Посмотреть неоткрытые кейсы: <code>к</code></i></blockquote>"
         )
     return (
         f"<blockquote>{_TIER_PLAIN_EMOJI.get(case_key, '📦')} <b><i>{cname} {case_label}</i></b>\n"
@@ -1911,7 +2219,7 @@ def case_detail_text(data: dict, case_key: str, lang: str = "ru") -> str:
 def case_detail_keyboard(case_key: str, can_buy: bool, lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if can_buy:
-        builder.row(_btn(_E["shop"], _L(lang, "Купить и открыть", "Buy and open"), f"case_open_{case_key}"))
+        builder.row(_btn(_E["shop"], _L(lang, "Купить", "Buy"), f"case_open_{case_key}"))
     else:
         builder.row(_btn(_E["cancel"], _L(lang, "Недостаточно антиматерии", "Not enough antimatter"), "noop"))
     builder.row(_back_btn("shop_cases", _L(lang, "Назад", "Back")))
@@ -3022,6 +3330,78 @@ def transfer_item_by_slot_id(
         recip_msg = (
             f'<tg-emoji emoji-id="5222113468051629260">🎁</tg-emoji> '
             f'<b><i>Вы получили {qty_str}{name} от {sender_name}!</i></b>'
+        )
+
+    return True, sender_msg, recip_msg
+
+
+# ============================================================
+#  ПЕРЕДАЧА НЕОТКРЫТЫХ КЕЙСОВ ДРУГОМУ ИГРОКУ
+#  Команды: "передать <код> [кол-во] [@user|id]" / "подарить ..."
+#  <код> — сокращение тира (ок/рк/ск/хк/эк/мк/лк), см. CASE_ABBR_TO_KEY.
+#  Обработчики команд — в mainhelp.py (cmd_transfer_case).
+# ============================================================
+
+def transfer_cases(sender_data: dict, recipient_data: dict, case_key: str, qty: int = 1, lang: str = "ru") -> tuple[bool, str, str]:
+    """
+    Передаёт qty НЕОТКРЫТЫХ кейсов тира case_key из инвентаря кейсов
+    sender_data -> recipient_data (data["case_inventory"]).
+    Возвращает (ok, sender_msg, recipient_msg).
+    Модифицирует оба словаря на месте — сохранение в БД на стороне вызывающего.
+    """
+    case = CASES.get(case_key)
+    if not case:
+        err = "Неизвестный кейс." if lang == "ru" else "Unknown case."
+        return False, f"❌ {err}", ""
+
+    if qty < 1:
+        err = "Количество должно быть ≥ 1." if lang == "ru" else "Quantity must be ≥ 1."
+        return False, f"❌ {err}", ""
+    if qty > 100:
+        err = "Максимум 100 кейсов за раз." if lang == "ru" else "Maximum 100 cases at once."
+        return False, f"❌ {err}", ""
+
+    cname      = case["name_en"] if lang == "en" else case["name"]
+    case_label = "case" if lang == "en" else "кейс"
+    available  = get_case_inventory_qty(sender_data, case_key)
+    if qty > available:
+        err = (
+            f"Недостаточно неоткрытых кейсов! В наличии: {available}× {cname}."
+            if lang == "ru"
+            else f"Not enough unopened cases! In stock: {available}× {cname}."
+        )
+        return False, f"❌ {err}", ""
+
+    if not _remove_cases_from_inventory(sender_data, case_key, qty):
+        err = "Не удалось списать кейсы." if lang == "ru" else "Failed to remove cases."
+        return False, f"❌ {err}", ""
+
+    _add_cases_to_inventory(recipient_data, case_key, qty)
+
+    qty_str = f"{qty} " if qty else ""
+
+    recip_name  = recipient_data.get("first_name") or recipient_data.get("username") or str(recipient_data["id"])
+    sender_name = sender_data.get("first_name") or sender_data.get("username") or str(sender_data["id"])
+
+    if lang == "en":
+        sender_msg = (
+            f'<tg-emoji emoji-id="5201691993775818138">✅</tg-emoji> '
+            f'<b><i>You successfully sent {qty_str}{cname} {case_label}{"s" if qty != 1 else ""} '
+            f'(unopened) to player {recip_name}!</i></b>'
+        )
+        recip_msg = (
+            f'<tg-emoji emoji-id="5222113468051629260">🎁</tg-emoji> '
+            f'<b><i>You received {qty_str}{cname} {case_label}{"s" if qty != 1 else ""} '
+            f'(unopened) from {sender_name}!</i></b>'
+        )
+    else:
+        sender_msg = (
+            f'<tg-emoji emoji-id="5201691993775818138">✅</tg-emoji> '
+            f'<b><i>Вы успешно передали {qty_str}{cname} ({case_label}, неоткрытый) игроку {recip_name}!</i></b>'
+        )
+        recip_msg = (
+            f'<tg-emoji emoji-id="5222113468051629260">🎁</tg-emoji> '
+            f'<b><i>Вы получили {qty_str}{cname} ({case_label}, неоткрытый) от {sender_name}!</i></b>'
         )
 
     return True, sender_msg, recip_msg
