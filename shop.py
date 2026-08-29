@@ -1381,20 +1381,18 @@ def buy_cases(data: dict, case_key: str, qty: int, lang: str = "ru", via_command
         msg = (
             f"<blockquote>{_pe('shop', '🛒')} <b><i>Bought {qty}× {cname} {case_label}{'s' if qty != 1 else ''}!</i></b>\n"
             f"{_pe('spent', '💸')} <b><i>Spent: {_fmt_num(total_cost)}</i></b> {_pe('antimatter', '🟣')}\n"
-            f"{_pe('balance', '💰')} <b><i>Antimatter balance: {_fmt_num(data['antimatter'])}</i></b> {_pe('antimatter', '🟣')}</blockquote>\n"
-            f"\n<blockquote><i>Cases are no longer opened automatically — they wait unopened "
-            f"in your case inventory (in stock now: {in_stock}× {cname}).\n"
-            f"Open them with: <code>отк {abbr} {qty}</code> or <code>открыть {abbr} {qty}</code> (with or without /)\n"
-            f"View your unopened cases: <code>к</code></i></blockquote>"
+            f"{_pe('balance', '💰')} <b><i>Antimatter balance: {_fmt_num(data['antimatter'])}</i></b> {_pe('antimatter', '🟣')}\n"
+            f"{_pe('balance', '📦')} <b><i>In stock: {in_stock}× {cname}</i></b></blockquote>\n"
+            f"\n<blockquote><i>Open: <code>отк {abbr} {qty}</code> or <code>открыть {abbr} {qty}</code>\n"
+            f"View unopened cases: <code>к</code></i></blockquote>"
         )
     else:
         msg = (
             f"<blockquote>{_pe('shop', '🛒')} <b><i>Куплено {qty}× {cname} {case_label}!</i></b>\n"
             f"{_pe('spent', '💸')} <b><i>Потрачено: {_fmt_num(total_cost)}</i></b> {_pe('antimatter', '🟣')}\n"
-            f"{_pe('balance', '💰')} <b><i>Баланс антиматерии: {_fmt_num(data['antimatter'])}</i></b> {_pe('antimatter', '🟣')}</blockquote>\n"
-            f"\n<blockquote><i>Кейс больше не открывается сразу — он лежит неоткрытым в отдельном "
-            f"инвентаре кейсов (сейчас в наличии: {in_stock}× {cname}).\n"
-            f"Открыть его можно командой: <code>отк {abbr} {qty}</code> или <code>открыть {abbr} {qty}</code> (со слешем или без)\n"
+            f"{_pe('balance', '💰')} <b><i>Баланс антиматерии: {_fmt_num(data['antimatter'])}</i></b> {_pe('antimatter', '🟣')}\n"
+            f"{_pe('balance', '📦')} <b><i>В наличии: {in_stock}× {cname}</i></b></blockquote>\n"
+            f"\n<blockquote><i>Открыть: <code>отк {abbr} {qty}</code> или <code>открыть {abbr} {qty}</code>\n"
             f"Посмотреть неоткрытые кейсы: <code>к</code></i></blockquote>"
         )
     return True, msg
@@ -2111,8 +2109,8 @@ def cases_shop_text(data: dict = None, lang: str = "ru") -> str:
             f'\n<blockquote><tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> <b><i>Your stats</i></b>\n'
             f"<b><i>Cases opened: {_fmt_num(total_opened)}</i></b>\n"
             f"{_pe('spent', '💸')} <b><i>Spent: {_fmt_num(total_spent)}</i></b> {_pe('antimatter', '🟣')}</blockquote>\n"
-            f'\n<blockquote><i>Cases are not opened right away anymore — buy them here, then open them '
-            f'from your case inventory with <code>отк эк 5</code> / <code>открыть эк 5</code>. '
+            f'\n<blockquote><i>Buy cases here, then open them from your case inventory with '
+            f'<code>отк эк 5</code> / <code>открыть эк 5</code>. '
             f'View unopened cases: <code>к</code></i></blockquote>\n'
             f'\n<blockquote><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji> <b><i>Good luck! May something great drop</i></b><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji></blockquote>'
         )
@@ -2123,8 +2121,8 @@ def cases_shop_text(data: dict = None, lang: str = "ru") -> str:
         f'\n<blockquote><tg-emoji emoji-id="5231200819986047254">🎟</tg-emoji> <b><i>Твоя статистика</i></b>\n'
         f"<b><i>Открыто кейсов: {_fmt_num(total_opened)}</i></b>\n"
         f"{_pe('spent', '💸')} <b><i>Потрачено: {_fmt_num(total_spent)}</i></b> {_pe('antimatter', '🟣')}</blockquote>\n"
-        f'\n<blockquote><i>Кейс больше не открывается сразу — купи его здесь, а затем открой из '
-        f'своего инвентаря кейсов командой <code>отк эк 5</code> / <code>открыть эк 5</code>. '
+        f'\n<blockquote><i>Купи кейс здесь, а затем открой его из своего инвентаря кейсов '
+        f'командой <code>отк эк 5</code> / <code>открыть эк 5</code>. '
         f'Посмотреть неоткрытые кейсы: <code>к</code></i></blockquote>\n'
         f'\n<blockquote><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji> <b><i>Удачи тебе! Пусть выпадет что-то крутое</i></b><tg-emoji emoji-id="5269531045165816230">🎟</tg-emoji></blockquote>'
     )
@@ -2193,17 +2191,15 @@ def case_detail_text(data: dict, case_key: str, lang: str = "ru") -> str:
     if lang == "en":
         cmd_hint = (
             f"\n\n<blockquote><i>"
-            f"Quick buy: <code>купить #{case_num} 5</code> or <code>/open #{case_num} 5</code>\n"
-            f"Cases are NOT opened right away — they wait in your case inventory.\n"
-            f"Open them: <code>отк {abbr} 5</code> or <code>открыть {abbr} 5</code>\n"
+            f"Buy: <code>купить #{case_num} 5</code> or <code>/open #{case_num} 5</code>\n"
+            f"Open: <code>отк {abbr} 5</code> or <code>открыть {abbr} 5</code>\n"
             f"View unopened cases: <code>к</code></i></blockquote>"
         )
     else:
         cmd_hint = (
             f"\n\n<blockquote><i>"
-            f"Быстрая покупка: <code>купить #{case_num} 5</code> или <code>/открыть #{case_num} 5</code>\n"
-            f"Кейс НЕ открывается сразу — он ждёт в отдельном инвентаре кейсов.\n"
-            f"Открыть его: <code>отк {abbr} 5</code> или <code>открыть {abbr} 5</code>\n"
+            f"Купить: <code>купить #{case_num} 5</code> или <code>/открыть #{case_num} 5</code>\n"
+            f"Открыть: <code>отк {abbr} 5</code> или <code>открыть {abbr} 5</code>\n"
             f"Посмотреть неоткрытые кейсы: <code>к</code></i></blockquote>"
         )
     return (
