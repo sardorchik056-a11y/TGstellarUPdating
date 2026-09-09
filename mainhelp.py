@@ -1882,18 +1882,56 @@ def _gift_daily_limit(level: int) -> int | None:
 
 def _parse_amount(s: str) -> int | None:
     """
-    Парсит число с суффиксами: 100м → 100000000, 1.5к → 1500, 2млрд → 2000000000.
-    Поддерживает: к/k, м/m/mil, млрд/b/bil, трлн/t/tri.
+    Парсит число с суффиксами: 100м → 100000000, 1.5к → 1500, 2млрд → 2000000000,
+    10Qa → 10 000 000 000 000 000 и т.д.
+
+    Поддерживает ВСЮ ту же шкалу, что и вывод (_fmt_num / database.format_amount):
+    к/k/тыс, м/m/mil/млн, b/bil/млрд, t/tri/трлн, Qa, Qi, Sx, Sp, Oc, No, Dc
+    (квадриллион...дециллион), плюс продолжение Dc2/Dc3/... для ещё больших чисел
+    — так же, как это подписывается в балансе. Суффикс регистронезависим:
+    "10qa" и "10Qa" разбираются одинаково.
+
     Возвращает int или None если не распознано.
     """
     import re as _r
+    from decimal import Decimal, InvalidOperation
     s = s.strip().lower().replace(" ", "").replace("_", "")
-    # Суффиксы: самые длинные сначала чтобы не срезать часть
+    if not s:
+        return None
+
+    # Decimal, а не float: множители доходят до 10**33+, а double теряет
+    # точность уже после ~10**15 — сумма типа "2дц" (10**33) float'ом
+    # округлялась бы криво (2000000000000000000000000000000000 стало бы
+    # 1999999999999999891150461974085632 и т.п.).
+    def _to_int(num_str: str, multiplier: int) -> int | None:
+        try:
+            return int(Decimal(num_str) * multiplier)
+        except (InvalidOperation, ValueError):
+            return None
+
+    # Продолжение шкалы после "Dc" (10**33): dc2 -> 10**36, dc3 -> 10**39 и т.д.
+    m_dc = _r.match(r'^(.*?)dc(\d+)$', s)
+    if m_dc:
+        num_str, n = m_dc.group(1), int(m_dc.group(2))
+        if num_str:
+            res = _to_int(num_str, 10 ** (33 + 3 * (n - 1)))
+            if res is not None:
+                return res
+
+    # Суффиксы: суффиксы старших разрядов проверяем раньше однобуквенных,
+    # чтобы не срезать их по ошибке более коротким совпадением.
     _SUFFIXES = [
-        (("трлн", "tri", "t"), 1_000_000_000_000),
-        (("млрд", " млд", "bil", "b"),  1_000_000_000),
-        (("mil", "м", "m"),             1_000_000),
-        (("к", "k"),                    1_000),
+        (("dc", "дц"),                  10 ** 33),  # дециллион
+        (("no",),                       10 ** 30),  # нониллион
+        (("oc",),                       10 ** 27),  # октиллион
+        (("sp",),                       10 ** 24),  # септиллион
+        (("sx",),                       10 ** 21),  # секстиллион
+        (("qi",),                       10 ** 18),  # квинтиллион
+        (("qa",),                       10 ** 15),  # квадриллион
+        (("трлн", "tri", "t"),          10 ** 12),
+        (("млрд", "млд", "bil", "b"),   10 ** 9),
+        (("mil", "м", "m"),             10 ** 6),
+        (("тыс", "к", "k"),             10 ** 3),
     ]
     for aliases, multiplier in _SUFFIXES:
         for alias in aliases:
@@ -1901,11 +1939,7 @@ def _parse_amount(s: str) -> int | None:
                 num_str = s[:-len(alias)]
                 if not num_str:
                     return None
-                try:
-                    num = float(num_str)
-                    return int(num * multiplier)
-                except ValueError:
-                    return None
+                return _to_int(num_str, multiplier)
     # Без суффикса — целое число
     try:
         return int(s)
@@ -2880,11 +2914,26 @@ async def cmd_sell(message: Message):
         return
     slot_id = int(m.group(1))
     qty     = int(m.group(2)) if m.group(2) else 1
-    ok, msg = sell_item_by_slot_id(u, slot_id, qty, lang)
+
+    # ВАЖНО (фикс бага "монеты иногда пропадают"): раньше `u` читался ДО
+    # захвата персонального лока и сохранялся ПОСЛЕ продажи тем же самым
+    # снимком — без _get_user_lock(uid), в отличие от всех остальных мест,
+    # где меняется баланс (переводы, вклады, шахта и т.д.). Если в этот же
+    # момент прилетал перевод монет игроку (/gift) или начислялся вклад,
+    # их запись в БД могла произойти МЕЖДУ чтением и записью здесь — и
+    # save_user(uid, u) со старым снимком полностью затирал их изменение
+    # балансом без начисления. Теперь снимок берётся заново уже внутри
+    # лока — того же самого, что использует handle_callback/gift/cdl —
+    # это исключает потерю параллельно начисленных монет.
+    from database import aio_save_user
+    lock = await _get_user_lock(uid)
+    async with lock:
+        u = await aio_get_or_create_user(message.from_user)
+        ok, msg = sell_item_by_slot_id(u, slot_id, qty, lang)
+        if ok:
+            _ach_newly = check_achievements(u)
+            await aio_save_user(uid, u)
     if ok:
-        from database import aio_save_user
-        _ach_newly = check_achievements(u)
-        await aio_save_user(uid, u)
         await _notify_ach(uid, u, _ach_newly)
     await message.reply(msg, parse_mode="HTML")
 
