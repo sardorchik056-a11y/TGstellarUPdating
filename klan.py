@@ -1293,6 +1293,21 @@ def get_withdrawal_requests(clan_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _peek_withdrawal_request_uid(req_id: int) -> int | None:
+    """Узнать заранее, кому уйдут деньги по заявке req_id (без изменений
+    и без локов) — нужно только чтобы асинхронная обёртка знала, какой
+    именно per-uid лок захватить ДО запуска approve_withdrawal. Сама
+    approve_withdrawal всё равно перепроверяет статус атомарно, так что
+    устаревший/неверный результат этой функции не опасен для целостности
+    данных — в худшем случае лок возьмётся не на того uid и заявка потом
+    просто не пройдёт (req_not_found)."""
+    with _conn() as c:
+        row = c.execute(
+            "SELECT uid FROM clan_treasury_requests WHERE id=? AND status='pending'", (req_id,)
+        ).fetchone()
+    return row["uid"] if row else None
+
+
 def approve_withdrawal(actor_uid: int, req_id: int) -> dict:
     """
     Одобрить заявку на вывод из казны. Доступно creator и officer.
@@ -1767,12 +1782,32 @@ async def aio_get_all_clans_stats(*args, **kwargs) -> dict:
     return await asyncio.to_thread(get_all_clans_stats, *args, **kwargs)
 
 
+def _first_uid(args, kwargs) -> int:
+    """uid всегда первый позиционный аргумент во всех функциях ниже,
+    которые он используется для (или именованный kwarg 'uid')."""
+    return args[0] if args else kwargs["uid"]
+
+
+async def _with_shared_uid_lock(uid: int, func, *args, **kwargs):
+    """Оборачивает синхронную функцию модуля общим с mainhelp.py
+    per-uid локом (см. шапку файла и TODO про два разных замка).
+    Импорт mainhelp — ленивый (внутри функции), т.к. mainhelp.py сам
+    импортирует klan.py на верхнем уровне: прямой импорт на уровне
+    модуля здесь создал бы циклический импорт."""
+    from mainhelp import _get_user_lock
+    lock = await _get_user_lock(uid)
+    async with lock:
+        return await asyncio.to_thread(func, *args, **kwargs)
+
+
 async def aio_create_clan(*args, **kwargs) -> dict:
-    return await asyncio.to_thread(create_clan, *args, **kwargs)
+    uid = _first_uid(args, kwargs)
+    return await _with_shared_uid_lock(uid, create_clan, *args, **kwargs)
 
 
 async def aio_disband_clan(*args, **kwargs) -> dict:
-    return await asyncio.to_thread(disband_clan, *args, **kwargs)
+    uid = _first_uid(args, kwargs)
+    return await _with_shared_uid_lock(uid, disband_clan, *args, **kwargs)
 
 
 async def aio_leave_clan(*args, **kwargs) -> dict:
@@ -1816,7 +1851,8 @@ async def aio_reject_all_applications(*args, **kwargs) -> dict:
 
 
 async def aio_deposit_treasury(*args, **kwargs) -> dict:
-    return await asyncio.to_thread(deposit_treasury, *args, **kwargs)
+    uid = _first_uid(args, kwargs)
+    return await _with_shared_uid_lock(uid, deposit_treasury, *args, **kwargs)
 
 
 async def aio_request_withdrawal(*args, **kwargs) -> dict:
@@ -1828,7 +1864,18 @@ async def aio_get_withdrawal_requests(*args, **kwargs):
 
 
 async def aio_approve_withdrawal(*args, **kwargs) -> dict:
-    return await asyncio.to_thread(approve_withdrawal, *args, **kwargs)
+    # В отличие от create_clan/deposit_treasury/disband_clan, здесь
+    # деньги уходят НЕ actor_uid, а автору заявки (req["uid"]) — этот
+    # uid известен только после чтения заявки. Подсматриваем его без
+    # лока, затем берём общий с mainhelp.py per-uid лок ИМЕННО для
+    # получателя выплаты и только потом выполняем саму операцию.
+    req_id = args[1] if len(args) > 1 else kwargs["req_id"]
+    beneficiary_uid = await asyncio.to_thread(_peek_withdrawal_request_uid, req_id)
+    if beneficiary_uid is None:
+        # Заявки уже нет/не pending — пусть approve_withdrawal сама
+        # вернёт корректную ошибку (req_not_found), лок не нужен.
+        return await asyncio.to_thread(approve_withdrawal, *args, **kwargs)
+    return await _with_shared_uid_lock(beneficiary_uid, approve_withdrawal, *args, **kwargs)
 
 
 async def aio_reject_withdrawal(*args, **kwargs) -> dict:
