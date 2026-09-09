@@ -64,16 +64,22 @@ async def cmd_add_balance(message: Message):
     # /add <username|id> <сумма>
     if len(parts) != 3:
         await message.reply(
-            "❌ Неверный формат.\nИспользование: <code>/add username|id сумма</code>",
+            "❌ Неверный формат.\nИспользование: <code>/add username|id сумма</code> "
+            "(поддерживаются суффиксы: 100к, 5м, 2млрд, 10Qa, 1.5Qi и т.д.)",
             parse_mode="HTML"
         )
         return
 
     target_raw = parts[1].lstrip("@")
-    try:
-        amount = int(parts[2])
-    except ValueError:
-        await message.reply("❌ Сумма должна быть целым числом.", parse_mode="HTML")
+    # ВАЖНО (фикс "/add не понимает 10Qa и т.п."): раньше сумма читалась
+    # голым int(parts[2]), который поддерживал только чистые цифры — все
+    # сокращения (к/м/млрд/Qa/Qi/...) отклонялись как "не целое число".
+    # _parse_amount (тот же парсер, что и у "дать"/gift, и уже был
+    # импортирован в этом файле, но не использовался здесь) понимает всю
+    # шкалу суффиксов, включая Qa/Qi/Sx/Sp/Oc/No/Dc, а не только Qa.
+    amount = _parse_amount(parts[2])
+    if amount is None:
+        await message.reply("❌ Сумма должна быть числом (можно с суффиксом: 100к, 5м, 10Qa...).", parse_mode="HTML")
         return
 
     # Поиск пользователя в БД
@@ -86,13 +92,27 @@ async def cmd_add_balance(message: Message):
         )
         return
 
-    old_balance = found.get("balance", 0)
-    new_balance = old_balance + amount
-    if new_balance < 0:
-        new_balance = 0  # не уходим в минус
+    # ВАЖНО (фикс "монеты иногда пропадают"): раньше баланс читался и
+    # сохранялся без персонального _get_user_lock(uid), в отличие от всех
+    # остальных мест, которые меняют баланс (переводы, вклады, /sell и
+    # т.д. — см. те же комментарии там). Если в этот момент игрок сам
+    # что-то делал с балансом (перевод, продажа, вклад), могла произойти
+    # гонка: чья запись в БД физически произойдёт последней — та и
+    # "победит", полностью затерев другое изменение. Начисление админом
+    # могло бесследно пропасть, либо, наоборот, стереть только что
+    # полученный игроком перевод. Берём тот же лок и перечитываем
+    # свежие данные внутри него — как и везде в проекте.
+    from mainhelp import _get_user_lock
+    lock = await _get_user_lock(found["id"])
+    async with lock:
+        found = await aio_get_user(found["id"]) or found
+        old_balance = found.get("balance", 0)
+        new_balance = old_balance + amount
+        if new_balance < 0:
+            new_balance = 0  # не уходим в минус
 
-    found["balance"] = new_balance
-    await aio_save_user(found["id"], found)
+        found["balance"] = new_balance
+        await aio_save_user(found["id"], found)
 
     name   = _esc(found.get("first_name") or found.get("username") or str(found["id"]))
     action = "➕ Выдано" if amount >= 0 else "➖ Снято"
@@ -606,12 +626,12 @@ async def cmd_addcheck(message: Message):
         )
         return
     try:
-        amount = int(parts[1])
+        amount = _parse_amount(parts[1])
         uses   = int(parts[2])
     except ValueError:
         await message.reply("❌ Сумма и кол-во — целые числа.", parse_mode="HTML")
         return
-    if amount <= 0 or uses <= 0:
+    if amount is None or amount <= 0 or uses <= 0:
         await message.reply("❌ Сумма и кол-во должны быть > 0.", parse_mode="HTML")
         return
 
@@ -682,12 +702,12 @@ async def cmd_addpromo(message: Message):
         return
     name = parts[1]
     try:
-        amount = int(parts[2])
+        amount = _parse_amount(parts[2])
         uses   = int(parts[3])
     except ValueError:
         await message.reply("❌ Сумма и кол-во — целые числа.", parse_mode="HTML")
         return
-    if amount <= 0 or uses <= 0:
+    if amount is None or amount <= 0 or uses <= 0:
         await message.reply("❌ Сумма и кол-во должны быть > 0.", parse_mode="HTML")
         return
 
@@ -892,12 +912,21 @@ def _cancel_kb():
 #    самих команд — чтобы ничего из уже работающего не сломать) ─────────
 
 async def _do_add_balance(found: dict, amount: int) -> str:
-    old_balance = found.get("balance", 0)
-    new_balance = old_balance + amount
-    if new_balance < 0:
-        new_balance = 0
-    found["balance"] = new_balance
-    await aio_save_user(found["id"], found)
+    # ВАЖНО: тот же фикс гонки, что и в /add (cmd_add_balance) — берём
+    # персональный лок и перечитываем свежие данные внутри него, иначе
+    # это админ-панельное начисление точно так же может затереть или
+    # быть затёртым параллельным действием игрока (перевод/продажа/вклад).
+    from mainhelp import _get_user_lock
+    uid = found["id"]
+    lock = await _get_user_lock(uid)
+    async with lock:
+        found = await aio_get_user(uid) or found
+        old_balance = found.get("balance", 0)
+        new_balance = old_balance + amount
+        if new_balance < 0:
+            new_balance = 0
+        found["balance"] = new_balance
+        await aio_save_user(uid, found)
 
     name   = _esc(found.get("first_name") or found.get("username") or str(found["id"]))
     action = "➕ Выдано" if amount >= 0 else "➖ Снято"
@@ -1218,10 +1247,9 @@ async def admin_input_balance(message: Message, state: FSMContext):
         )
         return
     target_raw = parts[0].lstrip("@")
-    try:
-        amount = int(parts[1])
-    except ValueError:
-        await message.reply("❌ Сумма должна быть целым числом.", parse_mode="HTML")
+    amount = _parse_amount(parts[1])
+    if amount is None:
+        await message.reply("❌ Сумма должна быть числом (можно с суффиксом: 100к, 5м, 10Qa...).", parse_mode="HTML")
         return
     found = await aio_get_user_by_id_or_username(target_raw)
     if not found:
@@ -1532,12 +1560,12 @@ async def admin_input_check_create(message: Message, state: FSMContext):
         await message.reply("❌ Формат: <code>сумма кол-во</code>\nПример: <code>10000 10</code>", parse_mode="HTML")
         return
     try:
-        amount = int(parts[0])
+        amount = _parse_amount(parts[0])
         uses   = int(parts[1])
     except ValueError:
         await message.reply("❌ Сумма и кол-во — целые числа.", parse_mode="HTML")
         return
-    if amount <= 0 or uses <= 0:
+    if amount is None or amount <= 0 or uses <= 0:
         await message.reply("❌ Сумма и кол-во должны быть > 0.", parse_mode="HTML")
         return
 
@@ -1633,12 +1661,12 @@ async def admin_input_promo_create(message: Message, state: FSMContext):
         return
     name, amount_s, uses_s = parts
     try:
-        amount = int(amount_s)
+        amount = _parse_amount(amount_s)
         uses   = int(uses_s)
     except ValueError:
         await message.reply("❌ Сумма и кол-во — целые числа.", parse_mode="HTML")
         return
-    if amount <= 0 or uses <= 0:
+    if amount is None or amount <= 0 or uses <= 0:
         await message.reply("❌ Сумма и кол-во должны быть > 0.", parse_mode="HTML")
         return
 
