@@ -1559,7 +1559,22 @@ async def aio_refresh_exchange_rate() -> int:
 
 
 async def aio_exchange_crystals_for_coins(uid: int, qty: int) -> tuple[bool, str, int, int]:
-    return await asyncio.to_thread(exchange_crystals_for_coins, uid, qty)
+    # exchange_crystals_for_coins читает основной баланс (_db_get_user),
+    # затем прибавляет монеты и перезаписывает баланс ЦЕЛИКОМ
+    # (_db_update_user) — то есть это классический read-modify-write без
+    # какой-либо защиты от гонок. Раньше это вообще ничем не лочилось:
+    # параллельный /sell, перевод или вклад из mainhelp.py (или даже два
+    # параллельных обмена в самом городе) мог измениться балансу между
+    # чтением main_user и записью new_main_balance — и это изменение
+    # молча стиралось. Берём тот же общий per-uid лок, что и mainhelp.py,
+    # на всё время операции (включая чтение баланса внутри неё), чтобы
+    # никто другой не мог тронуть баланс этого uid параллельно.
+    # Импорт mainhelp — ленивый: mainhelp.py сам импортирует city.py на
+    # верхнем уровне, прямой импорт здесь создал бы циклическую зависимость.
+    from mainhelp import _get_user_lock
+    lock = await _get_user_lock(uid)
+    async with lock:
+        return await asyncio.to_thread(exchange_crystals_for_coins, uid, qty)
 
 
 async def aio_generate_news() -> dict:
