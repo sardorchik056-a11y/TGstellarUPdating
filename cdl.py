@@ -92,9 +92,11 @@ DEPOSITS_BY_KEY = {d["key"]: d for d in DEPOSITS}
 def parse_amount_input(text: str) -> int | None:
     """Парсит сумму, введённую игроком при открытии вклада, с поддержкой
     сокращений: '100000', '100к'/'100К'/'100k'/'100K', '1.5м'/'1.5M',
-    а также полных слов тыс/млн/млрд/трлн. Регистр и раскладка (рус/eng)
-    не важны. Возвращает None, если строку не удалось разобрать, или
-    если число <= 0.
+    полных слов тыс/млн/млрд/трлн, а также верхней части шкалы
+    Qa/Qi/Sx/Sp/Oc/No/Dc (квадриллион...дециллион) — той же, что показывается
+    в балансе (см. database.format_amount / _fmt_num). Регистр и раскладка
+    (рус/eng) не важны. Возвращает None, если строку не удалось разобрать,
+    или если число <= 0.
 
     Использовать в хэндлере ввода суммы вклада вместо голого int(message.text)."""
     if not text:
@@ -103,9 +105,37 @@ def parse_amount_input(text: str) -> int | None:
     if not s:
         return None
 
-    # Порядок важен: сначала длинные слова, потом однобуквенные сокращения,
-    # иначе "100млн" обрежется по одной букве "м" вместо целого "млн".
+    # Decimal, а не float: множители доходят до 10**33+, а double теряет
+    # точность уже после ~10**15, поэтому суммы в Qi/Sx/.../Dc считаем
+    # через Decimal, чтобы не терять/не искажать монеты при округлении.
+    import re as _re_amt
+    from decimal import Decimal, InvalidOperation
+
+    def _to_int(num_str: str, multiplier: int) -> int | None:
+        try:
+            return int(Decimal(num_str) * multiplier)
+        except (InvalidOperation, ValueError):
+            return None
+
+    # Продолжение шкалы после "Dc" (10**33): dc2 -> 10**36, dc3 -> 10**39 и т.д.
+    m_dc = _re_amt.match(r'^(.*?)dc(\d+)$', s)
+    if m_dc and m_dc.group(1):
+        n = int(m_dc.group(2))
+        res = _to_int(m_dc.group(1), 10 ** (33 + 3 * (n - 1)))
+        if res is not None and res > 0:
+            return res
+
+    # Порядок важен: сначала длинные/крупные сокращения, потом однобуквенные,
+    # иначе "100млн" обрежется по одной букве "м" вместо целого "млн", а "qa"
+    # никогда не совпадёт если проверять его после однобуквенных.
     suffixes = [
+        ("dc", 10 ** 33), ("дц", 10 ** 33),
+        ("no", 10 ** 30),
+        ("oc", 10 ** 27),
+        ("sp", 10 ** 24),
+        ("sx", 10 ** 21),
+        ("qi", 10 ** 18),
+        ("qa", 10 ** 15),
         ("трлн", 10 ** 12), ("млрд", 10 ** 9), ("млн", 10 ** 6), ("тыс", 10 ** 3),
         ("t", 10 ** 12), ("т", 10 ** 12),
         ("b", 10 ** 9),  ("б", 10 ** 9),
@@ -122,13 +152,10 @@ def parse_amount_input(text: str) -> int | None:
 
     if not s:
         return None
-    try:
-        val = float(s)
-    except ValueError:
+    val = _to_int(s, mult)
+    if val is None or val <= 0:
         return None
-    if val <= 0:
-        return None
-    return int(round(val * mult))
+    return val
 
 # Emoji кнопки «назад»
 _BACK_EMOJI = "6039539366177541657"
