@@ -14,7 +14,6 @@
 
 import sqlite3
 import time
-import threading
 import unicodedata
 from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
@@ -304,21 +303,19 @@ def _conn():
 # поэтому одного database-уровня атомарности недостаточно: между
 # "прочитали rewarded=0" и "записали баланс" возможна гонка при
 # параллельных вызовах (повторный апдейт от Telegram, спам командой
-# и т.п.). Чтобы исключить дюп монет/наград, любая операция, которая
-# читает и затем изменяет состояние одного и того же uid, должна
-# выполняться под этим локом.
-
-_locks_guard = threading.Lock()
-_uid_locks: dict[int, threading.Lock] = {}
-
-
-def _lock_for(uid: int) -> threading.Lock:
-    with _locks_guard:
-        lock = _uid_locks.get(uid)
-        if lock is None:
-            lock = threading.Lock()
-            _uid_locks[uid] = lock
-        return lock
+# и т.п.). Захват самого флага rewarded защищён атомарным
+# UPDATE ... WHERE rewarded=0 (см. reward_inviter) — это само по себе
+# исключает двойное начисление за ОДНОГО и того же реферала.
+#
+# А вот последующее начисление на баланс инвайтера (get_user/save_user)
+# больше НЕ сериализуется собственным локом этого модуля: раньше здесь
+# был свой threading.Lock, ключом которого был uid реферала — то есть
+# два реферала одного инвайтера, подтвердившиеся почти одновременно,
+# лочились РАЗНЫМИ ключами и всё равно гонялись друг с другом; вдобавок
+# этот лок не был виден mainhelp.py, так что параллельный /sell,
+# перевод или вклад инвайтера мог столкнуться с начислением реф-награды.
+# Теперь используется общий с mainhelp.py per-uid лок, взятый на
+# правильном ключе — inviter_uid — см. aio_reward_inviter ниже.
 
 # ────────────────────────── рефералы ─────────────────────────
 
@@ -349,75 +346,76 @@ def reward_inviter(uid: int, is_premium: bool) -> tuple[bool, int, int]:
     атомарной UPDATE ... WHERE rewarded=0, поэтому даже при параллельном
     вызове (повторный апдейт от Telegram, гонка хендлеров) награду сможет
     забрать только один вызов — остальные сразу увидят rowcount=0
-    и завершатся без начисления. Дополнительно операция сериализуется
-    локом по uid, чтобы исключить гонки и на уровне save_user().
+    и завершатся без начисления. Начисление на баланс инвайтера
+    сериализуется общим с mainhelp.py per-uid локом — см. aio_reward_inviter,
+    который берёт его СНАРУЖИ (на inviter_uid, а не на uid реферала, т.к.
+    именно баланс инвайтера меняется ниже).
     """
-    with _lock_for(uid):
-        with _conn() as c:
-            # Атомарный "захват" права на начисление: строка обновится
-            # ТОЛЬКО если rewarded ещё не был выставлен. Это устраняет
-            # классический TOCTOU (read rewarded -> ... -> write rewarded),
-            # из-за которого было возможно двойное начисление монет.
-            # Заодно фиксируем is_premium и % отчислений (10/15) для этого
-            # реферала — с этого момента SQL-триггер trg_ref_income начнёт
-            # автоматически отдавать рефереру процент с ЛЮБОГО дохода uid.
-            # Активация привязана к тому же моменту, что и разовая награда
-            # (после капчи), чтобы не начислять % с ещё не подтверждённых
-            # рефералов.
-            percent = REF_PERCENT_PREMIUM if is_premium else REF_PERCENT_NORMAL
-            cur = c.execute(
-                """
-                UPDATE refs
-                SET rewarded=1, is_premium=?, percent=?
-                WHERE uid=? AND rewarded=0 AND inviter_uid IS NOT NULL
-                """,
-                (1 if is_premium else 0, percent, uid),
-            )
-            c.commit()
-            if cur.rowcount == 0:
-                # Либо записи нет, либо уже была вознаграждена, либо нет inviter_uid.
-                return False, 0, 0
-            ref_row = c.execute(
-                "SELECT inviter_uid FROM refs WHERE uid=?", (uid,)
-            ).fetchone()
-
-        inviter   = ref_row["inviter_uid"]
-        coins     = REF_REWARD_PREMIUM if is_premium else REF_REWARD_NORMAL
-        samosvety = REF_SAMOSVETY_PREMIUM if is_premium else REF_SAMOSVETY_NORMAL
-
-        from database import get_user, save_user
-        d = get_user(inviter)
-        if not d:
-            # Получателя награды не существует — откатываем захваченный
-            # флаг, чтобы награда не "сгорела" безвозвратно и не возникло
-            # рассинхрона между rewarded=1 и реально начисленными монетами.
-            with _conn() as c:
-                c.execute("UPDATE refs SET rewarded=0 WHERE uid=?", (uid,))
-                c.commit()
+    with _conn() as c:
+        # Атомарный "захват" права на начисление: строка обновится
+        # ТОЛЬКО если rewarded ещё не был выставлен. Это устраняет
+        # классический TOCTOU (read rewarded -> ... -> write rewarded),
+        # из-за которого было возможно двойное начисление монет.
+        # Заодно фиксируем is_premium и % отчислений (10/15) для этого
+        # реферала — с этого момента SQL-триггер trg_ref_income начнёт
+        # автоматически отдавать рефереру процент с ЛЮБОГО дохода uid.
+        # Активация привязана к тому же моменту, что и разовая награда
+        # (после капчи), чтобы не начислять % с ещё не подтверждённых
+        # рефералов.
+        percent = REF_PERCENT_PREMIUM if is_premium else REF_PERCENT_NORMAL
+        cur = c.execute(
+            """
+            UPDATE refs
+            SET rewarded=1, is_premium=?, percent=?
+            WHERE uid=? AND rewarded=0 AND inviter_uid IS NOT NULL
+            """,
+            (1 if is_premium else 0, percent, uid),
+        )
+        c.commit()
+        if cur.rowcount == 0:
+            # Либо записи нет, либо уже была вознаграждена, либо нет inviter_uid.
             return False, 0, 0
+        ref_row = c.execute(
+            "SELECT inviter_uid FROM refs WHERE uid=?", (uid,)
+        ).fetchone()
 
-        d["balance"]   = d.get("balance", 0) + coins
-        d["samosvety"] = d.get("samosvety", 0) + samosvety
-        save_user(inviter, d)
+    inviter   = ref_row["inviter_uid"]
+    coins     = REF_REWARD_PREMIUM if is_premium else REF_REWARD_NORMAL
+    samosvety = REF_SAMOSVETY_PREMIUM if is_premium else REF_SAMOSVETY_NORMAL
 
+    from database import get_user, save_user
+    d = get_user(inviter)
+    if not d:
+        # Получателя награды не существует — откатываем захваченный
+        # флаг, чтобы награда не "сгорела" безвозвратно и не возникло
+        # рассинхрона между rewarded=1 и реально начисленными монетами.
         with _conn() as c:
-            if is_premium:
-                c.execute("""
-                    INSERT INTO ref_stats (uid, total_refs, premium_refs, earned_coins, earned_samosvety)
-                    VALUES (?, 1, 1, ?, ?)
-                    ON CONFLICT(uid) DO UPDATE SET
-                        total_refs=total_refs+1, premium_refs=premium_refs+1,
-                        earned_coins=earned_coins+?, earned_samosvety=earned_samosvety+?
-                """, (inviter, coins, samosvety, coins, samosvety))
-            else:
-                c.execute("""
-                    INSERT INTO ref_stats (uid, total_refs, premium_refs, earned_coins, earned_samosvety)
-                    VALUES (?, 1, 0, ?, ?)
-                    ON CONFLICT(uid) DO UPDATE SET
-                        total_refs=total_refs+1, earned_coins=earned_coins+?, earned_samosvety=earned_samosvety+?
-                """, (inviter, coins, samosvety, coins, samosvety))
+            c.execute("UPDATE refs SET rewarded=0 WHERE uid=?", (uid,))
             c.commit()
-        return True, coins, samosvety
+        return False, 0, 0
+
+    d["balance"]   = d.get("balance", 0) + coins
+    d["samosvety"] = d.get("samosvety", 0) + samosvety
+    save_user(inviter, d)
+
+    with _conn() as c:
+        if is_premium:
+            c.execute("""
+                INSERT INTO ref_stats (uid, total_refs, premium_refs, earned_coins, earned_samosvety)
+                VALUES (?, 1, 1, ?, ?)
+                ON CONFLICT(uid) DO UPDATE SET
+                    total_refs=total_refs+1, premium_refs=premium_refs+1,
+                    earned_coins=earned_coins+?, earned_samosvety=earned_samosvety+?
+            """, (inviter, coins, samosvety, coins, samosvety))
+        else:
+            c.execute("""
+                INSERT INTO ref_stats (uid, total_refs, premium_refs, earned_coins, earned_samosvety)
+                VALUES (?, 1, 0, ?, ?)
+                ON CONFLICT(uid) DO UPDATE SET
+                    total_refs=total_refs+1, earned_coins=earned_coins+?, earned_samosvety=earned_samosvety+?
+            """, (inviter, coins, samosvety, coins, samosvety))
+        c.commit()
+    return True, coins, samosvety
 
 
 def get_ref_stats(uid: int) -> dict:
@@ -756,8 +754,36 @@ async def aio_is_new_user(uid: int) -> bool:
     return await _asyncio.to_thread(is_new_user, uid)
 
 
+def _peek_pending_inviter_uid(uid: int) -> int | None:
+    """Узнать заранее, кому уйдёт награда за реферала uid (без изменений
+    и без лока) — нужно только чтобы асинхронная обёртка знала, чей
+    именно per-uid лок захватить ДО запуска reward_inviter (баланс
+    меняется у inviter, а не у uid). Сама reward_inviter всё равно
+    атомарно перепроверяет rewarded=0, так что устаревший результат
+    этой функции не опасен для целостности данных."""
+    with _conn() as c:
+        row = c.execute(
+            "SELECT inviter_uid FROM refs WHERE uid=? AND rewarded=0", (uid,)
+        ).fetchone()
+    return row["inviter_uid"] if row and row["inviter_uid"] is not None else None
+
+
 async def aio_reward_inviter(uid: int, is_premium: bool) -> tuple[bool, int, int]:
-    return await _asyncio.to_thread(reward_inviter, uid, is_premium)
+    inviter_uid = await _asyncio.to_thread(_peek_pending_inviter_uid, uid)
+    if inviter_uid is None:
+        # Либо реферала нет, либо уже вознаграждён, либо нет inviter_uid —
+        # пусть reward_inviter сама вернёт корректный результат, лок не нужен.
+        return await _asyncio.to_thread(reward_inviter, uid, is_premium)
+    # Тот же per-uid лок, что использует mainhelp.py для /sell, переводов,
+    # вкладов и т.д. — без него начисление реф-награды могло разъехаться
+    # с параллельной операцией над балансом инвайтера (см. коммент в шапке
+    # файла про anti-dupe locks). Импорт mainhelp — ленивый: mainhelp.py
+    # сам импортирует refs.py на верхнем уровне, прямой импорт здесь
+    # создал бы циклическую зависимость.
+    from mainhelp import _get_user_lock
+    lock = await _get_user_lock(inviter_uid)
+    async with lock:
+        return await _asyncio.to_thread(reward_inviter, uid, is_premium)
 
 
 async def aio_get_ref_stats(uid: int) -> dict:
