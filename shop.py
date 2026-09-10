@@ -2548,7 +2548,10 @@ def artifact_collection_text(data: dict, lang: str = "ru") -> str:
         return (
             f'<blockquote><tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> <b><i>{_L(lang, "МОЯ КОЛЛЕКЦИЯ АРТЕФАКТОВ", "MY ARTIFACT COLLECTION")}</i></b>\n'
             f'{_pe("cancel", "❌")} <b><i>{_L(lang, "У тебя пока нет артефактов.", "You have no artifacts yet.")}</i></b>\n'
-            f'{_L(lang, "Загляни в Магазин Артефактов, чтобы купить первый!", "Check out the Artifact Shop to buy your first one!")}</blockquote>'
+            f'{_L(lang, "Загляни в Магазин Артефактов, чтобы купить первый!", "Check out the Artifact Shop to buy your first one!")}</blockquote>\n'
+            f'\n<blockquote>{_pe("gift", "🎁")} <b><i>{_L(lang, "Кстати", "By the way")}</i></b>\n'
+            f'{_L(lang, "Артефакты можно передавать другим игрокам — ответь на сообщение игрока и напиши", "You can give artifacts to other players — reply to their message and write")} '
+            f'<code>отп арт {_L(lang, "название", "name")}</code>.</blockquote>'
         )
 
     mine_mult   = get_artifact_mine_multiplier(data)
@@ -2571,6 +2574,12 @@ def artifact_collection_text(data: dict, lang: str = "ru") -> str:
     pets_icon  = f'<tg-emoji emoji-id="{_E_PETS}">🐾</tg-emoji>'
     bonus_icon = f'<tg-emoji emoji-id="{_E_BONUS}">✨</tg-emoji>'
 
+    _first_art = ARTIFACT_POOL_BY_KEY.get(owned[0]["key"])
+    _first_owned_name = (
+        (_first_art.get("name_en", _first_art["name"]) if lang == "en" else _first_art["name"])
+        if _first_art else _L(lang, "название", "name")
+    )
+
     return (
         f'<blockquote><tg-emoji emoji-id="5442939099906325301">💎</tg-emoji> '
         f'<b><i>{_L(lang, "МОЯ КОЛЛЕКЦИЯ", "MY COLLECTION")} ({len(owned)}/{MAX_ARTIFACTS})</i></b></blockquote>\n'
@@ -2580,7 +2589,12 @@ def artifact_collection_text(data: dict, lang: str = "ru") -> str:
         f'{dmg_icon} <b><i>{_L(lang, "Босс", "Boss")}: ×{damage_mult}</i></b>\n'
         f'{pets_icon} <b><i>{_L(lang, "Питомцы", "Pets")}: ×{pets_mult}</i></b>'
         f'</blockquote>\n'
-        f'\n<blockquote><b><i>{_L(lang, "Артефакты", "Artifacts")}:</i></b>\n' + "".join(artifact_lines) + '</blockquote>'
+        f'\n<blockquote><b><i>{_L(lang, "Артефакты", "Artifacts")}:</i></b>\n' + "".join(artifact_lines) + '</blockquote>\n'
+        f'\n<blockquote>{_pe("gift", "🎁")} <b><i>{_L(lang, "Как передать артефакт другому игроку", "How to give an artifact to another player")}</i></b>\n'
+        f'{_L(lang, "Ответь на сообщение игрока и напиши:", "Reply to the player\'s message and write:")}\n'
+        f'<code>отп арт {_L(lang, "название", "name")}</code>\n'
+        f'{_L(lang, "Например:", "For example:")} <code>отп арт {_first_owned_name}</code>\n'
+        f'{_L(lang, "Бот попросит подтвердить передачу кнопкой — артефакт уйдёт только после подтверждения.", "The bot will ask you to confirm with a button — the artifact is transferred only after you confirm.")}</blockquote>'
     )
 
 
@@ -2588,6 +2602,148 @@ def artifact_collection_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(_back_btn("artifact_shop_list", _L(lang, "В магазин", "To shop")))
     return builder.as_markup()
+
+
+# ============================================================
+#  ПЕРЕДАЧА АРТЕФАКТА ДРУГОМУ ИГРОКУ
+#  Команда: "отп арт <название>" в ответ на сообщение игрока
+#  (см. cmd_transfer_artifact в mainhelp.py). В отличие от передачи
+#  обычных предметов/кейсов — требует подтверждения инлайн-кнопкой,
+#  т.к. артефакт единственный в своём роде у игрока и отправить не
+#  тому по опечатке в имени/реплаю обиднее, чем предмет из стопки.
+# ============================================================
+
+def find_artifact_by_query(query: str) -> dict | None:
+    """
+    Найти артефакт из ARTIFACT_SHOP_POOL по названию (RU/EN, без учёта
+    регистра) или по ключу. Сначала ищет точное совпадение имени/ключа,
+    затем — вхождение подстроки. Если подстрока совпала сразу с
+    несколькими артефактами — результат неоднозначен, возвращаем None,
+    чтобы не передать по ошибке не тот артефакт.
+    """
+    q = (query or "").strip().lower()
+    if not q:
+        return None
+
+    exact = [
+        a for a in ARTIFACT_SHOP_POOL
+        if a["name"].lower() == q or a.get("name_en", "").lower() == q or a["key"] == q
+    ]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        return None
+
+    partial = [
+        a for a in ARTIFACT_SHOP_POOL
+        if q in a["name"].lower() or q in a.get("name_en", "").lower()
+    ]
+    return partial[0] if len(partial) == 1 else None
+
+
+def transfer_artifact(sender_data: dict, recipient_data: dict, artifact_key: str, lang: str = "ru") -> tuple:
+    """
+    Передаёт артефакт artifact_key: убирает из коллекции sender_data,
+    добавляет в коллекцию recipient_data. Вызывать ТОЛЬКО после того, как
+    отправитель подтвердил передачу инлайн-кнопкой (сама передача
+    подтверждения не запрашивает — это делает вызывающий код в
+    mainhelp.py, см. "atx_y:"/"atx_n:" в handle_callback).
+    Модифицирует оба словаря на месте — сохранение в БД на стороне
+    вызывающего.
+    Возвращает (ok, sender_msg, recipient_msg).
+    """
+    art = ARTIFACT_POOL_BY_KEY.get(artifact_key)
+    if not art:
+        err = "Неизвестный артефакт." if lang == "ru" else "Unknown artifact."
+        return False, f"❌ {err}", ""
+
+    if not is_artifact_owned(sender_data, artifact_key):
+        err = "У тебя больше нет этого артефакта." if lang == "ru" else "You no longer own this artifact."
+        return False, f"❌ {err}", ""
+
+    if is_artifact_owned(recipient_data, artifact_key):
+        err = (
+            "У получателя уже есть этот артефакт — повторно передать нельзя."
+            if lang == "ru"
+            else "The recipient already owns this artifact — can't transfer a duplicate."
+        )
+        return False, f"⚠️ {err}", ""
+
+    sender_artifacts = sender_data.get("artifacts", [])
+    sender_data["artifacts"] = [e for e in sender_artifacts if e["key"] != artifact_key]
+
+    recipient_artifacts = recipient_data.setdefault("artifacts", [])
+    recipient_artifacts.append({"key": artifact_key})
+
+    name        = art.get("name_en", art["name"]) if lang == "en" else art["name"]
+    recip_name  = recipient_data.get("first_name") or recipient_data.get("username") or str(recipient_data["id"])
+    sender_name = sender_data.get("first_name") or sender_data.get("username") or str(sender_data["id"])
+
+    if lang == "en":
+        sender_msg = (
+            f'<tg-emoji emoji-id="5201691993775818138">✅</tg-emoji> '
+            f'<b><i>You successfully sent the artifact «{name}» to player {recip_name}!</i></b>'
+        )
+        recip_msg = (
+            f'<tg-emoji emoji-id="5222113468051629260">🎁</tg-emoji> '
+            f'<b><i>You received the artifact «{name}» from {sender_name}!</i></b>'
+        )
+    else:
+        sender_msg = (
+            f'<tg-emoji emoji-id="5201691993775818138">✅</tg-emoji> '
+            f'<b><i>Вы успешно передали артефакт «{name}» игроку {recip_name}!</i></b>'
+        )
+        recip_msg = (
+            f'<tg-emoji emoji-id="5222113468051629260">🎁</tg-emoji> '
+            f'<b><i>Вы получили артефакт «{name}» от {sender_name}!</i></b>'
+        )
+
+    return True, sender_msg, recip_msg
+
+
+def artifact_transfer_confirm_text(artifact_key: str, recipient_name: str, lang: str = "ru") -> str:
+    art = ARTIFACT_POOL_BY_KEY.get(artifact_key)
+    name = (art.get("name_en", art["name"]) if lang == "en" else art["name"]) if art else artifact_key
+    icon = _artifact_icon(art) if art else "💎"
+    if lang == "en":
+        return (
+            f'<tg-emoji emoji-id="5325547803936572038">⚠️</tg-emoji> <b>Transfer artifact?</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━\n\n'
+            f'<blockquote>'
+            f'{icon} <b><i>{name}</i></b>\n\n'
+            f'Are you sure you want to give this artifact to <b>{recipient_name}</b>?\n'
+            f'This action is <b>irreversible</b> — you won\'t be able to get it back automatically.'
+            f'</blockquote>'
+        )
+    return (
+        f'<tg-emoji emoji-id="5325547803936572038">⚠️</tg-emoji> <b>Передать артефакт?</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━\n\n'
+        f'<blockquote>'
+        f'{icon} <b><i>{name}</i></b>\n\n'
+        f'Ты действительно хочешь передать этот артефакт игроку <b>{recipient_name}</b>?\n'
+        f'Действие <b>необратимо</b> — автоматически вернуть его будет нельзя.'
+        f'</blockquote>'
+    )
+
+
+def artifact_transfer_confirm_keyboard(artifact_key: str, sender_uid: int, recipient_uid: int, lang: str = "ru") -> InlineKeyboardMarkup:
+    # Ключ артефакта ≤30 символов, два id — под лимит callback_data в 64
+    # байта укладываемся с большим запасом (проверено для самого длинного
+    # ключа в ARTIFACT_SHOP_POOL).
+    payload = f"{artifact_key}:{sender_uid}:{recipient_uid}"
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=_L(lang, "✅ Подтвердить", "✅ Confirm"),
+            callback_data=f"atx_y:{payload}",
+        ),
+        InlineKeyboardButton(
+            text=_L(lang, "❌ Отменить", "❌ Cancel"),
+            callback_data=f"atx_n:{payload}",
+        ),
+    )
+    return builder.as_markup()
+
 
 
 def inventory_main_text(data: dict, lang: str = "ru") -> str:
