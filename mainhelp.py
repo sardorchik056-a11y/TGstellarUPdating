@@ -266,6 +266,8 @@ from shop import (
     artifact_collection_text, artifact_collection_keyboard,
     artifact_insufficient_keyboard,
     buy_artifact_with_samosvety, buy_artifact_with_coins, is_artifact_owned, ARTIFACT_POOL_BY_KEY, ARTIFACT_TIERS_BY_KEY,
+    find_artifact_by_query, transfer_artifact,
+    artifact_transfer_confirm_text, artifact_transfer_confirm_keyboard,
     # Единый инвентарь
     unified_inventory_text, get_unified_inventory,
     use_item_by_slot_id, cancel_active_by_type,
@@ -3058,6 +3060,115 @@ async def cmd_transfer_item(message: Message):
             pass
 
 
+# ── отп арт <название> — передать артефакт (с подтверждением) ──────────────
+# Формат:
+#   отп арт <название>              — получатель из reply
+#   отп арт <название> @username    — явный получатель
+# Синонимы "пер"/"перевести"/"отправить" — как у отп #<slot>.
+# В отличие от предметов и кейсов, передача артефакта требует подтверждения
+# инлайн-кнопкой (см. "atx_y:"/"atx_n:" в handle_callback) — артефакт
+# единственный в своём роде у игрока, отменить случайную передачу по
+# опечатке в названии/реплае намного дороже, чем для стопки предметов.
+
+_TRANSFER_ARTIFACT_RE = _re_inv.compile(
+    r'^/?(отп|пер|перевести|отправить|transfer_item)\s+арт(?:ефакт)?\s+'
+    r'(.+?)'
+    r'(?:\s+[@](\S+))?'
+    r'\s*$',
+    _re_inv.IGNORECASE,
+)
+
+@dp.message(F.text.regexp(
+    r'^/?(отп|пер|перевести|отправить|transfer_item)\s+арт(?:ефакт)?\s+',
+    flags=_re_inv.IGNORECASE,
+))
+async def cmd_transfer_artifact(message: Message):
+    """Передача артефакта из коллекции другому игроку — с подтверждением."""
+    from database import aio_get_user
+
+    uid  = message.from_user.id
+    u    = await aio_get_or_create_user(message.from_user)
+    lang = get_lang(u)
+    await aio_track_user(uid)
+    if await _check_onboarded(message, u):
+        return
+
+    text = (message.text or "").strip()
+    m = _TRANSFER_ARTIFACT_RE.match(text)
+    if not m:
+        hint = (
+            "❌ <b>Неверный формат.</b>\n\n"
+            "<blockquote>"
+            "Ответь на сообщение игрока и напиши:\n"
+            "<code>отп арт Сфера Иллюзий</code>\n\n"
+            "Или укажи получателя явно:\n"
+            "<code>отп арт Сфера Иллюзий @username</code>"
+            "</blockquote>"
+        )
+        await message.reply(hint, parse_mode="HTML")
+        return
+
+    query      = m.group(2).strip()
+    target_raw = m.group(3)
+
+    art = find_artifact_by_query(query)
+    if not art:
+        await message.reply(
+            "❌ Не нашёл артефакт с таким названием (или совпало сразу несколько — уточни название точнее).\n"
+            "Посмотреть точные названия можно в разделе «Коллекция артефактов».",
+            parse_mode="HTML",
+        )
+        return
+
+    if not is_artifact_owned(u, art["key"]):
+        await message.reply("❌ У тебя нет этого артефакта.", parse_mode="HTML")
+        return
+
+    # ── Определяем получателя ──────────────────────────────────────────
+    recipient_data = None
+
+    if target_raw:
+        from database import aio_get_user_by_id_or_username as _find_transfer
+        recipient_data = await _find_transfer(target_raw.lstrip("@"))
+    else:
+        if not message.reply_to_message:
+            hint = (
+                "❌ <b>Укажи получателя.</b>\n\n"
+                "<blockquote>"
+                "Ответь на сообщение игрока и напиши:\n"
+                f"<code>отп арт {art['name']}</code>\n\n"
+                "Или укажи явно:\n"
+                f"<code>отп арт {art['name']} @username</code>"
+                "</blockquote>"
+            )
+            await message.reply(hint, parse_mode="HTML")
+            return
+        target_uid     = message.reply_to_message.from_user.id
+        recipient_data = await aio_get_user(target_uid)
+
+    if not recipient_data:
+        await message.reply(
+            "❌ Игрок не найден в базе. Он должен хотя бы раз написать боту.",
+            parse_mode="HTML",
+        )
+        return
+
+    if recipient_data["id"] == uid:
+        await message.reply("❌ Нельзя передавать артефакты самому себе.", parse_mode="HTML")
+        return
+
+    if is_artifact_owned(recipient_data, art["key"]):
+        await message.reply("⚠️ У получателя уже есть этот артефакт — повторно передать нельзя.", parse_mode="HTML")
+        return
+
+    recip_name = recipient_data.get("first_name") or recipient_data.get("username") or str(recipient_data["id"])
+    await message.reply(
+        artifact_transfer_confirm_text(art["key"], recip_name, lang),
+        parse_mode="HTML",
+        reply_markup=artifact_transfer_confirm_keyboard(art["key"], uid, recipient_data["id"], lang),
+    )
+
+
 @dp.message(Command("boost", "буст", "бусты", "boosts"))
 @dp.message(F.text.regexp(r'^/?(boost|буст|бусты|boosts)\s*$', flags=_re_inv.IGNORECASE))
 async def cmd_boost_status(message: Message):
@@ -3703,6 +3814,103 @@ async def potion_use_callback(call: CallbackQuery):
         )
     else:
         await call.answer(msg, show_alert=True)
+
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("atx_y:") | F.data.startswith("atx_n:"))
+async def artifact_transfer_confirm_callback(call: CallbackQuery):
+    """
+    Подтверждение/отмена передачи артефакта (кнопки из cmd_transfer_artifact,
+    callback_data вида "atx_y:<artifact_key>:<sender_uid>:<recipient_uid>").
+
+    Зарегистрирован ОТДЕЛЬНЫМ хендлером, а не веткой внутри handle_callback,
+    намеренно: handle_callback держит _get_user_lock(user.id) на всё время
+    своей работы, а тут нужны ДВА лока — отправителя и получателя — как в
+    cmd_transfer_item/cmd_gift. Если бы это было веткой handle_callback,
+    второй лок пришлось бы брать поверх уже удерживаемого своего же, и при
+    одновременном нажатии обоими игроками (например, получатель в этот же
+    момент жмёт что-то в своём handle_callback) это был бы классический
+    deadlock — см. комментарий про foe_uid в обработке результата дуэли
+    чуть ниже по файлу. Отдельный хендлер снимает проблему: оба лока
+    берутся заново и в согласованном порядке по uid.
+    """
+    cd = call.data
+    is_confirm = cd.startswith("atx_y:")
+    payload = cd[len("atx_y:"):] if is_confirm else cd[len("atx_n:"):]
+    parts = payload.split(":")
+    if len(parts) != 3:
+        await call.answer()
+        return
+
+    artifact_key = parts[0]
+    try:
+        sender_uid    = int(parts[1])
+        recipient_uid = int(parts[2])
+    except ValueError:
+        await call.answer()
+        return
+
+    actor = call.from_user.id
+    if actor != sender_uid:
+        # Кнопку видит любой в чате (реплай — публичное сообщение), но
+        # подтвердить/отменить может только тот, кто инициировал передачу.
+        await call.answer(
+            "Только отправитель может подтвердить или отменить эту передачу.",
+            show_alert=True,
+        )
+        return
+
+    sender_preview = await aio_get_user(sender_uid)
+    lang = get_lang(sender_preview) if sender_preview else "ru"
+
+    if not is_confirm:
+        try:
+            await call.message.edit_text(
+                "❌ Передача отменена." if lang == "ru" else "❌ Transfer cancelled.",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+        await call.answer()
+        return
+
+    if artifact_key not in ARTIFACT_POOL_BY_KEY or not sender_preview:
+        await call.answer("❌ Ошибка. Попробуй ещё раз.", show_alert=True)
+        return
+
+    lock_sender    = await _get_user_lock(sender_uid)
+    lock_recipient = await _get_user_lock(recipient_uid)
+    first_lock, second_lock = (
+        (lock_sender, lock_recipient)
+        if sender_uid < recipient_uid
+        else (lock_recipient, lock_sender)
+    )
+
+    ok = False
+    sender_msg = recip_msg = ""
+    async with first_lock:
+        async with second_lock:
+            sender_data    = await aio_get_user(sender_uid)
+            recipient_data = await aio_get_user(recipient_uid)
+            if not sender_data or not recipient_data:
+                await call.answer("❌ Один из игроков не найден.", show_alert=True)
+                return
+            ok, sender_msg, recip_msg = transfer_artifact(sender_data, recipient_data, artifact_key, lang)
+            if ok:
+                await aio_save_user(sender_uid, sender_data)
+                await aio_save_user(recipient_uid, recipient_data)
+
+    try:
+        await call.message.edit_text(sender_msg, parse_mode="HTML")
+    except Exception:
+        pass
+
+    if ok and recip_msg:
+        try:
+            await bot.send_message(recipient_uid, recip_msg, parse_mode="HTML")
+        except Exception:
+            pass
 
     await call.answer()
 
