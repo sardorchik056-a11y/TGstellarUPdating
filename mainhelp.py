@@ -1,5 +1,6 @@
 import asyncio
 import html as _html
+import json
 import logging
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
@@ -1239,6 +1240,37 @@ async def cmd_daily(message: Message):
 _ONBOARD_GUIDE_URL = "https://iridescent-swan-76a0d8.netlify.app/"
 
 
+# ── Картинка для экрана "выбор языка + гайд" (ставится админом через /img,
+#    см. admin.py). Хранится в отдельном json-файле, чтобы переживать
+#    рестарт бота. file_id действителен, пока фото не удалено из Telegram. ──
+_ONBOARD_IMAGE_FILE = "onboard_image.json"
+
+
+def _load_onboard_image_id() -> str | None:
+    try:
+        with open(_ONBOARD_IMAGE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f).get("file_id")
+    except Exception:
+        return None
+
+
+_ONBOARD_IMAGE_ID: str | None = _load_onboard_image_id()
+
+
+def get_onboard_image_id() -> str | None:
+    return _ONBOARD_IMAGE_ID
+
+
+def set_onboard_image_id(file_id: str) -> None:
+    global _ONBOARD_IMAGE_ID
+    _ONBOARD_IMAGE_ID = file_id
+    try:
+        with open(_ONBOARD_IMAGE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"file_id": file_id}, f)
+    except Exception as e:
+        print(f"[onboard_image] не удалось сохранить file_id: {e}")
+
+
 def _onboard_guide_text(lang: str = "ru") -> str:
     """Экран между выбором языка и стартом игры: короткий гайд + кнопка «Начинаем!»."""
     if lang == "en":
@@ -1266,12 +1298,12 @@ def _onboard_guide_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(
         text="📖 Гайд" if lang != "en" else "📖 Guide",
         web_app=WebAppInfo(url=_ONBOARD_GUIDE_URL),
-        icon_custom_emoji_id="5271604874419647061",
     ))
     builder.row(InlineKeyboardButton(
         text="🚀 Начинаем!" if lang != "en" else "🚀 Let's start!",
         callback_data="onboard_finish",
         style="success",
+        icon_custom_emoji_id="5195033767969839232",
     ))
     return builder.as_markup()
 
@@ -1282,13 +1314,24 @@ async def _send_onboarding_step(message: Message, uid: int) -> bool:
     Капчи больше нет: онбординг полностью кнопочный —
     выбор языка → гайд + «Начинаем!» → меню (см. cd == "start_lang_*"
     и cd == "onboard_finish" в handle_callback).
+    Если админ установил картинку командой /img (см. admin.py) — это же
+    сообщение отправляется как фото с подписью, а не просто текстом.
     Возвращает True всегда — обработку сообщения нужно прекратить.
     """
-    await message.answer(
-        lang_choose_text("ru"),
-        parse_mode="HTML",
-        reply_markup=lang_choose_keyboard_start(),
-    )
+    img = get_onboard_image_id()
+    if img:
+        await message.answer_photo(
+            img,
+            caption=lang_choose_text("ru"),
+            parse_mode="HTML",
+            reply_markup=lang_choose_keyboard_start(),
+        )
+    else:
+        await message.answer(
+            lang_choose_text("ru"),
+            parse_mode="HTML",
+            reply_markup=lang_choose_keyboard_start(),
+        )
     return True
 
 
@@ -6065,12 +6108,25 @@ async def handle_callback(call: CallbackQuery):
             new_lang = "ru" if cd == "start_lang_ru" else "en"
             data["lang"] = new_lang
             await aio_save_user(data["id"], data)
-            await call.message.edit_text(
-                _onboard_guide_text(new_lang),
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-                reply_markup=_onboard_guide_keyboard(new_lang),
-            )
+            guide_text = _onboard_guide_text(new_lang)
+            guide_kb = _onboard_guide_keyboard(new_lang)
+            # Экран выбора языка мог быть отправлен как фото (см. /img
+            # в admin.py) — в этом случае текст сообщения нельзя отредактировать
+            # через edit_text, нужен edit_caption. Обычный текстовый экран
+            # редактируется как раньше.
+            if call.message.photo:
+                await call.message.edit_caption(
+                    caption=guide_text,
+                    parse_mode="HTML",
+                    reply_markup=guide_kb,
+                )
+            else:
+                await call.message.edit_text(
+                    guide_text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                    reply_markup=guide_kb,
+                )
             await call.answer()
             return
 
