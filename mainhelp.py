@@ -7,6 +7,7 @@ from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     ReplyKeyboardMarkup, KeyboardButton,
     LabeledPrice, PreCheckoutQuery,
+    WebAppInfo,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from aiogram.filters import Command
@@ -855,14 +856,14 @@ def shop_main_keyboard() -> InlineKeyboardMarkup:
 
 ADMIN_IDS = {8118184388}
 
-GUIDE_URL = "https://telegra.ph/POLNOE-RUKOVODSTVO-POLZOVATELYA-06-24"
+GUIDE_URL = "https://iridescent-swan-76a0d8.netlify.app/"
 
 
 def guide_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
         text="📖 Открыть гайд",
-        url=GUIDE_URL,
+        web_app=WebAppInfo(url=GUIDE_URL),
     ))
     return builder.as_markup()
 
@@ -1235,7 +1236,7 @@ async def cmd_daily(message: Message):
         await message.reply(text, parse_mode="HTML")
 
 
-_ONBOARD_GUIDE_URL = "https://t.me/"   # TODO: вставить ссылку на гайд
+_ONBOARD_GUIDE_URL = "https://iridescent-swan-76a0d8.netlify.app/"
 
 
 def _onboard_guide_text(lang: str = "ru") -> str:
@@ -1264,7 +1265,7 @@ def _onboard_guide_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
         text="📖 Гайд" if lang != "en" else "📖 Guide",
-        url=_ONBOARD_GUIDE_URL,
+        web_app=WebAppInfo(url=_ONBOARD_GUIDE_URL),
         icon_custom_emoji_id="5271604874419647061",
     ))
     builder.row(InlineKeyboardButton(
