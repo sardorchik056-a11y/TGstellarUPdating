@@ -1300,7 +1300,7 @@ def _onboard_guide_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
         web_app=WebAppInfo(url=_ONBOARD_GUIDE_URL),
     ))
     builder.row(InlineKeyboardButton(
-        text="🚀 Начинаем!" if lang != "en" else "🚀 Let's start!",
+        text=" Начинаем!" if lang != "en" else " Let's start!",
         callback_data="onboard_finish",
         style="success",
         icon_custom_emoji_id="5195033767969839232",
