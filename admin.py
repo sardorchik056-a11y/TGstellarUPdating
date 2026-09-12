@@ -30,7 +30,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from mainhelp import bot, dp, ADMIN_IDS, _esc, _parse_amount
+from mainhelp import bot, dp, ADMIN_IDS, _esc, _parse_amount, set_onboard_image_id
 
 from database import (
     format_amount,
@@ -302,6 +302,35 @@ async def cmd_checkmine(message: Message):
         f'<blockquote>{mine_status}</blockquote>\n\n'
         f'<b>Открытые кирки ({len(owned_sorted)}/{len(PICKAXES_ORDER)}):</b>\n'
         f'<blockquote>{pickaxes_block}</blockquote>',
+        parse_mode="HTML",
+    )
+
+
+# ── /img — задать картинку для экрана "выбор языка + гайд" ─────────────
+#  Использование: ответить (reply) командой /img на сообщение с фото —
+#  оно станет обложкой первого сообщения онбординга (выбор языка → гайд).
+
+@dp.message(Command("img"))
+async def cmd_set_onboard_image(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return  # тихо игнорируем
+
+    if not message.reply_to_message or not message.reply_to_message.photo:
+        await message.reply(
+            "❌ Ответь командой <code>/img</code> на сообщение с изображением.\n"
+            "Это фото станет обложкой первого сообщения онбординга "
+            "(экран выбора языка и гайда).",
+            parse_mode="HTML",
+        )
+        return
+
+    # photo — список размеров одного и того же фото, последний элемент — самый большой
+    file_id = message.reply_to_message.photo[-1].file_id
+    set_onboard_image_id(file_id)
+
+    await message.reply(
+        "✅ Готово! Это изображение теперь прикрепляется к первому сообщению "
+        "онбординга — экрану выбора языка и гайда.",
         parse_mode="HTML",
     )
 
